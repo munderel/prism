@@ -1,0 +1,357 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// === NEXTAUTH MODELS ===
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// === CORE MODELS ===
+
+model User {
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  name                  String?
+  image                 String?
+  emailVerified         DateTime?
+  googleRefreshToken    String?   @db.Text
+  googleTokenExpiresAt  DateTime?
+  mtp                   String?   @db.Text
+  isAdmin               Boolean   @default(false)
+  hasCompletedOnboarding Boolean  @default(false)
+  timezone              String    @default("America/New_York")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  accounts              Account[]
+  sessions              Session[]
+  goalStacks            GoalStack[]
+  tasks                 Task[]
+  reviews               Review[]
+  streaks               Streak[]
+  publicWins            PublicWin[]
+  powerdownSessions     PowerdownSession[]
+  taskComments          TaskComment[]
+  commentMentions       CommentMention[]
+  pushSubscriptions     PushSubscription[]
+  notificationPreference NotificationPreference?
+  configVersions        ConfigVersion[]
+}
+
+model CompanySettings {
+  id         String   @id @default(cuid())
+  companyMtp String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model GoalStack {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  isCompany Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner          User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  goals          Goal[]
+  configVersions ConfigVersion[]
+}
+
+enum GoalLevel {
+  HIGH_HARD
+  STRATEGIC
+  MONTHLY
+  WEEKLY
+  DAILY
+}
+
+enum GoalStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  stackId     String
+  parentId    String?
+  level       GoalLevel
+  title       String
+  description String?    @db.Text
+  status      GoalStatus @default(NOT_STARTED)
+  progressPct Float      @default(0)
+  dueDate     DateTime?
+  sortOrder   Int        @default(0)
+  deletedAt   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  stack              GoalStack  @relation(fields: [stackId], references: [id], onDelete: Cascade)
+  parent             Goal?      @relation("GoalHierarchy", fields: [parentId], references: [id])
+  children           Goal[]     @relation("GoalHierarchy")
+  tasks              Task[]
+  companyGoalLinks   GoalLink[] @relation("CompanyGoal")
+  individualGoalLinks GoalLink[] @relation("IndividualGoal")
+  publicWins         PublicWin[]
+
+  @@index([stackId])
+  @@index([parentId])
+  @@index([deletedAt])
+}
+
+model GoalLink {
+  id               String   @id @default(cuid())
+  companyGoalId    String
+  individualGoalId String
+  weight           Float    @default(1.0)
+  createdAt        DateTime @default(now())
+
+  companyGoal    Goal @relation("CompanyGoal", fields: [companyGoalId], references: [id], onDelete: Cascade)
+  individualGoal Goal @relation("IndividualGoal", fields: [individualGoalId], references: [id], onDelete: Cascade)
+
+  @@index([companyGoalId])
+  @@index([individualGoalId])
+}
+
+// === TASKS & TRACKING ===
+
+enum TaskType {
+  GOAL_STACK
+  REACT
+  MAINTENANCE
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  DROPPED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Task {
+  id             String       @id @default(cuid())
+  ownerId        String
+  goalId         String?
+  taskType       TaskType
+  title          String
+  description    String?      @db.Text
+  status         TaskStatus   @default(TODO)
+  priority       TaskPriority @default(MEDIUM)
+  dueDate        DateTime?
+  recurrenceRule String?
+  calendarEventId String?
+  timeBlockStart DateTime?
+  timeBlockEnd   DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  failedAt       DateTime?
+  rescheduledTo  DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  owner    User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  goal     Goal?         @relation(fields: [goalId], references: [id])
+  comments TaskComment[]
+  publicWins PublicWin[]
+
+  @@index([ownerId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model Streak {
+  id             String   @id @default(cuid())
+  userId         String
+  streakType     String
+  currentCount   Int      @default(0)
+  bestCount      Int      @default(0)
+  lastActiveDate DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, streakType])
+}
+
+model PublicWin {
+  id        String   @id @default(cuid())
+  userId    String
+  goalId    String?
+  taskId    String?
+  message   String
+  createdAt DateTime @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal Goal? @relation(fields: [goalId], references: [id])
+  task Task? @relation(fields: [taskId], references: [id])
+}
+
+// === RITUALS & REVIEWS ===
+
+enum ReviewType {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+model Review {
+  id             String     @id @default(cuid())
+  userId         String
+  reviewType     ReviewType
+  scheduledDate  DateTime
+  completedAt    DateTime?
+  notes          String?    @db.Text
+  checklistState Json?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, reviewType])
+  @@index([scheduledDate])
+}
+
+model ReviewTemplate {
+  id             String     @id @default(cuid())
+  reviewType     ReviewType @unique
+  checklistItems Json
+  processSteps   Json
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+model PowerdownSession {
+  id             String    @id @default(cuid())
+  userId         String
+  sessionDate    DateTime
+  currentStep    Int       @default(1)
+  checklistState Json?
+  tomorrowPlan   Json?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sessionDate])
+}
+
+// === COLLABORATION ===
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  task     Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author   User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mentions CommentMention[]
+
+  @@index([taskId])
+}
+
+model CommentMention {
+  id        String @id @default(cuid())
+  commentId String
+  userId    String
+
+  comment TaskComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([commentId])
+}
+
+// === NOTIFICATIONS ===
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model NotificationPreference {
+  id              String  @id @default(cuid())
+  userId          String  @unique
+  emailEnabled    Boolean @default(true)
+  pushEnabled     Boolean @default(true)
+  derailingAlerts Boolean @default(true)
+  mentionAlerts   Boolean @default(true)
+  reviewNags      Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// === VERSIONING ===
+
+model ConfigVersion {
+  id            String   @id @default(cuid())
+  stackId       String
+  versionNum    Int
+  yamlContent   String   @db.Text
+  changeSummary String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  stack     GoalStack @relation(fields: [stackId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdById], references: [id])
+
+  @@index([stackId])
+}
