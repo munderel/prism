@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi } from 'vitest';
-import { requireAuth, requireAdmin, requireOwnership } from '@/lib/auth-guard';
+import { requireAuth, requireAdmin, requireOwnership, requireCronSecret } from '@/lib/auth-guard';
 
 // Mock next-auth
 vi.mock('next-auth', () => ({
@@ -70,5 +70,36 @@ describe('requireOwnership', () => {
     mockGetServerSession.mockResolvedValue(session as any);
     const result = await requireOwnership('user1');
     expect(result.session).toEqual(session);
+  });
+});
+
+// Mock the environment variable
+vi.stubEnv('CRON_SECRET', 'test-cron-secret');
+
+describe('requireCronSecret', () => {
+  it('returns true for valid cron secret', () => {
+    const request = new Request('http://localhost/api/cron/test', {
+      headers: { authorization: 'Bearer test-cron-secret' },
+    });
+    expect(requireCronSecret(request)).toBe(true);
+  });
+
+  it('returns false for invalid cron secret', () => {
+    const request = new Request('http://localhost/api/cron/test', {
+      headers: { authorization: 'Bearer wrong-secret' },
+    });
+    expect(requireCronSecret(request)).toBe(false);
+  });
+
+  it('returns false for missing authorization header', () => {
+    const request = new Request('http://localhost/api/cron/test');
+    expect(requireCronSecret(request)).toBe(false);
+  });
+
+  it('returns false for mismatched length', () => {
+    const request = new Request('http://localhost/api/cron/test', {
+      headers: { authorization: 'Bearer x' },
+    });
+    expect(requireCronSecret(request)).toBe(false);
   });
 });

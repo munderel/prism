@@ -1,4 +1,5 @@
 import { getServerSession, Session } from 'next-auth';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { authOptions } from './auth';
 
 export type AuthResult =
@@ -41,5 +42,14 @@ export function authError(result: AuthResult) {
 
 export function requireCronSecret(request: Request): boolean {
   const authHeader = request.headers.get('authorization');
-  return authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  if (!authHeader) return false;
+
+  const expected = `Bearer ${process.env.CRON_SECRET}`;
+
+  // HMAC both values to fixed-length digests, avoiding length-based timing leaks
+  const hmacKey = 'cron-secret-compare';
+  const hashA = createHmac('sha256', hmacKey).update(authHeader).digest();
+  const hashB = createHmac('sha256', hmacKey).update(expected).digest();
+
+  return timingSafeEqual(hashA, hashB);
 }
