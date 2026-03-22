@@ -5,6 +5,8 @@ import { goalLimiter, getClientIp } from '@/lib/rate-limit';
 import { parseYamlToGoals, diffGoals, buildGoalTree, type GoalNode } from '@/lib/yaml-handler';
 import { cascadeProgressUp } from '@/lib/progress';
 
+export const MAX_YAML_SIZE = 256 * 1024; // 256KB
+
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
   const limit = goalLimiter.check(ip);
@@ -17,6 +19,13 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const { stackId, yamlContent, confirmed } = body;
+
+  if (typeof yamlContent !== 'string' || yamlContent.length > MAX_YAML_SIZE) {
+    return Response.json(
+      { error: 'YAML content must be a string under 256KB' },
+      { status: 400 }
+    );
+  }
 
   if (!stackId || !yamlContent) {
     return Response.json(
