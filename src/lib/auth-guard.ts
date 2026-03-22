@@ -1,6 +1,7 @@
 import { getServerSession, Session } from 'next-auth';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { authOptions } from './auth';
+import { prisma } from './prisma';
 
 export type AuthResult =
   | { session: Session; userId: string; error?: never; status?: never }
@@ -38,6 +39,22 @@ export async function requireOwnership(ownerId: string): Promise<AuthResult> {
 
 export function authError(result: AuthResult) {
   return Response.json({ error: result.error }, { status: result.status });
+}
+
+export async function requireTaskAccess(taskId: string): Promise<AuthResult & { task?: { id: string; ownerId: string } }> {
+  const result = await requireAuth();
+  if ('error' in result) return result;
+
+  const task = await prisma.task.findUnique({ where: { id: taskId } });
+  if (!task) {
+    return { error: 'Task not found', status: 404 };
+  }
+
+  if (task.ownerId !== result.userId && !result.session.user.isAdmin) {
+    return { error: 'Forbidden', status: 403 };
+  }
+
+  return { ...result, task };
 }
 
 export function requireCronSecret(request: Request): boolean {

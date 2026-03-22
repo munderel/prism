@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi } from 'vitest';
-import { requireAuth, requireAdmin, requireOwnership, requireCronSecret } from '@/lib/auth-guard';
+import { requireAuth, requireAdmin, requireOwnership, requireCronSecret, requireTaskAccess } from '@/lib/auth-guard';
 
 // Mock next-auth
 vi.mock('next-auth', () => ({
@@ -11,8 +11,19 @@ vi.mock('@/lib/auth', () => ({
   authOptions: {},
 }));
 
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    task: {
+      findUnique: vi.fn(),
+    },
+  },
+}));
+
 import { getServerSession } from 'next-auth';
 const mockGetServerSession = vi.mocked(getServerSession);
+
+import { prisma } from '@/lib/prisma';
+const mockTaskFindUnique = vi.mocked(prisma.task.findUnique);
 
 describe('requireAuth', () => {
   it('returns 401 when no session', async () => {
@@ -101,5 +112,37 @@ describe('requireCronSecret', () => {
       headers: { authorization: 'Bearer x' },
     });
     expect(requireCronSecret(request)).toBe(false);
+  });
+});
+
+describe('requireTaskAccess', () => {
+  it('returns 404 when task not found', async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: 'user1', isAdmin: false } } as any);
+    mockTaskFindUnique.mockResolvedValue(null);
+    const result = await requireTaskAccess('task-xyz');
+    expect(result.error).toBe('Task not found');
+    expect(result.status).toBe(404);
+  });
+
+  it('returns 403 when user does not own task', async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: 'user1', isAdmin: false } } as any);
+    mockTaskFindUnique.mockResolvedValue({ id: 'task-xyz', ownerId: 'user2' } as any);
+    const result = await requireTaskAccess('task-xyz');
+    expect(result.error).toBe('Forbidden');
+    expect(result.status).toBe(403);
+  });
+
+  it('allows owner to access task', async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: 'user1', isAdmin: false } } as any);
+    mockTaskFindUnique.mockResolvedValue({ id: 'task-xyz', ownerId: 'user1' } as any);
+    const result = await requireTaskAccess('task-xyz');
+    expect(result.session).toBeDefined();
+  });
+
+  it('allows admin to access any task', async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: 'admin1', isAdmin: true } } as any);
+    mockTaskFindUnique.mockResolvedValue({ id: 'task-xyz', ownerId: 'user2' } as any);
+    const result = await requireTaskAccess('task-xyz');
+    expect(result.session).toBeDefined();
   });
 });
