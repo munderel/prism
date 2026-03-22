@@ -22,7 +22,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, user }) {
       if (session.user) {
         session.user.id = user.id;
-        session.user.isAdmin = (user as any).isAdmin ?? false;
+        session.user.isAdmin = (user as unknown as { isAdmin: boolean }).isAdmin ?? false;
       }
       return session;
     },

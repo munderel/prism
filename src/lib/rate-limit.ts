@@ -36,6 +36,7 @@ export function rateLimit(options: Options) {
 export const commentLimiter = rateLimit({ interval: 60_000, limit: 20 });
 export const notificationLimiter = rateLimit({ interval: 60_000, limit: 10 });
 export const taskLimiter = rateLimit({ interval: 60_000, limit: 30 });
+export const goalLimiter = rateLimit({ interval: 60_000, limit: 30 });
 
 export function getClientIp(request: Request): string {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
