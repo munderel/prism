@@ -1,3 +1,7 @@
+// TODO: This in-memory rate limiter does not work across serverless invocations.
+// For production on Vercel, replace with Upstash Redis or Vercel KV.
+// See: https://vercel.com/guides/rate-limiting-edge-middleware-vercel-kv
+
 type RateLimitResult = {
   success: boolean;
   remaining: number;
@@ -39,5 +43,10 @@ export const taskLimiter = rateLimit({ interval: 60_000, limit: 30 });
 export const goalLimiter = rateLimit({ interval: 60_000, limit: 30 });
 
 export function getClientIp(request: Request): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  // Prefer Vercel's non-spoofable header, fall back to x-forwarded-for for local dev
+  return (
+    request.headers.get('x-real-ip') ??
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    'unknown'
+  );
 }
