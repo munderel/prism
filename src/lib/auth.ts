@@ -7,7 +7,7 @@ import { prisma } from './prisma';
 // Dev-only credentials provider — passwordless email login for local development.
 // Gated behind NODE_ENV to prevent accidental exposure in production.
 const devProvider =
-  process.env.NODE_ENV !== 'production'
+  process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEV_LOGIN === 'true'
     ? [
         CredentialsProvider({
           name: 'Dev Login',
@@ -16,8 +16,9 @@ const devProvider =
           },
           async authorize(credentials) {
             if (!credentials?.email) return null;
+            const normalizedEmail = credentials.email.trim().toLowerCase();
             const user = await prisma.user.findUnique({
-              where: { email: credentials.email },
+              where: { email: normalizedEmail },
             });
             if (!user) return null;
             return { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin };
