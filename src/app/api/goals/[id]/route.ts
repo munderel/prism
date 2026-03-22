@@ -143,7 +143,14 @@ export async function DELETE(
   return Response.json({ ok: true });
 }
 
-async function softDeleteDescendants(goalId: string, now: Date) {
+const MAX_GOAL_DEPTH = 20;
+
+async function softDeleteDescendants(goalId: string, now: Date, depth = 0) {
+  if (depth > MAX_GOAL_DEPTH) {
+    console.warn(`softDeleteDescendants: max depth ${MAX_GOAL_DEPTH} exceeded at goal ${goalId}, stopping recursion`);
+    return;
+  }
+
   await prisma.goal.update({
     where: { id: goalId },
     data: { deletedAt: now },
@@ -155,6 +162,6 @@ async function softDeleteDescendants(goalId: string, now: Date) {
   });
 
   for (const child of children) {
-    await softDeleteDescendants(child.id, now);
+    await softDeleteDescendants(child.id, now, depth + 1);
   }
 }
