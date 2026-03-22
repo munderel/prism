@@ -98,6 +98,18 @@ export async function sendEmailNotification(
 }
 
 /**
+ * Escape HTML special characters to prevent XSS attacks.
+ */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
  * Notify a user (both push + email).
  */
 export async function notifyUser(
@@ -108,6 +120,6 @@ export async function notifyUser(
 ) {
   await Promise.all([
     sendPushNotification(userId, title, body, url),
-    sendEmailNotification(userId, title, `<p>${body}</p>`),
+    sendEmailNotification(userId, title, `<p>${escapeHtml(body)}</p>`),
   ]);
 }
