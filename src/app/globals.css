@@ -25,3 +25,45 @@ body {
     text-wrap: balance;
   }
 }
+
+/* FullCalendar dark theme */
+.fc-dark-theme .fc {
+  --fc-border-color: #1f2937;
+  --fc-button-bg-color: #374151;
+  --fc-button-border-color: #4b5563;
+  --fc-button-hover-bg-color: #4b5563;
+  --fc-button-hover-border-color: #6b7280;
+  --fc-button-active-bg-color: #6366f1;
+  --fc-button-active-border-color: #6366f1;
+  --fc-today-bg-color: rgba(99, 102, 241, 0.1);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: #111827;
+  --fc-list-event-hover-bg-color: #1f2937;
+  --fc-event-bg-color: #6366f1;
+  --fc-event-border-color: #6366f1;
+  color: #e5e7eb;
+}
+
+.fc-dark-theme .fc .fc-col-header-cell {
+  background-color: #111827;
+}
+
+.fc-dark-theme .fc .fc-timegrid-slot {
+  border-color: #1f2937;
+}
+
+/* Mobile responsive sidebar */
+@media (max-width: 1023px) {
+  .mobile-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    justify-content: space-around;
+    background: #030712;
+    border-top: 1px solid #1f2937;
+    padding: 0.5rem 0;
+  }
+}
