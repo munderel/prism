@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useSession, signOut } from 'next-auth/react';
 
 export function TopBar() {
@@ -17,9 +18,11 @@ export function TopBar() {
           <>
             <span className="text-sm text-gray-400">{session.user.name}</span>
             {session.user.image && (
-              <img
+              <Image
                 src={session.user.image}
                 alt=""
+                width={32}
+                height={32}
                 className="h-8 w-8 rounded-full"
               />
             )}

@@ -1,8 +1,8 @@
-import { getServerSession } from 'next-auth';
+import { getServerSession, Session } from 'next-auth';
 import { authOptions } from './auth';
 
-type AuthResult =
-  | { session: any; userId: string; error?: never; status?: never }
+export type AuthResult =
+  | { session: Session; userId: string; error?: never; status?: never }
   | { session?: never; userId?: never; error: string; status: number };
 
 export async function requireAuth(): Promise<AuthResult> {
@@ -35,7 +35,7 @@ export async function requireOwnership(ownerId: string): Promise<AuthResult> {
   return result;
 }
 
-export function authError(result: { error: string; status: number }) {
+export function authError(result: AuthResult) {
   return Response.json({ error: result.error }, { status: result.status });
 }
 

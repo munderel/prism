@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi } from 'vitest';
 import { requireAuth, requireAdmin, requireOwnership } from '@/lib/auth-guard';
 
