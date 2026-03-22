@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError } from '@/lib/auth-guard';
+import { requireTaskAccess, authError } from '@/lib/auth-guard';
 import { commentLimiter, getClientIp } from '@/lib/rate-limit';
 import { extractMentions, resolveMentions } from '@/lib/mention-parser';
 
@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: taskId } = await params;
-  const auth = await requireAuth();
+  const auth = await requireTaskAccess(taskId);
   if ('error' in auth) return authError(auth);
 
   const comments = await prisma.taskComment.findMany({
@@ -36,13 +36,8 @@ export async function POST(
     return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 
-  const auth = await requireAuth();
+  const auth = await requireTaskAccess(taskId);
   if ('error' in auth) return authError(auth);
-
-  const task = await prisma.task.findUnique({ where: { id: taskId } });
-  if (!task) {
-    return Response.json({ error: 'Task not found' }, { status: 404 });
-  }
 
   const body = await request.json();
   const { content } = body;
