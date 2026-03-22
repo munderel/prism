@@ -1,5 +1,77 @@
 import { google } from 'googleapis';
 import { prisma } from './prisma';
+import { decryptToken } from './crypto';
+
+/**
+ * Check if a user has a Google account linked (for graceful degradation).
+ */
+export async function hasGoogleAccount(userId: string): Promise<boolean> {
+  try {
+    const account = await prisma.account.findFirst({
+      where: { userId, provider: 'google' },
+      select: { id: true, refresh_token: true },
+    });
+    return !!account?.refresh_token;
+  } catch (err) {
+    console.warn('[calendar] hasGoogleAccount check failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Update an existing Google Calendar event.
+ */
+export async function updateGoogleEvent(
+  userId: string,
+  eventId: string,
+  event: {
+    summary?: string;
+    description?: string;
+    start?: string;
+    end?: string;
+  }
+) {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return null;
+
+  try {
+    const requestBody: any = {};
+    if (event.summary !== undefined) requestBody.summary = event.summary;
+    if (event.description !== undefined) requestBody.description = event.description;
+    if (event.start !== undefined) requestBody.start = { dateTime: event.start };
+    if (event.end !== undefined) requestBody.end = { dateTime: event.end };
+
+    const response = await calendar.events.patch({
+      calendarId: 'primary',
+      eventId,
+      requestBody,
+    });
+
+    return response.data;
+  } catch (err) {
+    console.warn('[calendar] Failed to update Google event:', err);
+    return null;
+  }
+}
+
+/**
+ * Delete a Google Calendar event.
+ */
+export async function deleteGoogleEvent(userId: string, eventId: string) {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return false;
+
+  try {
+    await calendar.events.delete({
+      calendarId: 'primary',
+      eventId,
+    });
+    return true;
+  } catch (err) {
+    console.warn('[calendar] Failed to delete Google event:', err);
+    return false;
+  }
+}
 
 /**
  * Get an authenticated Google Calendar API client for a user.
@@ -12,13 +84,26 @@ export async function getCalendarClient(userId: string) {
 
   if (!account?.refresh_token) return null;
 
+  // Decrypt if encryption is enabled.
+  // Fallback handles migration: existing plaintext tokens won't decrypt successfully,
+  // so they pass through as-is. Log a warning so we can track migration progress.
+  let refreshToken = account.refresh_token;
+  if (process.env.TOKEN_ENCRYPTION_KEY) {
+    const decrypted = decryptToken(account.refresh_token);
+    if (decrypted) {
+      refreshToken = decrypted;
+    } else {
+      console.warn(`[calendar] Failed to decrypt refresh token for user ${userId} — using as plaintext (pre-migration token?)`);
+    }
+  }
+
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET
   );
 
   oauth2Client.setCredentials({
-    refresh_token: account.refresh_token,
+    refresh_token: refreshToken,
     access_token: account.access_token ?? undefined,
     expiry_date: account.expires_at ? account.expires_at * 1000 : undefined,
   });
