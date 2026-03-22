@@ -1,3 +1,4 @@
+import { encryptToken } from './crypto';
 import { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
@@ -78,7 +79,9 @@ export const authOptions: NextAuthOptions = {
         await prisma.user.update({
           where: { id: user.id },
           data: {
-            googleRefreshToken: account.refresh_token,
+            googleRefreshToken: process.env.TOKEN_ENCRYPTION_KEY
+              ? encryptToken(account.refresh_token)
+              : account.refresh_token,
             googleTokenExpiresAt: account.expires_at
               ? new Date(account.expires_at * 1000)
               : null,
