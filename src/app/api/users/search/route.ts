@@ -13,14 +13,19 @@ export async function GET(request: NextRequest) {
     return Response.json([]);
   }
 
+  // Non-admins can only search by name (prevents email enumeration).
+  // Admins can also search by email for user management.
+  const isAdmin = auth.session.user.isAdmin;
+  const where = isAdmin
+    ? { OR: [
+        { name: { contains: q, mode: 'insensitive' as const } },
+        { email: { contains: q, mode: 'insensitive' as const } },
+      ] }
+    : { name: { contains: q, mode: 'insensitive' as const } };
+
   const users = await prisma.user.findMany({
-    where: {
-      OR: [
-        { name: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-      ],
-    },
-    select: { id: true, name: true, email: true, image: true },
+    where,
+    select: { id: true, name: true, image: true },
     take: 10,
   });
 
