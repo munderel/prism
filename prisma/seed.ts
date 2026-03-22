@@ -1,6 +1,9 @@
 import { PrismaClient, ReviewType } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL ?? 'postgresql://goaldash:goaldash@localhost:5433/goaldash';
+const adapter = new PrismaPg({ connectionString });
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // Seed ReviewTemplates
