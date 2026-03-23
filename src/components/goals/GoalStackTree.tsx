@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import useSWR from 'swr';
 import {
   DndContext,
   closestCenter,
@@ -19,6 +20,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { AnimatePresence } from 'framer-motion';
+import React from 'react';
 import { GoalCard } from './GoalCard';
 import { GoalEditor } from './GoalEditor';
 
@@ -95,9 +97,27 @@ export function GoalStackTree({
   isCompanyStack,
   isAdmin,
 }: GoalStackTreeProps) {
-  const [, setGoals] = useState<any[]>([]);
-  const [flatGoals, setFlatGoals] = useState<FlatGoal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: goalsData, isLoading, mutate: mutateGoals } = useSWR(`/api/goals?stackId=${stackId}`);
+
+  const flatGoals = useMemo(() => {
+    const data = Array.isArray(goalsData) ? goalsData : [];
+    // Build tree from flat list
+    const map = new Map<string, any>();
+    for (const g of data) {
+      map.set(g.id, { ...g, children: [] });
+    }
+    const roots: any[] = [];
+    for (const g of data) {
+      const node = map.get(g.id)!;
+      if (g.parentId && map.has(g.parentId)) {
+        map.get(g.parentId)!.children.push(node);
+      } else if (!g.parentId) {
+        roots.push(node);
+      }
+    }
+    return flattenTree(roots);
+  }, [goalsData]);
+
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<{
     open: boolean;
@@ -110,43 +130,11 @@ export function GoalStackTree({
     useSensor(KeyboardSensor)
   );
 
-  const fetchGoals = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/goals?stackId=${stackId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-
-      // Build tree from flat list
-      const map = new Map<string, any>();
-      for (const g of data) {
-        map.set(g.id, { ...g, children: [] });
-      }
-      const roots: any[] = [];
-      for (const g of data) {
-        const node = map.get(g.id)!;
-        if (g.parentId && map.has(g.parentId)) {
-          map.get(g.parentId)!.children.push(node);
-        } else if (!g.parentId) {
-          roots.push(node);
-        }
-      }
-
-      setGoals(roots);
-      setFlatGoals(flattenTree(roots));
-    } finally {
-      setLoading(false);
-    }
-  }, [stackId]);
-
-  useEffect(() => {
-    fetchGoals();
-  }, [fetchGoals]);
-
-  const handleDragStart = (event: DragStartEvent) => {
+  const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(event.active.id as string);
-  };
+  }, []);
 
-  const handleDragEnd = async (event: DragEndEvent) => {
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -155,48 +143,42 @@ export function GoalStackTree({
     const overIndex = flatGoals.findIndex((f) => f.goal.id === over.id);
     if (activeIndex === -1 || overIndex === -1) return;
 
-    // Optimistic reorder
-    const newFlat = [...flatGoals];
-    const [moved] = newFlat.splice(activeIndex, 1);
-    newFlat.splice(overIndex, 0, moved);
-    setFlatGoals(newFlat);
-
     try {
       await fetch(`/api/goals/${active.id}/reorder`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sortOrder: overIndex }),
       });
-      await fetchGoals(); // Refresh from server
+      await mutateGoals(); // Refresh from server
     } catch {
-      setFlatGoals(flatGoals); // Revert on error
+      await mutateGoals(); // Revert on error
     }
-  };
+  }, [flatGoals, mutateGoals]);
 
-  const handleDelete = async (goalId: string) => {
+  const handleDelete = useCallback(async (goalId: string) => {
     if (!confirm('Delete this goal and all its children?')) return;
     await fetch(`/api/goals/${goalId}`, { method: 'DELETE' });
-    fetchGoals();
-  };
+    mutateGoals();
+  }, [mutateGoals]);
 
-  const handleEdit = (goal: any) => {
+  const handleEdit = useCallback((goal: any) => {
     setEditorState({ open: true, goal });
-  };
+  }, []);
 
-  const handleAddChild = (parentGoal: any) => {
+  const handleAddChild = useCallback((parentGoal: any) => {
     setEditorState({ open: true, parentGoal });
-  };
+  }, []);
 
-  const handleAddRoot = () => {
+  const handleAddRoot = useCallback(() => {
     setEditorState({ open: true });
-  };
+  }, []);
 
-  const handleEditorSave = () => {
+  const handleEditorSave = useCallback(() => {
     setEditorState({ open: false });
-    fetchGoals();
-  };
+    mutateGoals();
+  }, [mutateGoals]);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-gray-500">Loading goals...</div>

@@ -6,7 +6,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Goal Dashboard',
+  title: 'Prism',
   description: 'Dopaminergic goal management for teams',
 };
 

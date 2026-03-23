@@ -1,9 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
+
+const levelLabels: Record<string, string> = {
+  HIGH_HARD: 'HHG',
+  STRATEGIC: 'Yearly',
+  MONTHLY: 'Monthly',
+  WEEKLY: 'Weekly',
+  DAILY: 'Daily',
+};
 
 interface GoalEditorProps {
   stackId: string;
@@ -79,14 +87,14 @@ export function GoalEditor({
 
   return (
     <AnimatePresence>
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       >
-        <motion.div
+        <m.div
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
@@ -106,7 +114,7 @@ export function GoalEditor({
             <div className="mb-4">
               <span className="text-xs text-gray-400">Level: </span>
               <span className="text-xs font-medium text-indigo-400">
-                {derivedLevel}
+                {levelLabels[derivedLevel] ?? derivedLevel}
               </span>
             </div>
           )}
@@ -182,8 +190,8 @@ export function GoalEditor({
               </button>
             </div>
           </form>
-        </motion.div>
-      </motion.div>
+        </m.div>
+      </m.div>
     </AnimatePresence>
   );
 }

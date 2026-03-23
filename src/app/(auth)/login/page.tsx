@@ -1,17 +1,75 @@
 'use client';
 
+import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 
+const showDevLogin = process.env.NEXT_PUBLIC_DEV_LOGIN === 'true';
+
 export default function LoginPage() {
+  const [email, setEmail] = useState('admin@upwhiten.com');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleDevLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    const result = await signIn('credentials', {
+      email,
+      callbackUrl: '/',
+      redirect: false,
+    });
+    if (result?.error) {
+      setError('User not found. Run: npx prisma db seed');
+      setLoading(false);
+    } else {
+      window.location.href = '/';
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-950">
       <div className="w-full max-w-sm text-center">
         <h1 className="text-3xl font-bold text-white mb-2">
-          <span className="text-indigo-400">Goal</span> Dashboard
+          <span className="text-indigo-400">Pr</span>ism
         </h1>
         <p className="text-gray-400 mb-8">
           Dopaminergic goal management for your team
         </p>
+
+        {/* Dev Login — only shown when NEXT_PUBLIC_DEV_LOGIN=true */}
+        {showDevLogin && (
+          <>
+            <form onSubmit={handleDevLogin} className="mb-6 space-y-3">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email address"
+                className="w-full rounded-lg border border-gray-700 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                required
+              />
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white hover:bg-indigo-500 transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+              {error && <p className="text-sm text-red-400">{error}</p>}
+            </form>
+
+            <div className="relative mb-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-800" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-gray-950 px-2 text-gray-500">or</span>
+              </div>
+            </div>
+          </>
+        )}
+
         <button
           onClick={() => signIn('google', { callbackUrl: '/' })}
           className="flex items-center justify-center gap-3 w-full px-6 py-3 bg-white text-gray-900 rounded-lg font-medium hover:bg-gray-100 transition-colors"

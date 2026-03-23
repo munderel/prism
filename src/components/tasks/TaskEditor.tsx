@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 
 interface TaskEditorProps {
@@ -24,9 +24,9 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
   const [goalId, setGoalId] = useState(task?.goalId ?? '');
   const [recurrenceFreq, setRecurrenceFreq] = useState('DAILY');
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);
-  const [timeBlockStart, setTimeBlockStart] = useState('');
-  const [timeBlockEnd, setTimeBlockEnd] = useState('');
+  // Time blocking is now managed via the calendar drag-to-schedule UI
   const [goals, setGoals] = useState<any[]>([]);
+  const [deliverable, setDeliverable] = useState(task?.deliverable ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -63,10 +63,9 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
     setError('');
 
     try {
-      const body: any = { title, description, priority };
+      const body: any = { title, description, priority, deliverable };
       if (dueDate) body.dueDate = dueDate;
-      if (timeBlockStart) body.timeBlockStart = new Date(`${dueDate}T${timeBlockStart}`).toISOString();
-      if (timeBlockEnd) body.timeBlockEnd = new Date(`${dueDate}T${timeBlockEnd}`).toISOString();
+
 
       if (isEditing) {
         body.status = status;
@@ -106,14 +105,14 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
 
   return (
     <AnimatePresence>
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       >
-        <motion.div
+        <m.div
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
@@ -178,6 +177,17 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
               />
             </div>
 
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Expected Deliverable</label>
+              <input
+                type="text"
+                value={deliverable}
+                onChange={(e) => setDeliverable(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                placeholder="e.g., 'Final report PDF', 'Working prototype'"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Priority</label>
@@ -214,11 +224,21 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
                   className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">Select a goal...</option>
-                  {goals.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.title} ({g.stackName})
-                    </option>
-                  ))}
+                  {goals.map((g) => {
+                    const levelLabels: Record<string, string> = {
+                      HIGH_HARD: 'HHG',
+                      STRATEGIC: 'Yearly',
+                      MONTHLY: 'Monthly',
+                      WEEKLY: 'Weekly',
+                      DAILY: 'Daily',
+                    };
+                    const levelPrefix = levelLabels[g.level] ?? g.level;
+                    return (
+                      <option key={g.id} value={g.id}>
+                        [{levelPrefix}] {g.title} ({g.stackName})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
@@ -250,28 +270,6 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
                 </div>
               </div>
             )}
-
-            {/* Time block */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Time Block Start</label>
-                <input
-                  type="time"
-                  value={timeBlockStart}
-                  onChange={(e) => setTimeBlockStart(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Time Block End</label>
-                <input
-                  type="time"
-                  value={timeBlockEnd}
-                  onChange={(e) => setTimeBlockEnd(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-            </div>
 
             {/* Status (edit only) */}
             {isEditing && (
@@ -307,8 +305,8 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
               </button>
             </div>
           </form>
-        </motion.div>
-      </motion.div>
+        </m.div>
+      </m.div>
     </AnimatePresence>
   );
 }

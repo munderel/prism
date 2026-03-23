@@ -45,3 +45,23 @@ export async function PATCH(request: NextRequest) {
 
   return Response.json(updated);
 }
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireAdmin();
+  if ('error' in auth) return authError(auth);
+
+  const body = await request.json();
+  const { userId } = body;
+
+  if (!userId) {
+    return Response.json({ error: 'userId is required' }, { status: 400 });
+  }
+
+  if (userId === auth.userId) {
+    return Response.json({ error: 'Cannot delete yourself' }, { status: 400 });
+  }
+
+  await prisma.user.delete({ where: { id: userId } });
+
+  return Response.json({ success: true });
+}

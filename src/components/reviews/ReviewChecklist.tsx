@@ -1,8 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 import { CheckCircle2, Circle, BookOpen } from 'lucide-react';
+
+interface ChecklistItem {
+  title: string;
+  description?: string;
+}
+
+interface ProcessStep {
+  title: string;
+  description?: string;
+}
 
 interface ReviewChecklistProps {
   reviewId: string;
@@ -31,8 +41,8 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
     setLoading(false);
   };
 
-  const toggleItem = async (item: string) => {
-    const updated = { ...checklist, [item]: !checklist[item] };
+  const toggleItem = async (title: string) => {
+    const updated = { ...checklist, [title]: !checklist[title] };
     setChecklist(updated);
 
     await fetch(`/api/reviews/${reviewId}`, {
@@ -55,9 +65,9 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
   if (!review) return <div className="text-gray-500 text-sm">Review not found.</div>;
 
   const template = review.template;
-  const items: string[] = template?.checklistItems ?? [];
-  const steps: string[] = template?.processSteps ?? [];
-  const allChecked = items.length > 0 && items.every((item: string) => checklist[item]);
+  const items: ChecklistItem[] = template?.checklistItems ?? [];
+  const steps: ProcessStep[] = template?.processSteps ?? [];
+  const allChecked = items.length > 0 && items.every((item: ChecklistItem) => checklist[item.title]);
 
   return (
     <div className="space-y-6">
@@ -69,8 +79,13 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
             Process Guide
           </h3>
           <ol className="list-decimal list-inside space-y-2 text-sm text-gray-400">
-            {steps.map((step: string, i: number) => (
-              <li key={i}>{step}</li>
+            {steps.map((step: ProcessStep, i: number) => (
+              <li key={i}>
+                <span className="text-gray-300">{step.title}</span>
+                {step.description && (
+                  <p className="ml-5 mt-1 text-xs text-gray-500">{step.description}</p>
+                )}
+              </li>
             ))}
           </ol>
         </div>
@@ -80,22 +95,22 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
       <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
         <h3 className="text-sm font-semibold text-white mb-3">Checklist</h3>
         <div className="space-y-2">
-          {items.map((item: string) => (
-            <motion.button
-              key={item}
-              onClick={() => toggleItem(item)}
+          {items.map((item: ChecklistItem) => (
+            <m.button
+              key={item.title}
+              onClick={() => toggleItem(item.title)}
               className="flex items-center gap-3 w-full text-left rounded-lg px-3 py-2 hover:bg-gray-800/50 transition-colors"
               whileTap={{ scale: 0.98 }}
             >
-              {checklist[item] ? (
+              {checklist[item.title] ? (
                 <CheckCircle2 className="h-5 w-5 text-green-400 flex-shrink-0" />
               ) : (
                 <Circle className="h-5 w-5 text-gray-600 flex-shrink-0" />
               )}
-              <span className={`text-sm ${checklist[item] ? 'text-gray-500 line-through' : 'text-white'}`}>
-                {item}
+              <span className={`text-sm ${checklist[item.title] ? 'text-gray-500 line-through' : 'text-white'}`}>
+                {item.title}
               </span>
-            </motion.button>
+            </m.button>
           ))}
         </div>
       </div>
@@ -118,7 +133,7 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
         disabled={!allChecked}
         className="w-full rounded-lg bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50 transition-colors"
       >
-        {allChecked ? 'Complete Review' : `${items.filter((i: string) => checklist[i]).length}/${items.length} items checked`}
+        {allChecked ? 'Complete Review' : `${items.filter((i: ChecklistItem) => checklist[i.title]).length}/${items.length} items checked`}
       </button>
     </div>
   );

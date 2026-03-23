@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw } from 'lucide-react';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail } from 'lucide-react';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
@@ -21,12 +21,28 @@ export default function SettingsPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+
+  // Dev user creation
+  const [createName, setCreateName] = useState('');
+  const [createEmail, setCreateEmail] = useState('');
+  const [createRole, setCreateRole] = useState('user');
+  const [creating, setCreating] = useState(false);
+
+  // Invitations
+  const [invitations, setInvitations] = useState<any[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('user');
+  const [inviting, setInviting] = useState(false);
+
+  const isDevMode = process.env.NEXT_PUBLIC_DEV_LOGIN === 'true';
 
   useEffect(() => {
     fetchSettings();
     if (isAdmin) {
       fetchUsers();
       fetchCompanySettings();
+      fetchInvitations();
     }
   }, [isAdmin]);
 
@@ -62,6 +78,7 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mtp, timezone, notificationPrefs: notifPrefs }),
     });
+    setMessageType('success');
     setMessage('Settings saved!');
     setSaving(false);
     setTimeout(() => setMessage(''), 2000);
@@ -74,6 +91,7 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scope: 'company', companyMtp }),
     });
+    setMessageType('success');
     setMessage('Company MTP saved!');
     setSaving(false);
     setTimeout(() => setMessage(''), 2000);
@@ -88,6 +106,23 @@ export default function SettingsPage() {
     fetchUsers();
   };
 
+  const removeUser = async (userId: string) => {
+    if (!window.confirm('Are you sure you want to remove this user? This cannot be undone.')) return;
+    const res = await fetch('/api/admin', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    if (res.ok) {
+      fetchUsers();
+    } else {
+      const data = await res.json();
+      setMessageType('error');
+      setMessage(data.error || 'Failed to remove user');
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
   const retriggerOnboarding = async () => {
     await fetch('/api/settings', {
       method: 'PATCH',
@@ -95,6 +130,70 @@ export default function SettingsPage() {
       body: JSON.stringify({ hasCompletedOnboarding: false }),
     });
     window.location.href = '/';
+  };
+
+  const fetchInvitations = async () => {
+    const res = await fetch('/api/invitations');
+    if (res.ok) setInvitations(await res.json());
+  };
+
+  const createUser = async () => {
+    if (!createEmail.trim()) return;
+    setCreating(true);
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: createEmail, name: createName, role: createRole }),
+    });
+    if (res.ok) {
+      setMessageType('success');
+      setMessage('User created! They can now log in via dev login.');
+      setCreateEmail('');
+      setCreateName('');
+      setCreateRole('user');
+      fetchUsers();
+    } else {
+      const data = await res.json();
+      setMessageType('error');
+      setMessage(data.error || 'Failed to create user');
+    }
+    setCreating(false);
+    setTimeout(() => setMessage(''), 3000);
+  };
+
+  const sendInvitation = async () => {
+    if (!inviteEmail.trim()) return;
+    setInviting(true);
+    const res = await fetch('/api/invitations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+    });
+    if (res.ok) {
+      setMessageType('success');
+      setMessage('Invitation sent!');
+      setInviteEmail('');
+      setInviteRole('user');
+      fetchInvitations();
+    } else {
+      const data = await res.json();
+      setMessageType('error');
+      setMessage(data.error || 'Failed to send invitation');
+    }
+    setInviting(false);
+    setTimeout(() => setMessage(''), 3000);
+  };
+
+  const revokeInvitation = async (id: string) => {
+    const res = await fetch(`/api/invitations/${id}`, {
+      method: 'PATCH',
+    });
+    if (res.ok) {
+      setMessageType('success');
+      setMessage('Invitation revoked');
+      fetchInvitations();
+    }
+    setTimeout(() => setMessage(''), 2000);
   };
 
   return (
@@ -107,7 +206,11 @@ export default function SettingsPage() {
       </div>
 
       {message && (
-        <div className="mb-4 rounded-lg bg-green-600/20 border border-green-600/30 px-4 py-2 text-sm text-green-400">
+        <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${
+          messageType === 'error'
+            ? 'bg-red-600/20 border-red-600/30 text-red-400'
+            : 'bg-green-600/20 border-green-600/30 text-green-400'
+        }`}>
           {message}
         </div>
       )}
@@ -227,20 +330,168 @@ export default function SettingsPage() {
                     <span className="text-sm text-white">{user.name ?? user.email}</span>
                     <span className="text-xs text-gray-500 ml-2">{user.email}</span>
                   </div>
-                  <button
-                    onClick={() => toggleAdmin(user.id, !user.isAdmin)}
-                    disabled={user.id === session?.user?.id}
-                    className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
-                      user.isAdmin
-                        ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
-                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                    } disabled:opacity-50`}
-                  >
-                    {user.isAdmin ? 'Remove Admin' : 'Make Admin'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleAdmin(user.id, !user.isAdmin)}
+                      disabled={user.id === session?.user?.id}
+                      className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+                        user.isAdmin
+                          ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      } disabled:opacity-50`}
+                    >
+                      {user.isAdmin ? 'Remove Admin' : 'Make Admin'}
+                    </button>
+                    {user.id !== session?.user?.id && (
+                      <button
+                        onClick={() => removeUser(user.id)}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* Create User (Dev mode only) */}
+        {isAdmin && isDevMode && (
+          <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-green-400" />
+              Create User (Dev)
+            </h2>
+            <p className="text-xs text-gray-500 mb-4">Create users directly for local testing. They can log in via the dev login form.</p>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                placeholder="Name"
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-green-500 focus:outline-none"
+              />
+              <input
+                type="email"
+                value={createEmail}
+                onChange={(e) => setCreateEmail(e.target.value)}
+                placeholder="Email"
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-green-500 focus:outline-none"
+              />
+              <select
+                value={createRole}
+                onChange={(e) => setCreateRole(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-green-500 focus:outline-none"
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button
+                onClick={createUser}
+                disabled={creating || !createEmail.trim()}
+                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50 transition-colors"
+              >
+                {creating ? 'Creating...' : 'Create User'}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Invite User */}
+        {isAdmin && (
+          <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Mail className="h-5 w-5 text-indigo-400" />
+              Invite User
+            </h2>
+            <p className="text-xs text-gray-500 mb-4">Invite users by email. When they sign in via Google, they&apos;ll be assigned the selected role.</p>
+            <div className="space-y-3">
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="Email address"
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+              />
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button
+                onClick={sendInvitation}
+                disabled={inviting || !inviteEmail.trim()}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+              >
+                {inviting ? 'Sending...' : 'Send Invitation'}
+              </button>
+            </div>
+
+            {/* Pending Invitations */}
+            {invitations.filter((inv: any) => inv.status === 'PENDING').length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-medium text-gray-400 mb-3">Pending Invitations</h3>
+                <div className="space-y-2">
+                  {invitations
+                    .filter((inv: any) => inv.status === 'PENDING')
+                    .map((inv: any) => (
+                      <div key={inv.id} className="flex items-center justify-between rounded-lg bg-gray-800/50 px-4 py-3">
+                        <div>
+                          <span className="text-sm text-white">{inv.email}</span>
+                          <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                            inv.role === 'admin'
+                              ? 'bg-purple-600/20 text-purple-400'
+                              : 'bg-gray-700 text-gray-400'
+                          }`}>
+                            {inv.role}
+                          </span>
+                          <span className="text-xs text-gray-600 ml-2">
+                            {new Date(inv.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => revokeInvitation(inv.id)}
+                          className="rounded-lg px-3 py-1 text-xs font-medium bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Invitation History */}
+            {invitations.filter((inv: any) => inv.status !== 'PENDING').length > 0 && (
+              <details className="mt-4">
+                <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+                  Invitation History ({invitations.filter((inv: any) => inv.status !== 'PENDING').length})
+                </summary>
+                <div className="space-y-2 mt-2">
+                  {invitations
+                    .filter((inv: any) => inv.status !== 'PENDING')
+                    .map((inv: any) => (
+                      <div key={inv.id} className="flex items-center justify-between rounded-lg bg-gray-800/30 px-4 py-2">
+                        <div>
+                          <span className="text-sm text-gray-500">{inv.email}</span>
+                          <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                            inv.status === 'ACCEPTED'
+                              ? 'bg-green-600/20 text-green-400'
+                              : 'bg-red-600/20 text-red-400'
+                          }`}>
+                            {inv.status.toLowerCase()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </details>
+            )}
           </section>
         )}
       </div>

@@ -73,6 +73,11 @@ model User {
   pushSubscriptions     PushSubscription[]
   notificationPreference NotificationPreference?
   configVersions        ConfigVersion[]
+  invitations           Invitation[]
+  assignedProcesses    Process[]          @relation("ProcessAssignee")
+  delegatedProcesses   Process[]          @relation("ProcessDelegate")
+  processExecutions    ProcessExecution[]
+  meetings             Meeting[]
 }
 
 model CompanySettings {
@@ -93,6 +98,8 @@ model GoalStack {
   owner          User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   goals          Goal[]
   configVersions ConfigVersion[]
+
+  @@index([ownerId])
 }
 
 enum GoalLevel {
@@ -181,6 +188,7 @@ model Task {
   taskType       TaskType
   title          String
   description    String?      @db.Text
+  deliverable    String?      @db.Text
   status         TaskStatus   @default(TODO)
   priority       TaskPriority @default(MEDIUM)
   dueDate        DateTime?
@@ -199,10 +207,14 @@ model Task {
   goal     Goal?         @relation(fields: [goalId], references: [id])
   comments TaskComment[]
   publicWins PublicWin[]
+  processExecution ProcessExecution?
 
   @@index([ownerId])
   @@index([dueDate])
   @@index([status])
+  @@index([goalId])
+  @@index([ownerId, dueDate])
+  @@index([ownerId, status])
 }
 
 model Streak {
@@ -337,6 +349,130 @@ model NotificationPreference {
   reviewNags      Boolean @default(true)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// === INVITATIONS ===
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  email       String
+  role        String           @default("user")
+  status      InvitationStatus @default(PENDING)
+  invitedById String
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  invitedBy User @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([status])
+}
+
+// === BUSINESS PROCESSES ===
+
+enum ProcessCadence {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+model BusinessFunction {
+  id          String    @id @default(cuid())
+  name        String
+  description String?   @db.Text
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  processes   Process[]
+}
+
+model Process {
+  id            String          @id @default(cuid())
+  functionId    String
+  title         String
+  description   String?         @db.Text
+  assigneeId    String?
+  delegateId    String?
+  delegateUntil DateTime?
+  cadence       ProcessCadence
+  cadenceRule   String?
+  sortOrder     Int             @default(0)
+  lastRunAt     DateTime?
+  nextDueAt     DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  function     BusinessFunction @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  assignee     User?            @relation("ProcessAssignee", fields: [assigneeId], references: [id])
+  delegate     User?            @relation("ProcessDelegate", fields: [delegateId], references: [id])
+  steps        ProcessStep[]
+  executions   ProcessExecution[]
+
+  @@index([functionId])
+  @@index([assigneeId])
+  @@index([nextDueAt])
+}
+
+model ProcessStep {
+  id          String   @id @default(cuid())
+  processId   String
+  title       String
+  description String?  @db.Text
+  url         String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  process     Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@index([processId])
+}
+
+model ProcessExecution {
+  id            String    @id @default(cuid())
+  processId     String
+  executedById  String?
+  scheduledDate DateTime
+  completedAt   DateTime?
+  taskId        String?   @unique
+  createdAt     DateTime  @default(now())
+
+  process       Process   @relation(fields: [processId], references: [id], onDelete: Cascade)
+  executedBy    User?     @relation(fields: [executedById], references: [id])
+  task          Task?     @relation(fields: [taskId], references: [id])
+
+  @@index([processId])
+  @@index([scheduledDate])
+}
+
+// === MEETINGS ===
+
+model Meeting {
+  id          String          @id @default(cuid())
+  title       String
+  description String?         @db.Text
+  cadence     ProcessCadence
+  dayOfWeek   Int?            // 0=Sun, 1=Mon, ... 6=Sat
+  timeStart   String          // "09:00" format
+  timeEnd     String          // "10:00" format
+  attendeeIds Json            // String[] of user IDs
+  createdById String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
 }
 
 // === VERSIONING ===

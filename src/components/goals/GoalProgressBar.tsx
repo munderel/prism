@@ -1,6 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import React from 'react';
+import { m } from 'framer-motion';
 
 interface GoalProgressBarProps {
   progress: number;
@@ -21,7 +22,7 @@ const sizeClasses = {
   lg: 'h-4',
 };
 
-export function GoalProgressBar({
+export const GoalProgressBar = React.memo(function GoalProgressBar({
   progress,
   size = 'md',
   showLabel = false,
@@ -31,7 +32,7 @@ export function GoalProgressBar({
   return (
     <div className="flex items-center gap-2">
       <div className={`flex-1 rounded-full bg-gray-800 ${sizeClasses[size]}`}>
-        <motion.div
+        <m.div
           className={`${sizeClasses[size]} rounded-full ${getProgressColor(clamped)}`}
           initial={{ width: 0 }}
           animate={{ width: `${clamped}%` }}
@@ -45,4 +46,4 @@ export function GoalProgressBar({
       )}
     </div>
   );
-}
+});
