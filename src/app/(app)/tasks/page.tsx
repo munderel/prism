@@ -1,46 +1,177 @@
 'use client';
 
-import { useState } from 'react';
-import { ListTodo, Plus } from 'lucide-react';
+import { useState, useCallback, useMemo } from 'react';
+import useSWR from 'swr';
+import { ListTodo, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { TaskComments } from '@/components/tasks/TaskComments';
 
+type ViewMode = 'day' | 'week' | 'month';
+
+function getMonday(d: Date): Date {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  return date;
+}
+
+function getSunday(d: Date): Date {
+  const monday = getMonday(d);
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+  return sunday;
+}
+
+function getFirstOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function getLastOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+}
+
+function toDateStr(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+function formatDateLabel(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function formatMonthLabel(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+function formatWeekLabel(d: Date): string {
+  const mon = getMonday(d);
+  const sun = getSunday(d);
+  const fmt = (dt: Date) => dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(mon)} – ${fmt(sun)}`;
+}
+
 export default function TasksPage() {
   const today = new Date().toISOString().split('T')[0];
   const [date, setDate] = useState(today);
+  const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [selectedTask, setSelectedTask] = useState<any>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  const refresh = () => {
-    setRefreshKey((k) => k + 1);
+  // Compute date range for current view
+  const currentDate = new Date(date + 'T00:00:00');
+
+  const getRange = useCallback((): { start: string; end: string } | null => {
+    const d = new Date(date + 'T00:00:00');
+    if (viewMode === 'week') {
+      return { start: toDateStr(getMonday(d)), end: toDateStr(getSunday(d)) };
+    }
+    if (viewMode === 'month') {
+      return { start: toDateStr(getFirstOfMonth(d)), end: toDateStr(getLastOfMonth(d)) };
+    }
+    return null;
+  }, [date, viewMode]);
+
+  // SWR key for range tasks (week/month views)
+  const rangeKey = useMemo(() => {
+    if (viewMode === 'day') return null;
+    const range = getRange();
+    if (!range) return null;
+    return `/api/tasks?startDate=${range.start}&endDate=${range.end}`;
+  }, [viewMode, getRange]);
+
+  const { data: rangeData, isLoading: rangeLoading, mutate: mutateRange } = useSWR(rangeKey);
+  const rangeTasks = useMemo(() => (Array.isArray(rangeData) ? rangeData : []), [rangeData]);
+
+  const refresh = useCallback(() => {
+    mutateRange();
     setShowEditor(false);
     setEditingTask(null);
-  };
+  }, [mutateRange]);
 
-  const handleEdit = (task: any) => {
+  const handleEdit = useCallback((task: any) => {
     setEditingTask(task);
     setShowEditor(true);
-  };
+  }, []);
 
-  const handleDelete = async (taskId: string) => {
+  const handleDelete = useCallback(async (taskId: string) => {
     if (!confirm('Delete this task?')) return;
     const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     if (res.ok) {
-      if (selectedTask?.id === taskId) setSelectedTask(null);
-      refresh();
+      setSelectedTask((prev: any) => prev?.id === taskId ? null : prev);
+      mutateRange();
+      setShowEditor(false);
+      setEditingTask(null);
     }
-  };
+  }, [mutateRange]);
 
-  const handleTaskClick = async (task: any) => {
-    // Fetch full task with comments
+  const handleTaskClick = useCallback(async (task: any) => {
     const res = await fetch(`/api/tasks/${task.id}`);
     if (res.ok) {
       setSelectedTask(await res.json());
     }
+  }, []);
+
+  // Group tasks by date for range views
+  const groupedByDate = useMemo((): Record<string, any[]> => {
+    const groups: Record<string, any[]> = {};
+    const undated: any[] = [];
+    for (const task of rangeTasks) {
+      if (task.dueDate) {
+        const key = new Date(task.dueDate).toISOString().split('T')[0];
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(task);
+      } else {
+        undated.push(task);
+      }
+    }
+    if (undated.length > 0) {
+      const range = getRange();
+      if (range) {
+        if (!groups[range.start]) groups[range.start] = [];
+        groups[range.start].push(...undated);
+      }
+    }
+    return groups;
+  }, [rangeTasks, getRange]);
+
+  // Get sorted date keys within range
+  const dateKeys = useMemo((): string[] => {
+    const range = getRange();
+    if (!range) return [];
+    const keys = Object.keys(groupedByDate).sort();
+    return keys.filter((k) => k >= range.start && k <= range.end);
+  }, [groupedByDate, getRange]);
+
+  // Navigation
+  const navigate = (direction: -1 | 1) => {
+    const d = new Date(date + 'T00:00:00');
+    if (viewMode === 'day') {
+      d.setDate(d.getDate() + direction);
+    } else if (viewMode === 'week') {
+      d.setDate(d.getDate() + direction * 7);
+    } else {
+      d.setMonth(d.getMonth() + direction);
+    }
+    setDate(toDateStr(d));
   };
+
+  const goToToday = () => setDate(today);
+
+  // Label for current period
+  const periodLabel = (): string => {
+    if (viewMode === 'day') return formatDateLabel(date);
+    if (viewMode === 'week') return formatWeekLabel(currentDate);
+    return formatMonthLabel(currentDate);
+  };
+
+  const VIEW_TABS: { key: ViewMode; label: string }[] = [
+    { key: 'day', label: 'Day' },
+    { key: 'week', label: 'Week' },
+    { key: 'month', label: 'Month' },
+  ];
 
   return (
     <div>
@@ -58,8 +189,44 @@ export default function TasksPage() {
         </button>
       </div>
 
-      {/* Filter bar */}
-      <div className="mb-6 flex items-center gap-4">
+      {/* View mode tabs */}
+      <div className="mb-4 flex items-center gap-2">
+        {VIEW_TABS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setViewMode(key)}
+            className={`rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+              viewMode === key
+                ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                : 'text-gray-400 border border-gray-800 hover:border-gray-700 hover:text-white'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Date navigation bar */}
+      <div className="mb-6 flex items-center gap-3">
+        <button
+          onClick={() => navigate(-1)}
+          className="rounded-lg border border-gray-700 bg-gray-800 p-2 text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+          title={`Previous ${viewMode}`}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => navigate(1)}
+          className="rounded-lg border border-gray-700 bg-gray-800 p-2 text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+          title={`Next ${viewMode}`}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+
+        <span className="text-sm font-medium text-white min-w-[180px]">
+          {periodLabel()}
+        </span>
+
         <input
           type="date"
           value={date}
@@ -67,7 +234,7 @@ export default function TasksPage() {
           className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
         />
         <button
-          onClick={() => setDate(today)}
+          onClick={goToToday}
           className={`rounded-lg px-3 py-2 text-sm transition-colors ${
             date === today
               ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
@@ -79,15 +246,56 @@ export default function TasksPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Task list */}
+        {/* Task list area */}
         <div className="lg:col-span-2">
-          <DailyTaskList
-            date={date}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onClick={handleTaskClick}
-            refreshKey={refreshKey}
-          />
+          {viewMode === 'day' ? (
+            /* Day view: single DailyTaskList */
+            <DailyTaskList
+              date={date}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onClick={handleTaskClick}
+              onStatusChange={() => mutateRange()}
+            />
+          ) : rangeLoading ? (
+            <div className="text-gray-500 text-sm py-4">Loading tasks...</div>
+          ) : (
+            /* Week / Month view: grouped by date */
+            <div className="space-y-6">
+              {dateKeys.length === 0 ? (
+                <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-8 text-center">
+                  <p className="text-gray-600 text-sm">No tasks in this {viewMode}</p>
+                </div>
+              ) : (
+                dateKeys.map((dateKey) => {
+                  const dayTasks = groupedByDate[dateKey] || [];
+                  const isToday = dateKey === today;
+                  return (
+                    <div key={dateKey}>
+                      <div className={`mb-2 flex items-center gap-2 text-sm font-semibold ${
+                        isToday ? 'text-indigo-400' : 'text-gray-300'
+                      }`}>
+                        <span>{formatDateLabel(dateKey)}</span>
+                        {isToday && (
+                          <span className="rounded bg-indigo-600/20 px-2 py-0.5 text-xs text-indigo-400 border border-indigo-600/30">
+                            Today
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-600">({dayTasks.length})</span>
+                      </div>
+                      <DailyTaskList
+                        date={dateKey}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onClick={handleTaskClick}
+                        onStatusChange={() => mutateRange()}
+                      />
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
         {/* Detail panel */}

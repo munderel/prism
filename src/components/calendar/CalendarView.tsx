@@ -9,18 +9,20 @@ import interactionPlugin from '@fullcalendar/interaction';
 interface CalendarViewProps {
   onEventClick?: (info: any) => void;
   onDateSelect?: (info: any) => void;
+  onExternalDrop?: (taskId: string, start: Date, end: Date) => void;
 }
 
 const SOURCE_FILTERS = [
   { key: 'tasks', label: 'My Tasks', color: 'bg-indigo-500' },
   { key: 'reviews', label: 'Reviews', color: 'bg-yellow-500' },
+  { key: 'meetings', label: 'Meetings', color: 'bg-emerald-500' },
   { key: 'google', label: 'Google Calendar', color: 'bg-purple-500' },
 ];
 
-export function CalendarView({ onEventClick, onDateSelect }: CalendarViewProps) {
+export function CalendarView({ onEventClick, onDateSelect, onExternalDrop }: CalendarViewProps) {
   const calendarRef = useRef<any>(null);
   const [events, setEvents] = useState<any[]>([]);
-  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'google']));
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'google']));
 
   const fetchEvents = async (start: string, end: string) => {
     const res = await fetch(`/api/calendar?start=${start}&end=${end}&source=all`);
@@ -40,6 +42,34 @@ export function CalendarView({ onEventClick, onDateSelect }: CalendarViewProps) 
       else next.add(key);
       return next;
     });
+  };
+
+  const handleEventReceive = async (info: any) => {
+    // External drop from unscheduled sidebar
+    const taskId = info.event.extendedProps?.taskId || info.event.id?.replace('task-', '');
+    if (!taskId) return;
+
+    const start = info.event.start;
+    const end = info.event.end || new Date(start.getTime() + 60 * 60 * 1000); // default 1hr
+
+    await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        timeBlockStart: start.toISOString(),
+        timeBlockEnd: end.toISOString(),
+        dueDate: start.toISOString(),
+      }),
+    });
+
+    // Refresh calendar events
+    if (calendarRef.current) {
+      const api = calendarRef.current.getApi();
+      const { activeStart, activeEnd } = api.view;
+      fetchEvents(activeStart.toISOString(), activeEnd.toISOString());
+    }
+
+    onExternalDrop?.(taskId, start, end);
   };
 
   const handleEventDrop = async (info: any) => {
@@ -97,7 +127,9 @@ export function CalendarView({ onEventClick, onDateSelect }: CalendarViewProps) 
           events={filteredEvents}
           editable={true}
           selectable={true}
+          droppable={true}
           eventDrop={handleEventDrop}
+          eventReceive={handleEventReceive}
           eventClick={onEventClick}
           select={onDateSelect}
           datesSet={handleDatesSet}

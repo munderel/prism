@@ -62,6 +62,23 @@ export async function PATCH(
   return Response.json(updated);
 }
 
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
+
+  const review = await prisma.review.findUnique({ where: { id } });
+  if (!review || review.userId !== auth.userId) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  await prisma.review.delete({ where: { id } });
+  return Response.json({ success: true }, { status: 200 });
+}
+
 function getNextReviewDate(reviewType: string): Date {
   const now = new Date();
   switch (reviewType) {

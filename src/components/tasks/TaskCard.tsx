@@ -1,6 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import React from 'react';
+import { m } from 'framer-motion';
 import { Pencil, Trash2, MessageSquare, RefreshCw, Target } from 'lucide-react';
 
 const priorityDot: Record<string, string> = {
@@ -25,12 +26,12 @@ interface TaskCardProps {
   onClick?: (task: any) => void;
 }
 
-export function TaskCard({ task, onToggle, onEdit, onDelete, onClick }: TaskCardProps) {
+export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick }: TaskCardProps) {
   const isDone = task.status === 'DONE';
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isDone;
 
   return (
-    <motion.div
+    <m.div
       layout
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -54,7 +55,7 @@ export function TaskCard({ task, onToggle, onEdit, onDelete, onClick }: TaskCard
           }`}
         >
           {isDone && (
-            <motion.svg
+            <m.svg
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               className="h-full w-full text-white"
@@ -64,7 +65,7 @@ export function TaskCard({ task, onToggle, onEdit, onDelete, onClick }: TaskCard
               strokeWidth={3}
             >
               <path d="M5 13l4 4L19 7" />
-            </motion.svg>
+            </m.svg>
           )}
         </button>
 
@@ -81,6 +82,15 @@ export function TaskCard({ task, onToggle, onEdit, onDelete, onClick }: TaskCard
               {task.status.replace('_', ' ')}
             </span>
           </div>
+          {task.goal?.stack?.name && (
+            <span className="text-xs text-gray-500">{task.goal.stack.name}</span>
+          )}
+          {task.taskType === 'MAINTENANCE' && task.processExecution?.process?.title && (
+            <span className="text-xs text-orange-400/70">⚙ {task.processExecution.process.title}</span>
+          )}
+          {task.deliverable && (
+            <p className="text-xs text-cyan-400/70 mt-1 truncate">→ {task.deliverable}</p>
+          )}
         </div>
 
         {/* Icons */}
@@ -128,6 +138,6 @@ export function TaskCard({ task, onToggle, onEdit, onDelete, onClick }: TaskCard
           </button>
         </div>
       </div>
-    </motion.div>
+    </m.div>
   );
-}
+});

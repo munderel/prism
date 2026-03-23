@@ -15,6 +15,7 @@ export interface IndividualReport {
   failedTasks: number;
   byType: { type: string; total: number; completed: number }[];
   streakHistory: { current: number; best: number };
+  dailyCompletion: { date: string; completed: number }[];
 }
 
 export interface CompanyReport {
@@ -40,6 +41,17 @@ export function computeIndividualReport(
     typeMap.set(t.taskType, entry);
   }
 
+  const dailyMap = new Map<string, number>();
+  for (const t of tasks) {
+    if (t.status === 'DONE' && t.completedAt) {
+      const date = new Date(t.completedAt).toISOString().split('T')[0];
+      dailyMap.set(date, (dailyMap.get(date) ?? 0) + 1);
+    }
+  }
+  const dailyCompletion = Array.from(dailyMap.entries())
+    .map(([date, completed]) => ({ date, completed }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   return {
     completionRate: total > 0 ? Math.round((completed / total) * 100) : 0,
     failureRate: total > 0 ? Math.round((failed / total) * 100) : 0,
@@ -48,6 +60,7 @@ export function computeIndividualReport(
     failedTasks: failed,
     byType: Array.from(typeMap.entries()).map(([type, data]) => ({ type, ...data })),
     streakHistory: { current: streak?.currentCount ?? 0, best: streak?.bestCount ?? 0 },
+    dailyCompletion,
   };
 }
 

@@ -10,7 +10,7 @@ export function TopBar() {
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm px-6">
       <div className="lg:hidden">
         <h1 className="text-lg font-bold text-white">
-          <span className="text-indigo-400">Goal</span> Dashboard
+          <span className="text-indigo-400">Pr</span>ism
         </h1>
       </div>
       <div className="ml-auto flex items-center gap-4">

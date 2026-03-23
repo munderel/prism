@@ -1,40 +1,47 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
+import useSWR from 'swr';
 import { LayoutDashboard, Plus, CheckCircle2, Clock, AlertTriangle, Zap } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
+import { useState } from 'react';
 
 export default function DashboardPage() {
   const { data: session } = useSession();
   const today = new Date().toISOString().split('T')[0];
-  const [stats, setStats] = useState({ total: 0, done: 0, urgent: 0, inProgress: 0 });
   const [showEditor, setShowEditor] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [editingTask, setEditingTask] = useState<any>(null);
 
-  const fetchStats = async () => {
-    const res = await fetch(`/api/tasks?date=${today}`);
-    if (res.ok) {
-      const tasks = await res.json();
-      setStats({
-        total: tasks.length,
-        done: tasks.filter((t: any) => t.status === 'DONE').length,
-        urgent: tasks.filter((t: any) => t.priority === 'URGENT').length,
-        inProgress: tasks.filter((t: any) => t.status === 'IN_PROGRESS').length,
-      });
-    }
-  };
+  const { data: tasks, mutate } = useSWR(`/api/tasks?date=${today}`);
+  const list = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
-  useEffect(() => {
-    fetchStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  const stats = useMemo(() => ({
+    total: list.length,
+    done: list.filter((t: any) => t.status === 'DONE').length,
+    urgent: list.filter((t: any) => t.priority === 'URGENT').length,
+    inProgress: list.filter((t: any) => t.status === 'IN_PROGRESS').length,
+  }), [list]);
 
-  const refresh = () => {
-    setRefreshKey((k) => k + 1);
+  const refresh = useCallback(() => {
+    mutate();
     setShowEditor(false);
-  };
+    setEditingTask(null);
+  }, [mutate]);
+
+  const handleEdit = useCallback((task: any) => {
+    setEditingTask(task);
+  }, []);
+
+  const handleDelete = useCallback(async (id: string) => {
+    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+    mutate();
+  }, [mutate]);
+
+  const handleStatusChange = useCallback(() => {
+    mutate();
+  }, [mutate]);
 
   const statCards = [
     { label: 'Total Tasks', value: stats.total, icon: Clock, color: 'text-blue-400' },
@@ -86,12 +93,9 @@ export default function DashboardPage() {
         <h2 className="text-lg font-semibold text-white mb-4">Today&apos;s Tasks</h2>
         <DailyTaskList
           date={today}
-          onEdit={() => {}}
-          onDelete={async (id) => {
-            await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-            refresh();
-          }}
-          refreshKey={refreshKey}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onStatusChange={handleStatusChange}
         />
       </div>
 
@@ -99,6 +103,14 @@ export default function DashboardPage() {
         <TaskEditor
           onSave={refresh}
           onClose={() => setShowEditor(false)}
+        />
+      )}
+
+      {editingTask && (
+        <TaskEditor
+          task={editingTask}
+          onSave={refresh}
+          onClose={() => setEditingTask(null)}
         />
       )}
     </div>

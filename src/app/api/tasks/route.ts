@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { taskLimiter, getClientIp } from '@/lib/rate-limit';
 import { parseRRule } from '@/lib/recurrence';
+import { createGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -10,6 +11,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date');
+  const startDate = searchParams.get('startDate');
+  const endDate = searchParams.get('endDate');
   const goalId = searchParams.get('goalId');
   const status = searchParams.get('status');
   const taskType = searchParams.get('taskType');
@@ -21,11 +24,23 @@ export async function GET(request: NextRequest) {
     where.ownerId = auth.userId;
   }
 
-  if (date) {
+  if (startDate && endDate) {
+    // Date range mode: fetch tasks across multiple days
+    const rangeStart = new Date(startDate);
+    const rangeEnd = new Date(endDate);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+    where.OR = [
+      { dueDate: { gte: rangeStart, lt: rangeEnd } },
+      { dueDate: null },
+    ];
+  } else if (date) {
     const start = new Date(date);
     const end = new Date(date);
     end.setDate(end.getDate() + 1);
-    where.dueDate = { gte: start, lt: end };
+    where.OR = [
+      { dueDate: { gte: start, lt: end } },
+      { dueDate: null },
+    ];
   }
 
   if (goalId) where.goalId = goalId;
@@ -39,7 +54,8 @@ export async function GET(request: NextRequest) {
       { dueDate: 'asc' },
     ],
     include: {
-      goal: { select: { id: true, title: true, level: true } },
+      goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } },
+      processExecution: { include: { process: { select: { title: true } } } },
       _count: { select: { comments: true } },
     },
   });
@@ -58,7 +74,7 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { taskType, title, description, priority, dueDate, goalId, recurrenceRule, timeBlockStart, timeBlockEnd } = body;
+  const { taskType, title, description, priority, dueDate, goalId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable } = body;
 
   if (!taskType || !title) {
     return Response.json({ error: 'taskType and title are required' }, { status: 400 });
@@ -103,11 +119,36 @@ export async function POST(request: NextRequest) {
       recurrenceRule: recurrenceRule ?? null,
       timeBlockStart: timeBlockStart ? new Date(timeBlockStart) : null,
       timeBlockEnd: timeBlockEnd ? new Date(timeBlockEnd) : null,
+      deliverable: deliverable ?? null,
     },
     include: {
       goal: { select: { id: true, title: true, level: true } },
     },
   });
+
+  // Sync to Google Calendar if the task has time blocks
+  if (timeBlockStart && timeBlockEnd) {
+    try {
+      const hasGoogle = await hasGoogleAccount(auth.userId);
+      if (hasGoogle) {
+        const gcalEvent = await createGoogleEvent(auth.userId, {
+          summary: title,
+          description: description ?? undefined,
+          start: new Date(timeBlockStart).toISOString(),
+          end: new Date(timeBlockEnd).toISOString(),
+        });
+        if (gcalEvent?.id) {
+          await prisma.task.update({
+            where: { id: task.id },
+            data: { calendarEventId: gcalEvent.id },
+          });
+          (task as any).calendarEventId = gcalEvent.id;
+        }
+      }
+    } catch (err) {
+      console.warn('[tasks] Google Calendar sync failed on create:', err);
+    }
+  }
 
   return Response.json(task, { status: 201 });
 }

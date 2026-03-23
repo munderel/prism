@@ -11,6 +11,7 @@ import {
   Moon,
   Trophy,
   BarChart3,
+  ListChecks,
   Settings,
 } from 'lucide-react';
 
@@ -23,6 +24,7 @@ const navItems = [
   { href: '/powerdown', label: 'Power Down', icon: Moon },
   { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
   { href: '/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/processes', label: 'Processes', icon: ListChecks },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -33,7 +35,7 @@ export function Sidebar() {
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-gray-800 bg-gray-950 hidden lg:block">
       <div className="flex h-16 items-center px-6 border-b border-gray-800">
         <h1 className="text-lg font-bold text-white">
-          <span className="text-indigo-400">Goal</span> Dashboard
+          <span className="text-indigo-400">Pr</span>ism
         </h1>
       </div>
       <nav className="mt-4 px-3">

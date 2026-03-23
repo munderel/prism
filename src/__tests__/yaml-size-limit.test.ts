@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_YAML_SIZE } from '@/app/api/goals/import/route';
+
+// MAX_YAML_SIZE is defined in the route file but can't be exported (Next.js route constraint)
+const MAX_YAML_SIZE = 256 * 1024; // 256KB — must stay in sync with src/app/api/goals/import/route.ts
 
 describe('YAML size limit constant', () => {
   it('is 256KB', () => {

@@ -11,52 +11,68 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type'); // 'individual' | 'company'
 
   if (type === 'company') {
-    // Company report: all users
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        tasks: { select: { status: true, taskType: true, completedAt: true, failedAt: true, recurrenceRule: true, title: true } },
-      },
-    });
-
-    const teamTotal = users.reduce((sum, u) => sum + u.tasks.length, 0);
-    const teamCompleted = users.reduce((sum, u) => sum + u.tasks.filter((t) => t.status === 'DONE').length, 0);
-
-    const perPerson = users.map((u) => ({
-      name: u.name ?? 'Unknown',
-      total: u.tasks.length,
-      completionRate: u.tasks.length > 0
-        ? Math.round((u.tasks.filter((t) => t.status === 'DONE').length / u.tasks.length) * 100)
-        : 0,
-    }));
-
-    // Company goal progress
-    const companyStacks = await prisma.goalStack.findMany({
-      where: { isCompany: true },
-      include: {
-        goals: {
-          where: { deletedAt: null, parentId: null },
-          select: { title: true, progressPct: true },
+    // Company report: use aggregation instead of loading all task rows
+    const [taskCounts, users, companyStacks, maintenanceTasks] = await Promise.all([
+      prisma.task.groupBy({
+        by: ['ownerId', 'status'],
+        _count: true,
+      }),
+      prisma.user.findMany({
+        select: { id: true, name: true },
+      }),
+      prisma.goalStack.findMany({
+        where: { isCompany: true },
+        include: {
+          goals: {
+            where: { deletedAt: null, parentId: null },
+            select: { title: true, progressPct: true },
+          },
         },
-      },
+      }),
+      prisma.task.findMany({
+        where: { taskType: 'MAINTENANCE' },
+        select: { status: true, taskType: true, completedAt: true, failedAt: true, recurrenceRule: true, title: true },
+      }),
+    ]);
+
+    // Build per-person stats from grouped counts
+    const perPersonMap = new Map<string, { total: number; done: number }>();
+    for (const row of taskCounts) {
+      const entry = perPersonMap.get(row.ownerId) ?? { total: 0, done: 0 };
+      entry.total += row._count;
+      if (row.status === 'DONE') entry.done += row._count;
+      perPersonMap.set(row.ownerId, entry);
+    }
+
+    let teamTotal = 0;
+    let teamCompleted = 0;
+    const perPerson = users.map((u) => {
+      const stats = perPersonMap.get(u.id) ?? { total: 0, done: 0 };
+      teamTotal += stats.total;
+      teamCompleted += stats.done;
+      return {
+        name: u.name ?? 'Unknown',
+        total: stats.total,
+        completionRate: stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0,
+      };
     });
 
     const goalProgress = companyStacks.flatMap((s) =>
       s.goals.map((g) => ({ title: g.title, progress: g.progressPct }))
     );
 
-    // Leverage analysis for maintenance tasks
-    const allMaintenance = users.flatMap((u) =>
-      u.tasks.filter((t) => t.taskType === 'MAINTENANCE')
-    );
-    const leverageAnalysis = computeLeverageAnalysis(allMaintenance);
+    const leverageAnalysis = computeLeverageAnalysis(maintenanceTasks);
 
-    return Response.json({
+    return new Response(JSON.stringify({
       teamCompletion: teamTotal > 0 ? Math.round((teamCompleted / teamTotal) * 100) : 0,
       perPerson,
       goalProgress,
       leverageAnalysis,
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'private, max-age=60, stale-while-revalidate=300',
+      },
     });
   }
 
@@ -72,5 +88,10 @@ export async function GET(request: NextRequest) {
 
   const report = computeIndividualReport(tasks, streak);
 
-  return Response.json(report);
+  return new Response(JSON.stringify(report), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'private, max-age=60, stale-while-revalidate=300',
+    },
+  });
 }

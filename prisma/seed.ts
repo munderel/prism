@@ -100,7 +100,18 @@ async function main() {
     });
   }
 
-  console.log('Seed complete: 4 ReviewTemplates + CompanySettings');
+  // Seed default admin user
+  const adminUser = await prisma.user.upsert({
+    where: { email: 'admin@upwhiten.com' },
+    update: { isAdmin: true },
+    create: {
+      email: 'admin@upwhiten.com',
+      name: 'Munder (Admin)',
+      isAdmin: true,
+    },
+  });
+
+  console.log(`Seed complete: 4 ReviewTemplates + CompanySettings + Admin user (${adminUser.email})`);
 }
 
 main()

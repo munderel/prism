@@ -1,6 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import React from 'react';
+import { m } from 'framer-motion';
 import { Pencil, Trash2, Plus, Link } from 'lucide-react';
 import { GoalProgressBar } from './GoalProgressBar';
 
@@ -14,7 +15,7 @@ const levelColors: Record<string, string> = {
 
 const levelLabels: Record<string, string> = {
   HIGH_HARD: 'HHG',
-  STRATEGIC: 'Strategic',
+  STRATEGIC: 'Yearly',
   MONTHLY: 'Monthly',
   WEEKLY: 'Weekly',
   DAILY: 'Daily',
@@ -38,7 +39,7 @@ interface GoalCardProps {
   hasLinks?: boolean;
 }
 
-export function GoalCard({
+export const GoalCard = React.memo(function GoalCard({
   goal,
   depth,
   onEdit,
@@ -48,7 +49,7 @@ export function GoalCard({
   const canAddChild = goal.level !== 'DAILY';
 
   return (
-    <motion.div
+    <m.div
       layout
       layoutId={goal.id}
       initial={{ opacity: 0, y: -10 }}
@@ -66,6 +67,9 @@ export function GoalCard({
         >
           {levelLabels[goal.level] ?? goal.level}
         </span>
+        {goal.level === 'HIGH_HARD' && (
+          <span className="text-xs text-purple-400/70 italic">5-10 Year Goal</span>
+        )}
 
         {/* Title and status */}
         <div className="flex-1 min-w-0">
@@ -119,6 +123,6 @@ export function GoalCard({
           </button>
         </div>
       </div>
-    </motion.div>
+    </m.div>
   );
-}
+});

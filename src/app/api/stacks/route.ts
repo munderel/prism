@@ -21,7 +21,12 @@ export async function GET() {
     orderBy: [{ isCompany: 'desc' }, { createdAt: 'asc' }],
   });
 
-  return Response.json(stacks);
+  return new Response(JSON.stringify(stacks), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'private, max-age=30, stale-while-revalidate=120',
+    },
+  });
 }
 
 export async function POST(request: NextRequest) {

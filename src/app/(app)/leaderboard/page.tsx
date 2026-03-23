@@ -11,7 +11,7 @@ export default function LeaderboardPage() {
   useEffect(() => {
     fetch('/api/leaderboard')
       .then((r) => r.json())
-      .then(setData)
+      .then((d) => setData({ leaderboard: d.leaderboard ?? [], publicWins: d.publicWins ?? [] }))
       .finally(() => setLoading(false));
   }, []);
 

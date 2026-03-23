@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useCallback, useMemo } from 'react';
+import useSWR from 'swr';
+import { m, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { TaskCard } from './TaskCard';
 
@@ -16,52 +17,55 @@ interface DailyTaskListProps {
   onEdit: (task: any) => void;
   onDelete: (taskId: string) => void;
   onClick?: (task: any) => void;
-  refreshKey?: number;
+  onStatusChange?: () => void;
 }
 
-export function DailyTaskList({ date, onEdit, onDelete, onClick, refreshKey }: DailyTaskListProps) {
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+export function DailyTaskList({ date, onEdit, onDelete, onClick, onStatusChange }: DailyTaskListProps) {
+  const { data, isLoading, mutate } = useSWR(`/api/tasks?date=${date}`);
+  const tasks = Array.isArray(data) ? data : [];
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const fetchTasks = async () => {
-    setLoading(true);
-    const res = await fetch(`/api/tasks?date=${date}`);
-    if (res.ok) {
-      setTasks(await res.json());
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchTasks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, refreshKey]);
-
-  const toggleCollapse = (key: string) => {
+  const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  }, []);
 
-  const handleToggle = async (task: any) => {
+  const handleToggle = useCallback(async (task: any) => {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
-    await fetch(`/api/tasks/${task.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    fetchTasks();
-  };
+    mutate(
+      async (currentData: any) => {
+        await fetch(`/api/tasks/${task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        const current = Array.isArray(currentData) ? currentData : [];
+        return current.map((t: any) =>
+          t.id === task.id ? { ...t, status: newStatus } : t
+        );
+      },
+      {
+        optimisticData: (currentData: any) => {
+          const current = Array.isArray(currentData) ? currentData : [];
+          return current.map((t: any) =>
+            t.id === task.id ? { ...t, status: newStatus } : t
+          );
+        },
+        rollbackOnError: true,
+      }
+    );
+    onStatusChange?.();
+  }, [mutate, onStatusChange]);
 
-  if (loading) {
-    return <div className="text-gray-500 text-sm py-4">Loading tasks...</div>;
-  }
-
-  const grouped = SECTIONS.map(({ key, label, color }) => ({
+  const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => ({
     key,
     label,
     color,
-    tasks: tasks.filter((t) => t.taskType === key),
-  }));
+    tasks: tasks.filter((t: any) => t.taskType === key),
+  })), [tasks]);
+
+  if (isLoading) {
+    return <div className="text-gray-500 text-sm py-4">Loading tasks...</div>;
+  }
 
   return (
     <div className="space-y-4">
@@ -82,7 +86,7 @@ export function DailyTaskList({ date, onEdit, onDelete, onClick, refreshKey }: D
 
           <AnimatePresence>
             {!collapsed[key] && (
-              <motion.div
+              <m.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
@@ -102,7 +106,7 @@ export function DailyTaskList({ date, onEdit, onDelete, onClick, refreshKey }: D
                     />
                   ))
                 )}
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
         </div>

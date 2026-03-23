@@ -55,6 +55,28 @@ export async function POST(request: NextRequest) {
   return Response.json(review, { status: 201 });
 }
 
+export async function DELETE(request: NextRequest) {
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
+
+  const body = await request.json();
+  const { reviewType } = body;
+
+  if (!reviewType) {
+    return Response.json({ error: 'reviewType is required' }, { status: 400 });
+  }
+
+  const result = await prisma.review.deleteMany({
+    where: {
+      userId: auth.userId,
+      reviewType,
+      completedAt: null,
+    },
+  });
+
+  return Response.json({ success: true, deleted: result.count }, { status: 200 });
+}
+
 function getNextReviewDate(reviewType: string): Date {
   const now = new Date();
   switch (reviewType) {

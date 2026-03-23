@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import { BarChart3 } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -25,22 +26,57 @@ const RechartsBar = dynamic(
   { ssr: false }
 );
 
+const RechartsPie = dynamic(
+  () => import('recharts').then((m) => {
+    const { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } = m;
+    const COLORS = ['#6366f1', '#06b6d4', '#f59e0b'];
+    return function Chart({ data }: { data: any[] }) {
+      const total = data.reduce((sum: number, d: any) => sum + d.value, 0);
+      if (total === 0) return <div className="text-gray-500 text-sm text-center py-8">No task data yet</div>;
+      return (
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}>
+              {data.map((_: any, i: number) => (
+                <Cell key={i} fill={COLORS[i % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      );
+    };
+  }),
+  { ssr: false }
+);
+
+const RechartsLine = dynamic(
+  () => import('recharts').then((m) => {
+    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = m;
+    return function Chart({ data }: { data: any[] }) {
+      if (data.length === 0) return <div className="text-gray-500 text-sm text-center py-8">No completion data yet</div>;
+      return (
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} tickFormatter={(d: string) => d.slice(5)} />
+            <YAxis stroke="#9ca3af" fontSize={12} />
+            <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} />
+            <Line type="monotone" dataKey="completed" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      );
+    };
+  }),
+  { ssr: false }
+);
+
 export default function ReportsPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
   const [tab, setTab] = useState<'individual' | 'company'>('individual');
-  const [report, setReport] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchReport = async () => {
-    setLoading(true);
-    const res = await fetch(`/api/reports?type=${tab}`);
-    if (res.ok) setReport(await res.json());
-    setLoading(false);
-  };
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchReport(); }, [tab]);
+  const { data: report, isLoading: loading } = useSWR(`/api/reports?type=${tab}`);
 
   return (
     <div>
@@ -80,34 +116,48 @@ export default function ReportsPage() {
             <StatCard label="Completion Rate" value={`${report.completionRate}%`} />
             <StatCard label="Failure Rate" value={`${report.failureRate}%`} />
             <StatCard label="Total Tasks" value={report.totalTasks} />
-            <StatCard label="Current Streak" value={`${report.streakHistory.current} days`} />
+            <StatCard label="Current Streak" value={`${report.streakHistory?.current ?? 0} days`} />
           </div>
 
           {/* By type chart */}
           <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
             <h3 className="text-sm font-semibold text-white mb-4">Tasks by Type</h3>
             <RechartsBar
-              data={report.byType.map((t: any) => ({
+              data={(report.byType ?? []).map((t: any) => ({
                 name: t.type.replace('_', ' '),
                 value: t.completed,
                 total: t.total,
               }))}
             />
           </div>
+
+          {/* Task Type Breakdown */}
+          <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+            <h2 className="text-sm font-semibold text-white mb-4">Task Type Breakdown</h2>
+            <RechartsPie data={(report.byType ?? []).map((t: any) => ({ name: t.type.replace('_', ' '), value: t.total }))} />
+          </section>
+
+          {/* Daily Completion Trend */}
+          {report.dailyCompletion && (
+            <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+              <h2 className="text-sm font-semibold text-white mb-4">Daily Completion Trend</h2>
+              <RechartsLine data={report.dailyCompletion} />
+            </section>
+          )}
         </div>
       ) : tab === 'company' && report ? (
         <div className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <StatCard label="Team Completion" value={`${report.teamCompletion}%`} />
-            <StatCard label="Team Members" value={report.perPerson.length} />
-            <StatCard label="Company Goals" value={report.goalProgress.length} />
+            <StatCard label="Team Members" value={(report.perPerson ?? []).length} />
+            <StatCard label="Company Goals" value={(report.goalProgress ?? []).length} />
           </div>
 
           {/* Per-person */}
           <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
             <h3 className="text-sm font-semibold text-white mb-4">Per Person</h3>
             <RechartsBar
-              data={report.perPerson.map((p: any) => ({
+              data={(report.perPerson ?? []).map((p: any) => ({
                 name: p.name,
                 value: p.completionRate,
               }))}
@@ -115,11 +165,11 @@ export default function ReportsPage() {
           </div>
 
           {/* Leverage analysis */}
-          {report.leverageAnalysis.length > 0 && (
+          {(report.leverageAnalysis ?? []).length > 0 && (
             <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
               <h3 className="text-sm font-semibold text-white mb-4">Maintenance Leverage</h3>
               <div className="space-y-2">
-                {report.leverageAnalysis.map((item: any, i: number) => (
+                {(report.leverageAnalysis ?? []).map((item: any, i: number) => (
                   <div key={i} className="flex items-center justify-between rounded-lg bg-gray-800/50 px-4 py-2">
                     <span className="text-sm text-white">{item.title}</span>
                     <div className="flex items-center gap-3">

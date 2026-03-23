@@ -1,41 +1,43 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { motion } from 'framer-motion';
+import dynamic from 'next/dynamic';
+import { m } from 'framer-motion';
 import { Building2, User, Target } from 'lucide-react';
-import { GoalStackTree } from '@/components/goals/GoalStackTree';
+
+const GoalStackTree = dynamic(
+  () => import('@/components/goals/GoalStackTree').then((mod) => ({ default: mod.GoalStackTree })),
+  { loading: () => <div className="text-gray-500 py-8 text-center">Loading...</div> }
+);
 import { YamlImportExport } from '@/components/goals/YamlImportExport';
 
 export default function GoalsPage() {
   const { data: session } = useSession();
-  const [stacks, setStacks] = useState<any[]>([]);
+  const { data: stacksData, isLoading, mutate: mutateStacks } = useSWR('/api/stacks');
+  const stacks = useMemo(() => (Array.isArray(stacksData) ? stacksData : []), [stacksData]);
   const [selectedStackId, setSelectedStackId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newStackName, setNewStackName] = useState('');
 
   const isAdmin = session?.user?.isAdmin ?? false;
 
-  const fetchStacks = async () => {
-    const res = await fetch('/api/stacks');
-    if (res.ok) {
-      const data = await res.json();
-      setStacks(data);
-      if (data.length > 0 && !selectedStackId) {
-        setSelectedStackId(data[0].id);
-      }
-    }
-    setLoading(false);
-  };
-
+  // Auto-select first stack when data loads
   useEffect(() => {
-    fetchStacks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (stacks.length > 0 && !selectedStackId) {
+      setSelectedStackId(stacks[0].id);
+    }
+  }, [stacks, selectedStackId]);
 
   const selectedStack = stacks.find((s) => s.id === selectedStackId);
 
-  const handleCreateStack = async () => {
-    const name = prompt('Stack name:');
+  const handleCreateStack = () => {
+    setShowCreateForm(true);
+  };
+
+  const handleSubmitCreate = async () => {
+    const name = newStackName.trim();
     if (!name) return;
 
     const res = await fetch('/api/stacks', {
@@ -46,12 +48,17 @@ export default function GoalsPage() {
 
     if (res.ok) {
       const stack = await res.json();
-      await fetchStacks();
+      setNewStackName('');
+      setShowCreateForm(false);
+      await mutateStacks();
       setSelectedStackId(stack.id);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'Failed to create stack');
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-gray-500">Loading stacks...</div>
@@ -109,9 +116,43 @@ export default function GoalsPage() {
         </button>
       </div>
 
+      {/* Inline create form */}
+      {showCreateForm && (
+        <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+          <h3 className="text-sm font-semibold text-white mb-3">Create New Stack</h3>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={newStackName}
+              onChange={(e) => setNewStackName(e.target.value)}
+              placeholder="Stack name"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSubmitCreate();
+                if (e.key === 'Escape') { setShowCreateForm(false); setNewStackName(''); }
+              }}
+              className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+            />
+            <button
+              onClick={handleSubmitCreate}
+              disabled={!newStackName.trim()}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+            >
+              Create
+            </button>
+            <button
+              onClick={() => { setShowCreateForm(false); setNewStackName(''); }}
+              className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Tree */}
       {selectedStack ? (
-        <motion.div
+        <m.div
           key={selectedStackId}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -122,7 +163,7 @@ export default function GoalsPage() {
             isCompanyStack={selectedStack.isCompany}
             isAdmin={isAdmin}
           />
-        </motion.div>
+        </m.div>
       ) : (
         <div className="text-center py-16">
           <p className="text-gray-500 mb-4">
