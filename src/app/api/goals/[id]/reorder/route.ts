@@ -30,6 +30,10 @@ export async function PATCH(
   const body = await request.json();
   const { sortOrder, parentId } = body;
 
+  if (sortOrder === undefined && parentId === undefined) {
+    return Response.json({ error: 'sortOrder or parentId is required' }, { status: 400 });
+  }
+
   // If reparenting, validate level constraint
   if (parentId !== undefined && parentId !== goal.parentId) {
     let parentLevel: string | null = null;
@@ -52,33 +56,37 @@ export async function PATCH(
     }
   }
 
-  // Update goal position
-  const data: Record<string, any> = {};
-  if (sortOrder !== undefined) data.sortOrder = sortOrder;
-  if (parentId !== undefined) data.parentId = parentId;
+  // Update parent if changed
+  if (parentId !== undefined) {
+    await prisma.goal.update({ where: { id }, data: { parentId } });
+  }
 
-  const updated = await prisma.goal.update({ where: { id }, data });
-
-  // Renumber siblings under the new parent
+  // Renumber siblings using splice-and-reindex approach
+  const targetParentId = parentId !== undefined ? parentId : goal.parentId;
   const siblings = await prisma.goal.findMany({
     where: {
       stackId: goal.stackId,
-      parentId: updated.parentId,
+      parentId: targetParentId,
       deletedAt: null,
-      id: { not: id },
     },
     orderBy: { sortOrder: 'asc' },
     select: { id: true },
   });
 
-  const reorderOps = siblings.map((s, i) => {
-    const order = i >= sortOrder ? i + 1 : i;
-    return prisma.goal.update({ where: { id: s.id }, data: { sortOrder: order } });
-  });
+  // Remove the moved goal from the list, then insert at the target position
+  const filtered = siblings.filter((s) => s.id !== id);
+  const insertAt = sortOrder !== undefined ? Math.max(0, Math.min(sortOrder, filtered.length)) : filtered.length;
+  filtered.splice(insertAt, 0, { id });
+
+  // Assign sequential sort orders
+  const reorderOps = filtered.map((s, i) =>
+    prisma.goal.update({ where: { id: s.id }, data: { sortOrder: i } })
+  );
 
   if (reorderOps.length > 0) {
     await prisma.$transaction(reorderOps);
   }
 
+  const updated = await prisma.goal.findUnique({ where: { id } });
   return Response.json(updated);
 }

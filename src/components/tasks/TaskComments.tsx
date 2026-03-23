@@ -27,6 +27,7 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
 
   useEffect(() => {
     fetchComments();
+    return () => { clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
@@ -90,8 +91,15 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
     }
   };
 
-  const highlightMentions = (text: string) => {
-    return text.replace(/@([\w.]+)/g, '<span class="text-indigo-400 font-medium">@$1</span>');
+  const renderWithMentions = (text: string) => {
+    const parts = text.split(/(@[\w.]+)/g);
+    return parts.map((part, i) =>
+      part.match(/^@[\w.]+$/) ? (
+        <span key={i} className="text-indigo-400 font-medium">{part}</span>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    );
   };
 
   return (
@@ -120,10 +128,9 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
                   {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
                 </span>
               </div>
-              <p
-                className="text-sm text-gray-300 mt-0.5"
-                dangerouslySetInnerHTML={{ __html: highlightMentions(comment.content) }}
-              />
+              <p className="text-sm text-gray-300 mt-0.5">
+                {renderWithMentions(comment.content)}
+              </p>
             </div>
             {(comment.authorId === session?.user?.id || session?.user?.isAdmin) && (
               <button

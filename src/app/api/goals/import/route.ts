@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { goalLimiter, getClientIp } from '@/lib/rate-limit';
 import { parseYamlToGoals, diffGoals, buildGoalTree, type GoalNode } from '@/lib/yaml-handler';
 import { cascadeProgressUp } from '@/lib/progress';
+import { validateGoalLevel } from '@/lib/goal-validation';
 
 const MAX_YAML_SIZE = 256 * 1024; // 256KB
 
@@ -129,14 +130,35 @@ export async function POST(request: NextRequest) {
   return Response.json({ ok: true, diff });
 }
 
+const MAX_GOALS_PER_IMPORT = 500;
+const MAX_IMPORT_DEPTH = 20;
+
 async function createNewGoals(
   nodes: GoalNode[],
   stackId: string,
-  parentId: string | null
+  parentId: string | null,
+  parentLevel: string | null = null,
+  counter = { count: 0 },
+  depth = 0
 ) {
+  if (depth > MAX_IMPORT_DEPTH) {
+    throw new Error('Import exceeds maximum nesting depth');
+  }
+
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
     if (!node.id) {
+      if (counter.count >= MAX_GOALS_PER_IMPORT) {
+        throw new Error(`Import exceeds maximum of ${MAX_GOALS_PER_IMPORT} goals`);
+      }
+
+      // Validate level hierarchy
+      if (!validateGoalLevel(node.level, parentLevel)) {
+        throw new Error(
+          `Invalid hierarchy: ${node.level} cannot be a child of ${parentLevel ?? 'root'}`
+        );
+      }
+
       // New goal — create it
       const created = await prisma.goal.create({
         data: {
@@ -150,13 +172,15 @@ async function createNewGoals(
           sortOrder: i,
         },
       });
+      counter.count++;
+
       // Recurse for children of this new goal
       if (node.children?.length) {
-        await createNewGoals(node.children, stackId, created.id);
+        await createNewGoals(node.children, stackId, created.id, node.level, counter, depth + 1);
       }
     } else if (node.children?.length) {
       // Existing goal — recurse into children to find new ones
-      await createNewGoals(node.children, stackId, node.id);
+      await createNewGoals(node.children, stackId, node.id, node.level, counter, depth + 1);
     }
   }
 }

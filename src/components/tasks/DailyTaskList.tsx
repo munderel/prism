@@ -21,7 +21,7 @@ interface DailyTaskListProps {
 }
 
 export function DailyTaskList({ date, onEdit, onDelete, onClick, onStatusChange }: DailyTaskListProps) {
-  const { data, isLoading, mutate } = useSWR(`/api/tasks?date=${date}`);
+  const { data, isLoading, mutate } = useSWR(`/api/tasks?date=${date}&includeUnscheduled=true`);
   const tasks = Array.isArray(data) ? data : [];
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 

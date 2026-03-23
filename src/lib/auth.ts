@@ -76,6 +76,9 @@ export const authOptions: NextAuthOptions = {
     async signIn({ account, user }) {
       // Store Google refresh token on sign in
       if (account?.provider === 'google' && account.refresh_token) {
+        if (process.env.NODE_ENV === 'production' && !process.env.TOKEN_ENCRYPTION_KEY) {
+          console.error('[auth] TOKEN_ENCRYPTION_KEY is not set — refresh tokens will be stored unencrypted');
+        }
         await prisma.user.update({
           where: { id: user.id },
           data: {
@@ -89,18 +92,20 @@ export const authOptions: NextAuthOptions = {
         });
       }
 
-      // Auto-promote first user to admin
+      // Auto-promote first user to admin (uses transaction to prevent race condition)
       if (account?.provider === 'google') {
-        const userCount = await prisma.user.count();
-        if (userCount <= 1) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { isAdmin: true },
-          });
-        }
+        await prisma.$transaction(async (tx) => {
+          const userCount = await tx.user.count();
+          if (userCount <= 1) {
+            await tx.user.update({
+              where: { id: user.id },
+              data: { isAdmin: true },
+            });
+          }
+        });
       }
 
-      // Check for pending invitation and apply role
+      // Check for pending invitation and apply role (only promote, never demote)
       if (account?.provider === 'google' && user.email) {
         const invitation = await prisma.invitation.findFirst({
           where: {
@@ -110,10 +115,13 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (invitation) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { isAdmin: invitation.role === 'admin' },
-          });
+          // Only promote to admin via invitation; never demote an existing admin
+          if (invitation.role === 'admin') {
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { isAdmin: true },
+            });
+          }
 
           await prisma.invitation.update({
             where: { id: invitation.id },

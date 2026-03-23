@@ -3,8 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 
 export async function POST(request: NextRequest) {
-  // Dev mode only
-  if (process.env.NODE_ENV === 'production') {
+  // Dev mode only — block by default, only allow in explicit development mode
+  if (process.env.NODE_ENV !== 'development') {
     return Response.json({ error: 'Not available in production' }, { status: 403 });
   }
 

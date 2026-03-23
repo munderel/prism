@@ -86,8 +86,10 @@ export async function PATCH(
 
   const updated = await prisma.task.update({ where: { id }, data });
 
-  // Google Calendar sync
+  // Google Calendar sync (only when calendar-relevant fields change)
+  const calendarFieldsChanged = status !== undefined || timeBlockStart !== undefined || timeBlockEnd !== undefined;
   try {
+    if (calendarFieldsChanged) {
     const hasGoogle = await hasGoogleAccount(task.ownerId);
     if (hasGoogle) {
       const newStart = data.timeBlockStart ?? task.timeBlockStart;
@@ -120,6 +122,7 @@ export async function PATCH(
         }
       }
     }
+    } // end calendarFieldsChanged
   } catch (err) {
     console.warn('[tasks] Google Calendar sync failed on update:', err);
   }

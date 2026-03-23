@@ -6,12 +6,12 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; commentId: string }> }
 ) {
-  const { commentId } = await params;
+  const { id: taskId, commentId } = await params;
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
   const comment = await prisma.taskComment.findUnique({ where: { id: commentId } });
-  if (!comment) {
+  if (!comment || comment.taskId !== taskId) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 

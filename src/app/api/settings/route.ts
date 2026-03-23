@@ -70,13 +70,22 @@ export async function PATCH(request: NextRequest) {
     select: { mtp: true, timezone: true, hasCompletedOnboarding: true },
   });
 
-  // Update notification preferences
-  if (notificationPrefs) {
-    await prisma.notificationPreference.upsert({
-      where: { userId: auth.userId },
-      update: notificationPrefs,
-      create: { userId: auth.userId, ...notificationPrefs },
-    });
+  // Update notification preferences (whitelist valid boolean fields only)
+  if (notificationPrefs && typeof notificationPrefs === 'object') {
+    const allowedFields = ['emailEnabled', 'pushEnabled', 'derailingAlerts', 'mentionAlerts', 'reviewNags'] as const;
+    const sanitized: Record<string, boolean> = {};
+    for (const field of allowedFields) {
+      if (typeof notificationPrefs[field] === 'boolean') {
+        sanitized[field] = notificationPrefs[field];
+      }
+    }
+    if (Object.keys(sanitized).length > 0) {
+      await prisma.notificationPreference.upsert({
+        where: { userId: auth.userId },
+        update: sanitized,
+        create: { userId: auth.userId, ...sanitized },
+      });
+    }
   }
 
   return Response.json(user);

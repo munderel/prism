@@ -6,7 +6,7 @@ export async function GET(_request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  // Get all users with their streaks and task counts
+  // Get all users with their streaks and task/review counts
   const users = await prisma.user.findMany({
     select: {
       id: true,
@@ -16,13 +16,11 @@ export async function GET(_request: NextRequest) {
         where: { streakType: 'daily_completion' },
         select: { currentCount: true, bestCount: true },
       },
-      tasks: {
-        where: { status: 'DONE' },
-        select: { id: true },
-      },
-      reviews: {
-        where: { completedAt: { not: null } },
-        select: { id: true },
+      _count: {
+        select: {
+          tasks: { where: { status: 'DONE' } },
+          reviews: { where: { completedAt: { not: null } } },
+        },
       },
     },
   });
@@ -33,9 +31,9 @@ export async function GET(_request: NextRequest) {
     image: u.image,
     streak: u.streaks[0]?.currentCount ?? 0,
     bestStreak: u.streaks[0]?.bestCount ?? 0,
-    tasksCompleted: u.tasks.length,
-    reviewsCompleted: u.reviews.length,
-    score: (u.streaks[0]?.currentCount ?? 0) * 10 + u.tasks.length + u.reviews.length * 5,
+    tasksCompleted: u._count.tasks,
+    reviewsCompleted: u._count.reviews,
+    score: (u.streaks[0]?.currentCount ?? 0) * 10 + u._count.tasks + u._count.reviews * 5,
   }));
 
   leaderboard.sort((a, b) => b.score - a.score);

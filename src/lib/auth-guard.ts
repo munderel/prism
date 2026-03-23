@@ -58,10 +58,13 @@ export async function requireTaskAccess(taskId: string): Promise<AuthResult & { 
 }
 
 export function requireCronSecret(request: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false; // No secret configured = deny all
+
   const authHeader = request.headers.get('authorization');
   if (!authHeader) return false;
 
-  const expected = `Bearer ${process.env.CRON_SECRET}`;
+  const expected = `Bearer ${secret}`;
 
   // HMAC both values to fixed-length digests, avoiding length-based timing leaks
   const hmacKey = 'cron-secret-compare';
