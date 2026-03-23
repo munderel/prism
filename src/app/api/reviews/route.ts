@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { addMonths, addWeeks, nextSunday, startOfMonth } from 'date-fns';
+import { getNextReviewDate } from '@/lib/review-dates';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -77,22 +77,3 @@ export async function DELETE(request: NextRequest) {
   return Response.json({ success: true, deleted: result.count }, { status: 200 });
 }
 
-function getNextReviewDate(reviewType: string): Date {
-  const now = new Date();
-  switch (reviewType) {
-    case 'WEEKLY':
-      return nextSunday(now);
-    case 'MONTHLY':
-      return startOfMonth(addMonths(now, 1));
-    case 'QUARTERLY': {
-      const month = now.getMonth();
-      const nextQ = [3, 6, 9, 0].find((m) => m > month) ?? 3;
-      const year = nextQ === 3 && month >= 10 ? now.getFullYear() + 1 : now.getFullYear();
-      return new Date(year, nextQ === 0 ? 0 : nextQ, 1);
-    }
-    case 'YEARLY':
-      return new Date(now.getFullYear() + 1, 0, 1);
-    default:
-      return addWeeks(now, 1);
-  }
-}

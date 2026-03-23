@@ -38,11 +38,15 @@ export function computeLinkedProgress(links: LinkLike[]): number {
   return Math.round(weightedSum / totalWeight);
 }
 
+const MAX_CASCADE_DEPTH = 20;
+
 /**
  * Recompute a goal's progress from current DB state and persist it.
  * Then cascade upward to parent if one exists.
  */
-export async function cascadeProgressUp(goalId: string): Promise<void> {
+export async function cascadeProgressUp(goalId: string, depth = 0): Promise<void> {
+  if (depth > MAX_CASCADE_DEPTH) return;
+
   const goal = await prisma.goal.findUnique({
     where: { id: goalId },
     include: {
@@ -74,6 +78,6 @@ export async function cascadeProgressUp(goalId: string): Promise<void> {
   });
 
   if (goal.parentId) {
-    await cascadeProgressUp(goal.parentId);
+    await cascadeProgressUp(goal.parentId, depth + 1);
   }
 }

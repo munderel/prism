@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireCronSecret } from '@/lib/auth-guard';
 import { computeNextDueDate } from '@/lib/process-scheduler';
 
-export async function POST(request: NextRequest) {
+// Vercel crons only invoke GET, so export GET as the handler
+export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }

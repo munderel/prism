@@ -14,7 +14,7 @@ export default function DashboardPage() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
 
-  const { data: tasks, mutate } = useSWR(`/api/tasks?date=${today}`);
+  const { data: tasks, mutate } = useSWR(`/api/tasks?date=${today}&includeUnscheduled=true`);
   const list = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
   const stats = useMemo(() => ({

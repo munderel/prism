@@ -7,11 +7,11 @@ import { decryptToken } from './crypto';
  */
 export async function hasGoogleAccount(userId: string): Promise<boolean> {
   try {
-    const account = await prisma.account.findFirst({
-      where: { userId, provider: 'google' },
-      select: { id: true, refresh_token: true },
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { googleRefreshToken: true },
     });
-    return !!account?.refresh_token;
+    return !!user?.googleRefreshToken;
   } catch (err) {
     console.warn('[calendar] hasGoogleAccount check failed:', err);
     return false;
@@ -78,23 +78,32 @@ export async function deleteGoogleEvent(userId: string, eventId: string) {
  * Returns null if the user hasn't connected Google Calendar.
  */
 export async function getCalendarClient(userId: string) {
-  const account = await prisma.account.findFirst({
-    where: { userId, provider: 'google' },
+  // Read the encrypted refresh token from User model (not the plaintext Account copy)
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { googleRefreshToken: true },
   });
 
-  if (!account?.refresh_token) return null;
+  const account = await prisma.account.findFirst({
+    where: { userId, provider: 'google' },
+    select: { id: true, access_token: true, expires_at: true },
+  });
 
-  // Decrypt if encryption is enabled.
-  // Fallback handles migration: existing plaintext tokens won't decrypt successfully,
-  // so they pass through as-is. Log a warning so we can track migration progress.
-  let refreshToken = account.refresh_token;
+  if (!user?.googleRefreshToken || !account) return null;
+
+  // Decrypt the token if encryption is enabled
+  let refreshToken: string;
   if (process.env.TOKEN_ENCRYPTION_KEY) {
-    const decrypted = decryptToken(account.refresh_token);
+    const decrypted = decryptToken(user.googleRefreshToken);
     if (decrypted) {
       refreshToken = decrypted;
     } else {
+      // Fallback for pre-migration plaintext tokens
       console.warn(`[calendar] Failed to decrypt refresh token for user ${userId} — using as plaintext (pre-migration token?)`);
+      refreshToken = user.googleRefreshToken;
     }
+  } else {
+    refreshToken = user.googleRefreshToken;
   }
 
   const oauth2Client = new google.auth.OAuth2(

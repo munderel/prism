@@ -15,10 +15,19 @@ type Options = {
 export function rateLimit(options: Options) {
   const { interval, limit } = options;
   const tokens = new Map<string, { count: number; expiresAt: number }>();
+  let checkCount = 0;
 
   return {
     check(ip: string): RateLimitResult {
       const now = Date.now();
+
+      // Periodically evict expired entries to prevent memory leaks
+      if (++checkCount % 100 === 0) {
+        tokens.forEach((val, key) => {
+          if (now > val.expiresAt) tokens.delete(key);
+        });
+      }
+
       const record = tokens.get(ip);
 
       if (!record || now > record.expiresAt) {

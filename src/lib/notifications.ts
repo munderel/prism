@@ -92,8 +92,8 @@ export async function sendEmailNotification(
       subject,
       html,
     });
-  } catch {
-    // Silently fail — logging would go here
+  } catch (err) {
+    console.error('[notifications] Email send failed:', err instanceof Error ? err.message : err);
   }
 }
 

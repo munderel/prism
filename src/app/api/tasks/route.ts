@@ -24,23 +24,33 @@ export async function GET(request: NextRequest) {
     where.ownerId = auth.userId;
   }
 
+  const includeUnscheduled = searchParams.get('includeUnscheduled') === 'true';
+
   if (startDate && endDate) {
     // Date range mode: fetch tasks across multiple days
     const rangeStart = new Date(startDate);
     const rangeEnd = new Date(endDate);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
-    where.OR = [
-      { dueDate: { gte: rangeStart, lt: rangeEnd } },
-      { dueDate: null },
-    ];
+    if (includeUnscheduled) {
+      where.OR = [
+        { dueDate: { gte: rangeStart, lt: rangeEnd } },
+        { dueDate: null },
+      ];
+    } else {
+      where.dueDate = { gte: rangeStart, lt: rangeEnd };
+    }
   } else if (date) {
     const start = new Date(date);
     const end = new Date(date);
     end.setDate(end.getDate() + 1);
-    where.OR = [
-      { dueDate: { gte: start, lt: end } },
-      { dueDate: null },
-    ];
+    if (includeUnscheduled) {
+      where.OR = [
+        { dueDate: { gte: start, lt: end } },
+        { dueDate: null },
+      ];
+    } else {
+      where.dueDate = { gte: start, lt: end };
+    }
   }
 
   if (goalId) where.goalId = goalId;
