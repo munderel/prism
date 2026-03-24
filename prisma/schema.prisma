@@ -117,6 +117,11 @@ enum GoalStatus {
   ABANDONED
 }
 
+enum KpiType {
+  NUMERIC
+  BINARY
+}
+
 model Goal {
   id          String     @id @default(cuid())
   stackId     String
@@ -139,6 +144,7 @@ model Goal {
   companyGoalLinks   GoalLink[] @relation("CompanyGoal")
   individualGoalLinks GoalLink[] @relation("IndividualGoal")
   publicWins         PublicWin[]
+  kpis               Kpi[]
 
   @@index([stackId])
   @@index([parentId])
@@ -490,4 +496,28 @@ model ConfigVersion {
   createdBy User      @relation(fields: [createdById], references: [id])
 
   @@index([stackId])
+}
+
+model Kpi {
+  id          String    @id @default(cuid())
+  goalId      String
+  name        String
+  type        KpiType
+  unit        String?
+  targetValue Float?
+  actualValue Float?
+  isComplete  Boolean   @default(false)
+  completedAt DateTime?
+  sortOrder   Int       @default(0)
+  linkedKpiId String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  goal       Goal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  linkedKpi  Kpi?  @relation("KpiLink", fields: [linkedKpiId], references: [id])
+  linkedFrom Kpi[] @relation("KpiLink")
+
+  @@unique([goalId, name])
+  @@index([goalId])
+  @@index([linkedKpiId])
 }

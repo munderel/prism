@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { goalLimiter, getClientIp } from '@/lib/rate-limit';
 import { parseYamlToGoals, diffGoals, buildGoalTree, type GoalNode } from '@/lib/yaml-handler';
 import { cascadeProgressUp } from '@/lib/progress';
+import { cascadeKpiUpdate } from '@/lib/kpi-progress';
 import { validateGoalLevel } from '@/lib/goal-validation';
 
 const MAX_YAML_SIZE = 256 * 1024; // 256KB
@@ -60,9 +61,24 @@ export async function POST(request: NextRequest) {
   const currentDbGoals = await prisma.goal.findMany({
     where: { stackId, deletedAt: null },
     orderBy: { sortOrder: 'asc' },
+    include: {
+      kpis: {
+        orderBy: { sortOrder: 'asc' },
+        include: { linkedKpi: { select: { name: true } } },
+      },
+    },
   });
 
-  const currentTree = buildGoalTree(currentDbGoals);
+  // Annotate KPIs with linked name for diff comparison
+  const annotatedGoals = currentDbGoals.map((g: any) => ({
+    ...g,
+    kpis: g.kpis.map((k: any) => ({
+      ...k,
+      _linkedKpiName: k.linkedKpi?.name ?? undefined,
+    })),
+  }));
+
+  const currentTree = buildGoalTree(annotatedGoals);
   const diff = diffGoals(currentTree, incomingGoals);
 
   // Preview mode: return diff without applying
@@ -95,7 +111,35 @@ export async function POST(request: NextRequest) {
   }
 
   // Create new goals (walk the incoming tree, create those without IDs)
-  await createNewGoals(incomingGoals, stackId, null, null, { count: 0 }, 0, auth.userId);
+  // kpiLinkQueue collects weekly KPIs that need to be linked to monthly KPIs after creation
+  const kpiLinkQueue: { kpiId: string; parentGoalId: string; linkedToName: string }[] = [];
+  await createNewGoals(incomingGoals, stackId, null, null, { count: 0 }, 0, auth.userId, kpiLinkQueue);
+
+  // Resolve KPI links (two-pass: monthly KPIs created first, now link weekly KPIs)
+  for (const link of kpiLinkQueue) {
+    const monthlyKpi = await prisma.kpi.findFirst({
+      where: { goal: { id: link.parentGoalId }, name: link.linkedToName },
+    });
+    if (monthlyKpi) {
+      await prisma.kpi.update({
+        where: { id: link.kpiId },
+        data: { linkedKpiId: monthlyKpi.id },
+      });
+    }
+  }
+
+  // Recalculate monthly KPIs that have new linked weeklies
+  if (kpiLinkQueue.length > 0) {
+    const monthlyGoalIds = [...new Set(kpiLinkQueue.map((l) => l.parentGoalId))];
+    for (const goalId of monthlyGoalIds) {
+      const monthlyKpis = await prisma.kpi.findMany({
+        where: { goalId, linkedFrom: { some: {} } },
+      });
+      for (const mk of monthlyKpis) {
+        await cascadeKpiUpdate(mk.id);
+      }
+    }
+  }
 
   // Create ConfigVersion
   const maxVersion = await prisma.configVersion.findFirst({
@@ -109,7 +153,7 @@ export async function POST(request: NextRequest) {
       stackId,
       versionNum: (maxVersion?.versionNum ?? 0) + 1,
       yamlContent,
-      changeSummary: `${diff.added.length} added, ${diff.deleted.length} deleted, ${diff.modified.length} modified`,
+      changeSummary: `${diff.added.length} added, ${diff.deleted.length} deleted, ${diff.modified.length} modified, ${diff.kpiChanges.length} KPI changes`,
       createdById: auth.userId,
     },
   });
@@ -140,7 +184,8 @@ async function createNewGoals(
   parentLevel: string | null = null,
   counter = { count: 0 },
   depth = 0,
-  ownerId: string | null = null
+  ownerId: string | null = null,
+  kpiLinkQueue: { kpiId: string; parentGoalId: string; linkedToName: string }[] = []
 ) {
   if (depth > MAX_IMPORT_DEPTH) {
     throw new Error('Import exceeds maximum nesting depth');
@@ -194,13 +239,44 @@ async function createNewGoals(
         }
       }
 
+      // Create KPIs for this goal
+      if (node.kpis?.length) {
+        const kpiLevel = node.level;
+        const isMonthlyOrAbove = ['STRATEGIC', 'MONTHLY'].includes(kpiLevel);
+        for (let ki = 0; ki < node.kpis.length; ki++) {
+          const kpiNode = node.kpis[ki];
+          const createdKpi = await prisma.kpi.create({
+            data: {
+              goalId: created.id,
+              name: kpiNode.name,
+              type: (kpiNode.type?.toUpperCase() ?? 'NUMERIC') as any,
+              unit: kpiNode.unit ?? null,
+              targetValue: kpiNode.target ?? null,
+              actualValue: kpiNode.actual ?? null,
+              isComplete: kpiNode.complete ?? false,
+              completedAt: kpiNode.complete ? new Date() : null,
+              sortOrder: ki,
+            },
+          });
+
+          // Queue link resolution for weekly KPIs
+          if (kpiNode.linked_to && !isMonthlyOrAbove && parentId) {
+            kpiLinkQueue.push({
+              kpiId: createdKpi.id,
+              parentGoalId: parentId,
+              linkedToName: kpiNode.linked_to,
+            });
+          }
+        }
+      }
+
       // Recurse for children of this new goal
       if (node.children?.length) {
-        await createNewGoals(node.children, stackId, created.id, node.level, counter, depth + 1, ownerId);
+        await createNewGoals(node.children, stackId, created.id, node.level, counter, depth + 1, ownerId, kpiLinkQueue);
       }
     } else if (node.children?.length) {
       // Existing goal — recurse into children to find new ones
-      await createNewGoals(node.children, stackId, node.id, node.level, counter, depth + 1, ownerId);
+      await createNewGoals(node.children, stackId, node.id, node.level, counter, depth + 1, ownerId, kpiLinkQueue);
     }
   }
 }
