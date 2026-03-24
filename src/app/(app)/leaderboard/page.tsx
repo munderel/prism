@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Trophy, Flame, CheckCircle2, Star } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 
 export default function LeaderboardPage() {
   const [data, setData] = useState<any>({ leaderboard: [], publicWins: [] });
@@ -30,7 +30,7 @@ export default function LeaderboardPage() {
         {/* Rankings */}
         <div className="lg:col-span-2 space-y-3">
           {data.leaderboard.map((user: any, i: number) => (
-            <motion.div
+            <m.div
               key={user.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -70,7 +70,7 @@ export default function LeaderboardPage() {
               </div>
 
               <span className="text-lg font-bold text-indigo-400">{user.score}</span>
-            </motion.div>
+            </m.div>
           ))}
         </div>
 
@@ -83,7 +83,7 @@ export default function LeaderboardPage() {
             </h3>
             <div className="space-y-3">
               {data.publicWins.map((win: any) => (
-                <motion.div
+                <m.div
                   key={win.id}
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -104,7 +104,7 @@ export default function LeaderboardPage() {
                   <p className="text-xs text-gray-600 mt-1">
                     {new Date(win.createdAt).toLocaleDateString()}
                   </p>
-                </motion.div>
+                </m.div>
               ))}
               {data.publicWins.length === 0 && (
                 <p className="text-xs text-gray-600">No wins yet. Complete tasks to earn them!</p>

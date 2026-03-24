@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 import { Flame } from 'lucide-react';
 
 interface StreakCounterProps {
@@ -24,7 +24,7 @@ export function StreakCounter({ streakType = 'daily_completion', atRisk = false 
   const count = streak?.currentCount ?? 0;
 
   return (
-    <motion.div
+    <m.div
       className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
         atRisk
           ? 'border-orange-600/30 bg-orange-600/10'
@@ -35,23 +35,23 @@ export function StreakCounter({ streakType = 'daily_completion', atRisk = false 
       animate={atRisk ? { scale: [1, 1.02, 1] } : {}}
       transition={atRisk ? { repeat: Infinity, duration: 1.5 } : {}}
     >
-      <motion.div
+      <m.div
         animate={count > 0 ? { rotate: [-5, 5, -5] } : {}}
         transition={{ repeat: Infinity, duration: 0.5 }}
       >
         <Flame className={`h-5 w-5 ${atRisk ? 'text-orange-400' : count > 0 ? 'text-yellow-400' : 'text-gray-600'}`} />
-      </motion.div>
+      </m.div>
       <div>
-        <motion.span
+        <m.span
           key={count}
           initial={{ scale: 1.5 }}
           animate={{ scale: 1 }}
           className="text-lg font-bold text-white"
         >
           {count}
-        </motion.span>
+        </m.span>
         <span className="text-xs text-gray-500 ml-1">day streak</span>
       </div>
-    </motion.div>
+    </m.div>
   );
 }

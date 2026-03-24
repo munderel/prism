@@ -1,5 +1,13 @@
 import yaml from 'js-yaml';
 
+export interface TaskNode {
+  title: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  dueDate?: string;
+}
+
 export interface GoalNode {
   id?: string;
   level: string;
@@ -8,6 +16,7 @@ export interface GoalNode {
   status: string;
   dueDate?: string;
   children?: GoalNode[];
+  tasks?: TaskNode[];
 }
 
 export interface YamlMeta {
@@ -57,6 +66,17 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
   if (node.status && node.status !== 'NOT_STARTED') obj.status = node.status;
   if (node.dueDate) obj.date = node.dueDate;
 
+  if (node.tasks?.length) {
+    obj.tasks = node.tasks.map((t) => {
+      const tObj: Record<string, any> = { title: t.title };
+      if (t.description) tObj.description = t.description;
+      if (t.status && t.status !== 'TODO') tObj.status = t.status;
+      if (t.priority && t.priority !== 'MEDIUM') tObj.priority = t.priority;
+      if (t.dueDate) tObj.date = t.dueDate;
+      return tObj;
+    });
+  }
+
   const childKey = LEVEL_TO_CHILD_KEY[node.level];
   if (childKey && node.children?.length) {
     obj[childKey] = node.children.map(goalToSemanticObj);
@@ -78,6 +98,16 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
   if (obj.id) node.id = obj.id;
   if (obj.description) node.description = obj.description;
   if (obj.date) node.dueDate = obj.date;
+
+  if (obj.tasks && Array.isArray(obj.tasks)) {
+    node.tasks = obj.tasks.map((t: any) => ({
+      title: t.title,
+      description: t.description,
+      status: t.status ?? 'TODO',
+      priority: t.priority ?? 'MEDIUM',
+      dueDate: t.date,
+    }));
+  }
 
   const childKey = LEVEL_TO_CHILD_KEY[level];
   if (childKey && obj[childKey]) {

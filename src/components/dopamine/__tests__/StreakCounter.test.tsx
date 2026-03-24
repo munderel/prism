@@ -3,9 +3,9 @@ import { screen, waitFor } from '@testing-library/react';
 import { render, createMockFetch } from '@/test/utils';
 import { StreakCounter } from '../StreakCounter';
 
-// Mock framer-motion so motion.div/span render as plain elements
+// Mock framer-motion so m.div/span render as plain elements
 vi.mock('framer-motion', () => ({
-  motion: {
+  m: {
     div: ({ children, ...props }: any) => {
       const { animate, transition, whileHover, whileTap, initial, exit, ...rest } = props;
       return <div {...rest}>{children}</div>;

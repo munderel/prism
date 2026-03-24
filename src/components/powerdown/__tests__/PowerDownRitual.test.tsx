@@ -3,9 +3,9 @@ import { screen, waitFor } from '@testing-library/react';
 import { render, userEvent, createMockFetch } from '@/test/utils';
 import { PowerDownRitual } from '../PowerDownRitual';
 
-// Mock framer-motion so motion.div / AnimatePresence render children
+// Mock framer-motion so m.div / AnimatePresence render children
 vi.mock('framer-motion', () => ({
-  motion: {
+  m: {
     div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
   },
   AnimatePresence: ({ children }: any) => <>{children}</>,
