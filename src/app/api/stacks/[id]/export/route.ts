@@ -30,9 +30,24 @@ export async function GET(
   const goals = await prisma.goal.findMany({
     where: { stackId: id, deletedAt: null },
     orderBy: { sortOrder: 'asc' },
+    include: {
+      kpis: {
+        orderBy: { sortOrder: 'asc' },
+        include: { linkedKpi: { select: { name: true } } },
+      },
+    },
   });
 
-  const tree = buildGoalTree(goals);
+  // Annotate KPIs with linked KPI name for YAML export
+  const annotatedGoals = goals.map((g: any) => ({
+    ...g,
+    kpis: g.kpis.map((k: any) => ({
+      ...k,
+      _linkedKpiName: k.linkedKpi?.name ?? undefined,
+    })),
+  }));
+
+  const tree = buildGoalTree(annotatedGoals);
 
   // Build meta section per spec
   const meta: YamlMeta = {
