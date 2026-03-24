@@ -36,3 +36,26 @@ export function getChildLevel(
 ): GoalLevel | null {
   return VALID_CHILD[parentLevel as GoalLevel] ?? null;
 }
+
+// KPI validation
+
+export const KPI_ALLOWED_LEVELS: GoalLevel[] = ['STRATEGIC', 'MONTHLY', 'WEEKLY'];
+
+export function validateKpiLevel(goalLevel: GoalLevel | string): boolean {
+  return KPI_ALLOWED_LEVELS.includes(goalLevel as GoalLevel);
+}
+
+export function validateKpiLink(
+  weeklyGoalLevel: GoalLevel | string,
+  weeklyGoalParentId: string | null,
+  monthlyKpiGoalId: string,
+  monthlyKpiGoalLevel: GoalLevel | string,
+  weeklyKpiType: string,
+  monthlyKpiType: string
+): boolean {
+  if (weeklyGoalLevel !== 'WEEKLY') return false;
+  if (monthlyKpiGoalLevel !== 'MONTHLY') return false;
+  if (weeklyGoalParentId !== monthlyKpiGoalId) return false;
+  if (weeklyKpiType !== monthlyKpiType) return false;
+  return true;
+}

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, Plus, Link, ChevronDown } from 'lucide-react';
+import { Pencil, Trash2, Plus, Link, ChevronDown, BarChart3 } from 'lucide-react';
 import { GoalProgressBar } from './GoalProgressBar';
 
 const levelColors: Record<string, string> = {
@@ -44,6 +44,7 @@ interface GoalCardProps {
   onDelete: (goalId: string) => void;
   onAddChild: (parentGoal: any) => void;
   onStatusChange?: (goalId: string, status: string) => void;
+  onKpiClick?: (goal: any) => void;
   isCompanyStack?: boolean;
   isAdmin?: boolean;
   hasLinks?: boolean;
@@ -56,6 +57,7 @@ export const GoalCard = React.memo(function GoalCard({
   onDelete,
   onAddChild,
   onStatusChange,
+  onKpiClick,
 }: GoalCardProps) {
   const canAddChild = goal.level !== 'DAILY';
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -134,6 +136,15 @@ export const GoalCard = React.memo(function GoalCard({
             </div>
             {goal.companyGoalLinks?.length > 0 && (
               <Link className="h-3 w-3 text-indigo-400" />
+            )}
+            {goal._count?.kpis > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onKpiClick?.(goal); }}
+                className="inline-flex items-center gap-1 rounded-md border border-indigo-600/30 bg-indigo-600/20 px-2 py-0.5 text-xs font-medium text-indigo-400 hover:bg-indigo-600/30 transition-colors"
+              >
+                <BarChart3 className="h-3 w-3" />
+                {goal._count.kpis} KPI{goal._count.kpis !== 1 ? 's' : ''}
+              </button>
             )}
           </div>
           <div className="mt-1 max-w-xs">

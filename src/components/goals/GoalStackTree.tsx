@@ -23,6 +23,7 @@ import { AnimatePresence } from 'framer-motion';
 import React from 'react';
 import { GoalCard } from './GoalCard';
 import { GoalEditor } from './GoalEditor';
+import { KpiSidebar } from './KpiSidebar';
 
 interface GoalStackTreeProps {
   stackId: string;
@@ -52,6 +53,7 @@ function SortableGoalCard({
   onDelete,
   onAddChild,
   onStatusChange,
+  onKpiClick,
   isCompanyStack,
   isAdmin,
 }: {
@@ -60,6 +62,7 @@ function SortableGoalCard({
   onDelete: (goalId: string) => void;
   onAddChild: (goal: any) => void;
   onStatusChange: (goalId: string, status: string) => void;
+  onKpiClick: (goal: any) => void;
   isCompanyStack: boolean;
   isAdmin: boolean;
 }) {
@@ -87,6 +90,7 @@ function SortableGoalCard({
         onDelete={onDelete}
         onAddChild={onAddChild}
         onStatusChange={onStatusChange}
+        onKpiClick={onKpiClick}
         isCompanyStack={isCompanyStack}
         isAdmin={isAdmin}
         hasLinks={item.goal.companyGoalLinks?.length > 0}
@@ -120,6 +124,8 @@ export function GoalStackTree({
     }
     return flattenTree(roots);
   }, [goalsData]);
+
+  const [selectedGoalForKpi, setSelectedGoalForKpi] = useState<any>(null);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<{
@@ -181,6 +187,10 @@ export function GoalStackTree({
     mutateGoals();
   }, [mutateGoals]);
 
+  const handleKpiClick = useCallback((goal: any) => {
+    setSelectedGoalForKpi((prev: any) => prev?.id === goal.id ? null : goal);
+  }, []);
+
   const handleAddRoot = useCallback(() => {
     setEditorState({ open: true });
   }, []);
@@ -199,7 +209,8 @@ export function GoalStackTree({
   }
 
   return (
-    <div>
+    <div className="flex gap-4">
+      <div className="flex-1 min-w-0">
       <div className="mb-4 flex justify-end">
         <button
           onClick={handleAddRoot}
@@ -240,6 +251,7 @@ export function GoalStackTree({
                     onDelete={handleDelete}
                     onAddChild={handleAddChild}
                     onStatusChange={handleStatusChange}
+                    onKpiClick={handleKpiClick}
                     isCompanyStack={isCompanyStack}
                     isAdmin={isAdmin}
                   />
@@ -273,6 +285,19 @@ export function GoalStackTree({
           onClose={() => setEditorState({ open: false })}
         />
       )}
+      </div>
+
+      <AnimatePresence>
+        {selectedGoalForKpi && (
+          <KpiSidebar
+            goalId={selectedGoalForKpi.id}
+            goalTitle={selectedGoalForKpi.title}
+            goalLevel={selectedGoalForKpi.level}
+            parentGoalId={selectedGoalForKpi.parentId}
+            onClose={() => setSelectedGoalForKpi(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

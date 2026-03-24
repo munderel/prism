@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
     include: {
       children: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } },
       tasks: { select: { id: true, status: true } },
+      _count: { select: { kpis: true } },
       companyGoalLinks: {
         include: {
           individualGoal: {
