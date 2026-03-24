@@ -111,8 +111,8 @@ export default function ReviewsPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <ClipboardCheck className="h-6 w-6 text-indigo-400" />
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+          <ClipboardCheck className="h-6 w-6 text-prism-indigo" />
           Reviews
         </h1>
       </div>
@@ -158,7 +158,7 @@ export default function ReviewsPage() {
           )}
 
           {/* Set Up Cadences */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+          <div className="glass-panel p-4">
             <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
               <CalendarClock className="h-4 w-4 text-indigo-400" />
               Review Cadences
@@ -206,7 +206,7 @@ export default function ReviewsPage() {
           </div>
 
           {/* Quick create buttons */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+          <div className="glass-panel p-4">
             <h3 className="text-sm font-semibold text-white mb-3">Schedule Review</h3>
             <div className="grid grid-cols-2 gap-2">
               {REVIEW_TYPES.map((type) => (
@@ -223,7 +223,7 @@ export default function ReviewsPage() {
           </div>
 
           {/* Pending reviews */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+          <div className="glass-panel p-4">
             <h3 className="text-sm font-semibold text-white mb-3">
               Pending ({pendingReviews.length})
             </h3>
@@ -264,7 +264,7 @@ export default function ReviewsPage() {
           </div>
 
           {/* Completed reviews */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+          <div className="glass-panel p-4">
             <h3 className="text-sm font-semibold text-white mb-3">
               Completed ({completedReviews.length})
             </h3>
@@ -290,7 +290,7 @@ export default function ReviewsPage() {
               }}
             />
           ) : (
-            <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-12 text-center">
+            <div className="glass-panel p-12 text-center">
               <p className="text-gray-600">Select a review to begin</p>
             </div>
           )}

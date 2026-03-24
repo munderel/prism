@@ -322,8 +322,8 @@ export default function ProcessesPage() {
     <div>
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <ListChecks className="h-6 w-6 text-indigo-400" />
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+          <ListChecks className="h-6 w-6 text-prism-indigo" />
           Processes
         </h1>
         {isAdmin && (
@@ -348,7 +348,7 @@ export default function ProcessesPage() {
 
       {/* Import JSON panel */}
       {showImport && isAdmin && (
-        <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+        <div className="mb-6 glass-panel p-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-white">Import from JSON</h3>
             <button onClick={() => { setShowImport(false); setImportError(''); }} className="text-gray-500 hover:text-white">
@@ -376,7 +376,7 @@ export default function ProcessesPage() {
 
       {/* Add Function form */}
       {showAddFunction && isAdmin && (
-        <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+        <div className="mb-6 glass-panel p-4">
           <h3 className="text-sm font-semibold text-white mb-3">New Business Function</h3>
           <div className="space-y-3">
             <input
@@ -421,7 +421,7 @@ export default function ProcessesPage() {
 
       {/* Functions list */}
       {functions.map((fn) => (
-        <details key={fn.id} className="mb-4 rounded-xl border border-gray-800 bg-gray-900/50 overflow-hidden" open>
+        <details key={fn.id} className="mb-4 glass-panel overflow-hidden" open>
           <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-800/50 transition-colors list-none">
             <div className="flex items-center gap-3">
               <ChevronRight className="h-4 w-4 text-gray-500 details-open-rotate" />
@@ -738,7 +738,7 @@ export default function ProcessesPage() {
 
                       <ol className="space-y-2">
                         {expandedProcessData.steps?.map((step: Step, idx: number) => (
-                          <li key={step.id} className="flex items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/50 p-3">
+                          <li key={step.id} className="flex items-start gap-3 glass-panel p-3">
                             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600/20 text-xs font-medium text-indigo-400">
                               {idx + 1}
                             </span>

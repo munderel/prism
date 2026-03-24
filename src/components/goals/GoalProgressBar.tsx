@@ -9,13 +9,6 @@ interface GoalProgressBarProps {
   showLabel?: boolean;
 }
 
-function getProgressColor(progress: number): string {
-  if (progress <= 25) return 'bg-red-500';
-  if (progress <= 50) return 'bg-yellow-500';
-  if (progress <= 75) return 'bg-blue-500';
-  return 'bg-green-500';
-}
-
 const sizeClasses = {
   sm: 'h-1.5',
   md: 'h-2.5',
@@ -28,12 +21,18 @@ export const GoalProgressBar = React.memo(function GoalProgressBar({
   showLabel = false,
 }: GoalProgressBarProps) {
   const clamped = Math.min(100, Math.max(0, progress));
+  const isActive = clamped > 0 && clamped < 100;
 
   return (
     <div className="flex items-center gap-2">
-      <div className={`flex-1 rounded-full bg-gray-800 ${sizeClasses[size]}`}>
+      <div className={`flex-1 rounded-full bg-white/[0.06] ${sizeClasses[size]}`}>
         <m.div
-          className={`${sizeClasses[size]} rounded-full ${getProgressColor(clamped)}`}
+          className={`${sizeClasses[size]} rounded-full bg-gradient-to-r from-prism-rose via-prism-amber to-prism-teal relative ${
+            isActive ? 'progress-shimmer' : ''
+          }`}
+          style={{
+            boxShadow: clamped > 0 ? '0 0 8px rgba(99, 102, 241, 0.3)' : 'none',
+          }}
           initial={{ width: 0 }}
           animate={{ width: `${clamped}%` }}
           transition={{ duration: 0.5, ease: 'easeOut' }}

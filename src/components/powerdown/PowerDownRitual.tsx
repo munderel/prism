@@ -156,7 +156,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
           </div>
 
           {/* Step content */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+          <div className="glass-panel p-6">
             {currentStep === 1 && (
               <div className="space-y-2">
                 <p className="text-sm text-gray-400 mb-3">

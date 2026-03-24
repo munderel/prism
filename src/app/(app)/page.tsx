@@ -1,15 +1,16 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
-import { useSession } from 'next-auth/react';
+import { useCallback, useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { LayoutDashboard, Plus, CheckCircle2, Clock, AlertTriangle, Zap } from 'lucide-react';
+import { Clock, CheckCircle2, Zap, AlertTriangle } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
-import { useState } from 'react';
+import { DashboardGreeting } from '@/components/dashboard/DashboardGreeting';
+import { PrismStatCard } from '@/components/dashboard/PrismStatCard';
+import { GoalProgressSummary } from '@/components/dashboard/GoalProgressSummary';
+import { WeeklySparkline } from '@/components/dashboard/WeeklySparkline';
 
 export default function DashboardPage() {
-  const { data: session } = useSession();
   const today = new Date().toISOString().split('T')[0];
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
@@ -44,53 +45,33 @@ export default function DashboardPage() {
   }, [mutate]);
 
   const statCards = [
-    { label: 'Total Tasks', value: stats.total, icon: Clock, color: 'text-blue-400' },
-    { label: 'Completed', value: stats.done, icon: CheckCircle2, color: 'text-green-400' },
-    { label: 'In Progress', value: stats.inProgress, icon: Zap, color: 'text-yellow-400' },
-    { label: 'Urgent', value: stats.urgent, icon: AlertTriangle, color: 'text-red-400' },
+    { label: 'Total Tasks', value: stats.total, icon: Clock, color: 'text-blue-400', glowColor: '#3b82f6' },
+    { label: 'Completed', value: stats.done, icon: CheckCircle2, color: 'text-green-400', glowColor: '#22c55e' },
+    { label: 'In Progress', value: stats.inProgress, icon: Zap, color: 'text-yellow-400', glowColor: '#eab308' },
+    { label: 'Urgent', value: stats.urgent, icon: AlertTriangle, color: 'text-red-400', glowColor: '#ef4444' },
   ];
 
   return (
     <div>
-      {/* Welcome header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <LayoutDashboard className="h-6 w-6 text-indigo-400" />
-            Dashboard
-          </h1>
-          <p className="text-gray-500 mt-1">
-            Welcome back{session?.user?.name ? `, ${session.user.name}` : ''}. Here&apos;s your day.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowEditor(true)}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Quick Add
-        </button>
-      </div>
+      {/* Greeting + streak + quick add */}
+      <DashboardGreeting onQuickAdd={() => setShowEditor(true)} />
 
-      {/* Stats cards */}
+      {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {statCards.map(({ label, value, icon: Icon, color }) => (
-          <div
-            key={label}
-            className="rounded-xl border border-gray-800 bg-gray-900/50 p-4"
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <Icon className={`h-4 w-4 ${color}`} />
-              <span className="text-xs text-gray-500">{label}</span>
-            </div>
-            <span className="text-2xl font-bold text-white">{value}</span>
-          </div>
+        {statCards.map((card) => (
+          <PrismStatCard key={card.label} {...card} />
         ))}
       </div>
 
+      {/* Goal progress summary */}
+      <GoalProgressSummary />
+
+      {/* Weekly completion trend */}
+      <WeeklySparkline />
+
       {/* Today's tasks */}
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-white mb-4">Today&apos;s Tasks</h2>
+        <h2 className="font-display text-lg font-semibold text-white mb-4">Today&apos;s Tasks</h2>
         <DailyTaskList
           date={today}
           onEdit={handleEdit}
