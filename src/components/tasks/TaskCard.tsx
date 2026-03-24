@@ -39,7 +39,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
       className="group"
     >
       <div
-        className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900/50 px-4 py-3 hover:border-gray-700 transition-colors cursor-pointer"
+        className="flex items-center gap-3 glass-panel px-4 py-3 hover:border-gray-700 transition-colors cursor-pointer"
         onClick={() => onClick?.(task)}
       >
         {/* Checkbox */}

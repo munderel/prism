@@ -69,8 +69,8 @@ export default function GoalsPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Target className="h-6 w-6 text-indigo-400" />
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+          <Target className="h-6 w-6 text-prism-indigo" />
           Goal Stack
         </h1>
         {selectedStack && (
@@ -95,8 +95,8 @@ export default function GoalsPage() {
             onClick={() => setSelectedStackId(stack.id)}
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               selectedStackId === stack.id
-                ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
-                : 'text-gray-400 border border-gray-800 hover:border-gray-700 hover:text-white'
+                ? 'bg-prism-indigo/15 text-prism-indigo border border-prism-indigo/25'
+                : 'text-gray-400 border border-white/[0.06] hover:border-white/[0.1] hover:text-white'
             }`}
           >
             {stack.isCompany ? (
@@ -118,7 +118,7 @@ export default function GoalsPage() {
 
       {/* Inline create form */}
       {showCreateForm && (
-        <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+        <div className="mb-6 glass-panel p-4">
           <h3 className="text-sm font-semibold text-white mb-3">Create New Stack</h3>
           <div className="flex items-center gap-3">
             <input
@@ -131,7 +131,7 @@ export default function GoalsPage() {
                 if (e.key === 'Enter') handleSubmitCreate();
                 if (e.key === 'Escape') { setShowCreateForm(false); setNewStackName(''); }
               }}
-              className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+              className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-prism-indigo focus:outline-none"
             />
             <button
               onClick={handleSubmitCreate}

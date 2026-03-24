@@ -114,7 +114,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop }: Cal
       </div>
 
       {/* Calendar */}
-      <div className="fc-dark-theme rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+      <div className="fc-dark-theme glass-panel p-4">
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}

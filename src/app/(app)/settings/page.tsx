@@ -199,8 +199,8 @@ export default function SettingsPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Settings className="h-6 w-6 text-indigo-400" />
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+          <Settings className="h-6 w-6 text-prism-indigo" />
           Settings
         </h1>
       </div>
@@ -217,7 +217,7 @@ export default function SettingsPage() {
 
       <div className="space-y-6 max-w-2xl">
         {/* MTP */}
-        <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+        <section className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Compass className="h-5 w-5 text-indigo-400" />
             Massively Transformative Purpose
@@ -236,7 +236,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Timezone */}
-        <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+        <section className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Globe className="h-5 w-5 text-indigo-400" />
             Timezone
@@ -253,7 +253,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Notifications */}
-        <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+        <section className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Bell className="h-5 w-5 text-indigo-400" />
             Notifications
@@ -284,7 +284,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Onboarding */}
-        <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+        <section className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-white mb-4">Onboarding Tour</h2>
           <button
             onClick={retriggerOnboarding}
@@ -297,7 +297,7 @@ export default function SettingsPage() {
 
         {/* Company MTP (admin only) */}
         {isAdmin && (
-          <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+          <section className="glass-panel p-6">
             <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               <Compass className="h-5 w-5 text-purple-400" />
               Company MTP (Admin)
@@ -318,7 +318,7 @@ export default function SettingsPage() {
 
         {/* Admin panel */}
         {isAdmin && (
-          <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+          <section className="glass-panel p-6">
             <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               <Shield className="h-5 w-5 text-red-400" />
               Admin Panel
@@ -359,7 +359,7 @@ export default function SettingsPage() {
 
         {/* Create User (Dev mode only) */}
         {isAdmin && isDevMode && (
-          <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+          <section className="glass-panel p-6">
             <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               <UserPlus className="h-5 w-5 text-green-400" />
               Create User (Dev)
@@ -401,7 +401,7 @@ export default function SettingsPage() {
 
         {/* Invite User */}
         {isAdmin && (
-          <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+          <section className="glass-panel p-6">
             <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               <Mail className="h-5 w-5 text-indigo-400" />
               Invite User

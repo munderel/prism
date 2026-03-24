@@ -82,7 +82,7 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
   if (loading) return <div className="text-gray-500 text-sm">Loading links...</div>;
 
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+    <div className="glass-panel p-4">
       <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
         <Link className="h-4 w-4 text-indigo-400" />
         Linked Individual Goals

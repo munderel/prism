@@ -81,8 +81,8 @@ export default function ReportsPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <BarChart3 className="h-6 w-6 text-indigo-400" />
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+          <BarChart3 className="h-6 w-6 text-prism-indigo" />
           Reports
         </h1>
         <div className="flex gap-2">
@@ -120,7 +120,7 @@ export default function ReportsPage() {
           </div>
 
           {/* By type chart */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+          <div className="glass-panel p-6">
             <h3 className="text-sm font-semibold text-white mb-4">Tasks by Type</h3>
             <RechartsBar
               data={(report.byType ?? []).map((t: any) => ({
@@ -132,14 +132,14 @@ export default function ReportsPage() {
           </div>
 
           {/* Task Type Breakdown */}
-          <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+          <section className="glass-panel p-6">
             <h2 className="text-sm font-semibold text-white mb-4">Task Type Breakdown</h2>
             <RechartsPie data={(report.byType ?? []).map((t: any) => ({ name: t.type.replace('_', ' '), value: t.total }))} />
           </section>
 
           {/* Daily Completion Trend */}
           {report.dailyCompletion && (
-            <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+            <section className="glass-panel p-6">
               <h2 className="text-sm font-semibold text-white mb-4">Daily Completion Trend</h2>
               <RechartsLine data={report.dailyCompletion} />
             </section>
@@ -154,7 +154,7 @@ export default function ReportsPage() {
           </div>
 
           {/* Per-person */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+          <div className="glass-panel p-6">
             <h3 className="text-sm font-semibold text-white mb-4">Per Person</h3>
             <RechartsBar
               data={(report.perPerson ?? []).map((p: any) => ({
@@ -166,7 +166,7 @@ export default function ReportsPage() {
 
           {/* Leverage analysis */}
           {(report.leverageAnalysis ?? []).length > 0 && (
-            <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+            <div className="glass-panel p-6">
               <h3 className="text-sm font-semibold text-white mb-4">Maintenance Leverage</h3>
               <div className="space-y-2">
                 {(report.leverageAnalysis ?? []).map((item: any, i: number) => (
@@ -195,7 +195,7 @@ export default function ReportsPage() {
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+    <div className="glass-panel p-4">
       <p className="text-xs text-gray-500 mb-1">{label}</p>
       <p className="text-2xl font-bold text-white">{value}</p>
     </div>

@@ -10,8 +10,8 @@ export default function PowerDownPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Moon className="h-6 w-6 text-indigo-400" />
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+          <Moon className="h-6 w-6 text-prism-indigo" />
           Power Down Ritual
         </h1>
         <p className="text-gray-500 text-sm mt-1">
