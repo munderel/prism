@@ -8,6 +8,17 @@ export interface TaskNode {
   dueDate?: string;
 }
 
+export interface KpiNode {
+  name: string;
+  type: string;
+  unit?: string;
+  target?: number;
+  actual?: number;
+  complete?: boolean;
+  completed_at?: string;
+  linked_to?: string;
+}
+
 export interface GoalNode {
   id?: string;
   level: string;
@@ -17,6 +28,7 @@ export interface GoalNode {
   dueDate?: string;
   children?: GoalNode[];
   tasks?: TaskNode[];
+  kpis?: KpiNode[];
 }
 
 export interface YamlMeta {
@@ -33,10 +45,18 @@ export interface GoalDiffChange {
   to: any;
 }
 
+export interface KpiDiffEntry {
+  goalTitle: string;
+  added: { name: string; type: string }[];
+  removed: { name: string; type: string }[];
+  modified: { name: string; changes: Record<string, GoalDiffChange> }[];
+}
+
 export interface GoalDiff {
   added: GoalNode[];
   deleted: { id: string; title: string }[];
   modified: { id: string; title: string; changes: Record<string, GoalDiffChange> }[];
+  kpiChanges: KpiDiffEntry[];
 }
 
 // Maps GoalLevel to YAML child key name
@@ -77,6 +97,19 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
     });
   }
 
+  if (node.kpis?.length) {
+    obj.kpis = node.kpis.map((k) => {
+      const kObj: Record<string, any> = { name: k.name, type: k.type.toLowerCase() };
+      if (k.unit) kObj.unit = k.unit;
+      if (k.target != null) kObj.target = k.target;
+      if (k.actual != null) kObj.actual = k.actual;
+      if (k.complete) kObj.complete = k.complete;
+      if (k.completed_at) kObj.completed_at = k.completed_at;
+      if (k.linked_to) kObj.linked_to = k.linked_to;
+      return kObj;
+    });
+  }
+
   const childKey = LEVEL_TO_CHILD_KEY[node.level];
   if (childKey && node.children?.length) {
     obj[childKey] = node.children.map(goalToSemanticObj);
@@ -106,6 +139,19 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
       status: t.status ?? 'TODO',
       priority: t.priority ?? 'MEDIUM',
       dueDate: t.date,
+    }));
+  }
+
+  if (obj.kpis && Array.isArray(obj.kpis)) {
+    node.kpis = obj.kpis.map((k: any) => ({
+      name: k.name,
+      type: (k.type ?? 'numeric').toUpperCase(),
+      unit: k.unit,
+      target: k.target,
+      actual: k.actual,
+      complete: k.complete,
+      completed_at: k.completed_at,
+      linked_to: k.linked_to,
     }));
   }
 
@@ -166,7 +212,7 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
   const roots: GoalNode[] = [];
 
   for (const g of goals) {
-    map.set(g.id, {
+    const node: GoalNode = {
       id: g.id,
       level: g.level,
       title: g.title,
@@ -174,7 +220,23 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
       status: g.status,
       dueDate: g.dueDate?.toISOString?.() ?? (typeof g.dueDate === 'string' ? g.dueDate : undefined),
       children: [],
-    });
+    };
+
+    // Include KPIs if present on DB record
+    if (g.kpis?.length) {
+      node.kpis = g.kpis.map((k: any) => ({
+        name: k.name,
+        type: k.type,
+        unit: k.unit ?? undefined,
+        target: k.targetValue ?? undefined,
+        actual: k.actualValue ?? undefined,
+        complete: k.type === 'BINARY' ? k.isComplete : undefined,
+        completed_at: k.completedAt?.toISOString?.() ?? undefined,
+        linked_to: k._linkedKpiName ?? undefined,
+      }));
+    }
+
+    map.set(g.id, node);
   }
 
   for (const g of goals) {
@@ -224,6 +286,7 @@ function collectNewGoals(nodes: GoalNode[]): GoalNode[] {
 }
 
 const DIFF_FIELDS: (keyof GoalNode)[] = ['title', 'description', 'status', 'level', 'dueDate'];
+const KPI_DIFF_FIELDS: (keyof KpiNode)[] = ['type', 'unit', 'target', 'actual', 'complete'];
 
 export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
   const currentMap = flattenGoals(current);
@@ -256,5 +319,61 @@ export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
     }
   });
 
-  return { added, deleted, modified };
+  // Compute KPI-level diffs for goals that exist in both trees
+  const kpiChanges: KpiDiffEntry[] = [];
+  Array.from(incomingMap.entries()).forEach(([id, incomingNode]) => {
+    const currentNode = currentMap.get(id);
+    if (!currentNode) return;
+
+    const currentKpis = currentNode.kpis ?? [];
+    const incomingKpis = incomingNode.kpis ?? [];
+    if (currentKpis.length === 0 && incomingKpis.length === 0) return;
+
+    const currentByName = new Map(currentKpis.map((k) => [k.name, k]));
+    const incomingByName = new Map(incomingKpis.map((k) => [k.name, k]));
+
+    const addedKpis: { name: string; type: string }[] = [];
+    const removedKpis: { name: string; type: string }[] = [];
+    const modifiedKpis: { name: string; changes: Record<string, GoalDiffChange> }[] = [];
+
+    Array.from(incomingByName.entries()).forEach(([name, kpi]) => {
+      if (!currentByName.has(name)) {
+        addedKpis.push({ name, type: kpi.type });
+      }
+    });
+
+    Array.from(currentByName.entries()).forEach(([name, kpi]) => {
+      if (!incomingByName.has(name)) {
+        removedKpis.push({ name, type: kpi.type });
+      }
+    });
+
+    Array.from(incomingByName.entries()).forEach(([name, incomingKpi]) => {
+      const currentKpi = currentByName.get(name);
+      if (!currentKpi) return;
+
+      const kpiChangesMap: Record<string, GoalDiffChange> = {};
+      for (const field of KPI_DIFF_FIELDS) {
+        const from = currentKpi[field];
+        const to = incomingKpi[field];
+        if (from !== to) {
+          kpiChangesMap[field] = { from, to };
+        }
+      }
+      if (Object.keys(kpiChangesMap).length > 0) {
+        modifiedKpis.push({ name, changes: kpiChangesMap });
+      }
+    });
+
+    if (addedKpis.length > 0 || removedKpis.length > 0 || modifiedKpis.length > 0) {
+      kpiChanges.push({
+        goalTitle: incomingNode.title,
+        added: addedKpis,
+        removed: removedKpis,
+        modified: modifiedKpis,
+      });
+    }
+  });
+
+  return { added, deleted, modified, kpiChanges };
 }

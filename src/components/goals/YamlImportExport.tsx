@@ -149,9 +149,38 @@ export function YamlImportExport({
               </div>
             )}
 
+            {diff.kpiChanges?.length > 0 && (
+              <div className="mb-2">
+                <span className="text-xs font-medium text-indigo-400">
+                  KPI changes in {diff.kpiChanges.length} goal{diff.kpiChanges.length !== 1 ? 's' : ''}
+                </span>
+                {diff.kpiChanges.map((entry: any, i: number) => (
+                  <div key={i} className="ml-4 mt-1">
+                    <span className="text-xs text-gray-400">{entry.goalTitle}:</span>
+                    {entry.added.map((k: any, j: number) => (
+                      <div key={`a${j}`} className="text-xs text-green-300/70 ml-2">
+                        + KPI: {k.name} ({k.type})
+                      </div>
+                    ))}
+                    {entry.removed.map((k: any, j: number) => (
+                      <div key={`r${j}`} className="text-xs text-red-300/70 ml-2">
+                        - KPI: {k.name} ({k.type})
+                      </div>
+                    ))}
+                    {entry.modified.map((k: any, j: number) => (
+                      <div key={`m${j}`} className="text-xs text-yellow-300/70 ml-2">
+                        ~ KPI: {k.name}: {Object.keys(k.changes).join(', ')}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {diff.added.length === 0 &&
               diff.deleted.length === 0 &&
-              diff.modified.length === 0 && (
+              diff.modified.length === 0 &&
+              (!diff.kpiChanges || diff.kpiChanges.length === 0) && (
                 <p className="text-xs text-gray-500">No changes detected.</p>
               )}
 
