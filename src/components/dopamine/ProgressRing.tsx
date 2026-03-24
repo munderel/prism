@@ -12,20 +12,30 @@ export function ProgressRing({ progress, size = 48, strokeWidth = 4 }: ProgressR
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (progress / 100) * circumference;
-
-  // HSL interpolation: red(0) → yellow(60) → green(120)
-  const hue = Math.round((progress / 100) * 120);
-  const color = `hsl(${hue}, 70%, 50%)`;
+  const nearComplete = progress >= 90;
 
   return (
-    <svg width={size} height={size} className="transform -rotate-90">
+    <m.svg
+      width={size}
+      height={size}
+      className="transform -rotate-90"
+      animate={nearComplete ? { scale: [1, 1.05, 1] } : {}}
+      transition={nearComplete ? { repeat: Infinity, duration: 2, ease: 'easeInOut' } : {}}
+    >
+      <defs>
+        <linearGradient id={`prism-ring-${size}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#8b5cf6" />
+          <stop offset="50%" stopColor="#6366f1" />
+          <stop offset="100%" stopColor="#06b6d4" />
+        </linearGradient>
+      </defs>
       {/* Background circle */}
       <circle
         cx={size / 2}
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke="rgb(31, 41, 55)"
+        stroke="rgba(255, 255, 255, 0.06)"
         strokeWidth={strokeWidth}
       />
       {/* Progress arc */}
@@ -34,7 +44,7 @@ export function ProgressRing({ progress, size = 48, strokeWidth = 4 }: ProgressR
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke={color}
+        stroke={`url(#prism-ring-${size})`}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
         strokeDasharray={circumference}
@@ -55,6 +65,6 @@ export function ProgressRing({ progress, size = 48, strokeWidth = 4 }: ProgressR
       >
         {Math.round(progress)}%
       </text>
-    </svg>
+    </m.svg>
   );
 }

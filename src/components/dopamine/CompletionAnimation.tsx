@@ -23,7 +23,7 @@ export function CompletionAnimation({ show, onComplete }: CompletionAnimationPro
             initial={{ scale: 0 }}
             animate={{ scale: [0, 1.2, 1] }}
             transition={{ duration: 0.5, times: [0, 0.7, 1] }}
-            className="h-24 w-24 rounded-full bg-green-500/20 flex items-center justify-center"
+            className="h-24 w-24 rounded-full bg-gradient-to-br from-prism-violet/20 via-prism-indigo/20 to-prism-cyan/20 flex items-center justify-center"
           >
             <m.div
               initial={{ scale: 0 }}

@@ -110,8 +110,8 @@ export default function CalendarPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <CalendarDays className="h-6 w-6 text-indigo-400" />
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+          <CalendarDays className="h-6 w-6 text-prism-indigo" />
           Calendar
         </h1>
         {isAdmin && (
@@ -130,7 +130,7 @@ export default function CalendarPage() {
       <div className="flex gap-6">
         {/* Unscheduled Tasks Sidebar */}
         <div className="w-72 flex-shrink-0">
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4 sticky top-4">
+          <div className="glass-panel p-4 sticky top-4">
             <div className="flex items-center gap-2 mb-4">
               <Clock className="h-4 w-4 text-indigo-400" />
               <h2 className="text-sm font-semibold text-white">Unscheduled Tasks</h2>
@@ -209,7 +209,7 @@ export default function CalendarPage() {
 
           {/* Event details panel */}
           {selectedEvent && (
-            <div className="mt-4 rounded-xl border border-gray-800 bg-gray-900/50 p-4 space-y-3">
+            <div className="mt-4 glass-panel p-4 space-y-3">
               <h3 className="text-lg font-semibold text-white">{selectedEvent.title}</h3>
               <div className="text-xs text-gray-500 space-y-1">
                 <p>Source: {selectedEvent.source}</p>

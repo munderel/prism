@@ -23,6 +23,7 @@ import { AnimatePresence } from 'framer-motion';
 import React from 'react';
 import { GoalCard } from './GoalCard';
 import { GoalEditor } from './GoalEditor';
+import { KpiSidebar } from './KpiSidebar';
 
 interface GoalStackTreeProps {
   stackId: string;
@@ -52,6 +53,7 @@ function SortableGoalCard({
   onDelete,
   onAddChild,
   onStatusChange,
+  onKpiClick,
   isCompanyStack,
   isAdmin,
 }: {
@@ -60,6 +62,7 @@ function SortableGoalCard({
   onDelete: (goalId: string) => void;
   onAddChild: (goal: any) => void;
   onStatusChange: (goalId: string, status: string) => void;
+  onKpiClick: (goal: any) => void;
   isCompanyStack: boolean;
   isAdmin: boolean;
 }) {
@@ -76,10 +79,26 @@ function SortableGoalCard({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    position: 'relative' as const,
   };
+
+  // Connector line colors per depth
+  const connectorColors = [
+    'border-purple-500/20',
+    'border-violet-500/20',
+    'border-indigo-500/20',
+    'border-cyan-500/20',
+    'border-gray-500/15',
+  ];
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {item.depth > 0 && (
+        <div
+          className={`absolute left-0 top-0 bottom-0 border-l-2 border-dashed ${connectorColors[Math.min(item.depth - 1, connectorColors.length - 1)]}`}
+          style={{ marginLeft: `${(item.depth - 1) * 24 + 11}px` }}
+        />
+      )}
       <GoalCard
         goal={item.goal}
         depth={item.depth}
@@ -87,6 +106,7 @@ function SortableGoalCard({
         onDelete={onDelete}
         onAddChild={onAddChild}
         onStatusChange={onStatusChange}
+        onKpiClick={onKpiClick}
         isCompanyStack={isCompanyStack}
         isAdmin={isAdmin}
         hasLinks={item.goal.companyGoalLinks?.length > 0}
@@ -127,6 +147,7 @@ export function GoalStackTree({
     parentGoal?: any;
     goal?: any;
   }>({ open: false });
+  const [selectedGoalForKpi, setSelectedGoalForKpi] = useState<any>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -181,6 +202,10 @@ export function GoalStackTree({
     mutateGoals();
   }, [mutateGoals]);
 
+  const handleKpiClick = useCallback((goal: any) => {
+    setSelectedGoalForKpi(goal);
+  }, []);
+
   const handleAddRoot = useCallback(() => {
     setEditorState({ open: true });
   }, []);
@@ -199,80 +224,95 @@ export function GoalStackTree({
   }
 
   return (
-    <div>
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={handleAddRoot}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-        >
-          + New Root Goal
-        </button>
-      </div>
-
-      {flatGoals.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="text-gray-500 mb-4">No goals yet. Start building your goal stack!</p>
+    <div className="flex gap-4">
+      <div className="flex-1 min-w-0">
+        <div className="mb-4 flex justify-end">
           <button
             onClick={handleAddRoot}
-            className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
           >
-            Create Your First Goal
+            + New Root Goal
           </button>
         </div>
-      ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={flatGoals.map((f) => f.goal.id)}
-            strategy={verticalListSortingStrategy}
+
+        {flatGoals.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-gray-500 mb-4">No goals yet. Start building your goal stack!</p>
+            <button
+              onClick={handleAddRoot}
+              className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+            >
+              Create Your First Goal
+            </button>
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
           >
-            <div className="space-y-2">
-              <AnimatePresence>
-                {flatGoals.map((item) => (
-                  <SortableGoalCard
-                    key={item.goal.id}
-                    item={item}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onAddChild={handleAddChild}
-                    onStatusChange={handleStatusChange}
-                    isCompanyStack={isCompanyStack}
-                    isAdmin={isAdmin}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-          </SortableContext>
-
-          <DragOverlay>
-            {activeId ? (
-              <div className="opacity-80">
-                <GoalCard
-                  goal={flatGoals.find((f) => f.goal.id === activeId)?.goal}
-                  depth={0}
-                  onEdit={() => {}}
-                  onDelete={() => {}}
-                  onAddChild={() => {}}
-                />
+            <SortableContext
+              items={flatGoals.map((f) => f.goal.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-2">
+                <AnimatePresence>
+                  {flatGoals.map((item) => (
+                    <SortableGoalCard
+                      key={item.goal.id}
+                      item={item}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      onAddChild={handleAddChild}
+                      onStatusChange={handleStatusChange}
+                      onKpiClick={handleKpiClick}
+                      isCompanyStack={isCompanyStack}
+                      isAdmin={isAdmin}
+                    />
+                  ))}
+                </AnimatePresence>
               </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      )}
+            </SortableContext>
 
-      {editorState.open && (
-        <GoalEditor
-          stackId={stackId}
-          parentGoal={editorState.parentGoal}
-          goal={editorState.goal}
-          onSave={handleEditorSave}
-          onClose={() => setEditorState({ open: false })}
-        />
-      )}
+            <DragOverlay>
+              {activeId ? (
+                <div className="opacity-80">
+                  <GoalCard
+                    goal={flatGoals.find((f) => f.goal.id === activeId)?.goal}
+                    depth={0}
+                    onEdit={() => {}}
+                    onDelete={() => {}}
+                    onAddChild={() => {}}
+                  />
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        )}
+
+        {editorState.open && (
+          <GoalEditor
+            stackId={stackId}
+            parentGoal={editorState.parentGoal}
+            goal={editorState.goal}
+            onSave={handleEditorSave}
+            onClose={() => setEditorState({ open: false })}
+          />
+        )}
+      </div>
+
+      <AnimatePresence>
+        {selectedGoalForKpi && (
+          <KpiSidebar
+            goalId={selectedGoalForKpi.id}
+            goalTitle={selectedGoalForKpi.title}
+            goalLevel={selectedGoalForKpi.level}
+            parentGoalId={selectedGoalForKpi.parentId}
+            onClose={() => setSelectedGoalForKpi(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

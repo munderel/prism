@@ -221,7 +221,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
             {meetings.map((m) => (
               <div
                 key={m.id}
-                className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900/50 p-4"
+                className="flex items-center justify-between glass-panel p-4"
               >
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-semibold text-white truncate">{m.title}</h3>
@@ -263,7 +263,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
 
         {/* Create / Edit form */}
         {showForm ? (
-          <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+          <form onSubmit={handleSubmit} className="space-y-4 glass-panel p-4">
             <h3 className="text-sm font-semibold text-white">
               {editingId ? 'Edit Meeting' : 'New Meeting'}
             </h3>
