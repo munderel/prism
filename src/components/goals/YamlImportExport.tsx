@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
 import { Download, Upload, X, Check } from 'lucide-react';
 
 interface YamlImportExportProps {
@@ -102,7 +102,7 @@ export function YamlImportExport({
 
       <AnimatePresence>
         {diff && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
@@ -175,7 +175,7 @@ export function YamlImportExport({
                 Cancel
               </button>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

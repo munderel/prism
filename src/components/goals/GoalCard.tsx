@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, Plus, Link } from 'lucide-react';
+import { Pencil, Trash2, Plus, Link, ChevronDown } from 'lucide-react';
 import { GoalProgressBar } from './GoalProgressBar';
 
 const levelColors: Record<string, string> = {
@@ -28,12 +28,22 @@ const statusColors: Record<string, string> = {
   ABANDONED: 'text-red-400',
 };
 
+const GOAL_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED'] as const;
+
+const statusBgColors: Record<string, string> = {
+  NOT_STARTED: 'hover:bg-gray-700',
+  IN_PROGRESS: 'hover:bg-yellow-900/30',
+  COMPLETED: 'hover:bg-green-900/30',
+  ABANDONED: 'hover:bg-red-900/30',
+};
+
 interface GoalCardProps {
   goal: any;
   depth: number;
   onEdit: (goal: any) => void;
   onDelete: (goalId: string) => void;
   onAddChild: (parentGoal: any) => void;
+  onStatusChange?: (goalId: string, status: string) => void;
   isCompanyStack?: boolean;
   isAdmin?: boolean;
   hasLinks?: boolean;
@@ -45,8 +55,23 @@ export const GoalCard = React.memo(function GoalCard({
   onEdit,
   onDelete,
   onAddChild,
+  onStatusChange,
 }: GoalCardProps) {
   const canAddChild = goal.level !== 'DAILY';
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const statusRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (statusRef.current && !statusRef.current.contains(e.target as Node)) {
+        setShowStatusMenu(false);
+      }
+    }
+    if (showStatusMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showStatusMenu]);
 
   return (
     <m.div
@@ -77,9 +102,36 @@ export const GoalCard = React.memo(function GoalCard({
             <span className="text-sm font-medium text-white truncate">
               {goal.title}
             </span>
-            <span className={`text-xs ${statusColors[goal.status] ?? ''}`}>
-              {goal.status.replace('_', ' ')}
-            </span>
+            <div className="relative" ref={statusRef}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowStatusMenu(!showStatusMenu); }}
+                className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-gray-800 ${statusColors[goal.status] ?? ''}`}
+              >
+                {goal.status.replace(/_/g, ' ')}
+                <ChevronDown className="h-3 w-3" />
+              </button>
+              {showStatusMenu && (
+                <div className="absolute top-full left-0 mt-1 z-50 w-36 rounded-lg border border-gray-700 bg-gray-800 shadow-xl py-1">
+                  {GOAL_STATUSES.map((s) => (
+                    <button
+                      key={s}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowStatusMenu(false);
+                        if (s !== goal.status && onStatusChange) {
+                          onStatusChange(goal.id, s);
+                        }
+                      }}
+                      className={`flex w-full items-center px-3 py-1.5 text-xs ${statusColors[s]} ${statusBgColors[s]} ${
+                        s === goal.status ? 'font-bold' : ''
+                      }`}
+                    >
+                      {s.replace(/_/g, ' ')}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {goal.companyGoalLinks?.length > 0 && (
               <Link className="h-3 w-3 text-indigo-400" />
             )}

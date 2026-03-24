@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Create new goals (walk the incoming tree, create those without IDs)
-  await createNewGoals(incomingGoals, stackId, null);
+  await createNewGoals(incomingGoals, stackId, null, null, { count: 0 }, 0, auth.userId);
 
   // Create ConfigVersion
   const maxVersion = await prisma.configVersion.findFirst({
@@ -139,7 +139,8 @@ async function createNewGoals(
   parentId: string | null,
   parentLevel: string | null = null,
   counter = { count: 0 },
-  depth = 0
+  depth = 0,
+  ownerId: string | null = null
 ) {
   if (depth > MAX_IMPORT_DEPTH) {
     throw new Error('Import exceeds maximum nesting depth');
@@ -174,13 +175,32 @@ async function createNewGoals(
       });
       counter.count++;
 
+      // Create tasks linked to this goal
+      if (node.tasks?.length && ownerId) {
+        for (const task of node.tasks) {
+          await prisma.task.create({
+            data: {
+              ownerId,
+              goalId: created.id,
+              taskType: 'GOAL_STACK',
+              title: task.title,
+              description: task.description ?? null,
+              status: (task.status as any) ?? 'TODO',
+              priority: (task.priority as any) ?? 'MEDIUM',
+              dueDate: task.dueDate ? new Date(task.dueDate) : null,
+              completedAt: task.status === 'DONE' ? new Date() : null,
+            },
+          });
+        }
+      }
+
       // Recurse for children of this new goal
       if (node.children?.length) {
-        await createNewGoals(node.children, stackId, created.id, node.level, counter, depth + 1);
+        await createNewGoals(node.children, stackId, created.id, node.level, counter, depth + 1, ownerId);
       }
     } else if (node.children?.length) {
       // Existing goal — recurse into children to find new ones
-      await createNewGoals(node.children, stackId, node.id, node.level, counter, depth + 1);
+      await createNewGoals(node.children, stackId, node.id, node.level, counter, depth + 1, ownerId);
     }
   }
 }

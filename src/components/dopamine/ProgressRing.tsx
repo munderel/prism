@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 
 interface ProgressRingProps {
   progress: number; // 0-100
@@ -29,7 +29,7 @@ export function ProgressRing({ progress, size = 48, strokeWidth = 4 }: ProgressR
         strokeWidth={strokeWidth}
       />
       {/* Progress arc */}
-      <motion.circle
+      <m.circle
         cx={size / 2}
         cy={size / 2}
         r={radius}

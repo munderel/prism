@@ -51,6 +51,7 @@ function SortableGoalCard({
   onEdit,
   onDelete,
   onAddChild,
+  onStatusChange,
   isCompanyStack,
   isAdmin,
 }: {
@@ -58,6 +59,7 @@ function SortableGoalCard({
   onEdit: (goal: any) => void;
   onDelete: (goalId: string) => void;
   onAddChild: (goal: any) => void;
+  onStatusChange: (goalId: string, status: string) => void;
   isCompanyStack: boolean;
   isAdmin: boolean;
 }) {
@@ -84,6 +86,7 @@ function SortableGoalCard({
         onEdit={onEdit}
         onDelete={onDelete}
         onAddChild={onAddChild}
+        onStatusChange={onStatusChange}
         isCompanyStack={isCompanyStack}
         isAdmin={isAdmin}
         hasLinks={item.goal.companyGoalLinks?.length > 0}
@@ -169,6 +172,15 @@ export function GoalStackTree({
     setEditorState({ open: true, parentGoal });
   }, []);
 
+  const handleStatusChange = useCallback(async (goalId: string, status: string) => {
+    await fetch(`/api/goals/${goalId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    mutateGoals();
+  }, [mutateGoals]);
+
   const handleAddRoot = useCallback(() => {
     setEditorState({ open: true });
   }, []);
@@ -227,6 +239,7 @@ export function GoalStackTree({
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onAddChild={handleAddChild}
+                    onStatusChange={handleStatusChange}
                     isCompanyStack={isCompanyStack}
                     isAdmin={isAdmin}
                   />

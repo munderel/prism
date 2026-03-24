@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, ChevronRight, Moon, PartyPopper } from 'lucide-react';
 
 const STEPS = [
@@ -105,7 +105,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   if (completed) {
     return (
-      <motion.div
+      <m.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         className="text-center py-16"
@@ -119,7 +119,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         >
           Back to Dashboard
         </button>
-      </motion.div>
+      </m.div>
     );
   }
 
@@ -141,7 +141,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       </div>
 
       <AnimatePresence mode="wait">
-        <motion.div
+        <m.div
           key={currentStep}
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -265,7 +265,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
             {currentStep === 6 ? 'Complete Power Down' : 'Next Step'}
             <ChevronRight className="h-4 w-4" />
           </button>
-        </motion.div>
+        </m.div>
       </AnimatePresence>
     </div>
   );
