@@ -20,7 +20,7 @@ export default function LeaderboardPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
           <Trophy className="h-6 w-6 text-yellow-400" />
           Leaderboard
         </h1>
@@ -35,7 +35,7 @@ export default function LeaderboardPage() {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: i * 0.05 }}
-              className="flex items-center gap-4 rounded-xl border border-gray-800 bg-gray-900/50 px-5 py-4"
+              className="flex items-center gap-4 glass-panel px-5 py-4"
             >
               <span className={`text-2xl font-bold ${
                 i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-orange-400' : 'text-gray-600'
@@ -76,7 +76,7 @@ export default function LeaderboardPage() {
 
         {/* Public Wins feed */}
         <div className="lg:col-span-1">
-          <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+          <div className="glass-panel p-4">
             <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
               <Star className="h-4 w-4 text-yellow-400" />
               Recent Wins

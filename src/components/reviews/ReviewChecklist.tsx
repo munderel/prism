@@ -73,7 +73,7 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
     <div className="space-y-6">
       {/* Process guide */}
       {steps.length > 0 && (
-        <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+        <div className="glass-panel p-4">
           <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-indigo-400" />
             Process Guide
@@ -92,7 +92,7 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
       )}
 
       {/* Checklist */}
-      <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+      <div className="glass-panel p-4">
         <h3 className="text-sm font-semibold text-white mb-3">Checklist</h3>
         <div className="space-y-2">
           {items.map((item: ChecklistItem) => (

@@ -176,8 +176,8 @@ export default function TasksPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <ListTodo className="h-6 w-6 text-indigo-400" />
+        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+          <ListTodo className="h-6 w-6 text-prism-indigo" />
           Tasks
         </h1>
         <button
@@ -263,7 +263,7 @@ export default function TasksPage() {
             /* Week / Month view: grouped by date */
             <div className="space-y-6">
               {dateKeys.length === 0 ? (
-                <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-8 text-center">
+                <div className="glass-panel p-8 text-center">
                   <p className="text-gray-600 text-sm">No tasks in this {viewMode}</p>
                 </div>
               ) : (
@@ -301,7 +301,7 @@ export default function TasksPage() {
         {/* Detail panel */}
         <div className="lg:col-span-1">
           {selectedTask ? (
-            <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4 space-y-4">
+            <div className="glass-panel p-4 space-y-4">
               <div>
                 <h3 className="text-lg font-semibold text-white">{selectedTask.title}</h3>
                 {selectedTask.description && (
@@ -316,7 +316,7 @@ export default function TasksPage() {
               <TaskComments taskId={selectedTask.id} />
             </div>
           ) : (
-            <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-8 text-center">
+            <div className="glass-panel p-8 text-center">
               <p className="text-gray-600 text-sm">Select a task to view details and comments</p>
             </div>
           )}

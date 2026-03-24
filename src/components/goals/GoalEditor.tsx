@@ -98,11 +98,11 @@ export function GoalEditor({
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
-          className="w-full max-w-lg rounded-xl border border-gray-800 bg-gray-900 p-6"
+          className="w-full max-w-lg glass-panel p-6"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="font-display text-lg font-semibold text-white">
               {isEditing ? 'Edit Goal' : 'New Goal'}
             </h2>
             <button onClick={onClose} className="text-gray-500 hover:text-white">
@@ -113,7 +113,7 @@ export function GoalEditor({
           {derivedLevel && (
             <div className="mb-4">
               <span className="text-xs text-gray-400">Level: </span>
-              <span className="text-xs font-medium text-indigo-400">
+              <span className="text-xs font-medium text-prism-indigo">
                 {levelLabels[derivedLevel] ?? derivedLevel}
               </span>
             </div>
@@ -131,7 +131,7 @@ export function GoalEditor({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
                 placeholder="What do you want to achieve?"
               />
             </div>
@@ -142,7 +142,7 @@ export function GoalEditor({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none"
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none"
                 placeholder="Optional details..."
               />
             </div>
@@ -153,7 +153,7 @@ export function GoalEditor({
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="NOT_STARTED">Not Started</option>
                   <option value="IN_PROGRESS">In Progress</option>
@@ -169,7 +169,7 @@ export function GoalEditor({
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
               />
             </div>
 

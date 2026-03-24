@@ -106,7 +106,7 @@ export function YamlImportExport({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mt-4 rounded-lg border border-gray-800 bg-gray-900/50 p-4"
+            className="mt-4 glass-panel p-4"
           >
             <h3 className="text-sm font-semibold text-white mb-3">Import Preview</h3>
 
