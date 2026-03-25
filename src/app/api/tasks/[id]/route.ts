@@ -56,7 +56,7 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority, dueDate, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isPinned, isAutoScheduled } = body;
+  const { title, description, status, priority, dueDate, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isPinned, isAutoScheduled, isWinTheDay } = body;
 
   const data: any = {};
   if (title !== undefined) data.title = title;
@@ -71,6 +71,20 @@ export async function PATCH(
   if (preferredTimeEnd !== undefined) data.preferredTimeEnd = preferredTimeEnd;
   if (isPinned !== undefined) data.isPinned = isPinned;
   if (isAutoScheduled !== undefined) data.isAutoScheduled = isAutoScheduled;
+  if (isWinTheDay !== undefined) data.isWinTheDay = isWinTheDay;
+
+  // Auto-unflag other Win the Day tasks for the same user + date
+  if (isWinTheDay === true && task.dueDate) {
+    await prisma.task.updateMany({
+      where: {
+        ownerId: task.ownerId,
+        dueDate: task.dueDate,
+        isWinTheDay: true,
+        id: { not: id },
+      },
+      data: { isWinTheDay: false },
+    });
+  }
 
   // Status transitions
   if (status !== undefined) {
