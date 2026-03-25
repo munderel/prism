@@ -58,6 +58,12 @@ model User {
   hasCompletedOnboarding Boolean  @default(false)
   timezone              String    @default("America/New_York")
   hiddenFeatures        Json      @default("[]")
+  workingHoursStart     String?   // "HH:mm" format, e.g. "09:00"
+  workingHoursEnd       String?   // "HH:mm" format, e.g. "17:00"
+  casualHoursStart      String?   // "HH:mm" format, e.g. "17:00"
+  casualHoursEnd        String?   // "HH:mm" format, e.g. "22:00"
+  autoScheduleEnabled   Boolean   @default(true)
+  taskSchedulePeriod    String?   // "working" | "casual" | "both"
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -224,9 +230,12 @@ model Task {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  aimInstanceId  String?
+
   owner    User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   goal     Goal?         @relation(fields: [goalId], references: [id])
   process  Process?      @relation("TaskProcess", fields: [processId], references: [id])
+  aimInstance AimInstance? @relation(fields: [aimInstanceId], references: [id])
   comments TaskComment[]
   publicWins PublicWin[]
   processExecution ProcessExecution?
@@ -632,6 +641,7 @@ model AimCategory {
   isDefault         Boolean  @default(true)
   isDaily           Boolean  @default(false)
   activities        Json?
+  schedulePeriod    String   @default("both") // "working" | "casual" | "both"
   createdAt         DateTime @default(now())
 
   userAims     UserAim[]
@@ -645,8 +655,15 @@ model UserAim {
   isActive        Boolean  @default(true)
   customDuration  Int?
   customFrequency Int?
-  customActivities Json?
-  createdAt       DateTime @default(now())
+  customActivities     Json?
+  customSchedulePeriod String?   // user override: "working" | "casual" | "both"
+  currentPhase         String    @default("SEED")    // SEED | SPROUT | GROW | FLOW
+  phaseStartedAt       DateTime  @default(now())
+  completionCount      Int       @default(0)
+  currentStreak        Int       @default(0)
+  bestStreak           Int       @default(0)
+  lastCompletedAt      DateTime?
+  createdAt            DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
@@ -663,12 +680,16 @@ model AimInstance {
   timeBlockEnd   DateTime?
   isGroupOpen    Boolean   @default(false)
   status         String    @default("SCHEDULED")
-  completedAt    DateTime?
-  activityNote   String?
-  createdAt      DateTime  @default(now())
+  completedAt      DateTime?
+  activityNote     String?
+  selectedActivity   String?   // e.g., "strength", "sauna", "painting"
+  phaseAtCompletion  String?   // snapshot of phase when completed
+  pointsEarned       Int       @default(0)
+  createdAt          DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
+  tasks       Task[]      // Deep Work container: nested tasks
 
   @@index([userId, scheduledDate])
 }

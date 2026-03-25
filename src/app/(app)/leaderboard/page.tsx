@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Trophy, Flame, CheckCircle2, Star } from 'lucide-react';
+import { Trophy, Flame, CheckCircle2, Star, Target } from 'lucide-react';
 import { m } from 'framer-motion';
 import useSWR from 'swr';
 
@@ -62,6 +62,10 @@ export default function LeaderboardPage() {
                   <span className="flex items-center gap-1">
                     <Star className="h-3 w-3 text-purple-400" />
                     {user.reviewsCompleted} reviews
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Target className="h-3 w-3 text-teal-400" />
+                    {user.aimScore ?? 0} aim pts
                   </span>
                 </div>
               </div>

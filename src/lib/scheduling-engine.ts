@@ -15,6 +15,7 @@ export interface SchedulableTask {
   dueDate: Date | null;
   preferredTimeStart: string | null; // "HH:mm"
   preferredTimeEnd: string | null;   // "HH:mm"
+  schedulingPeriod?: 'working' | 'casual' | 'both';
 }
 
 export interface CalendarEvent {
@@ -31,6 +32,11 @@ export interface ProposedSlot {
   taskId: string;
   start: Date;
   end: Date;
+}
+
+export interface ScheduleSettings {
+  workingHours: WorkingHours;   // e.g. { start: '09:00', end: '17:00' }
+  casualHours: WorkingHours;    // e.g. { start: '17:00', end: '22:00' }
 }
 
 // ---------- Priority ordering ----------
@@ -245,4 +251,86 @@ export function rearrangeFlexible(
   today?: Date
 ): ProposedSlot[] {
   return autoSchedule(flexibleTasks, fixedEvents, workingHours, today);
+}
+
+// ---------- Period-aware scheduling ----------
+
+/**
+ * Auto-schedule tasks respecting their scheduling period preference.
+ *
+ * Groups tasks by `schedulingPeriod`:
+ * - 'working': scheduled within `settings.workingHours`
+ * - 'casual':  scheduled within `settings.casualHours`
+ * - 'both':    scheduled within the combined range (earliest start to latest end)
+ *
+ * Each group is scheduled independently via `autoSchedule`, but they all
+ * share the same `existingEvents` so occupied slots are respected across groups.
+ */
+export function autoScheduleWithPeriods(
+  tasks: SchedulableTask[],
+  existingEvents: CalendarEvent[],
+  settings: ScheduleSettings,
+  today?: Date
+): ProposedSlot[] {
+  const workingTasks: SchedulableTask[] = [];
+  const casualTasks: SchedulableTask[] = [];
+  const bothTasks: SchedulableTask[] = [];
+
+  for (const task of tasks) {
+    const period = task.schedulingPeriod ?? 'both';
+    if (period === 'working') {
+      workingTasks.push(task);
+    } else if (period === 'casual') {
+      casualTasks.push(task);
+    } else {
+      bothTasks.push(task);
+    }
+  }
+
+  // Compute the combined range for 'both' tasks
+  const { hours: whStartH, minutes: whStartM } = parseTime(settings.workingHours.start);
+  const { hours: whEndH, minutes: whEndM } = parseTime(settings.workingHours.end);
+  const { hours: chStartH, minutes: chStartM } = parseTime(settings.casualHours.start);
+  const { hours: chEndH, minutes: chEndM } = parseTime(settings.casualHours.end);
+
+  const whStartTotal = whStartH * 60 + whStartM;
+  const whEndTotal = whEndH * 60 + whEndM;
+  const chStartTotal = chStartH * 60 + chStartM;
+  const chEndTotal = chEndH * 60 + chEndM;
+
+  const earliestMin = Math.min(whStartTotal, chStartTotal);
+  const latestMin = Math.max(whEndTotal, chEndTotal);
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const combinedHours: WorkingHours = {
+    start: `${pad(Math.floor(earliestMin / 60))}:${pad(earliestMin % 60)}`,
+    end: `${pad(Math.floor(latestMin / 60))}:${pad(latestMin % 60)}`,
+  };
+
+  // Schedule each group; accumulate occupied slots so later groups see earlier placements
+  const allOccupied: CalendarEvent[] = [...existingEvents];
+  const results: ProposedSlot[] = [];
+
+  // Schedule working tasks first (highest priority period)
+  const workingSlots = autoSchedule(workingTasks, allOccupied, settings.workingHours, today);
+  for (const slot of workingSlots) {
+    results.push(slot);
+    allOccupied.push({ start: slot.start, end: slot.end });
+  }
+
+  // Then casual tasks
+  const casualSlots = autoSchedule(casualTasks, allOccupied, settings.casualHours, today);
+  for (const slot of casualSlots) {
+    results.push(slot);
+    allOccupied.push({ start: slot.start, end: slot.end });
+  }
+
+  // Finally 'both' tasks get the full combined range
+  const bothSlots = autoSchedule(bothTasks, allOccupied, combinedHours, today);
+  for (const slot of bothSlots) {
+    results.push(slot);
+    allOccupied.push({ start: slot.start, end: slot.end });
+  }
+
+  return results;
 }

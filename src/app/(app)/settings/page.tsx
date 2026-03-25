@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye } from 'lucide-react';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
@@ -26,6 +26,12 @@ export default function SettingsPage() {
   });
   const [users, setUsers] = useState<any[]>([]);
   const [hiddenFeatures, setHiddenFeatures] = useState<string[]>([]);
+  const [autoScheduleEnabled, setAutoScheduleEnabled] = useState(true);
+  const [workingHoursStart, setWorkingHoursStart] = useState('09:00');
+  const [workingHoursEnd, setWorkingHoursEnd] = useState('17:00');
+  const [casualHoursStart, setCasualHoursStart] = useState('17:00');
+  const [casualHoursEnd, setCasualHoursEnd] = useState('22:00');
+  const [taskSchedulePeriod, setTaskSchedulePeriod] = useState('both');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
@@ -70,6 +76,12 @@ export default function SettingsPage() {
       if (data.notificationPreference) {
         setNotifPrefs(data.notificationPreference);
       }
+      if (data.autoScheduleEnabled !== undefined) setAutoScheduleEnabled(data.autoScheduleEnabled);
+      if (data.workingHoursStart) setWorkingHoursStart(data.workingHoursStart);
+      if (data.workingHoursEnd) setWorkingHoursEnd(data.workingHoursEnd);
+      if (data.casualHoursStart) setCasualHoursStart(data.casualHoursStart);
+      if (data.casualHoursEnd) setCasualHoursEnd(data.casualHoursEnd);
+      if (data.taskSchedulePeriod) setTaskSchedulePeriod(data.taskSchedulePeriod);
     }
   };
 
@@ -91,7 +103,7 @@ export default function SettingsPage() {
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs }),
+      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, autoScheduleEnabled, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod }),
     });
     setMessageType('success');
     setMessage('Settings saved!');
@@ -373,6 +385,85 @@ export default function SettingsPage() {
           <button onClick={saveUserSettings} disabled={saving}
             className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
             Save Preferences
+          </button>
+        </section>
+
+        {/* Scheduling */}
+        <section className="glass-panel p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <Clock className="h-5 w-5 text-indigo-400" />
+            Scheduling
+          </h2>
+          <div className="space-y-5">
+            <label className="flex items-center justify-between">
+              <div>
+                <span className="text-sm text-[var(--text-secondary)]">Enable auto-scheduling</span>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">Automatically suggests time blocks for tasks and aims in the calendar</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={autoScheduleEnabled}
+                onChange={(e) => setAutoScheduleEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+              />
+            </label>
+
+            <div>
+              <label className="text-sm text-[var(--text-secondary)]">Working Hours</label>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5 mb-2">Time range for work-related tasks and aims</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  value={workingHoursStart}
+                  onChange={(e) => setWorkingHoursStart(e.target.value)}
+                  className={inputClasses}
+                />
+                <span className="text-sm text-[var(--text-muted)]">to</span>
+                <input
+                  type="time"
+                  value={workingHoursEnd}
+                  onChange={(e) => setWorkingHoursEnd(e.target.value)}
+                  className={inputClasses}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--text-secondary)]">Casual Hours</label>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5 mb-2">Time range for personal activities like exercise and recovery</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  value={casualHoursStart}
+                  onChange={(e) => setCasualHoursStart(e.target.value)}
+                  className={inputClasses}
+                />
+                <span className="text-sm text-[var(--text-muted)]">to</span>
+                <input
+                  type="time"
+                  value={casualHoursEnd}
+                  onChange={(e) => setCasualHoursEnd(e.target.value)}
+                  className={inputClasses}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--text-secondary)]">Schedule tasks in</label>
+              <select
+                value={taskSchedulePeriod}
+                onChange={(e) => setTaskSchedulePeriod(e.target.value)}
+                className={`${inputClasses} mt-1`}
+              >
+                <option value="both">Both periods (Recommended)</option>
+                <option value="working">Working hours only</option>
+                <option value="casual">Casual hours only</option>
+              </select>
+            </div>
+          </div>
+          <button onClick={saveUserSettings} disabled={saving}
+            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+            Save
           </button>
         </section>
 

@@ -126,6 +126,7 @@ async function main() {
     isDefault: boolean;
     isDaily: boolean;
     activities: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+    schedulePeriod: string;
   }> = [
     {
       name: 'Deep Work',
@@ -136,6 +137,7 @@ async function main() {
       isDefault: true,
       isDaily: true,
       activities: Prisma.JsonNull,
+      schedulePeriod: 'working',
     },
     {
       name: 'Flow Activity',
@@ -145,7 +147,8 @@ async function main() {
       isGroupable: true,
       isDefault: true,
       isDaily: false,
-      activities: Prisma.JsonNull,
+      activities: ['painting', 'music', 'surfing', 'writing', 'coding', 'woodworking', 'climbing'],
+      schedulePeriod: 'casual',
     },
     {
       name: 'Exercise',
@@ -155,7 +158,8 @@ async function main() {
       isGroupable: true,
       isDefault: true,
       isDaily: false,
-      activities: Prisma.JsonNull,
+      activities: ['strength', 'cardio', 'sport', 'HIIT', 'swimming', 'cycling', 'running'],
+      schedulePeriod: 'casual',
     },
     {
       name: 'Active Recovery',
@@ -166,6 +170,7 @@ async function main() {
       isDefault: true,
       isDaily: false,
       activities: ['sauna', 'massage', 'mindfulness', 'light yoga'],
+      schedulePeriod: 'casual',
     },
     {
       name: 'Train Weakness',
@@ -176,6 +181,7 @@ async function main() {
       isDefault: true,
       isDaily: false,
       activities: Prisma.JsonNull,
+      schedulePeriod: 'working',
     },
     {
       name: 'Get Feedback',
@@ -186,6 +192,7 @@ async function main() {
       isDefault: true,
       isDaily: false,
       activities: Prisma.JsonNull,
+      schedulePeriod: 'working',
     },
     {
       name: 'Social Support',
@@ -196,6 +203,7 @@ async function main() {
       isDefault: true,
       isDaily: false,
       activities: Prisma.JsonNull,
+      schedulePeriod: 'casual',
     },
   ];
 
@@ -211,6 +219,7 @@ async function main() {
         isDefault: cat.isDefault,
         isDaily: cat.isDaily,
         activities: cat.activities,
+        schedulePeriod: cat.schedulePeriod,
       },
       create: {
         id: cat.name.toLowerCase().replace(/\s+/g, '-'),
@@ -222,6 +231,7 @@ async function main() {
         isDefault: cat.isDefault,
         isDaily: cat.isDaily,
         activities: cat.activities,
+        schedulePeriod: cat.schedulePeriod,
       },
     });
   }

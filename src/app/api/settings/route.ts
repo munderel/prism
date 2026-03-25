@@ -23,6 +23,12 @@ export async function GET(request: NextRequest) {
       hasCompletedOnboarding: true,
       hiddenFeatures: true,
       notificationPreference: true,
+      workingHoursStart: true,
+      workingHoursEnd: true,
+      casualHoursStart: true,
+      casualHoursEnd: true,
+      autoScheduleEnabled: true,
+      taskSchedulePeriod: true,
     },
   });
 
@@ -58,13 +64,19 @@ export async function PATCH(request: NextRequest) {
   }
 
   // User settings
-  const { mtp, timezone, hasCompletedOnboarding, hiddenFeatures, notificationPrefs } = body;
+  const { mtp, timezone, hasCompletedOnboarding, hiddenFeatures, notificationPrefs, autoScheduleEnabled, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod } = body;
 
   const data: any = {};
   if (mtp !== undefined) data.mtp = mtp;
   if (timezone !== undefined) data.timezone = timezone;
   if (hasCompletedOnboarding !== undefined) data.hasCompletedOnboarding = hasCompletedOnboarding;
   if (hiddenFeatures !== undefined && Array.isArray(hiddenFeatures)) data.hiddenFeatures = hiddenFeatures;
+  if (autoScheduleEnabled !== undefined) data.autoScheduleEnabled = autoScheduleEnabled;
+  if (workingHoursStart !== undefined) data.workingHoursStart = workingHoursStart;
+  if (workingHoursEnd !== undefined) data.workingHoursEnd = workingHoursEnd;
+  if (casualHoursStart !== undefined) data.casualHoursStart = casualHoursStart;
+  if (casualHoursEnd !== undefined) data.casualHoursEnd = casualHoursEnd;
+  if (taskSchedulePeriod !== undefined) data.taskSchedulePeriod = taskSchedulePeriod;
 
   const user = await prisma.user.update({
     where: { id: auth.userId },

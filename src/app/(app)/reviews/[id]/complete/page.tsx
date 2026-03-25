@@ -1,11 +1,8 @@
-'use client';
-
-import { use } from 'react';
 import { ReviewWizard } from '@/components/reviews/ReviewWizard';
 import { ClipboardList } from 'lucide-react';
 
-export default function ReviewCompletePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default async function ReviewCompletePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
 
   return (
     <div>

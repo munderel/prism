@@ -25,16 +25,33 @@ export async function GET(_request: NextRequest) {
     },
   });
 
-  const leaderboard = users.map((u) => ({
-    id: u.id,
-    name: u.name ?? 'Unknown',
-    image: u.image,
-    streak: u.streaks[0]?.currentCount ?? 0,
-    bestStreak: u.streaks[0]?.bestCount ?? 0,
-    tasksCompleted: u._count.tasks,
-    reviewsCompleted: u._count.reviews,
-    score: (u.streaks[0]?.currentCount ?? 0) * 10 + u._count.tasks + u._count.reviews * 5,
-  }));
+  // Get aim scores per user (sum of pointsEarned from completed instances)
+  const aimScores = await prisma.aimInstance.groupBy({
+    by: ['userId'],
+    where: { status: 'COMPLETED' },
+    _sum: { pointsEarned: true },
+    _count: true,
+  });
+
+  const aimScoreMap = new Map(
+    aimScores.map((a) => [a.userId, { points: a._sum.pointsEarned ?? 0, count: a._count }])
+  );
+
+  const leaderboard = users.map((u) => {
+    const aimData = aimScoreMap.get(u.id) ?? { points: 0, count: 0 };
+    return {
+      id: u.id,
+      name: u.name ?? 'Unknown',
+      image: u.image,
+      streak: u.streaks[0]?.currentCount ?? 0,
+      bestStreak: u.streaks[0]?.bestCount ?? 0,
+      tasksCompleted: u._count.tasks,
+      reviewsCompleted: u._count.reviews,
+      aimsCompleted: aimData.count,
+      aimScore: aimData.points,
+      score: (u.streaks[0]?.currentCount ?? 0) * 10 + u._count.tasks + u._count.reviews * 5 + aimData.points,
+    };
+  });
 
   leaderboard.sort((a, b) => b.score - a.score);
 

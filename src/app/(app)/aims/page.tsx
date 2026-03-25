@@ -35,6 +35,11 @@ interface UserAim {
   customDuration: number | null;
   customFrequency: number | null;
   customActivities: string[] | null;
+  currentPhase: string;
+  phaseStartedAt: string;
+  completionCount: number;
+  currentStreak: number;
+  bestStreak: number;
   aimCategory: AimCategory;
 }
 
@@ -184,6 +189,7 @@ export default function AimsPage() {
                 duration={getDuration(cat)}
                 frequency={formatFrequency(cat)}
                 activities={getActivities(cat)}
+                userAim={userAimMap.get(cat.id)}
                 isEditing={editingId === cat.id}
                 editDuration={editDuration}
                 editFrequency={editFrequency}
@@ -240,12 +246,34 @@ export default function AimsPage() {
   );
 }
 
+const PHASE_STYLES: Record<string, { dot: string; text: string; bg: string }> = {
+  SEED:   { dot: 'bg-gray-400',   text: 'text-gray-400',   bg: 'bg-gray-400/10' },
+  SPROUT: { dot: 'bg-green-400',  text: 'text-green-400',  bg: 'bg-green-400/10' },
+  GROW:   { dot: 'bg-teal-400',   text: 'text-teal-400',   bg: 'bg-teal-400/10' },
+  FLOW:   { dot: 'bg-amber-400',  text: 'text-amber-400',  bg: 'bg-amber-400/10' },
+};
+
+const PHASE_LABELS: Record<string, string> = {
+  SEED: 'Seed',
+  SPROUT: 'Sprout',
+  GROW: 'Grow',
+  FLOW: 'Flow',
+};
+
+const PHASE_DESCRIPTIONS: Record<string, string> = {
+  SEED: 'Building the habit',
+  SPROUT: 'Getting stronger',
+  GROW: 'Almost automatic',
+  FLOW: 'In flow',
+};
+
 interface AimCardProps {
   category: AimCategory;
   active: boolean;
   duration: number;
   frequency: string;
   activities: string[];
+  userAim?: UserAim;
   isEditing: boolean;
   editDuration: number;
   editFrequency: number;
@@ -268,6 +296,7 @@ function AimCard({
   duration,
   frequency,
   activities,
+  userAim,
   isEditing,
   editDuration,
   editFrequency,
@@ -283,6 +312,16 @@ function AimCard({
   onAddActivity,
   onRemoveActivity,
 }: AimCardProps) {
+  const phase = (userAim?.currentPhase || 'SEED') as string;
+  const phaseStyle = PHASE_STYLES[phase] || PHASE_STYLES.SEED;
+  const streak = userAim?.currentStreak ?? 0;
+  const completionCount = userAim?.completionCount ?? 0;
+
+  // Calculate effective duration based on phase
+  const phaseMultiplier = phase === 'SEED' ? 0.5 : phase === 'SPROUT' ? 0.75 : 1.0;
+  const effectiveDuration = Math.max(5, Math.round(duration * phaseMultiplier));
+  const isReduced = phaseMultiplier < 1.0;
+
   return (
     <div
       className={`glass-panel rounded-xl p-4 transition-opacity ${
@@ -301,6 +340,13 @@ function AimCard({
           )}
         </div>
         <div className="flex items-center gap-1 ml-2 shrink-0">
+          {/* Phase badge */}
+          {active && (
+            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${phaseStyle.text} ${phaseStyle.bg}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${phaseStyle.dot}`} />
+              {PHASE_LABELS[phase]}
+            </span>
+          )}
           {!isEditing && (
             <button
               onClick={onStartEdit}
@@ -324,11 +370,35 @@ function AimCard({
         </div>
       </div>
 
+      {/* Phase description + streak */}
+      {active && (
+        <div className="flex items-center justify-between mt-2">
+          <span className={`text-[10px] ${phaseStyle.text}`}>
+            {PHASE_DESCRIPTIONS[phase]}
+          </span>
+          <div className="flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+            {streak > 0 && (
+              <span className="flex items-center gap-0.5">
+                <Flame className="h-3 w-3 text-orange-400" />
+                {streak}
+              </span>
+            )}
+            {completionCount > 0 && (
+              <span>{completionCount} done</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Stats Row */}
-      <div className="flex items-center gap-3 mt-3 text-xs text-[var(--text-secondary)]">
+      <div className="flex items-center gap-3 mt-2 text-xs text-[var(--text-secondary)]">
         <span className="flex items-center gap-1">
           <Clock className="h-3.5 w-3.5" />
-          {duration} min
+          {isReduced ? (
+            <><span>{effectiveDuration} min</span><span className="text-[var(--text-muted)] line-through ml-1">{duration}</span></>
+          ) : (
+            <>{duration} min</>
+          )}
         </span>
         <span className="flex items-center gap-1">
           <Repeat className="h-3.5 w-3.5" />
