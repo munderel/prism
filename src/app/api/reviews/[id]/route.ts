@@ -12,16 +12,38 @@ export async function GET(
   if ('error' in auth) return authError(auth);
 
   const review = await prisma.review.findUnique({ where: { id } });
-  if (!review || review.userId !== auth.userId) {
+  if (!review) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
-  // Include the template
+  // Team reviews are accessible to all authenticated users; individual reviews only to owner/admin
+  if (!review.isTeamReview && review.userId !== auth.userId && !auth.session.user.isAdmin) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  // Include the template (prefer team template for team reviews)
   const template = await prisma.reviewTemplate.findUnique({
-    where: { reviewType: review.reviewType },
+    where: {
+      reviewType_isTeamTemplate: {
+        reviewType: review.reviewType,
+        isTeamTemplate: review.isTeamReview,
+      },
+    },
   });
 
-  return Response.json({ ...review, template });
+  // Fallback to individual template if no team template exists
+  const fallbackTemplate = !template && review.isTeamReview
+    ? await prisma.reviewTemplate.findUnique({
+        where: {
+          reviewType_isTeamTemplate: {
+            reviewType: review.reviewType,
+            isTeamTemplate: false,
+          },
+        },
+      })
+    : null;
+
+  return Response.json({ ...review, template: template ?? fallbackTemplate });
 }
 
 export async function PATCH(
@@ -33,7 +55,12 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const review = await prisma.review.findUnique({ where: { id } });
-  if (!review || review.userId !== auth.userId) {
+  if (!review) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  // Team reviews: any authenticated user can update; individual: only owner/admin
+  if (!review.isTeamReview && review.userId !== auth.userId && !auth.session.user.isAdmin) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
@@ -59,6 +86,9 @@ export async function PATCH(
           userId: auth.userId,
           reviewType: review.reviewType,
           scheduledDate: nextDate,
+          isTeamReview: review.isTeamReview,
+          startDate: review.startDate,
+          recurrenceDayOfWeek: review.recurrenceDayOfWeek,
         },
       });
     }
@@ -77,11 +107,18 @@ export async function DELETE(
   if ('error' in auth) return authError(auth);
 
   const review = await prisma.review.findUnique({ where: { id } });
-  if (!review || review.userId !== auth.userId) {
+  if (!review) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  // Team reviews: only admin can delete; individual: owner or admin
+  if (review.isTeamReview && !auth.session.user.isAdmin) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  if (!review.isTeamReview && review.userId !== auth.userId && !auth.session.user.isAdmin) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
   await prisma.review.delete({ where: { id } });
   return Response.json({ success: true }, { status: 200 });
 }
-
