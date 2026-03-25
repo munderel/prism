@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { taskType, title, description, priority, dueDate, goalId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay } = body;
+  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay } = body;
 
   if (!taskType || !title) {
     return Response.json({ error: 'taskType and title are required' }, { status: 400 });
@@ -112,6 +112,19 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Validate processId if provided
+  if (processId) {
+    const process = await prisma.process.findUnique({ where: { id: processId } });
+    if (!process) {
+      return Response.json({ error: 'Process not found' }, { status: 404 });
+    }
+  }
+
+  // For REACT tasks, allow admins to set ownerId (the person responsible)
+  const effectiveOwnerId = (taskType === 'REACT' && ownerId && auth.session.user.isAdmin)
+    ? ownerId
+    : auth.userId;
+
   // MAINTENANCE tasks must have a valid recurrence rule
   if (taskType === 'MAINTENANCE' && recurrenceRule) {
     try {
@@ -135,13 +148,14 @@ export async function POST(request: NextRequest) {
 
   const task = await prisma.task.create({
     data: {
-      ownerId: auth.userId,
+      ownerId: effectiveOwnerId,
       taskType,
       title,
       description: description ?? null,
       priority: priority ?? 'MEDIUM',
       dueDate: dueDate ? new Date(dueDate) : null,
       goalId: goalId ?? null,
+      processId: processId ?? null,
       recurrenceRule: recurrenceRule ?? null,
       timeBlockStart: timeBlockStart ? new Date(timeBlockStart) : null,
       timeBlockEnd: timeBlockEnd ? new Date(timeBlockEnd) : null,
