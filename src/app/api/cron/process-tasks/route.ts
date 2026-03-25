@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
           dueDate: computeNextDueDate(process.cadence, now),
           status: 'TODO',
           priority: 'MEDIUM',
+          estimatedMinutes: process.defaultDurationMinutes,
         },
       });
 
