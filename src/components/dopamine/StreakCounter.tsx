@@ -26,7 +26,7 @@ export function StreakCounter({ streakType = 'daily_completion', atRisk = false 
           ? 'border-orange-600/30 bg-orange-600/10'
           : count > 0
           ? 'border-yellow-600/30 bg-yellow-600/10'
-          : 'border-gray-800 bg-gray-900/50'
+          : 'border-[var(--border-color)] bg-[var(--surface)]'
       }`}
       animate={atRisk ? { scale: [1, 1.02, 1] } : {}}
       transition={atRisk ? { repeat: Infinity, duration: 1.5 } : {}}
@@ -35,18 +35,18 @@ export function StreakCounter({ streakType = 'daily_completion', atRisk = false 
         animate={count > 0 ? { rotate: [-5, 5, -5] } : {}}
         transition={{ repeat: Infinity, duration: 2.5, repeatType: 'mirror' }}
       >
-        <Flame className={`h-5 w-5 ${atRisk ? 'text-orange-400' : count > 0 ? 'text-yellow-400' : 'text-gray-600'}`} />
+        <Flame className={`h-5 w-5 ${atRisk ? 'text-orange-400' : count > 0 ? 'text-yellow-400' : 'text-[var(--text-muted)]'}`} />
       </m.div>
       <div>
         <m.span
           key={count}
           initial={{ scale: 1.5 }}
           animate={{ scale: 1 }}
-          className="text-lg font-bold text-white"
+          className="text-lg font-bold text-[var(--text-primary)]"
         >
           {count}
         </m.span>
-        <span className="text-xs text-gray-500 ml-1">day streak</span>
+        <span className="text-xs text-[var(--text-muted)] ml-1">day streak</span>
       </div>
     </m.div>
   );

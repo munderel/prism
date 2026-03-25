@@ -195,26 +195,26 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-800 bg-gray-950 p-6 shadow-2xl">
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--surface-raised)] bg-background p-6 shadow-2xl">
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 text-gray-500 hover:text-white transition-colors"
+          className="absolute right-4 top-4 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+        <h2 className="text-xl font-bold text-[var(--text-primary)] mb-6 flex items-center gap-2">
           <Users className="h-5 w-5 text-emerald-400" />
           Manage Meetings
         </h2>
 
         {/* Meeting list */}
         {loading ? (
-          <p className="text-gray-500 text-sm">Loading meetings...</p>
+          <p className="text-[var(--text-muted)] text-sm">Loading meetings...</p>
         ) : (
           <div className="space-y-3 mb-6">
             {meetings.length === 0 && !showForm && (
-              <p className="text-gray-600 text-sm text-center py-4">
+              <p className="text-[var(--text-muted)] text-sm text-center py-4">
                 No meetings yet. Create one to get started.
               </p>
             )}
@@ -224,8 +224,8 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
                 className="flex items-center justify-between glass-panel p-4"
               >
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-white truncate">{m.title}</h3>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)] truncate">{m.title}</h3>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-[var(--text-muted)]">
                     <span className="inline-flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {m.timeStart} - {m.timeEnd}
@@ -245,13 +245,13 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
                 <div className="flex items-center gap-2 ml-4">
                   <button
                     onClick={() => startEdit(m)}
-                    className="rounded-lg p-2 text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
+                    className="rounded-lg p-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-raised)] transition-colors"
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => handleDelete(m.id)}
-                    className="rounded-lg p-2 text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-colors"
+                    className="rounded-lg p-2 text-[var(--text-muted)] hover:text-red-400 hover:bg-[var(--surface-raised)] transition-colors"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -264,40 +264,40 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
         {/* Create / Edit form */}
         {showForm ? (
           <form onSubmit={handleSubmit} className="space-y-4 glass-panel p-4">
-            <h3 className="text-sm font-semibold text-white">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
               {editingId ? 'Edit Meeting' : 'New Meeting'}
             </h3>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Title</label>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-emerald-500 focus:outline-none"
                 placeholder="e.g., Weekly Team Standup"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Description (optional)</label>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Description (optional)</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none resize-none"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-emerald-500 focus:outline-none resize-none"
                 placeholder="Meeting agenda or notes..."
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Cadence</label>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Cadence</label>
                 <select
                   value={cadence}
                   onChange={(e) => setCadence(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
                 >
                   {CADENCE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -308,13 +308,13 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Day of Week</label>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
                 <select
                   value={dayOfWeek ?? ''}
                   onChange={(e) =>
                     setDayOfWeek(e.target.value === '' ? null : Number(e.target.value))
                   }
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
                 >
                   <option value="">Any / N/A</option>
                   {DAY_OPTIONS.map((d) => (
@@ -328,30 +328,30 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Start Time</label>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Start Time</label>
                 <input
                   type="time"
                   value={timeStart}
                   onChange={(e) => setTimeStart(e.target.value)}
                   required
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">End Time</label>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">End Time</label>
                 <input
                   type="time"
                   value={timeEnd}
                   onChange={(e) => setTimeEnd(e.target.value)}
                   required
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
                 />
               </div>
             </div>
 
             {/* Attendee multi-select */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Attendees</label>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Attendees</label>
               {selectedAttendees.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                   {selectedAttendees.map((a) => (
@@ -363,7 +363,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
                       <button
                         type="button"
                         onClick={() => removeAttendee(a.id)}
-                        className="hover:text-white"
+                        className="hover:text-[var(--text-primary)]"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -377,23 +377,23 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
                   value={userSearch}
                   onChange={(e) => setUserSearch(e.target.value)}
                   placeholder="Search users by name or email..."
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-emerald-500 focus:outline-none"
                 />
                 {(userResults.length > 0 || searchingUsers) && (
-                  <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-700 bg-gray-900 shadow-xl max-h-40 overflow-y-auto">
+                  <div className="absolute z-10 mt-1 w-full rounded-lg border border-[var(--border-color)] bg-background shadow-xl max-h-40 overflow-y-auto">
                     {searchingUsers && (
-                      <p className="px-3 py-2 text-xs text-gray-500">Searching...</p>
+                      <p className="px-3 py-2 text-xs text-[var(--text-muted)]">Searching...</p>
                     )}
                     {userResults.map((u) => (
                       <button
                         key={u.id}
                         type="button"
                         onClick={() => addAttendee(u)}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                        className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] transition-colors"
                       >
                         {u.name || u.email}
                         {u.name && (
-                          <span className="ml-2 text-xs text-gray-600">{u.email}</span>
+                          <span className="ml-2 text-xs text-[var(--text-muted)]">{u.email}</span>
                         )}
                       </button>
                     ))}
@@ -413,7 +413,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
               <button
                 type="button"
                 onClick={resetForm}
-                className="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+                className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--glass-border)] transition-colors"
               >
                 Cancel
               </button>

@@ -39,7 +39,7 @@ export const GoalProgressBar = React.memo(function GoalProgressBar({
         />
       </div>
       {showLabel && (
-        <span className="text-xs text-gray-400 min-w-[3ch] text-right">
+        <span className="text-xs text-[var(--text-secondary)] min-w-[3ch] text-right">
           {Math.round(clamped)}%
         </span>
       )}

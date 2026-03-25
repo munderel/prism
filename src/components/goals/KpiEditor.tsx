@@ -113,10 +113,10 @@ export function KpiEditor({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-lg font-semibold text-white">
+            <h2 className="font-display text-lg font-semibold text-[var(--text-primary)]">
               {isEditing ? 'Edit KPI' : 'New KPI'}
             </h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-white">
+            <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -127,20 +127,20 @@ export function KpiEditor({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Name</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Name</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 placeholder="e.g., Revenue Target"
               />
             </div>
 
             {!isEditing && (
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Type</label>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Type</label>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -151,7 +151,7 @@ export function KpiEditor({
                       onChange={() => setType('NUMERIC')}
                       className="accent-indigo-500"
                     />
-                    <span className="text-sm text-white">Numeric</span>
+                    <span className="text-sm text-[var(--text-primary)]">Numeric</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -162,7 +162,7 @@ export function KpiEditor({
                       onChange={() => setType('BINARY')}
                       className="accent-indigo-500"
                     />
-                    <span className="text-sm text-white">Binary</span>
+                    <span className="text-sm text-[var(--text-primary)]">Binary</span>
                   </label>
                 </div>
               </div>
@@ -171,24 +171,24 @@ export function KpiEditor({
             {type === 'NUMERIC' && (
               <>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Unit</label>
+                  <label className="block text-sm text-[var(--text-secondary)] mb-1">Unit</label>
                   <input
                     type="text"
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
-                    className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                     placeholder='e.g., "$", "calls", "locations"'
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Target Value</label>
+                  <label className="block text-sm text-[var(--text-secondary)] mb-1">Target Value</label>
                   <input
                     type="number"
                     value={target}
                     onChange={(e) => setTarget(e.target.value)}
                     required
-                    className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                     placeholder="e.g., 4000"
                   />
                 </div>
@@ -197,13 +197,13 @@ export function KpiEditor({
 
             {showLinkDropdown && (
               <div>
-                <label className="block text-sm text-gray-400 mb-1">
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">
                   Link to {parentLevelLabel[goalLevel] ?? 'Parent'} KPI
                 </label>
                 <select
                   value={linkedMonthlyKpiId}
                   onChange={(e) => setLinkedMonthlyKpiId(e.target.value)}
-                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">None</option>
                   {matchingParentKpis.map((pk: any) => (
@@ -219,7 +219,7 @@ export function KpiEditor({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="rounded-lg px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
               >
                 Cancel
               </button>

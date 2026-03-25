@@ -176,7 +176,7 @@ export default function TasksPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
           <ListTodo className="h-6 w-6 text-prism-indigo" />
           Tasks
         </h1>
@@ -198,7 +198,7 @@ export default function TasksPage() {
             className={`rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               viewMode === key
                 ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
-                : 'text-gray-400 border border-gray-800 hover:border-gray-700 hover:text-white'
+                : 'text-[var(--text-secondary)] border border-[var(--surface-raised)] hover:border-[var(--border-color)] hover:text-[var(--text-primary)]'
             }`}
           >
             {label}
@@ -210,20 +210,20 @@ export default function TasksPage() {
       <div className="mb-6 flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="rounded-lg border border-gray-700 bg-gray-800 p-2 text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+          className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--glass-border)] transition-colors"
           title={`Previous ${viewMode}`}
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
         <button
           onClick={() => navigate(1)}
-          className="rounded-lg border border-gray-700 bg-gray-800 p-2 text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+          className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--glass-border)] transition-colors"
           title={`Next ${viewMode}`}
         >
           <ChevronRight className="h-4 w-4" />
         </button>
 
-        <span className="text-sm font-medium text-white min-w-[180px]">
+        <span className="text-sm font-medium text-[var(--text-primary)] min-w-[180px]">
           {periodLabel()}
         </span>
 
@@ -231,14 +231,14 @@ export default function TasksPage() {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+          className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
         />
         <button
           onClick={goToToday}
           className={`rounded-lg px-3 py-2 text-sm transition-colors ${
             date === today
               ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
-              : 'text-gray-400 border border-gray-700 hover:border-gray-600'
+              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
           }`}
         >
           Today
@@ -258,13 +258,13 @@ export default function TasksPage() {
               onStatusChange={() => mutateRange()}
             />
           ) : rangeLoading ? (
-            <div className="text-gray-500 text-sm py-4">Loading tasks...</div>
+            <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>
           ) : (
             /* Week / Month view: grouped by date */
             <div className="space-y-6">
               {dateKeys.length === 0 ? (
                 <div className="glass-panel p-8 text-center">
-                  <p className="text-gray-600 text-sm">No tasks in this {viewMode}</p>
+                  <p className="text-[var(--text-muted)] text-sm">No tasks in this {viewMode}</p>
                 </div>
               ) : (
                 dateKeys.map((dateKey) => {
@@ -273,7 +273,7 @@ export default function TasksPage() {
                   return (
                     <div key={dateKey}>
                       <div className={`mb-2 flex items-center gap-2 text-sm font-semibold ${
-                        isToday ? 'text-indigo-400' : 'text-gray-300'
+                        isToday ? 'text-indigo-400' : 'text-[var(--text-secondary)]'
                       }`}>
                         <span>{formatDateLabel(dateKey)}</span>
                         {isToday && (
@@ -281,7 +281,7 @@ export default function TasksPage() {
                             Today
                           </span>
                         )}
-                        <span className="text-xs text-gray-600">({dayTasks.length})</span>
+                        <span className="text-xs text-[var(--text-muted)]">({dayTasks.length})</span>
                       </div>
                       <DailyTaskList
                         date={dateKey}
@@ -304,11 +304,11 @@ export default function TasksPage() {
           {selectedTask ? (
             <div className="glass-panel p-4 space-y-4">
               <div>
-                <h3 className="text-lg font-semibold text-white">{selectedTask.title}</h3>
+                <h3 className="text-lg font-semibold text-[var(--text-primary)]">{selectedTask.title}</h3>
                 {selectedTask.description && (
-                  <p className="text-sm text-gray-400 mt-1">{selectedTask.description}</p>
+                  <p className="text-sm text-[var(--text-secondary)] mt-1">{selectedTask.description}</p>
                 )}
-                <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                <div className="flex items-center gap-3 mt-2 text-xs text-[var(--text-muted)]">
                   <span>{selectedTask.taskType.replace('_', ' ')}</span>
                   <span>{selectedTask.priority}</span>
                   <span>{selectedTask.status.replace('_', ' ')}</span>
@@ -318,7 +318,7 @@ export default function TasksPage() {
             </div>
           ) : (
             <div className="glass-panel p-8 text-center">
-              <p className="text-gray-600 text-sm">Select a task to view details and comments</p>
+              <p className="text-[var(--text-muted)] text-sm">Select a task to view details and comments</p>
             </div>
           )}
         </div>

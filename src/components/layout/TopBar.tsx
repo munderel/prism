@@ -13,11 +13,11 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
   const { data: session } = useSession();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#050510]/80 backdrop-blur-sm px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-color)] bg-background/80 backdrop-blur-sm px-6">
       <div className="flex items-center gap-3 lg:hidden">
         <button
           onClick={onMenuToggle}
-          className="rounded-lg p-1.5 text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors"
+          className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors"
           aria-label="Open navigation menu"
         >
           <Menu className="h-5 w-5" />
@@ -31,7 +31,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
       <div className="ml-auto flex items-center gap-4">
         {session?.user && (
           <>
-            <span className="text-sm text-gray-400">{session.user.name}</span>
+            <span className="text-sm text-[var(--text-secondary)]">{session.user.name}</span>
             {session.user.image && (
               <Image
                 src={session.user.image}
@@ -43,7 +43,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
             )}
             <button
               onClick={() => signOut()}
-              className="text-sm text-gray-400 hover:text-white transition-colors"
+              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               Sign out
             </button>

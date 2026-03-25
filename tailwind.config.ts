@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: 'class',
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -20,10 +21,16 @@ const config: Config = {
           amber: '#f59e0b',
         },
         surface: {
-          DEFAULT: 'rgba(15, 15, 25, 0.7)',
-          raised: 'rgba(25, 25, 40, 0.8)',
-          border: 'rgba(99, 102, 241, 0.12)',
+          DEFAULT: 'var(--surface)',
+          raised: 'var(--surface-raised)',
+          border: 'var(--glass-border)',
         },
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-muted': 'var(--text-muted)',
+      },
+      borderColor: {
+        DEFAULT: 'var(--border-color)',
       },
       fontFamily: {
         sans: ['var(--font-inter)', 'Inter', 'system-ui', 'sans-serif'],

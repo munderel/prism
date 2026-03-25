@@ -25,8 +25,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${plusJakartaSans.variable}`}>
-      <body className={`${inter.className} bg-[#050510] text-white`}>
+    <html lang="en" className={`${inter.variable} ${plusJakartaSans.variable}`} suppressHydrationWarning>
+      <body className={`${inter.className} bg-background text-foreground`}>
         <ErrorBoundary>
           {children}
         </ErrorBoundary>

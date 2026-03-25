@@ -95,17 +95,17 @@ export function GoalEditor({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-lg font-semibold text-white">
+            <h2 className="font-display text-lg font-semibold text-[var(--text-primary)]">
               {isEditing ? 'Edit Goal' : 'New Goal'}
             </h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-white">
+            <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
               <X className="h-5 w-5" />
             </button>
           </div>
 
           {derivedLevel && (
             <div className="mb-4">
-              <span className="text-xs text-gray-400">Level: </span>
+              <span className="text-xs text-[var(--text-secondary)]">Level: </span>
               <span className="text-xs font-medium text-prism-indigo">
                 {LEVEL_LABELS[derivedLevel] ?? derivedLevel}
               </span>
@@ -118,35 +118,35 @@ export function GoalEditor({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Title</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 placeholder="What do you want to achieve?"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Description</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none"
+                className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none resize-none"
                 placeholder="Optional details..."
               />
             </div>
 
             {isEditing && (
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Status</label>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Status</label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="NOT_STARTED">Not Started</option>
                   <option value="IN_PROGRESS">In Progress</option>
@@ -157,12 +157,12 @@ export function GoalEditor({
             )}
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Due Date</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Due Date</label>
               <input
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
               />
             </div>
 
@@ -170,7 +170,7 @@ export function GoalEditor({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="rounded-lg px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
               >
                 Cancel
               </button>

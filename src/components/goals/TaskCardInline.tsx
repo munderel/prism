@@ -42,7 +42,7 @@ export const TaskCardInline = React.memo(function TaskCardInline({
           className={`flex-shrink-0 h-4 w-4 rounded border-2 transition-colors ${
             isDone
               ? 'bg-green-600 border-green-600'
-              : 'border-gray-600 hover:border-indigo-500'
+              : 'border-[var(--border-color)] hover:border-indigo-500'
           }`}
         >
           {isDone && (
@@ -64,7 +64,7 @@ export const TaskCardInline = React.memo(function TaskCardInline({
         <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${PRIORITY_DOT_COLORS[task.priority] ?? PRIORITY_DOT_COLORS.MEDIUM}`} />
 
         {/* Title */}
-        <span className={`flex-1 min-w-0 text-xs font-medium truncate ${isDone ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
+        <span className={`flex-1 min-w-0 text-xs font-medium truncate ${isDone ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-secondary)]'}`}>
           {task.title}
         </span>
 
@@ -75,7 +75,7 @@ export const TaskCardInline = React.memo(function TaskCardInline({
 
         {/* Due date */}
         {task.dueDate && (
-          <span className={`text-[10px] shrink-0 ${isOverdue ? 'text-red-400' : 'text-gray-500'}`}>
+          <span className={`text-[10px] shrink-0 ${isOverdue ? 'text-red-400' : 'text-[var(--text-muted)]'}`}>
             {new Date(task.dueDate).toLocaleDateString()}
           </span>
         )}
@@ -84,14 +84,14 @@ export const TaskCardInline = React.memo(function TaskCardInline({
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); onEdit(task); }}
-            className="rounded p-0.5 text-gray-500 hover:bg-white/[0.05] hover:text-white"
+            className="rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
             title="Edit task"
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
-            className="rounded p-0.5 text-gray-500 hover:bg-white/[0.05] hover:text-red-400"
+            className="rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-red-400"
             title="Delete task"
           >
             <Trash2 className="h-3.5 w-3.5" />

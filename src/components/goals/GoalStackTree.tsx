@@ -273,7 +273,7 @@ export function GoalStackTree({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-gray-500">Loading goals...</div>
+        <div className="text-[var(--text-muted)]">Loading goals...</div>
       </div>
     );
   }
@@ -295,7 +295,7 @@ export function GoalStackTree({
 
         {flatItems.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-gray-500 mb-4">No goals yet. Start building your goal stack!</p>
+            <p className="text-[var(--text-muted)] mb-4">No goals yet. Start building your goal stack!</p>
             <button
               onClick={handleAddRoot}
               className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"

@@ -104,12 +104,12 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
 
   return (
     <div className="space-y-3">
-      <h4 className="text-sm font-semibold text-gray-400">Comments</h4>
+      <h4 className="text-sm font-semibold text-[var(--text-secondary)]">Comments</h4>
 
       {/* Comment list */}
       <div className="space-y-2 max-h-60 overflow-y-auto">
         {comments.map((comment) => (
-          <div key={comment.id} className="group flex gap-2 rounded-lg bg-gray-800/50 p-3">
+          <div key={comment.id} className="group flex gap-2 rounded-lg bg-[var(--surface)] p-3">
             {comment.author?.image ? (
               <img
                 src={comment.author.image}
@@ -121,21 +121,21 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
             )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">
                   {comment.author?.name ?? 'Unknown'}
                 </span>
-                <span className="text-xs text-gray-600">
+                <span className="text-xs text-[var(--text-muted)]">
                   {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
                 </span>
               </div>
-              <p className="text-sm text-gray-300 mt-0.5">
+              <p className="text-sm text-[var(--text-secondary)] mt-0.5">
                 {renderWithMentions(comment.content)}
               </p>
             </div>
             {(comment.authorId === session?.user?.id || session?.user?.isAdmin) && (
               <button
                 onClick={() => handleDelete(comment.id)}
-                className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-opacity"
+                className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-red-400 transition-opacity"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -143,7 +143,7 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
           </div>
         ))}
         {comments.length === 0 && (
-          <p className="text-xs text-gray-600">No comments yet.</p>
+          <p className="text-xs text-[var(--text-muted)]">No comments yet.</p>
         )}
       </div>
 
@@ -157,7 +157,7 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
             onChange={(e) => handleContentChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Add a comment... (use @mention)"
-            className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
           />
           <button
             onClick={handleSend}
@@ -170,20 +170,20 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
 
         {/* @mention dropdown */}
         {showMentions && mentionResults.length > 0 && (
-          <div className="absolute bottom-full mb-1 left-0 w-full max-h-40 overflow-y-auto rounded-lg border border-gray-700 bg-gray-800 shadow-xl z-10">
+          <div className="absolute bottom-full mb-1 left-0 w-full max-h-40 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] shadow-xl z-10">
             {mentionResults.map((user) => (
               <button
                 key={user.id}
                 onClick={() => insertMention(user)}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-gray-700 transition-colors"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-[var(--hover-bg)] transition-colors"
               >
                 {user.image ? (
                   <img src={user.image} alt="" className="h-5 w-5 rounded-full" />
                 ) : (
                   <div className="h-5 w-5 rounded-full bg-gray-600" />
                 )}
-                <span className="text-white">{user.name}</span>
-                <span className="text-gray-500 text-xs">{user.email}</span>
+                <span className="text-[var(--text-primary)]">{user.name}</span>
+                <span className="text-[var(--text-muted)] text-xs">{user.email}</span>
               </button>
             ))}
           </div>
