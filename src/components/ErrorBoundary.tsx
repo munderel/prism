@@ -25,12 +25,12 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         this.props.fallback ?? (
-          <div className="flex min-h-screen items-center justify-center bg-gray-950">
+          <div className="flex min-h-screen items-center justify-center bg-background">
             <div className="text-center">
-              <h2 className="text-xl font-semibold text-white mb-2">
+              <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-2">
                 Something went wrong
               </h2>
-              <p className="text-gray-400 mb-4">
+              <p className="text-[var(--text-secondary)] mb-4">
                 An unexpected error occurred.
               </p>
               <button

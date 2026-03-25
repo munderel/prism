@@ -67,21 +67,21 @@ export function KpiSidebar({
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 340, opacity: 0 }}
         transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-        className="fixed top-0 right-0 h-full w-[340px] z-40 border-l border-white/[0.06] bg-gray-900/95 backdrop-blur-xl flex flex-col"
+        className="fixed top-0 right-0 h-full w-[340px] z-40 border-l border-[var(--border-color)] bg-background/95 backdrop-blur-xl flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
           <div className="min-w-0 flex-1">
-            <span className="text-xs text-gray-500 uppercase tracking-wider">
+            <span className="text-xs text-[var(--text-muted)] uppercase tracking-wider">
               {LEVEL_LABELS[goalLevel] ?? goalLevel} KPIs
             </span>
-            <h3 className="text-sm font-medium text-white truncate mt-0.5">
+            <h3 className="text-sm font-medium text-[var(--text-primary)] truncate mt-0.5">
               {goalTitle}
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="rounded p-1 text-gray-500 hover:bg-white/[0.05] hover:text-white ml-2 shrink-0"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] ml-2 shrink-0"
           >
             <X className="h-5 w-5" />
           </button>
@@ -95,9 +95,9 @@ export function KpiSidebar({
             </div>
           ) : kpis.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <BarChart3 className="h-8 w-8 text-gray-600 mb-2" />
-              <p className="text-sm text-gray-500">No KPIs yet</p>
-              <p className="text-xs text-gray-600 mt-1">
+              <BarChart3 className="h-8 w-8 text-[var(--text-muted)] mb-2" />
+              <p className="text-sm text-[var(--text-muted)]">No KPIs yet</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">
                 Add KPIs to track measurable outcomes for this goal.
               </p>
             </div>
@@ -117,7 +117,7 @@ export function KpiSidebar({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-white/[0.06]">
+        <div className="px-4 py-3 border-t border-[var(--border-color)]">
           <button
             onClick={() => {
               setEditingKpi(null);

@@ -22,10 +22,10 @@ export function DashboardGreeting({ onQuickAdd }: DashboardGreetingProps) {
   return (
     <div className="mb-8 flex items-start justify-between gap-4">
       <div>
-        <h1 className="font-display text-3xl font-bold text-white">
+        <h1 className="font-display text-3xl font-bold text-[var(--text-primary)]">
           {greeting}{session?.user?.name ? `, ${session.user.name}` : ''}
         </h1>
-        <p className="text-gray-500 mt-1.5 text-sm">
+        <p className="text-[var(--text-muted)] mt-1.5 text-sm">
           Here&apos;s your day at a glance.
         </p>
       </div>
@@ -33,7 +33,7 @@ export function DashboardGreeting({ onQuickAdd }: DashboardGreetingProps) {
         <StreakCounter />
         <button
           onClick={onQuickAdd}
-          className="glass-panel flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/[0.05] transition-colors"
+          className="glass-panel flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
         >
           <Plus className="h-4 w-4 text-prism-indigo" />
           Quick Add

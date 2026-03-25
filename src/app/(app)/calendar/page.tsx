@@ -11,7 +11,7 @@ import { MeetingsManager } from '@/components/calendar/MeetingsManager';
 // FullCalendar needs dynamic import (no SSR)
 const CalendarView = dynamic(
   () => import('@/components/calendar/CalendarView').then((m) => m.CalendarView),
-  { ssr: false, loading: () => <div className="text-gray-500 py-12 text-center">Loading calendar...</div> }
+  { ssr: false, loading: () => <div className="text-[var(--text-muted)] py-12 text-center">Loading calendar...</div> }
 );
 
 interface UnscheduledTask {
@@ -110,7 +110,7 @@ export default function CalendarPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
           <CalendarDays className="h-6 w-6 text-prism-indigo" />
           Calendar
         </h1>
@@ -133,13 +133,13 @@ export default function CalendarPage() {
           <div className="glass-panel p-4 sticky top-4">
             <div className="flex items-center gap-2 mb-4">
               <Clock className="h-4 w-4 text-indigo-400" />
-              <h2 className="text-sm font-semibold text-white">Unscheduled Tasks</h2>
-              <span className="ml-auto rounded-full bg-gray-800 px-2 py-0.5 text-xs text-gray-400">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Unscheduled Tasks</h2>
+              <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
                 {unscheduledTasks.length}
               </span>
             </div>
 
-            <p className="text-xs text-gray-500 mb-3">
+            <p className="text-xs text-[var(--text-muted)] mb-3">
               Drag tasks onto the calendar to schedule them.
             </p>
 
@@ -149,26 +149,26 @@ export default function CalendarPage() {
             >
               {loadingTasks ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-500 text-sm">Loading tasks...</div>
+                  <div className="text-[var(--text-muted)] text-sm">Loading tasks...</div>
                 </div>
               ) : unscheduledTasks.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-600 text-sm">All tasks are scheduled!</p>
+                  <p className="text-[var(--text-muted)] text-sm">All tasks are scheduled!</p>
                 </div>
               ) : (
                 unscheduledTasks.map((task) => (
                   <div
                     key={task.id}
-                    className={`fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-gray-800 border-l-4 ${
+                    className={`fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 ${
                       PRIORITY_COLORS[task.priority] || 'border-l-gray-600'
-                    } bg-gray-800/50 p-3 hover:bg-gray-800 transition-colors`}
+                    } bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors`}
                     data-task-id={task.id}
                     data-task-title={task.title}
                   >
                     <div className="flex items-start gap-2">
-                      <GripVertical className="h-4 w-4 text-gray-600 mt-0.5 flex-shrink-0" />
+                      <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white font-medium truncate">
+                        <p className="text-sm text-[var(--text-primary)] font-medium truncate">
                           {task.title}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
@@ -177,7 +177,7 @@ export default function CalendarPage() {
                               PRIORITY_DOT_COLORS[task.priority] || 'bg-gray-500'
                             }`}
                           />
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-[var(--text-muted)]">
                             {task.priority.charAt(0) + task.priority.slice(1).toLowerCase()}
                           </span>
                           {task.taskType === 'GOAL_STACK' && task.goal && (
@@ -187,7 +187,7 @@ export default function CalendarPage() {
                           )}
                         </div>
                         {task.dueDate && (
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-[var(--text-muted)] mt-1">
                             Due: {new Date(task.dueDate).toLocaleDateString()}
                           </p>
                         )}
@@ -210,8 +210,8 @@ export default function CalendarPage() {
           {/* Event details panel */}
           {selectedEvent && (
             <div className="mt-4 glass-panel p-4 space-y-3">
-              <h3 className="text-lg font-semibold text-white">{selectedEvent.title}</h3>
-              <div className="text-xs text-gray-500 space-y-1">
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">{selectedEvent.title}</h3>
+              <div className="text-xs text-[var(--text-muted)] space-y-1">
                 <p>Source: {selectedEvent.source}</p>
                 {selectedEvent.start && (
                   <p>Start: {new Date(selectedEvent.start).toLocaleString()}</p>
@@ -223,7 +223,7 @@ export default function CalendarPage() {
                 {selectedEvent.cadence && <p>Cadence: {selectedEvent.cadence}</p>}
                 {selectedEvent.createdBy && <p>Created by: {selectedEvent.createdBy}</p>}
                 {selectedEvent.description && (
-                  <p className="text-gray-400 mt-2">{selectedEvent.description}</p>
+                  <p className="text-[var(--text-secondary)] mt-2">{selectedEvent.description}</p>
                 )}
               </div>
               {selectedEvent.meetLink && (

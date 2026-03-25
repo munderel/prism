@@ -6,14 +6,16 @@ import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { m } from 'framer-motion';
 import { Building2, User, Target } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
 
 const GoalStackTree = dynamic(
   () => import('@/components/goals/GoalStackTree').then((mod) => ({ default: mod.GoalStackTree })),
-  { loading: () => <div className="text-gray-500 py-8 text-center">Loading...</div> }
+  { loading: () => <div className="text-[var(--text-muted)] py-8 text-center">Loading...</div> }
 );
 import { YamlImportExport } from '@/components/goals/YamlImportExport';
 
 export default function GoalsPage() {
+  const toast = useToast();
   const { data: session } = useSession();
   const { data: stacksData, isLoading, mutate: mutateStacks } = useSWR('/api/stacks');
   const stacks = useMemo(() => (Array.isArray(stacksData) ? stacksData : []), [stacksData]);
@@ -55,14 +57,14 @@ export default function GoalsPage() {
       setSelectedStackId(stack.id);
     } else {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || 'Failed to create stack');
+      toast.error(data.error || 'Failed to create stack');
     }
   };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-gray-500">Loading stacks...</div>
+        <div className="text-[var(--text-muted)]">Loading stacks...</div>
       </div>
     );
   }
@@ -70,7 +72,7 @@ export default function GoalsPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
           <Target className="h-6 w-6 text-prism-indigo" />
           Goal Stack
         </h1>
@@ -94,7 +96,7 @@ export default function GoalsPage() {
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               selectedStackId === stack.id
                 ? 'bg-prism-indigo/15 text-prism-indigo border border-prism-indigo/25'
-                : 'text-gray-400 border border-white/[0.06] hover:border-white/[0.1] hover:text-white'
+                : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1] hover:text-[var(--text-primary)]'
             }`}
           >
             {stack.isCompany ? (
@@ -103,12 +105,12 @@ export default function GoalsPage() {
               <User className="h-4 w-4" />
             )}
             {stack.name}
-            <span className="text-xs text-gray-600">({stack._count?.goals ?? 0})</span>
+            <span className="text-xs text-[var(--text-muted)]">({stack._count?.goals ?? 0})</span>
           </button>
         ))}
         <button
           onClick={handleCreateStack}
-          className="rounded-lg border border-dashed border-gray-700 px-4 py-2 text-sm text-gray-500 hover:border-gray-600 hover:text-gray-400 transition-colors"
+          className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-muted)] hover:border-[var(--glass-border)] hover:text-[var(--text-secondary)] transition-colors"
         >
           + New Stack
         </button>
@@ -117,7 +119,7 @@ export default function GoalsPage() {
       {/* Inline create form */}
       {showCreateForm && (
         <div className="mb-6 glass-panel p-4">
-          <h3 className="text-sm font-semibold text-white mb-3">Create New Stack</h3>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Create New Stack</h3>
           <div className="flex items-center gap-3">
             <input
               type="text"
@@ -129,7 +131,7 @@ export default function GoalsPage() {
                 if (e.key === 'Enter') handleSubmitCreate();
                 if (e.key === 'Escape') { setShowCreateForm(false); setNewStackName(''); }
               }}
-              className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white text-sm focus:border-prism-indigo focus:outline-none"
+              className="rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-prism-indigo focus:outline-none"
             />
             <button
               onClick={handleSubmitCreate}
@@ -140,7 +142,7 @@ export default function GoalsPage() {
             </button>
             <button
               onClick={() => { setShowCreateForm(false); setNewStackName(''); }}
-              className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+              className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               Cancel
             </button>
@@ -164,7 +166,7 @@ export default function GoalsPage() {
         </m.div>
       ) : (
         <div className="text-center py-16">
-          <p className="text-gray-500 mb-4">
+          <p className="text-[var(--text-muted)] mb-4">
             No goal stacks yet. Create one to get started!
           </p>
           <button

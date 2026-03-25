@@ -47,10 +47,10 @@ export const KpiProgressBar = React.memo(function KpiProgressBar({
       </div>
       {showValues && (
         <div className="flex items-center justify-between mt-1">
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-[var(--text-secondary)]">
             {formatValue(actual, unit)} / {formatValue(target, unit)}
           </span>
-          <span className="text-xs text-gray-400">{Math.round(pct)}%</span>
+          <span className="text-xs text-[var(--text-secondary)]">{Math.round(pct)}%</span>
         </div>
       )}
     </div>

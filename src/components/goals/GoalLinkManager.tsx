@@ -75,11 +75,11 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
     }
   };
 
-  if (loading) return <div className="text-gray-500 text-sm">Loading links...</div>;
+  if (loading) return <div className="text-[var(--text-muted)] text-sm">Loading links...</div>;
 
   return (
     <div className="glass-panel p-4">
-      <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+      <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
         <Link className="h-4 w-4 text-indigo-400" />
         Linked Individual Goals
       </h3>
@@ -89,22 +89,22 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
           {links.map((link: any) => (
             <div
               key={link.id}
-              className="flex items-center justify-between rounded-md bg-gray-800/50 px-3 py-2"
+              className="flex items-center justify-between rounded-md bg-[var(--surface)] px-3 py-2"
             >
               <div>
-                <span className="text-sm text-white">
+                <span className="text-sm text-[var(--text-primary)]">
                   {link.individualGoal?.title}
                 </span>
-                <span className="text-xs text-gray-500 ml-2">
+                <span className="text-xs text-[var(--text-muted)] ml-2">
                   by {link.individualGoal?.stack?.owner?.name ?? 'Unknown'}
                 </span>
-                <span className="text-xs text-gray-500 ml-2">
+                <span className="text-xs text-[var(--text-muted)] ml-2">
                   (weight: {link.weight})
                 </span>
               </div>
               <button
                 onClick={() => handleRemoveLink(link.id)}
-                className="text-gray-500 hover:text-red-400"
+                className="text-[var(--text-muted)] hover:text-red-400"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -115,11 +115,11 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
 
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <label className="block text-xs text-gray-400 mb-1">Individual Goal</label>
+          <label className="block text-xs text-[var(--text-secondary)] mb-1">Individual Goal</label>
           <select
             value={selectedGoalId}
             onChange={(e) => setSelectedGoalId(e.target.value)}
-            className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white"
+            className="w-full rounded-md border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1.5 text-sm text-[var(--text-primary)]"
           >
             <option value="">Select a goal...</option>
             {availableGoals.map((g) => (
@@ -130,14 +130,14 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
           </select>
         </div>
         <div className="w-20">
-          <label className="block text-xs text-gray-400 mb-1">Weight</label>
+          <label className="block text-xs text-[var(--text-secondary)] mb-1">Weight</label>
           <input
             type="number"
             step="0.1"
             min="0.1"
             value={weight}
             onChange={(e) => setWeight(parseFloat(e.target.value))}
-            className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white"
+            className="w-full rounded-md border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1.5 text-sm text-[var(--text-primary)]"
           />
         </div>
         <button

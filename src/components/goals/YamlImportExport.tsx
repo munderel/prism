@@ -77,7 +77,7 @@ export function YamlImportExport({
       <div className="flex items-center gap-2">
         <button
           onClick={handleExport}
-          className="flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-400 hover:border-gray-600 hover:text-white transition-colors"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:border-[var(--glass-border)] hover:text-[var(--text-primary)] transition-colors"
         >
           <Download className="h-4 w-4" />
           Export YAML
@@ -85,7 +85,7 @@ export function YamlImportExport({
 
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-400 hover:border-gray-600 hover:text-white transition-colors"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:border-[var(--glass-border)] hover:text-[var(--text-primary)] transition-colors"
         >
           <Upload className="h-4 w-4" />
           Import YAML
@@ -108,7 +108,7 @@ export function YamlImportExport({
             exit={{ opacity: 0, height: 0 }}
             className="mt-4 glass-panel p-4"
           >
-            <h3 className="text-sm font-semibold text-white mb-3">Import Preview</h3>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Import Preview</h3>
 
             {diff.added.length > 0 && (
               <div className="mb-2">
@@ -156,7 +156,7 @@ export function YamlImportExport({
                 </span>
                 {diff.kpiChanges.map((entry: any, i: number) => (
                   <div key={i} className="ml-4 mt-1">
-                    <span className="text-xs text-gray-400">{entry.goalTitle}:</span>
+                    <span className="text-xs text-[var(--text-secondary)]">{entry.goalTitle}:</span>
                     {entry.added.map((k: any, j: number) => (
                       <div key={`a${j}`} className="text-xs text-green-300/70 ml-2">
                         + KPI: {k.name} ({k.type})
@@ -181,7 +181,7 @@ export function YamlImportExport({
               diff.deleted.length === 0 &&
               diff.modified.length === 0 &&
               (!diff.kpiChanges || diff.kpiChanges.length === 0) && (
-                <p className="text-xs text-gray-500">No changes detected.</p>
+                <p className="text-xs text-[var(--text-muted)]">No changes detected.</p>
               )}
 
             <div className="flex items-center gap-2 mt-4">
@@ -198,7 +198,7 @@ export function YamlImportExport({
                   setDiff(null);
                   setYamlContent('');
                 }}
-                className="flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-400 hover:text-white"
+                className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               >
                 <X className="h-4 w-4" />
                 Cancel

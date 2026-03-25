@@ -107,7 +107,7 @@ export const GoalCard = React.memo(function GoalCard({
     >
       <div
         onClick={() => onKpiClick?.(goal)}
-        className={`flex items-center gap-3 rounded-lg border border-white/[0.06] bg-[var(--glass-bg)] ${styles.padding} hover:border-white/[0.1] transition-colors cursor-pointer ${styles.wrapper}`}>
+        className={`flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--glass-bg)] ${styles.padding} hover:border-white/[0.1] transition-colors cursor-pointer ${styles.wrapper}`}>
         {/* Level badge */}
         <span
           className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium shrink-0 ${
@@ -123,19 +123,19 @@ export const GoalCard = React.memo(function GoalCard({
         {/* Title and status */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`text-white truncate ${styles.titleClass}`}>
+            <span className={`text-[var(--text-primary)] truncate ${styles.titleClass}`}>
               {goal.title}
             </span>
             <div className="relative" ref={statusRef}>
               <button
                 onClick={(e) => { e.stopPropagation(); setShowStatusMenu(!showStatusMenu); }}
-                className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-white/[0.05] ${GOAL_STATUS_COLORS[goal.status] ?? ''}`}
+                className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-[var(--hover-bg)] ${GOAL_STATUS_COLORS[goal.status] ?? ''}`}
               >
                 {goal.status.replace(/_/g, ' ')}
                 <ChevronDown className="h-3 w-3" />
               </button>
               {showStatusMenu && (
-                <div className="absolute top-full left-0 mt-1 z-50 w-36 rounded-lg border border-white/[0.08] bg-gray-800/95 backdrop-blur-lg shadow-xl py-1">
+                <div className="absolute top-full left-0 mt-1 z-50 w-36 rounded-lg border border-white/[0.08] bg-[var(--surface-raised)] backdrop-blur-lg shadow-xl py-1">
                   {GOAL_STATUSES.map((s) => (
                     <button
                       key={s}
@@ -175,7 +175,7 @@ export const GoalCard = React.memo(function GoalCard({
 
         {/* Due date */}
         {goal.dueDate && (
-          <span className="text-xs text-gray-500 shrink-0">
+          <span className="text-xs text-[var(--text-muted)] shrink-0">
             {new Date(goal.dueDate).toLocaleDateString()}
           </span>
         )}
@@ -185,7 +185,7 @@ export const GoalCard = React.memo(function GoalCard({
           {canAddChild && (
             <button
               onClick={(e) => { e.stopPropagation(); onAddChild(goal); }}
-              className="rounded p-1 text-gray-500 hover:bg-white/[0.05] hover:text-white"
+              className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
               title="Add child goal"
             >
               <Plus className="h-4 w-4" />
@@ -194,7 +194,7 @@ export const GoalCard = React.memo(function GoalCard({
           {canAddTask && (
             <button
               onClick={(e) => { e.stopPropagation(); onAddTask?.(goal.id); }}
-              className="rounded p-1 text-gray-500 hover:bg-white/[0.05] hover:text-emerald-400"
+              className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-emerald-400"
               title="Add task"
             >
               <ListTodo className="h-4 w-4" />
@@ -202,14 +202,14 @@ export const GoalCard = React.memo(function GoalCard({
           )}
           <button
             onClick={() => onEdit(goal)}
-            className="rounded p-1 text-gray-500 hover:bg-white/[0.05] hover:text-white"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
             title="Edit goal"
           >
             <Pencil className="h-4 w-4" />
           </button>
           <button
             onClick={() => onDelete(goal.id)}
-            className="rounded p-1 text-gray-500 hover:bg-white/[0.05] hover:text-red-400"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-red-400"
             title="Delete goal"
           >
             <Trash2 className="h-4 w-4" />

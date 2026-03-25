@@ -2,11 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
+  const { theme, setTheme } = useTheme();
+  const toast = useToast();
+  const [mounted, setMounted] = useState(false);
 
   const [mtp, setMtp] = useState('');
   const [companyMtp, setCompanyMtp] = useState('');
@@ -35,9 +41,14 @@ export default function SettingsPage() {
   const [inviteRole, setInviteRole] = useState('user');
   const [inviting, setInviting] = useState(false);
 
+  // Confirm dialog state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingRemoveUserId, setPendingRemoveUserId] = useState<string | null>(null);
+
   const isDevMode = process.env.NEXT_PUBLIC_DEV_LOGIN === 'true';
 
   useEffect(() => {
+    setMounted(true);
     fetchSettings();
     if (isAdmin) {
       fetchUsers();
@@ -107,20 +118,25 @@ export default function SettingsPage() {
   };
 
   const removeUser = async (userId: string) => {
-    if (!window.confirm('Are you sure you want to remove this user? This cannot be undone.')) return;
+    setPendingRemoveUserId(userId);
+    setConfirmOpen(true);
+  };
+
+  const confirmRemoveUser = async () => {
+    if (!pendingRemoveUserId) return;
+    setConfirmOpen(false);
     const res = await fetch('/api/admin', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ userId: pendingRemoveUserId }),
     });
     if (res.ok) {
       fetchUsers();
     } else {
       const data = await res.json();
-      setMessageType('error');
-      setMessage(data.error || 'Failed to remove user');
-      setTimeout(() => setMessage(''), 3000);
+      toast.error(data.error || 'Failed to remove user');
     }
+    setPendingRemoveUserId(null);
   };
 
   const retriggerOnboarding = async () => {
@@ -146,19 +162,16 @@ export default function SettingsPage() {
       body: JSON.stringify({ email: createEmail, name: createName, role: createRole }),
     });
     if (res.ok) {
-      setMessageType('success');
-      setMessage('User created! They can now log in via dev login.');
+      toast.success('User created! They can now log in via dev login.');
       setCreateEmail('');
       setCreateName('');
       setCreateRole('user');
       fetchUsers();
     } else {
       const data = await res.json();
-      setMessageType('error');
-      setMessage(data.error || 'Failed to create user');
+      toast.error(data.error || 'Failed to create user');
     }
     setCreating(false);
-    setTimeout(() => setMessage(''), 3000);
   };
 
   const sendInvitation = async () => {
@@ -170,18 +183,15 @@ export default function SettingsPage() {
       body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
     });
     if (res.ok) {
-      setMessageType('success');
-      setMessage('Invitation sent!');
+      toast.success('Invitation sent!');
       setInviteEmail('');
       setInviteRole('user');
       fetchInvitations();
     } else {
       const data = await res.json();
-      setMessageType('error');
-      setMessage(data.error || 'Failed to send invitation');
+      toast.error(data.error || 'Failed to send invitation');
     }
     setInviting(false);
-    setTimeout(() => setMessage(''), 3000);
   };
 
   const revokeInvitation = async (id: string) => {
@@ -189,17 +199,23 @@ export default function SettingsPage() {
       method: 'PATCH',
     });
     if (res.ok) {
-      setMessageType('success');
-      setMessage('Invitation revoked');
+      toast.success('Invitation revoked');
       fetchInvitations();
     }
-    setTimeout(() => setMessage(''), 2000);
   };
+
+  const themeOptions = [
+    { value: 'light', label: 'Light', icon: Sun },
+    { value: 'dark', label: 'Dark', icon: MoonIcon },
+    { value: 'system', label: 'System', icon: Monitor },
+  ];
+
+  const inputClasses = 'w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none';
 
   return (
     <div>
       <div className="mb-6">
-        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
           <Settings className="h-6 w-6 text-prism-indigo" />
           Settings
         </h1>
@@ -216,9 +232,38 @@ export default function SettingsPage() {
       )}
 
       <div className="space-y-6 max-w-2xl">
+        {/* Appearance */}
+        <section className="glass-panel p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <Sun className="h-5 w-5 text-amber-400" />
+            Appearance
+          </h2>
+          {mounted && (
+            <div className="flex gap-2">
+              {themeOptions.map((opt) => {
+                const isActive = theme === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setTheme(opt.value)}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-prism-indigo text-white shadow-md shadow-prism-indigo/20'
+                        : 'bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] border border-[var(--border-color)]'
+                    }`}
+                  >
+                    <opt.icon className="h-4 w-4" />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         {/* MTP */}
         <section className="glass-panel p-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Compass className="h-5 w-5 text-indigo-400" />
             Massively Transformative Purpose
           </h2>
@@ -227,7 +272,7 @@ export default function SettingsPage() {
             onChange={(e) => setMtp(e.target.value)}
             rows={3}
             placeholder="What is your MTP? e.g., 'Democratize access to quality education for every child on earth'"
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none mb-3"
+            className={`${inputClasses} resize-none mb-3`}
           />
           <button onClick={saveUserSettings} disabled={saving}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
@@ -237,14 +282,14 @@ export default function SettingsPage() {
 
         {/* Timezone */}
         <section className="glass-panel p-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Globe className="h-5 w-5 text-indigo-400" />
             Timezone
           </h2>
           <select
             value={timezone}
             onChange={(e) => setTimezone(e.target.value)}
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+            className={inputClasses}
           >
             {['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'UTC'].map((tz) => (
               <option key={tz} value={tz}>{tz}</option>
@@ -254,7 +299,7 @@ export default function SettingsPage() {
 
         {/* Notifications */}
         <section className="glass-panel p-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Bell className="h-5 w-5 text-indigo-400" />
             Notifications
           </h2>
@@ -267,12 +312,12 @@ export default function SettingsPage() {
               { key: 'reviewNags', label: 'Review reminders' },
             ].map(({ key, label }) => (
               <label key={key} className="flex items-center justify-between">
-                <span className="text-sm text-gray-300">{label}</span>
+                <span className="text-sm text-[var(--text-secondary)]">{label}</span>
                 <input
                   type="checkbox"
                   checked={(notifPrefs as any)[key]}
                   onChange={(e) => setNotifPrefs({ ...notifPrefs, [key]: e.target.checked })}
-                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                  className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
                 />
               </label>
             ))}
@@ -285,10 +330,10 @@ export default function SettingsPage() {
 
         {/* Onboarding */}
         <section className="glass-panel p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Onboarding Tour</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Onboarding Tour</h2>
           <button
             onClick={retriggerOnboarding}
-            className="flex items-center gap-2 rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--glass-border)] transition-colors"
           >
             <RotateCcw className="h-4 w-4" />
             Re-trigger onboarding tour
@@ -298,7 +343,7 @@ export default function SettingsPage() {
         {/* Company MTP (admin only) */}
         {isAdmin && (
           <section className="glass-panel p-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
               <Compass className="h-5 w-5 text-purple-400" />
               Company MTP (Admin)
             </h2>
@@ -307,7 +352,7 @@ export default function SettingsPage() {
               onChange={(e) => setCompanyMtp(e.target.value)}
               rows={3}
               placeholder="Company Massively Transformative Purpose..."
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none mb-3"
+              className={`${inputClasses} resize-none mb-3`}
             />
             <button onClick={saveCompanyMtp} disabled={saving}
               className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500 disabled:opacity-50 transition-colors">
@@ -319,16 +364,16 @@ export default function SettingsPage() {
         {/* Admin panel */}
         {isAdmin && (
           <section className="glass-panel p-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
               <Shield className="h-5 w-5 text-red-400" />
               Admin Panel
             </h2>
             <div className="space-y-2">
               {users.map((user) => (
-                <div key={user.id} className="flex items-center justify-between rounded-lg bg-gray-800/50 px-4 py-3">
+                <div key={user.id} className="flex items-center justify-between rounded-lg bg-[var(--surface)] px-4 py-3">
                   <div>
-                    <span className="text-sm text-white">{user.name ?? user.email}</span>
-                    <span className="text-xs text-gray-500 ml-2">{user.email}</span>
+                    <span className="text-sm text-[var(--text-primary)]">{user.name ?? user.email}</span>
+                    <span className="text-xs text-[var(--text-muted)] ml-2">{user.email}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -337,7 +382,7 @@ export default function SettingsPage() {
                       className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
                         user.isAdmin
                           ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
-                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                          : 'bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                       } disabled:opacity-50`}
                     >
                       {user.isAdmin ? 'Remove Admin' : 'Make Admin'}
@@ -360,30 +405,30 @@ export default function SettingsPage() {
         {/* Create User (Dev mode only) */}
         {isAdmin && isDevMode && (
           <section className="glass-panel p-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
               <UserPlus className="h-5 w-5 text-green-400" />
               Create User (Dev)
             </h2>
-            <p className="text-xs text-gray-500 mb-4">Create users directly for local testing. They can log in via the dev login form.</p>
+            <p className="text-xs text-[var(--text-muted)] mb-4">Create users directly for local testing. They can log in via the dev login form.</p>
             <div className="space-y-3">
               <input
                 type="text"
                 value={createName}
                 onChange={(e) => setCreateName(e.target.value)}
                 placeholder="Name"
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-green-500 focus:outline-none"
+                className={inputClasses}
               />
               <input
                 type="email"
                 value={createEmail}
                 onChange={(e) => setCreateEmail(e.target.value)}
                 placeholder="Email"
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-green-500 focus:outline-none"
+                className={inputClasses}
               />
               <select
                 value={createRole}
                 onChange={(e) => setCreateRole(e.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-green-500 focus:outline-none"
+                className={inputClasses}
               >
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
@@ -402,23 +447,23 @@ export default function SettingsPage() {
         {/* Invite User */}
         {isAdmin && (
           <section className="glass-panel p-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
               <Mail className="h-5 w-5 text-indigo-400" />
               Invite User
             </h2>
-            <p className="text-xs text-gray-500 mb-4">Invite users by email. When they sign in via Google, they&apos;ll be assigned the selected role.</p>
+            <p className="text-xs text-[var(--text-muted)] mb-4">Invite users by email. When they sign in via Google, they&apos;ll be assigned the selected role.</p>
             <div className="space-y-3">
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="Email address"
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className={inputClasses}
               />
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className={inputClasses}
               >
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
@@ -435,22 +480,22 @@ export default function SettingsPage() {
             {/* Pending Invitations */}
             {invitations.filter((inv: any) => inv.status === 'PENDING').length > 0 && (
               <div className="mt-6">
-                <h3 className="text-sm font-medium text-gray-400 mb-3">Pending Invitations</h3>
+                <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">Pending Invitations</h3>
                 <div className="space-y-2">
                   {invitations
                     .filter((inv: any) => inv.status === 'PENDING')
                     .map((inv: any) => (
-                      <div key={inv.id} className="flex items-center justify-between rounded-lg bg-gray-800/50 px-4 py-3">
+                      <div key={inv.id} className="flex items-center justify-between rounded-lg bg-[var(--surface)] px-4 py-3">
                         <div>
-                          <span className="text-sm text-white">{inv.email}</span>
+                          <span className="text-sm text-[var(--text-primary)]">{inv.email}</span>
                           <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
                             inv.role === 'admin'
                               ? 'bg-purple-600/20 text-purple-400'
-                              : 'bg-gray-700 text-gray-400'
+                              : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'
                           }`}>
                             {inv.role}
                           </span>
-                          <span className="text-xs text-gray-600 ml-2">
+                          <span className="text-xs text-[var(--text-muted)] ml-2">
                             {new Date(inv.createdAt).toLocaleDateString()}
                           </span>
                         </div>
@@ -469,16 +514,16 @@ export default function SettingsPage() {
             {/* Invitation History */}
             {invitations.filter((inv: any) => inv.status !== 'PENDING').length > 0 && (
               <details className="mt-4">
-                <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+                <summary className="text-xs text-[var(--text-muted)] cursor-pointer hover:text-[var(--text-secondary)]">
                   Invitation History ({invitations.filter((inv: any) => inv.status !== 'PENDING').length})
                 </summary>
                 <div className="space-y-2 mt-2">
                   {invitations
                     .filter((inv: any) => inv.status !== 'PENDING')
                     .map((inv: any) => (
-                      <div key={inv.id} className="flex items-center justify-between rounded-lg bg-gray-800/30 px-4 py-2">
+                      <div key={inv.id} className="flex items-center justify-between rounded-lg bg-[var(--surface)] px-4 py-2">
                         <div>
-                          <span className="text-sm text-gray-500">{inv.email}</span>
+                          <span className="text-sm text-[var(--text-muted)]">{inv.email}</span>
                           <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
                             inv.status === 'ACCEPTED'
                               ? 'bg-green-600/20 text-green-400'
@@ -495,6 +540,16 @@ export default function SettingsPage() {
           </section>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Remove User"
+        message="Are you sure you want to remove this user? This cannot be undone."
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={confirmRemoveUser}
+        onCancel={() => { setConfirmOpen(false); setPendingRemoveUserId(null); }}
+      />
     </div>
   );
 }

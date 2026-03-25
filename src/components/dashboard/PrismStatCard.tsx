@@ -48,9 +48,9 @@ export function PrismStatCard({ label, value, icon: Icon, color, glowColor }: Pr
           />
           <Icon className={`h-4.5 w-4.5 relative ${color}`} />
         </div>
-        <span className="text-xs text-gray-500 font-medium">{label}</span>
+        <span className="text-xs text-[var(--text-muted)] font-medium">{label}</span>
       </div>
-      <span className="font-display text-3xl font-bold text-white">{displayValue}</span>
+      <span className="font-display text-3xl font-bold text-[var(--text-primary)]">{displayValue}</span>
     </m.div>
   );
 }
