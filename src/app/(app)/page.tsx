@@ -1,20 +1,36 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { Clock, CheckCircle2, Zap, AlertTriangle } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { DashboardGreeting } from '@/components/dashboard/DashboardGreeting';
 import { PrismStatCard } from '@/components/dashboard/PrismStatCard';
+import { WinTheDayCard } from '@/components/dashboard/WinTheDayCard';
+import { WinTheDayCelebration } from '@/components/dopamine/WinTheDayCelebration';
 
 export default function DashboardPage() {
   const today = new Date().toISOString().split('T')[0];
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
 
+  const [showWinCelebration, setShowWinCelebration] = useState(false);
+
   const { data: tasks, mutate } = useSWR(`/api/tasks?date=${today}&includeUnscheduled=true`);
   const list = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
+
+  const winTheDayTask = useMemo(() => list.find((t: any) => t.isWinTheDay) ?? null, [list]);
+
+  const prevWtdStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (winTheDayTask) {
+      if (prevWtdStatusRef.current && prevWtdStatusRef.current !== 'DONE' && winTheDayTask.status === 'DONE') {
+        setShowWinCelebration(true);
+      }
+      prevWtdStatusRef.current = winTheDayTask.status;
+    }
+  }, [winTheDayTask]);
 
   const stats = useMemo(() => ({
     total: list.length,
@@ -60,6 +76,10 @@ export default function DashboardPage() {
           <PrismStatCard key={card.label} {...card} />
         ))}
       </div>
+
+      {/* Win the Day */}
+      <WinTheDayCard task={winTheDayTask} />
+      <WinTheDayCelebration show={showWinCelebration} onComplete={() => setShowWinCelebration(false)} />
 
       {/* Today's tasks */}
       <div className="mb-4">
