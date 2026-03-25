@@ -54,7 +54,12 @@ export async function PATCH(
 
   if (isAdmin) {
     // Admin can update all fields
-    const { title, description, assigneeId, delegateId, delegateUntil, cadence, cadenceRule } = body;
+    const { title, description, assigneeId, delegateId, delegateUntil, cadence, cadenceRule, defaultDurationMinutes } = body;
+
+    if (defaultDurationMinutes !== undefined && (typeof defaultDurationMinutes !== 'number' || defaultDurationMinutes <= 0)) {
+      return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
+    }
+
     const updated = await prisma.process.update({
       where: { id },
       data: {
@@ -65,6 +70,7 @@ export async function PATCH(
         ...(delegateUntil !== undefined && { delegateUntil: delegateUntil ? new Date(delegateUntil) : null }),
         ...(cadence !== undefined && { cadence }),
         ...(cadenceRule !== undefined && { cadenceRule }),
+        ...(defaultDurationMinutes !== undefined && { defaultDurationMinutes }),
       },
     });
     return Response.json(updated);
