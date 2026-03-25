@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { m } from 'framer-motion';
 import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3 } from 'lucide-react';
 import { GoalProgressBar } from './GoalProgressBar';
+import { TimeUrgencyBadge } from './TimeUrgencyBadge';
 import {
   LEVEL_COLORS,
   LEVEL_LABELS,
@@ -173,11 +174,16 @@ export const GoalCard = React.memo(function GoalCard({
           </div>
         </div>
 
-        {/* Due date */}
-        {goal.dueDate && (
-          <span className="text-xs text-[var(--text-muted)] shrink-0">
-            {new Date(goal.dueDate).toLocaleDateString()}
-          </span>
+        {/* Due date + urgency */}
+        {(goal.dueDate || goal.endDate) && (
+          <div className="flex items-center gap-2 shrink-0">
+            <TimeUrgencyBadge startDate={goal.startDate} endDate={goal.endDate} dueDate={goal.dueDate} />
+            {goal.dueDate && (
+              <span className="text-xs text-[var(--text-muted)]">
+                {new Date(goal.dueDate).toLocaleDateString()}
+              </span>
+            )}
+          </div>
         )}
 
         {/* Actions */}

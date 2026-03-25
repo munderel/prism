@@ -65,11 +65,13 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { checklistState, notes, complete } = body;
+  const { checklistState, notes, complete, timeBlockStart, timeBlockEnd } = body;
 
   const data: any = {};
   if (checklistState !== undefined) data.checklistState = checklistState;
   if (notes !== undefined) data.notes = notes;
+  if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
+  if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
 
   if (complete) {
     data.completedAt = new Date();

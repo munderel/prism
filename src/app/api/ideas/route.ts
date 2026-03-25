@@ -2,9 +2,6 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIceScore } from '@/lib/scoring';
-import { rateLimit, getClientIp } from '@/lib/rate-limit';
-
-const ideaLimiter = rateLimit({ interval: 60_000, limit: 20 });
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -65,12 +62,6 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const ip = getClientIp(request);
-  const limit = ideaLimiter.check(ip);
-  if (!limit.success) {
-    return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
-  }
-
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 

@@ -21,11 +21,18 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { title, description, cadence, dayOfWeek, timeStart, timeEnd, attendeeIds } = body;
+  const { title, description, cadence, dayOfWeek, occurDate, timeStart, timeEnd, attendeeIds } = body;
 
   if (!title || !cadence || !timeStart || !timeEnd) {
     return Response.json(
       { error: 'title, cadence, timeStart, and timeEnd are required' },
+      { status: 400 }
+    );
+  }
+
+  if (cadence === 'ONE_TIME' && !occurDate) {
+    return Response.json(
+      { error: 'occurDate is required for one-time meetings' },
       { status: 400 }
     );
   }
@@ -35,7 +42,8 @@ export async function POST(request: NextRequest) {
       title,
       description: description || null,
       cadence,
-      dayOfWeek: dayOfWeek ?? null,
+      dayOfWeek: cadence === 'ONE_TIME' ? null : (dayOfWeek ?? null),
+      occurDate: cadence === 'ONE_TIME' && occurDate ? new Date(occurDate) : null,
       timeStart,
       timeEnd,
       attendeeIds: attendeeIds || [],

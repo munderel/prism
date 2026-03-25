@@ -32,26 +32,33 @@ export async function GET(
   // Enrich KPIs with linked child actuals (monthly←weekly, yearly←monthly, HHG←yearly)
   const levelsWithChildren = ['HIGH_HARD', 'STRATEGIC', 'MONTHLY'];
   if (levelsWithChildren.includes(goal.level)) {
-    const enriched = await Promise.all(
-      kpis.map(async (kpi) => {
-        const linkedChildren = await prisma.kpi.findMany({
-          where: { linkedKpiId: kpi.id },
-          include: {
-            goal: { select: { title: true, sortOrder: true, dueDate: true } },
-          },
-          orderBy: { goal: { sortOrder: 'asc' } },
-        });
+    const kpiIds = kpis.map((k) => k.id);
+    const allLinkedChildren = await prisma.kpi.findMany({
+      where: { linkedKpiId: { in: kpiIds } },
+      include: {
+        goal: { select: { title: true, sortOrder: true, dueDate: true } },
+      },
+      orderBy: { goal: { sortOrder: 'asc' } },
+    });
 
-        const linkedWeeklyActuals = linkedChildren.map((child, idx) => ({
-          weekLabel: `W${idx + 1}`,
-          actual: child.type === 'NUMERIC' ? child.actualValue : null,
-          isComplete: child.isComplete,
-          goalTitle: child.goal.title,
-        }));
+    const childrenByParent = new Map<string, typeof allLinkedChildren>();
+    for (const child of allLinkedChildren) {
+      const key = child.linkedKpiId!;
+      const list = childrenByParent.get(key) ?? [];
+      list.push(child);
+      childrenByParent.set(key, list);
+    }
 
-        return { ...kpi, linkedWeeklyActuals };
-      })
-    );
+    const enriched = kpis.map((kpi) => {
+      const linkedChildren = childrenByParent.get(kpi.id) ?? [];
+      const linkedWeeklyActuals = linkedChildren.map((child, idx) => ({
+        weekLabel: `W${idx + 1}`,
+        actual: child.type === 'NUMERIC' ? child.actualValue : null,
+        isComplete: child.isComplete,
+        goalTitle: child.goal.title,
+      }));
+      return { ...kpi, linkedWeeklyActuals };
+    });
 
     return Response.json({ kpis: enriched });
   }

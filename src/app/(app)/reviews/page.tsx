@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User, Download } from 'lucide-react';
+import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User, Download, PlayCircle } from 'lucide-react';
 import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
+import { useRouter } from 'next/navigation';
 
 const REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'] as const;
 
@@ -46,13 +47,14 @@ const getNextScheduledDate = (type: string): string => {
 type TabValue = 'my' | 'team';
 
 export default function ReviewsPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
   const { data: reviewsData, isLoading: loading, mutate: mutateReviews } = useSWR('/api/reviews');
   const allReviews = Array.isArray(reviewsData) ? reviewsData : [];
   const [selectedReview, setSelectedReview] = useState<string | null>(null);
   const [settingUpCadences, setSettingUpCadences] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabValue>('my');
+  const [activeTab, setActiveTab] = useState<TabValue>('team');
   const [creatingTeamReview, setCreatingTeamReview] = useState(false);
   const [teamReviewType, setTeamReviewType] = useState<string>('WEEKLY');
 
@@ -498,15 +500,41 @@ export default function ReviewsPage() {
 
         {/* Review detail */}
         <div className="lg:col-span-2">
-          {selectedReview ? (
-            <ReviewChecklist
-              reviewId={selectedReview}
-              onComplete={() => {
-                setSelectedReview(null);
-                mutateReviews();
-              }}
-            />
-          ) : (
+          {selectedReview ? (() => {
+            const selected = allReviews.find((r: any) => r.id === selectedReview);
+            const isPending = selected && !selected.completedAt;
+
+            if (isPending) {
+              return (
+                <div className="glass-panel p-8 text-center space-y-4">
+                  <ClipboardCheck className="h-12 w-12 text-amber-400 mx-auto" />
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+                    {selected.reviewType} Review
+                  </h3>
+                  <p className="text-sm text-[var(--text-muted)]">
+                    Scheduled for {new Date(selected.scheduledDate).toLocaleDateString()}
+                  </p>
+                  <button
+                    onClick={() => router.push(`/reviews/${selectedReview}/complete`)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+                  >
+                    <PlayCircle className="h-5 w-5" />
+                    Start Review
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <ReviewChecklist
+                reviewId={selectedReview}
+                onComplete={() => {
+                  setSelectedReview(null);
+                  mutateReviews();
+                }}
+              />
+            );
+          })() : (
             <div className="glass-panel p-12 text-center">
               <p className="text-[var(--text-muted)]">Select a review to begin</p>
             </div>

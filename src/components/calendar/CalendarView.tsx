@@ -12,9 +12,9 @@ import { Sparkles, Check, X } from 'lucide-react';
 interface CalendarViewProps {
   onEventClick?: (info: any) => void;
   onDateSelect?: (info: any) => void;
-  onExternalDrop?: (taskId: string, start: Date, end: Date) => void;
+  onExternalDrop?: (itemId: string, start: Date, end: Date, itemType?: string) => void;
   unscheduledTasks?: any[];
-  onBatchScheduleConfirm?: (slots: Array<{ id: string; timeBlockStart: string; timeBlockEnd: string; isAutoScheduled: boolean; isPinned: boolean }>) => void;
+  onBatchScheduleConfirm?: (slots: Array<{ id: string; timeBlockStart: string; timeBlockEnd: string; isAutoScheduled: boolean; isPinned: boolean; itemType?: string }>) => void;
 }
 
 const SOURCE_FILTERS = [
@@ -40,6 +40,14 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     }
   };
 
+  const refreshCalendar = () => {
+    if (calendarRef.current) {
+      const api = calendarRef.current.getApi();
+      const { activeStart, activeEnd } = api.view;
+      fetchEvents(activeStart.toISOString(), activeEnd.toISOString());
+    }
+  };
+
   const handleDatesSet = (info: any) => {
     fetchEvents(info.startStr, info.endStr);
   };
@@ -54,77 +62,133 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   };
 
   const handleEventReceive = async (info: any) => {
-    // External drop from unscheduled sidebar
-    const taskId = info.event.extendedProps?.taskId || info.event.id?.replace('task-', '');
-    if (!taskId) return;
-
+    const props = info.event.extendedProps || {};
+    const itemType = props.itemType || 'task';
     const start = info.event.start;
-    const end = info.event.end || new Date(start.getTime() + 60 * 60 * 1000); // default 1hr
+    const end = info.event.end || new Date(start.getTime() + 60 * 60 * 1000);
+    const startISO = start.toISOString();
+    const endISO = end.toISOString();
 
-    await fetch(`/api/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        timeBlockStart: start.toISOString(),
-        timeBlockEnd: end.toISOString(),
-        dueDate: start.toISOString(),
-      }),
-    });
+    if (itemType === 'aim') {
+      const aimInstanceId = props.aimInstanceId;
+      const aimCategoryId = props.aimCategoryId;
 
-    // Refresh calendar events
-    if (calendarRef.current) {
-      const api = calendarRef.current.getApi();
-      const { activeStart, activeEnd } = api.view;
-      fetchEvents(activeStart.toISOString(), activeEnd.toISOString());
+      if (aimInstanceId) {
+        // Update existing instance with time block
+        await fetch(`/api/aims/instances/${aimInstanceId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
+        });
+      } else if (aimCategoryId) {
+        // Create new instance with time block
+        await fetch('/api/aims/instances', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            aimCategoryId,
+            scheduledDate: startISO,
+            timeBlockStart: startISO,
+            timeBlockEnd: endISO,
+          }),
+        });
+      }
+
+      refreshCalendar();
+      onExternalDrop?.(info.event.id, start, end, 'aim');
+    } else if (itemType === 'review') {
+      const reviewId = props.reviewId;
+      if (reviewId) {
+        await fetch(`/api/reviews/${reviewId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
+        });
+      }
+
+      refreshCalendar();
+      onExternalDrop?.(info.event.id, start, end, 'review');
+    } else {
+      // Task (existing behavior)
+      const taskId = props.taskId || info.event.id?.replace('task-', '');
+      if (!taskId) return;
+
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timeBlockStart: startISO,
+          timeBlockEnd: endISO,
+          dueDate: startISO,
+        }),
+      });
+
+      refreshCalendar();
+      onExternalDrop?.(taskId, start, end, 'task');
     }
-
-    onExternalDrop?.(taskId, start, end);
   };
 
   const handleEventDrop = async (info: any) => {
     const eventId = info.event.id;
-    if (!eventId.startsWith('task-')) return;
-
-    const taskId = eventId.replace('task-', '');
     const newStart = info.event.start?.toISOString();
     const newEnd = info.event.end?.toISOString();
 
-    await fetch(`/api/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        timeBlockStart: newStart,
-        timeBlockEnd: newEnd,
-        dueDate: newStart,
-        isPinned: true,  // Manual drag = pinned
-      }),
-    });
-
-    // TODO: Smart rearranging — re-run scheduler for flexible (non-pinned) tasks
-    // after a manual drag to optimize remaining schedule around the pinned event.
-
-    if (calendarRef.current) {
-      const api = calendarRef.current.getApi();
-      const { activeStart, activeEnd } = api.view;
-      fetchEvents(activeStart.toISOString(), activeEnd.toISOString());
+    if (eventId.startsWith('aim-instance-') || eventId.startsWith('aim-new-')) {
+      // Aim instance drag on calendar
+      const aimInstanceId = info.event.extendedProps?.aimInstanceId;
+      if (aimInstanceId) {
+        await fetch(`/api/aims/instances/${aimInstanceId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timeBlockStart: newStart, timeBlockEnd: newEnd }),
+        });
+      }
+    } else if (eventId.startsWith('review-')) {
+      const reviewId = info.event.extendedProps?.reviewId || eventId.replace('review-', '');
+      await fetch(`/api/reviews/${reviewId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeBlockStart: newStart, timeBlockEnd: newEnd }),
+      });
+    } else if (eventId.startsWith('task-')) {
+      const taskId = eventId.replace('task-', '');
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timeBlockStart: newStart,
+          timeBlockEnd: newEnd,
+          dueDate: newStart,
+          isPinned: true,
+        }),
+      });
+    } else {
+      // Unknown event type, skip
+      return;
     }
+
+    refreshCalendar();
   };
 
   const handleAutoSchedule = () => {
     if (!unscheduledTasks || unscheduledTasks.length === 0) return;
 
-    // Convert unscheduled tasks to SchedulableTask format
+    // Convert all unscheduled items to SchedulableTask format
+    const priorityMap: Record<string, SchedulableTask['priority']> = {
+      aim: 'MEDIUM',
+      review: 'HIGH',
+    };
+
     const schedulableTasks: SchedulableTask[] = unscheduledTasks.map((t) => ({
       id: t.id,
       title: t.title,
-      estimatedMinutes: t.estimatedMinutes ?? 60,
-      priority: t.priority ?? 'MEDIUM',
-      dueDate: t.dueDate ? new Date(t.dueDate) : null,
+      estimatedMinutes: t.duration ?? t.estimatedMinutes ?? 60,
+      priority: t.priority ?? priorityMap[t.itemType] ?? 'MEDIUM',
+      dueDate: t.dueDate ? new Date(t.dueDate) : t.scheduledDate ? new Date(t.scheduledDate) : null,
       preferredTimeStart: t.preferredTimeStart ?? null,
       preferredTimeEnd: t.preferredTimeEnd ?? null,
     }));
 
-    // Convert existing calendar events to CalendarEvent format for the engine
     const existingCalEvents: ScheduleEvent[] = events.map((e) => ({
       start: new Date(e.start),
       end: new Date(e.end),
@@ -139,20 +203,79 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     setShowGhosts(true);
   };
 
-  const handleConfirmGhosts = () => {
-    if (!onBatchScheduleConfirm) return;
+  const handleConfirmGhosts = async () => {
+    // Schedule each ghost event via the appropriate API
+    for (const ghost of ghostEvents) {
+      const item = unscheduledTasks?.find((t) => t.id === ghost.taskId);
+      const itemType = item?.itemType || 'task';
+      const startISO = ghost.start.toISOString();
+      const endISO = ghost.end.toISOString();
 
-    const slots = ghostEvents.map((g) => ({
-      id: g.taskId,
-      timeBlockStart: g.start.toISOString(),
-      timeBlockEnd: g.end.toISOString(),
-      isAutoScheduled: true,
-      isPinned: false,
-    }));
+      if (itemType === 'aim') {
+        const aimInstanceId = item?.aimInstanceId;
+        if (aimInstanceId) {
+          await fetch(`/api/aims/instances/${aimInstanceId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
+          });
+        } else if (item?.aimCategoryId) {
+          await fetch('/api/aims/instances', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              aimCategoryId: item.aimCategoryId,
+              scheduledDate: startISO,
+              timeBlockStart: startISO,
+              timeBlockEnd: endISO,
+            }),
+          });
+        }
+      } else if (itemType === 'review') {
+        const reviewId = item?.reviewId;
+        if (reviewId) {
+          await fetch(`/api/reviews/${reviewId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
+          });
+        }
+      } else {
+        // Task
+        const taskId = item?.taskId || ghost.taskId.replace('task-', '');
+        await fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            timeBlockStart: startISO,
+            timeBlockEnd: endISO,
+            dueDate: startISO,
+            isAutoScheduled: true,
+            isPinned: false,
+          }),
+        });
+      }
+    }
 
-    onBatchScheduleConfirm(slots);
+    // Also call the batch callback if provided
+    if (onBatchScheduleConfirm) {
+      const slots = ghostEvents.map((g) => {
+        const item = unscheduledTasks?.find((t) => t.id === g.taskId);
+        return {
+          id: g.taskId,
+          timeBlockStart: g.start.toISOString(),
+          timeBlockEnd: g.end.toISOString(),
+          isAutoScheduled: true,
+          isPinned: false,
+          itemType: item?.itemType || 'task',
+        };
+      });
+      onBatchScheduleConfirm(slots);
+    }
+
     setGhostEvents([]);
     setShowGhosts(false);
+    refreshCalendar();
   };
 
   const handleDismissGhosts = () => {
@@ -162,17 +285,28 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
   const filteredEvents = events.filter((e) => activeFilters.has(e.source));
 
-  const ghostCalendarEvents = showGhosts ? ghostEvents.map(g => ({
-    id: `ghost-${g.taskId}`,
-    title: `(Auto) ${unscheduledTasks?.find(t => t.id === g.taskId)?.title ?? 'Task'}`,
-    start: g.start.toISOString(),
-    end: g.end.toISOString(),
-    backgroundColor: 'rgba(99, 102, 241, 0.3)',
-    borderColor: '#6366f1',
-    classNames: ['ghost-event'],
-    editable: true,
-    source: 'tasks',
-  })) : [];
+  const ghostCalendarEvents = showGhosts ? ghostEvents.map(g => {
+    const item = unscheduledTasks?.find(t => t.id === g.taskId);
+    const itemType = item?.itemType || 'task';
+    const ghostColors: Record<string, { bg: string; border: string }> = {
+      task: { bg: 'rgba(99, 102, 241, 0.3)', border: '#6366f1' },
+      aim: { bg: 'rgba(20, 184, 166, 0.3)', border: '#14b8a6' },
+      review: { bg: 'rgba(245, 158, 11, 0.3)', border: '#f59e0b' },
+    };
+    const { bg, border } = ghostColors[itemType] || ghostColors.task;
+
+    return {
+      id: `ghost-${g.taskId}`,
+      title: `(Auto) ${item?.title ?? 'Item'}`,
+      start: g.start.toISOString(),
+      end: g.end.toISOString(),
+      backgroundColor: bg,
+      borderColor: border,
+      classNames: ['ghost-event'],
+      editable: true,
+      source: itemType === 'task' ? 'tasks' : itemType === 'aim' ? 'aims' : 'reviews',
+    };
+  }) : [];
 
   const allDisplayEvents = [...filteredEvents, ...ghostCalendarEvents];
 

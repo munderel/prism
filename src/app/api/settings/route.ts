@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       mtp: true,
       timezone: true,
       hasCompletedOnboarding: true,
+      hiddenFeatures: true,
       notificationPreference: true,
     },
   });
@@ -57,17 +58,18 @@ export async function PATCH(request: NextRequest) {
   }
 
   // User settings
-  const { mtp, timezone, hasCompletedOnboarding, notificationPrefs } = body;
+  const { mtp, timezone, hasCompletedOnboarding, hiddenFeatures, notificationPrefs } = body;
 
   const data: any = {};
   if (mtp !== undefined) data.mtp = mtp;
   if (timezone !== undefined) data.timezone = timezone;
   if (hasCompletedOnboarding !== undefined) data.hasCompletedOnboarding = hasCompletedOnboarding;
+  if (hiddenFeatures !== undefined && Array.isArray(hiddenFeatures)) data.hiddenFeatures = hiddenFeatures;
 
   const user = await prisma.user.update({
     where: { id: auth.userId },
     data,
-    select: { mtp: true, timezone: true, hasCompletedOnboarding: true },
+    select: { mtp: true, timezone: true, hasCompletedOnboarding: true, hiddenFeatures: true },
   });
 
   // Update notification preferences (whitelist valid boolean fields only)

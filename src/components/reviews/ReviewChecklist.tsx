@@ -67,7 +67,7 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
     // Debounce persistence is handled by the component; persist on blur
   };
 
-  const persistTextItem = async (title: string) => {
+  const persistTextItem = async (_title: string) => {
     await persistState(checklist);
   };
 

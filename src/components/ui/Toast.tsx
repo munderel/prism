@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
 import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 export type ToastVariant = 'success' | 'error' | 'info';
@@ -43,7 +43,7 @@ export function Toast({ message, variant, onClose, duration = 4000 }: ToastProps
   return (
     <AnimatePresence onExitComplete={onClose}>
       {visible && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, x: 40, scale: 0.95 }}
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: 40, scale: 0.95 }}
@@ -58,7 +58,7 @@ export function Toast({ message, variant, onClose, duration = 4000 }: ToastProps
           >
             <X className="h-4 w-4" />
           </button>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

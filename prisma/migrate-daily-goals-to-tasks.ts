@@ -32,37 +32,44 @@ async function main() {
   let migrated = 0;
   let skipped = 0;
 
-  for (const goal of dailyGoals) {
+  const BATCH_SIZE = 50;
+  const toMigrate = dailyGoals.filter((goal) => {
     if (!goal.parentId) {
       console.warn(`  Skipping goal "${goal.title}" (${goal.id}) — no parent.`);
       skipped++;
-      continue;
+      return false;
     }
+    return true;
+  });
 
-    const taskStatus = STATUS_MAP[goal.status] ?? 'TODO';
-
-    await prisma.$transaction([
-      prisma.task.create({
-        data: {
-          ownerId: goal.stack.ownerId,
-          goalId: goal.parentId, // Link to WEEKLY parent
-          taskType: 'GOAL_STACK',
-          title: goal.title,
-          description: goal.description,
-          status: taskStatus as any,
-          priority: 'MEDIUM',
-          dueDate: goal.dueDate,
-          completedAt: goal.status === 'COMPLETED' ? new Date() : null,
-        },
-      }),
-      prisma.goal.update({
-        where: { id: goal.id },
-        data: { deletedAt: new Date() },
-      }),
-    ]);
-
-    migrated++;
-    console.log(`  Migrated: "${goal.title}" → task (parent: ${goal.parentId})`);
+  for (let i = 0; i < toMigrate.length; i += BATCH_SIZE) {
+    const batch = toMigrate.slice(i, i + BATCH_SIZE);
+    await prisma.$transaction(
+      batch.flatMap((goal) => {
+        const taskStatus = STATUS_MAP[goal.status] ?? 'TODO';
+        return [
+          prisma.task.create({
+            data: {
+              ownerId: goal.stack.ownerId,
+              goalId: goal.parentId!,
+              taskType: 'GOAL_STACK',
+              title: goal.title,
+              description: goal.description,
+              status: taskStatus as any,
+              priority: 'MEDIUM',
+              dueDate: goal.dueDate,
+              completedAt: goal.status === 'COMPLETED' ? new Date() : null,
+            },
+          }),
+          prisma.goal.update({
+            where: { id: goal.id },
+            data: { deletedAt: new Date() },
+          }),
+        ];
+      })
+    );
+    migrated += batch.length;
+    console.log(`  Migrated batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} goals`);
   }
 
   console.log(`\nDone. Migrated: ${migrated}, Skipped: ${skipped}`);

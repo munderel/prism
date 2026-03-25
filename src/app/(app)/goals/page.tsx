@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { m } from 'framer-motion';
-import { Building2, User, Target } from 'lucide-react';
+import { Building2, User, Target, Filter, CalendarClock } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 
 const GoalStackTree = dynamic(
@@ -23,6 +23,8 @@ export default function GoalsPage() {
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newStackName, setNewStackName] = useState('');
+  const [showInProgress, setShowInProgress] = useState(false);
+  const [showDueToday, setShowDueToday] = useState(false);
 
   const isAdmin = session?.user?.isAdmin ?? false;
 
@@ -150,6 +152,34 @@ export default function GoalsPage() {
         </div>
       )}
 
+      {/* Filters */}
+      {selectedStack && (
+        <div className="mb-4 flex items-center gap-2">
+          <button
+            onClick={() => { setShowInProgress(!showInProgress); if (!showInProgress) setShowDueToday(false); }}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              showInProgress
+                ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1]'
+            }`}
+          >
+            <Filter className="h-3.5 w-3.5" />
+            In Progress
+          </button>
+          <button
+            onClick={() => { setShowDueToday(!showDueToday); if (!showDueToday) setShowInProgress(false); }}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              showDueToday
+                ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-600/30'
+                : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1]'
+            }`}
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            Due Today
+          </button>
+        </div>
+      )}
+
       {/* Tree */}
       {selectedStack ? (
         <m.div
@@ -162,6 +192,8 @@ export default function GoalsPage() {
             stackId={selectedStack.id}
             isCompanyStack={selectedStack.isCompany}
             isAdmin={isAdmin}
+            showInProgress={showInProgress}
+            showDueToday={showDueToday}
           />
         </m.div>
       ) : (

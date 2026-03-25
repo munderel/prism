@@ -1,6 +1,7 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { openrouter, AIError } from '@/lib/openrouter';
+import { openrouter } from '@/lib/openrouter';
 import { taskSuggestionPrompt } from '@/lib/ai-prompts';
+import { handleAIError } from '@/lib/ai-error-handler';
 
 const MAX_INPUT_LENGTH = 10000;
 
@@ -49,14 +50,6 @@ export async function POST(request: Request) {
     const result = await openrouter.chatJSON(messages);
     return Response.json(result);
   } catch (err) {
-    if (err instanceof AIError) {
-      const status = err.code === 'RATE_LIMITED' ? 429 : err.code === 'API_KEY_INVALID' ? 503 : 502;
-      return Response.json(
-        { error: 'AI service temporarily unavailable. Please try again later.' },
-        { status }
-      );
-    }
-    console.error('[tasks/ai-suggest] Unexpected error:', err);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
+    return handleAIError(err, 'tasks/ai-suggest');
   }
 }

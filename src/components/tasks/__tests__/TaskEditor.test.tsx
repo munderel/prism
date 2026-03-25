@@ -49,7 +49,7 @@ describe('TaskEditor', () => {
     expect(screen.queryByText('Task Type')).not.toBeInTheDocument();
   });
 
-  it('shows Linked Goal select when GOAL_STACK type is selected', async () => {
+  it('shows Linked Goal select when IMPROVE type is selected', async () => {
     renderWithProviders(<TaskEditor onSave={onSave} onClose={onClose} />);
     await waitFor(() => {
       expect(screen.getByText('Linked Goal')).toBeInTheDocument();

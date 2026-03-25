@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { cascadeKpiUpdate, recalculateMonthlyNumericKpi, recalculateBinaryKpi } from '@/lib/kpi-progress';
+import { pickDefined } from '@/lib/api-helpers';
 
 export async function PUT(
   request: NextRequest,
@@ -26,18 +27,13 @@ export async function PUT(
   }
 
   const body = await request.json();
-  const { name, unit, targetValue, actualValue, isComplete, sortOrder } = body;
+  const { name, isComplete, actualValue } = body;
 
-  const data: Record<string, any> = {};
-  if (name !== undefined) data.name = name;
-  if (unit !== undefined) data.unit = unit;
-  if (targetValue !== undefined) data.targetValue = targetValue;
-  if (actualValue !== undefined) data.actualValue = actualValue;
+  const data: Record<string, any> = pickDefined(body, ['name', 'unit', 'targetValue', 'actualValue', 'sortOrder']);
   if (isComplete !== undefined) {
     data.isComplete = isComplete;
     data.completedAt = isComplete ? new Date() : null;
   }
-  if (sortOrder !== undefined) data.sortOrder = sortOrder;
 
   // Check unique constraint if name is changing
   if (name !== undefined && name !== kpi.name) {

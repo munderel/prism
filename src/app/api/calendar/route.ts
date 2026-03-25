@@ -118,7 +118,10 @@ export async function GET(request: NextRequest) {
       ? prisma.review.findMany({
           where: {
             userId: auth.userId,
-            scheduledDate: { gte: new Date(start), lte: new Date(end) },
+            OR: [
+              { scheduledDate: { gte: new Date(start), lte: new Date(end) } },
+              { timeBlockStart: { gte: new Date(start), lte: new Date(end) } },
+            ],
           },
         })
       : Promise.resolve([]),
@@ -156,17 +159,19 @@ export async function GET(request: NextRequest) {
       taskId: task.id,
       status: task.status,
       taskType: task.taskType,
-      color: task.taskType === 'GOAL_STACK' ? '#6366f1' : task.taskType === 'REACT' ? '#eab308' : '#06b6d4',
+      color: task.taskType === 'IMPROVE' ? '#6366f1' : task.taskType === 'REACT' ? '#eab308' : '#06b6d4',
     });
   }
 
   // Process reviews
   for (const review of reviews) {
+    const hasTimeBlock = review.timeBlockStart && review.timeBlockEnd;
     events.push({
       id: `review-${review.id}`,
       title: `${review.reviewType} Review`,
-      start: review.scheduledDate.toISOString(),
-      allDay: true,
+      start: hasTimeBlock ? review.timeBlockStart!.toISOString() : review.scheduledDate.toISOString(),
+      end: hasTimeBlock ? review.timeBlockEnd!.toISOString() : undefined,
+      allDay: !hasTimeBlock,
       source: 'review',
       reviewId: review.id,
       completed: !!review.completedAt,
@@ -218,7 +223,7 @@ export async function GET(request: NextRequest) {
   for (const aim of aimInstances) {
     events.push({
       id: `aim-${aim.id}`,
-      title: aim.aimCategory.name,
+      title: aim.isGroupOpen ? `🤝 ${aim.aimCategory.name}` : aim.aimCategory.name,
       start: aim.timeBlockStart?.toISOString() ?? aim.scheduledDate.toISOString(),
       end: aim.timeBlockEnd?.toISOString() ?? undefined,
       allDay: !aim.timeBlockStart,
@@ -226,8 +231,9 @@ export async function GET(request: NextRequest) {
       aimInstanceId: aim.id,
       aimCategoryId: aim.aimCategoryId,
       status: aim.status,
-      backgroundColor: '#14b8a6',
-      color: '#14b8a6',
+      isGroupOpen: aim.isGroupOpen,
+      backgroundColor: aim.isGroupOpen ? '#0d9488' : '#14b8a6',
+      color: aim.isGroupOpen ? '#0d9488' : '#14b8a6',
     });
   }
 
@@ -262,13 +268,27 @@ export async function POST(request: NextRequest) {
 
 // Generate recurring meeting instances within a date range
 function generateMeetingInstances(
-  meeting: { cadence: string; dayOfWeek: number | null; timeStart: string; timeEnd: string },
+  meeting: { cadence: string; dayOfWeek: number | null; occurDate?: Date | null; timeStart: string; timeEnd: string },
   rangeStart: Date,
   rangeEnd: Date
 ): { start: Date; end: Date }[] {
   const instances: { start: Date; end: Date }[] = [];
   const [startH, startM] = meeting.timeStart.split(':').map(Number);
   const [endH, endM] = meeting.timeEnd.split(':').map(Number);
+
+  // One-time meetings: just check if the specific date falls in range
+  if (meeting.cadence === 'ONE_TIME' && meeting.occurDate) {
+    const d = new Date(meeting.occurDate);
+    d.setHours(0, 0, 0, 0);
+    if (d >= rangeStart && d <= rangeEnd) {
+      const s = new Date(d);
+      s.setHours(startH, startM, 0, 0);
+      const e = new Date(d);
+      e.setHours(endH, endM, 0, 0);
+      instances.push({ start: s, end: e });
+    }
+    return instances;
+  }
 
   // Iterate day-by-day through range (capped at 366 days for safety)
   const cursor = new Date(rangeStart);

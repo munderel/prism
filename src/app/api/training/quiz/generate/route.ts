@@ -1,7 +1,8 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { openrouter, AIError } from '@/lib/openrouter';
+import { openrouter } from '@/lib/openrouter';
 import { quizGenerationPrompt } from '@/lib/ai-prompts';
 import { prisma } from '@/lib/prisma';
+import { handleAIError } from '@/lib/ai-error-handler';
 
 const MAX_INPUT_LENGTH = 10000;
 
@@ -70,14 +71,6 @@ export async function POST(request: Request) {
       quizAttemptId: quizAttempt.id,
     });
   } catch (err) {
-    if (err instanceof AIError) {
-      const status = err.code === 'RATE_LIMITED' ? 429 : err.code === 'API_KEY_INVALID' ? 503 : 502;
-      return Response.json(
-        { error: 'AI service temporarily unavailable. Please try again later.' },
-        { status }
-      );
-    }
-    console.error('[training/quiz/generate] Unexpected error:', err);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
+    return handleAIError(err, 'training/quiz/generate');
   }
 }

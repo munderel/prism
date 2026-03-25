@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { enrichTrainingProgress } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -14,9 +15,14 @@ export async function GET(request: NextRequest) {
   if (type) where.type = type;
   if (status) where.status = status;
 
+  const limit = Math.min(Number(searchParams.get('limit')) || 100, 200);
+  const offset = Number(searchParams.get('offset')) || 0;
+
   const items = await prisma.trainingItem.findMany({
     where,
     orderBy: { createdAt: 'desc' },
+    take: limit,
+    skip: offset,
     include: {
       goal: { select: { id: true, title: true, level: true } },
       trainingTasks: {
@@ -31,19 +37,7 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  // Enrich with progress counts
-  const enriched = items.map((item) => {
-    const totalTasks = item.trainingTasks.length;
-    const completedTasks = item.trainingTasks.filter(
-      (tt) => tt.task.status === 'DONE'
-    ).length;
-    return {
-      ...item,
-      totalTasks,
-      completedTasks,
-      progressPct: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
-    };
-  });
+  const enriched = items.map(enrichTrainingProgress);
 
   return Response.json(enriched);
 }

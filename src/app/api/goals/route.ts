@@ -5,7 +5,7 @@ import {
   requireAdmin,
   authError,
 } from '@/lib/auth-guard';
-import { goalLimiter, getClientIp } from '@/lib/rate-limit';
+
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
 
@@ -52,16 +52,15 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return Response.json(goals);
+  return new Response(JSON.stringify(goals), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'private, max-age=10, stale-while-revalidate=60',
+    },
+  });
 }
 
 export async function POST(request: NextRequest) {
-  const ip = getClientIp(request);
-  const limit = goalLimiter.check(ip);
-  if (!limit.success) {
-    return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
-  }
-
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 

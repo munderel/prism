@@ -9,21 +9,31 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const start = searchParams.get('start');
   const end = searchParams.get('end');
+  const groupOpen = searchParams.get('groupOpen');
 
   if (!start || !end) {
     return Response.json({ error: 'start and end query params are required' }, { status: 400 });
   }
 
-  const instances = await prisma.aimInstance.findMany({
-    where: {
-      userId: auth.userId,
-      scheduledDate: {
-        gte: new Date(start),
-        lte: new Date(end),
-      },
+  // If groupOpen=true, fetch all group-open sessions from all users (for joining)
+  const where: any = {
+    scheduledDate: {
+      gte: new Date(start),
+      lte: new Date(end),
     },
+  };
+
+  if (groupOpen === 'true') {
+    where.isGroupOpen = true;
+  } else {
+    where.userId = auth.userId;
+  }
+
+  const instances = await prisma.aimInstance.findMany({
+    where,
     include: {
       aimCategory: true,
+      user: { select: { id: true, name: true, image: true } },
     },
     orderBy: { scheduledDate: 'asc' },
   });

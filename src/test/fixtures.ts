@@ -28,7 +28,7 @@ export function createTask(overrides: Record<string, any> = {}) {
     description: '',
     status: 'TODO',
     priority: 'MEDIUM',
-    taskType: 'GOAL_STACK',
+    taskType: 'IMPROVE',
     dueDate: null,
     goalId: null,
     deliverable: null,

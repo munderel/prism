@@ -48,5 +48,10 @@ export async function GET(_request: NextRequest) {
     },
   });
 
-  return Response.json({ leaderboard, publicWins });
+  return new Response(JSON.stringify({ leaderboard, publicWins }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'private, max-age=30, stale-while-revalidate=120',
+    },
+  });
 }
