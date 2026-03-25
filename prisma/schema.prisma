@@ -314,6 +314,10 @@ model PowerdownSession {
   currentStep    Int       @default(1)
   checklistState Json?
   tomorrowPlan   Json?
+  distractions   Json?
+  gratitudes     Json?
+  ideas          Json?
+  clearGoals     Json?
   completedAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
