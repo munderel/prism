@@ -14,14 +14,17 @@ const SECTIONS = [
 
 interface DailyTaskListProps {
   date: string; // YYYY-MM-DD
+  prefetchedTasks?: any[];
   onEdit: (task: any) => void;
   onDelete: (taskId: string) => void;
   onClick?: (task: any) => void;
   onStatusChange?: () => void;
 }
 
-export function DailyTaskList({ date, onEdit, onDelete, onClick, onStatusChange }: DailyTaskListProps) {
-  const { data, isLoading, mutate } = useSWR(`/api/tasks?date=${date}&includeUnscheduled=true`);
+export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick, onStatusChange }: DailyTaskListProps) {
+  const swrKey = prefetchedTasks ? null : `/api/tasks?date=${date}&includeUnscheduled=true`;
+  const { data: swrData, isLoading, mutate } = useSWR(swrKey);
+  const data = prefetchedTasks ?? swrData;
   const tasks = Array.isArray(data) ? data : [];
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 

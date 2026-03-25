@@ -88,6 +88,12 @@ export async function DELETE(
 
   const linkedKpiId = kpi.linkedKpiId;
 
+  // Unlink any KPIs that point to this one (avoid FK constraint)
+  await prisma.kpi.updateMany({
+    where: { linkedKpiId: id },
+    data: { linkedKpiId: null },
+  });
+
   await prisma.kpi.delete({ where: { id } });
 
   // Recalculate former linked monthly KPI if there was a link

@@ -3,20 +3,7 @@
 import React from 'react';
 import { m } from 'framer-motion';
 import { Pencil, Trash2, MessageSquare, RefreshCw, Target } from 'lucide-react';
-
-const priorityDot: Record<string, string> = {
-  URGENT: 'bg-red-500',
-  HIGH: 'bg-orange-500',
-  MEDIUM: 'bg-yellow-500',
-  LOW: 'bg-gray-500',
-};
-
-const statusBadge: Record<string, string> = {
-  TODO: 'text-gray-400',
-  IN_PROGRESS: 'text-yellow-400',
-  DONE: 'text-green-400',
-  DROPPED: 'text-red-400',
-};
+import { PRIORITY_DOT_COLORS, TASK_STATUS_COLORS } from '@/lib/goal-constants';
 
 interface TaskCardProps {
   task: any;
@@ -70,7 +57,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
         </button>
 
         {/* Priority dot */}
-        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${priorityDot[task.priority] ?? priorityDot.MEDIUM}`} />
+        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${PRIORITY_DOT_COLORS[task.priority] ?? PRIORITY_DOT_COLORS.MEDIUM}`} />
 
         {/* Title and meta */}
         <div className="flex-1 min-w-0">
@@ -78,7 +65,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
             <span className={`text-sm font-medium truncate ${isDone ? 'text-gray-500 line-through' : 'text-white'}`}>
               {task.title}
             </span>
-            <span className={`text-xs ${statusBadge[task.status] ?? ''}`}>
+            <span className={`text-xs ${TASK_STATUS_COLORS[task.status] ?? ''}`}>
               {task.status.replace('_', ' ')}
             </span>
           </div>

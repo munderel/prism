@@ -47,15 +47,21 @@ export async function PATCH(
   if (complete) {
     data.completedAt = new Date();
 
-    // Auto-schedule next review of same type
-    const nextDate = getNextReviewDate(review.reviewType);
-    await prisma.review.create({
-      data: {
-        userId: auth.userId,
-        reviewType: review.reviewType,
-        scheduledDate: nextDate,
-      },
+    // Only auto-schedule next review if user hasn't disabled reviews
+    const prefs = await prisma.notificationPreference.findUnique({
+      where: { userId: auth.userId },
     });
+
+    if (!prefs || prefs.reviewNags) {
+      const nextDate = getNextReviewDate(review.reviewType);
+      await prisma.review.create({
+        data: {
+          userId: auth.userId,
+          reviewType: review.reviewType,
+          scheduledDate: nextDate,
+        },
+      });
+    }
   }
 
   const updated = await prisma.review.update({ where: { id }, data });

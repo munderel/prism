@@ -3,16 +3,7 @@
 import useSWR from 'swr';
 import { useMemo } from 'react';
 import { ProgressRing } from '@/components/dopamine/ProgressRing';
-
-const levelColors: Record<string, string> = {
-  HIGH_HARD: 'bg-purple-600/20 text-purple-400 border-purple-600/30',
-  STRATEGIC: 'bg-blue-600/20 text-blue-400 border-blue-600/30',
-};
-
-const levelLabels: Record<string, string> = {
-  HIGH_HARD: 'HHG',
-  STRATEGIC: 'Strategic',
-};
+import { LEVEL_COLORS, LEVEL_LABELS } from '@/lib/goal-constants';
 
 export function GoalProgressSummary() {
   const { data: stacksData } = useSWR('/api/stacks');
@@ -48,10 +39,10 @@ export function GoalProgressSummary() {
             <div className="min-w-0 flex-1">
               <span
                 className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
-                  levelColors[goal.level] ?? ''
+                  LEVEL_COLORS[goal.level] ?? ''
                 }`}
               >
-                {levelLabels[goal.level] ?? goal.level}
+                {LEVEL_LABELS[goal.level] ?? goal.level}
               </span>
               <p className="text-sm font-medium text-white truncate mt-1">{goal.title}</p>
             </div>

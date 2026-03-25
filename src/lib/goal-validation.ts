@@ -20,7 +20,7 @@ const VALID_CHILD: Record<GoalLevel, GoalLevel | null> = {
   HIGH_HARD: 'STRATEGIC',
   STRATEGIC: 'MONTHLY',
   MONTHLY: 'WEEKLY',
-  WEEKLY: 'DAILY',
+  WEEKLY: null, // WEEKLY is now leaf — daily items are tasks, not goals
   DAILY: null,
 };
 
@@ -39,23 +39,25 @@ export function getChildLevel(
 
 // KPI validation
 
-export const KPI_ALLOWED_LEVELS: GoalLevel[] = ['STRATEGIC', 'MONTHLY', 'WEEKLY'];
+export const KPI_ALLOWED_LEVELS: GoalLevel[] = ['HIGH_HARD', 'STRATEGIC', 'MONTHLY', 'WEEKLY'];
 
 export function validateKpiLevel(goalLevel: GoalLevel | string): boolean {
   return KPI_ALLOWED_LEVELS.includes(goalLevel as GoalLevel);
 }
 
 export function validateKpiLink(
-  weeklyGoalLevel: GoalLevel | string,
-  weeklyGoalParentId: string | null,
-  monthlyKpiGoalId: string,
-  monthlyKpiGoalLevel: GoalLevel | string,
-  weeklyKpiType: string,
-  monthlyKpiType: string
+  childGoalLevel: GoalLevel | string,
+  childGoalParentId: string | null,
+  parentKpiGoalId: string,
+  parentKpiGoalLevel: GoalLevel | string,
+  childKpiType: string,
+  parentKpiType: string
 ): boolean {
-  if (weeklyGoalLevel !== 'WEEKLY') return false;
-  if (monthlyKpiGoalLevel !== 'MONTHLY') return false;
-  if (weeklyGoalParentId !== monthlyKpiGoalId) return false;
-  if (weeklyKpiType !== monthlyKpiType) return false;
+  // Child's parent level must match the target KPI's goal level
+  if (VALID_PARENT[childGoalLevel as GoalLevel] !== parentKpiGoalLevel) return false;
+  // Child goal's parent must be the target KPI's goal
+  if (childGoalParentId !== parentKpiGoalId) return false;
+  // Types must match
+  if (childKpiType !== parentKpiType) return false;
   return true;
 }

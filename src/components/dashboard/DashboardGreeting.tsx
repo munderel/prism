@@ -1,6 +1,5 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { Plus } from 'lucide-react';
 import { StreakCounter } from '@/components/dopamine/StreakCounter';
@@ -18,7 +17,7 @@ function getGreeting(): string {
 
 export function DashboardGreeting({ onQuickAdd }: DashboardGreetingProps) {
   const { data: session } = useSession();
-  const greeting = useMemo(() => getGreeting(), []);
+  const greeting = getGreeting();
 
   return (
     <div className="mb-8 flex items-start justify-between gap-4">

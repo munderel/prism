@@ -285,6 +285,7 @@ export default function TasksPage() {
                       </div>
                       <DailyTaskList
                         date={dateKey}
+                        prefetchedTasks={dayTasks}
                         onEdit={handleEdit}
                         onDelete={handleDelete}
                         onClick={handleTaskClick}

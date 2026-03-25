@@ -6,16 +6,8 @@ import { X, Plus, BarChart3 } from 'lucide-react';
 import useSWR from 'swr';
 import { KpiCard } from './KpiCard';
 import { KpiEditor } from './KpiEditor';
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
-const levelLabels: Record<string, string> = {
-  HIGH_HARD: 'HHG',
-  STRATEGIC: 'Yearly',
-  MONTHLY: 'Monthly',
-  WEEKLY: 'Weekly',
-  DAILY: 'Daily',
-};
+import { fetcher } from '@/lib/fetcher';
+import { LEVEL_LABELS } from '@/lib/goal-constants';
 
 interface KpiSidebarProps {
   goalId: string;
@@ -35,23 +27,20 @@ export function KpiSidebar({
   const [showEditor, setShowEditor] = useState(false);
   const [editingKpi, setEditingKpi] = useState<any>(null);
 
-  const { data: kpis, mutate } = useSWR(
+  const { data, mutate } = useSWR(
     `/api/goals/${goalId}/kpis`,
     fetcher
   );
+  const kpis = data?.kpis;
 
-  const handleUpdate = async (id: string, data: any) => {
+  const handleUpdate = async (id: string, updatePayload: any) => {
     const res = await fetch(`/api/kpis/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(updatePayload),
     });
     if (!res.ok) throw new Error('Failed to update KPI');
-    const result = await res.json();
     mutate();
-    if (result.updatedLinkedKpi) {
-      mutate();
-    }
   };
 
   const handleDelete = async (id: string) => {
@@ -84,7 +73,7 @@ export function KpiSidebar({
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
           <div className="min-w-0 flex-1">
             <span className="text-xs text-gray-500 uppercase tracking-wider">
-              {levelLabels[goalLevel] ?? goalLevel} KPIs
+              {LEVEL_LABELS[goalLevel] ?? goalLevel} KPIs
             </span>
             <h3 className="text-sm font-medium text-white truncate mt-0.5">
               {goalTitle}
