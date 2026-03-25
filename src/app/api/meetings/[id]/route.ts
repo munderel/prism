@@ -17,7 +17,7 @@ export async function PATCH(
     return Response.json({ error: 'Meeting not found' }, { status: 404 });
   }
 
-  const { title, description, cadence, dayOfWeek, timeStart, timeEnd, attendeeIds } = body;
+  const { title, description, cadence, dayOfWeek, occurDate, timeStart, timeEnd, attendeeIds } = body;
 
   const updated = await prisma.meeting.update({
     where: { id },
@@ -26,6 +26,7 @@ export async function PATCH(
       ...(description !== undefined && { description: description || null }),
       ...(cadence !== undefined && { cadence }),
       ...(dayOfWeek !== undefined && { dayOfWeek: dayOfWeek ?? null }),
+      ...(occurDate !== undefined && { occurDate: occurDate ? new Date(occurDate) : null }),
       ...(timeStart !== undefined && { timeStart }),
       ...(timeEnd !== undefined && { timeEnd }),
       ...(attendeeIds !== undefined && { attendeeIds }),

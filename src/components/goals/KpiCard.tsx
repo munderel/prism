@@ -12,12 +12,12 @@ interface KpiCardProps {
   onDelete: (id: string) => void;
 }
 
-export const KpiCard = React.memo(function KpiCard({
+export const KpiCard = React.memo(React.forwardRef<HTMLDivElement, KpiCardProps>(function KpiCard({
   kpi,
   onUpdate,
   onEdit,
   onDelete,
-}: KpiCardProps) {
+}: KpiCardProps, ref) {
   const [editingActual, setEditingActual] = useState(false);
   const [actualValue, setActualValue] = useState(String(kpi.actualValue ?? 0));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +50,7 @@ export const KpiCard = React.memo(function KpiCard({
   if (kpi.type === 'BINARY') {
     return (
       <m.div
+        ref={ref}
         layout
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -111,6 +112,7 @@ export const KpiCard = React.memo(function KpiCard({
   // NUMERIC variant
   return (
     <m.div
+      ref={ref}
       layout
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -180,4 +182,4 @@ export const KpiCard = React.memo(function KpiCard({
       )}
     </m.div>
   );
-});
+}));

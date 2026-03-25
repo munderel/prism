@@ -1,7 +1,8 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { openrouter, AIError } from '@/lib/openrouter';
+import { openrouter } from '@/lib/openrouter';
 import { courseBreakdownPrompt } from '@/lib/ai-prompts';
 import { prisma } from '@/lib/prisma';
+import { handleAIError } from '@/lib/ai-error-handler';
 
 const MAX_INPUT_LENGTH = 10000;
 
@@ -54,11 +55,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    // 1. Call OpenRouter for course breakdown
     const messages = courseBreakdownPrompt(title, syllabus);
     const breakdown = await openrouter.chatJSON<CourseBreakdown>(messages);
 
-    // 2. Calculate due dates
     const now = new Date();
     const target = targetCompletionDate ? new Date(targetCompletionDate) : null;
 
@@ -103,7 +102,6 @@ export async function POST(request: Request) {
       return new Date(now.getTime() + stepMs * (index + 1));
     };
 
-    // 3. Create TrainingItem + Tasks + TrainingTasks in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const trainingItem = await tx.trainingItem.create({
         data: {
@@ -124,7 +122,7 @@ export async function POST(request: Request) {
         const task = await tx.task.create({
           data: {
             ownerId: auth.userId,
-            taskType: 'GOAL_STACK',
+            taskType: 'IMPROVE',
             title: entry.label,
             description: `Part of training: ${title}`,
             priority: 'MEDIUM',
@@ -162,14 +160,6 @@ export async function POST(request: Request) {
 
     return Response.json(result, { status: 201 });
   } catch (err) {
-    if (err instanceof AIError) {
-      const status = err.code === 'RATE_LIMITED' ? 429 : err.code === 'API_KEY_INVALID' ? 503 : 502;
-      return Response.json(
-        { error: 'AI service temporarily unavailable. Please try again later.' },
-        { status }
-      );
-    }
-    console.error('[training/courses] Unexpected error:', err);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
+    return handleAIError(err, 'training/courses');
   }
 }

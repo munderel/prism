@@ -36,8 +36,8 @@ describe('DailyTaskList', () => {
 
   it('shows task counts per section', async () => {
     const tasks = [
-      createTask({ id: 't-1', title: 'Task A', taskType: 'GOAL_STACK' }),
-      createTask({ id: 't-2', title: 'Task B', taskType: 'GOAL_STACK' }),
+      createTask({ id: 't-1', title: 'Task A', taskType: 'IMPROVE' }),
+      createTask({ id: 't-2', title: 'Task B', taskType: 'IMPROVE' }),
       createTask({ id: 't-3', title: 'Task C', taskType: 'REACT' }),
     ];
     renderWithProviders(
@@ -53,7 +53,7 @@ describe('DailyTaskList', () => {
 
   it('renders task titles in their sections', async () => {
     const tasks = [
-      createTask({ id: 't-1', title: 'Write tests', taskType: 'GOAL_STACK' }),
+      createTask({ id: 't-1', title: 'Write tests', taskType: 'IMPROVE' }),
       createTask({ id: 't-2', title: 'Fix bug', taskType: 'REACT' }),
     ];
     renderWithProviders(
@@ -79,7 +79,7 @@ describe('DailyTaskList', () => {
   it('collapses a section when header is clicked', async () => {
     const user = userEvent.setup();
     const tasks = [
-      createTask({ id: 't-1', title: 'Visible Task', taskType: 'GOAL_STACK' }),
+      createTask({ id: 't-1', title: 'Visible Task', taskType: 'IMPROVE' }),
     ];
     renderWithProviders(
       <DailyTaskList date={date} onEdit={onEdit} onDelete={onDelete} />,

@@ -15,7 +15,7 @@ interface TaskEditorProps {
 export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEditorProps) {
   const isEditing = !!task;
 
-  const [taskType, setTaskType] = useState(task?.taskType ?? (prefilledGoalId ? 'GOAL_STACK' : 'GOAL_STACK'));
+  const [taskType, setTaskType] = useState(task?.taskType ?? (prefilledGoalId ? 'IMPROVE' : 'IMPROVE'));
   const [title, setTitle] = useState(task?.title ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
   const [priority, setPriority] = useState(task?.priority ?? 'MEDIUM');
@@ -36,7 +36,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (taskType === 'GOAL_STACK') {
+    if (taskType === 'IMPROVE') {
       fetchGoals();
     }
   }, [taskType]);
@@ -83,7 +83,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
         }
       } else {
         body.taskType = taskType;
-        if (taskType === 'GOAL_STACK' && goalId) body.goalId = goalId;
+        if (taskType === 'IMPROVE' && goalId) body.goalId = goalId;
         if (taskType === 'MAINTENANCE') {
           body.recurrenceRule = `FREQ=${recurrenceFreq};INTERVAL=${recurrenceInterval}`;
         }
@@ -139,7 +139,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-1">Task Type</label>
                 <div className="flex gap-2">
-                  {['GOAL_STACK', 'REACT', 'MAINTENANCE'].map((t) => (
+                  {['IMPROVE', 'REACT', 'MAINTENANCE'].map((t) => (
                     <button
                       key={t}
                       type="button"
@@ -150,7 +150,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                           : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
                       }`}
                     >
-                      {t === 'GOAL_STACK' ? 'Goal Stack' : t === 'REACT' ? 'React' : 'Maintenance'}
+                      {t === 'IMPROVE' ? 'Improve' : t === 'REACT' ? 'React' : 'Maintenance'}
                     </button>
                   ))}
                 </div>
@@ -268,8 +268,8 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               </div>
             </div>
 
-            {/* Goal selector for GOAL_STACK */}
-            {taskType === 'GOAL_STACK' && !isEditing && (
+            {/* Goal selector for IMPROVE */}
+            {taskType === 'IMPROVE' && !isEditing && (
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-1">Linked Goal</label>
                 <select

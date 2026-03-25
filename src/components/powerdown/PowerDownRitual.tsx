@@ -30,7 +30,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [completed, setCompleted] = useState(false);
 
-  // New state for expanded steps
   const [distractions, setDistractions] = useState<string[]>([]);
   const [newDistraction, setNewDistraction] = useState('');
   const [gratitudes, setGratitudes] = useState<string[]>([]);
@@ -39,8 +38,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [newIdea, setNewIdea] = useState('');
   const [clearGoals, setClearGoals] = useState<any[]>([]);
 
-  // Gratitude timer
-  const [timerSeconds, setTimerSeconds] = useState(300); // 5 min
+  const [timerSeconds, setTimerSeconds] = useState(300);
   const [timerRunning, setTimerRunning] = useState(false);
 
   useEffect(() => {

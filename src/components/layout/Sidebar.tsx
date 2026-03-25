@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
-import { X, Sun, Moon as MoonIcon } from 'lucide-react';
+import { X, Sun, Moon as MoonIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
   LayoutDashboard,
   Target,
@@ -20,7 +20,8 @@ import {
   Settings,
 } from 'lucide-react';
 import { StreakCounter } from '@/components/dopamine/StreakCounter';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import useSWR from 'swr';
 
 const navSections = [
   {
@@ -61,12 +62,27 @@ const navSections = [
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const { data: settings } = useSWR('/api/settings?scope=user');
+  const hiddenFeatures: string[] = useMemo(() => {
+    if (settings && Array.isArray(settings.hiddenFeatures)) return settings.hiddenFeatures;
+    return [];
+  }, [settings]);
+
+  const filteredNavSections = useMemo(() =>
+    navSections.map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !hiddenFeatures.includes(item.href)),
+    })).filter((section) => section.items.length > 0),
+    [hiddenFeatures]
+  );
 
   useEffect(() => setMounted(true), []);
 
@@ -76,12 +92,23 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
-      <div className="flex h-16 items-center justify-between px-6 border-b border-[var(--border-color)]">
-        <Link href="/" onClick={onClose}>
-          <h1 className="text-lg font-bold font-display prism-text">
-            Prism
-          </h1>
-        </Link>
+      <div className={`flex h-16 items-center border-b border-[var(--border-color)] ${collapsed ? 'justify-center px-2' : 'justify-between px-6'}`}>
+        {!collapsed && (
+          <Link href="/" onClick={onClose}>
+            <h1 className="text-lg font-bold font-display prism-text">
+              Prism
+            </h1>
+          </Link>
+        )}
+        {/* Desktop collapse toggle */}
+        <button
+          onClick={onToggleCollapse}
+          className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors hidden lg:block"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+        </button>
+        {/* Mobile close button */}
         <button
           onClick={onClose}
           className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors lg:hidden"
@@ -90,13 +117,15 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           <X className="h-5 w-5" />
         </button>
       </div>
-      <nav className="mt-4 px-3 flex-1">
-        {navSections.map((section, idx) => (
+      <nav className={`mt-4 flex-1 ${collapsed ? 'px-1.5' : 'px-3'}`}>
+        {filteredNavSections.map((section, idx) => (
           <div key={section.label} className={idx > 0 ? 'mt-6' : ''}>
-            <span className="px-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-              {section.label}
-            </span>
-            <div className="mt-2">
+            {!collapsed && (
+              <span className="px-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                {section.label}
+              </span>
+            )}
+            <div className={collapsed ? 'mt-1' : 'mt-2'}>
               {section.items.map((item) => {
                 const isActive = pathname === item.href;
                 return (
@@ -104,14 +133,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     key={item.href}
                     href={item.href}
                     onClick={onClose}
-                    className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 mb-0.5 text-sm font-medium transition-colors ${
+                    title={collapsed ? item.label : undefined}
+                    className={`relative flex items-center rounded-lg mb-0.5 text-sm font-medium transition-colors ${
+                      collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
+                    } ${
                       isActive
                         ? 'nav-active-indicator bg-[var(--hover-bg)] text-[var(--text-primary)]'
                         : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'
                     }`}
                   >
-                    <item.icon className={`h-5 w-5 ${isActive ? 'text-prism-indigo' : ''}`} />
-                    {item.label}
+                    <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-prism-indigo' : ''}`} />
+                    {!collapsed && item.label}
                   </Link>
                 );
               })}
@@ -119,20 +151,23 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           </div>
         ))}
       </nav>
-      <div className="px-4 pb-4 border-t border-[var(--border-color)] pt-4 space-y-3">
-        <StreakCounter />
+      <div className={`pb-4 border-t border-[var(--border-color)] pt-4 space-y-3 ${collapsed ? 'px-1.5' : 'px-4'}`}>
+        {!collapsed && <StreakCounter />}
         {mounted && (
           <button
             onClick={toggleTheme}
-            className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors"
+            title={collapsed ? (resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode') : undefined}
+            className={`flex items-center w-full rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors ${
+              collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'
+            }`}
             aria-label="Toggle theme"
           >
             {resolvedTheme === 'dark' ? (
-              <Sun className="h-4 w-4" />
+              <Sun className="h-4 w-4 flex-shrink-0" />
             ) : (
-              <MoonIcon className="h-4 w-4" />
+              <MoonIcon className="h-4 w-4 flex-shrink-0" />
             )}
-            {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+            {!collapsed && (resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode')}
           </button>
         )}
       </div>
@@ -142,11 +177,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar — always visible at lg+ */}
-      <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-[var(--border-color)] bg-[var(--surface)] backdrop-blur-xl hidden lg:block">
+      <aside className={`fixed left-0 top-0 z-40 h-screen border-r border-[var(--border-color)] bg-[var(--surface)] backdrop-blur-xl hidden lg:block transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`}>
         {sidebarContent}
       </aside>
 
-      {/* Mobile sidebar — slide-in drawer */}
+      {/* Mobile sidebar — slide-in drawer (always expanded) */}
       <div
         className={`fixed inset-0 z-50 lg:hidden transition-opacity duration-300 ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'

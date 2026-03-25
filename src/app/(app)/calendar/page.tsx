@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR from 'swr';
 import dynamic from 'next/dynamic';
-import { CalendarDays, Video, GripVertical, Clock, Users } from 'lucide-react';
+import { CalendarDays, Video, GripVertical, Clock, Users, Flame, ClipboardList } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { Draggable } from '@fullcalendar/interaction';
 import { MeetingsManager } from '@/components/calendar/MeetingsManager';
@@ -21,8 +21,52 @@ interface UnscheduledTask {
   taskType: string;
   status: string;
   dueDate: string | null;
+  estimatedMinutes?: number;
+  preferredTimeStart?: string | null;
+  preferredTimeEnd?: string | null;
   goal?: { title: string; level: string; stack?: { name: string } } | null;
 }
+
+interface UnscheduledAim {
+  id: string;
+  type: 'aim';
+  title: string;
+  aimCategoryId: string;
+  aimInstanceId?: string;
+  duration: number;
+  source: 'aims';
+}
+
+interface UnscheduledReview {
+  id: string;
+  type: 'review';
+  title: string;
+  reviewId: string;
+  reviewType: string;
+  duration: number;
+  scheduledDate: string;
+  source: 'reviews';
+}
+
+type UnscheduledItem = {
+  id: string;
+  itemType: 'task' | 'aim' | 'review';
+  title: string;
+  duration: number; // minutes
+  // Task-specific
+  taskId?: string;
+  priority?: string;
+  taskType?: string;
+  dueDate?: string | null;
+  goal?: { title: string; level: string; stack?: { name: string } } | null;
+  // Aim-specific
+  aimCategoryId?: string;
+  aimInstanceId?: string;
+  // Review-specific
+  reviewId?: string;
+  reviewType?: string;
+  scheduledDate?: string;
+};
 
 const PRIORITY_COLORS: Record<string, string> = {
   URGENT: 'border-l-red-500',
@@ -43,12 +87,66 @@ export default function CalendarPage() {
   const isAdmin = session?.user?.isAdmin ?? false;
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?status=TODO');
+  const { data: aimsData, isLoading: loadingAims, mutate: mutateAims } = useSWR<UnscheduledAim[]>('/api/aims/unscheduled');
+  const { data: reviewsData, isLoading: loadingReviews, mutate: mutateReviews } = useSWR<UnscheduledReview[]>('/api/reviews/unscheduled');
+
   const unscheduledTasks = useMemo(() => {
     const tasks = Array.isArray(tasksData) ? tasksData : [];
     return tasks.filter(
       (t: any) => !t.timeBlockStart && (t.status === 'TODO' || t.status === 'IN_PROGRESS')
     ) as UnscheduledTask[];
   }, [tasksData]);
+
+  const allUnscheduledItems = useMemo(() => {
+    const items: UnscheduledItem[] = [];
+
+    // Tasks
+    for (const task of unscheduledTasks) {
+      items.push({
+        id: `task-${task.id}`,
+        itemType: 'task',
+        title: task.title,
+        duration: task.estimatedMinutes ?? 60,
+        taskId: task.id,
+        priority: task.priority,
+        taskType: task.taskType,
+        dueDate: task.dueDate,
+        goal: task.goal,
+      });
+    }
+
+    // Aims
+    if (Array.isArray(aimsData)) {
+      for (const aim of aimsData) {
+        items.push({
+          id: aim.id,
+          itemType: 'aim',
+          title: aim.title,
+          duration: aim.duration,
+          aimCategoryId: aim.aimCategoryId,
+          aimInstanceId: aim.aimInstanceId,
+        });
+      }
+    }
+
+    // Reviews
+    if (Array.isArray(reviewsData)) {
+      for (const review of reviewsData) {
+        items.push({
+          id: review.id,
+          itemType: 'review',
+          title: review.title,
+          duration: review.duration,
+          reviewId: review.reviewId,
+          reviewType: review.reviewType,
+          scheduledDate: review.scheduledDate,
+        });
+      }
+    }
+
+    return items;
+  }, [unscheduledTasks, aimsData, reviewsData]);
+
   const [showMeetings, setShowMeetings] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const draggableRef = useRef<Draggable | null>(null);
@@ -65,18 +163,36 @@ export default function CalendarPage() {
     draggableRef.current = new Draggable(sidebarRef.current, {
       itemSelector: '.fc-unscheduled-task',
       eventData: (eventEl) => {
-        const taskId = eventEl.getAttribute('data-task-id') || '';
-        const title = eventEl.getAttribute('data-task-title') || '';
+        const itemType = eventEl.getAttribute('data-item-type') || 'task';
+        const itemId = eventEl.getAttribute('data-item-id') || '';
+        const title = eventEl.getAttribute('data-item-title') || '';
+        const durationMin = parseInt(eventEl.getAttribute('data-duration') || '60', 10);
+        const hours = Math.floor(durationMin / 60);
+        const mins = durationMin % 60;
+        const duration = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+
+        const colors: Record<string, { bg: string; border: string }> = {
+          task: { bg: '#6366f1', border: '#4f46e5' },
+          aim: { bg: '#14b8a6', border: '#0d9488' },
+          review: { bg: '#f59e0b', border: '#d97706' },
+        };
+
+        const { bg, border } = colors[itemType] || colors.task;
+
         return {
-          id: `task-${taskId}`,
+          id: itemId,
           title,
-          duration: '01:00',
+          duration,
           extendedProps: {
-            taskId,
-            source: 'tasks',
+            itemType,
+            taskId: eventEl.getAttribute('data-task-id') || undefined,
+            aimCategoryId: eventEl.getAttribute('data-aim-category-id') || undefined,
+            aimInstanceId: eventEl.getAttribute('data-aim-instance-id') || undefined,
+            reviewId: eventEl.getAttribute('data-review-id') || undefined,
+            source: itemType === 'task' ? 'tasks' : itemType === 'aim' ? 'aims' : 'reviews',
           },
-          backgroundColor: '#6366f1',
-          borderColor: '#4f46e5',
+          backgroundColor: bg,
+          borderColor: border,
         };
       },
     });
@@ -87,7 +203,7 @@ export default function CalendarPage() {
         draggableRef.current = null;
       }
     };
-  }, [unscheduledTasks]); // Re-init when tasks change
+  }, [allUnscheduledItems]); // Re-init when any items change
 
   const handleEventClick = (info: any) => {
     const eventData = info.event.extendedProps;
@@ -99,12 +215,127 @@ export default function CalendarPage() {
     });
   };
 
-  const handleExternalDrop = (taskId: string) => {
-    // Remove from unscheduled list after successful drop by revalidating
-    mutateTasks(
-      (current: any) => Array.isArray(current) ? current.filter((t: any) => t.id !== taskId) : current,
-      { revalidate: false }
-    );
+  const handleExternalDrop = (itemId: string, _start: Date, _end: Date, itemType?: string) => {
+    if (itemType === 'aim') {
+      mutateAims();
+    } else if (itemType === 'review') {
+      mutateReviews();
+    } else {
+      // Default: task
+      const taskId = itemId.replace('task-', '');
+      mutateTasks(
+        (current: any) => Array.isArray(current) ? current.filter((t: any) => t.id !== taskId) : current,
+        { revalidate: false }
+      );
+    }
+  };
+
+  const isLoading = loadingTasks || loadingAims || loadingReviews;
+
+  const renderItem = (item: UnscheduledItem) => {
+    if (item.itemType === 'task') {
+      return (
+        <div
+          key={item.id}
+          className={`fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 ${
+            PRIORITY_COLORS[item.priority || ''] || 'border-l-gray-600'
+          } bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors`}
+          data-item-type="task"
+          data-item-id={item.id}
+          data-item-title={item.title}
+          data-task-id={item.taskId}
+          data-duration={item.duration}
+        >
+          <div className="flex items-start gap-2">
+            <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-[var(--text-primary)] font-medium truncate">
+                {item.title}
+              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    PRIORITY_DOT_COLORS[item.priority || ''] || 'bg-gray-500'
+                  }`}
+                />
+                <span className="text-xs text-[var(--text-muted)]">
+                  {(item.priority || 'MEDIUM').charAt(0) + (item.priority || 'MEDIUM').slice(1).toLowerCase()}
+                </span>
+                {item.taskType === 'IMPROVE' && item.goal && (
+                  <span className="text-xs text-indigo-400 truncate">
+                    {item.goal.title}
+                  </span>
+                )}
+              </div>
+              {item.dueDate && (
+                <p className="text-xs text-[var(--text-muted)] mt-1">
+                  Due: {new Date(item.dueDate).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (item.itemType === 'aim') {
+      return (
+        <div
+          key={item.id}
+          className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 border-l-teal-500 bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors"
+          data-item-type="aim"
+          data-item-id={item.id}
+          data-item-title={item.title}
+          data-aim-category-id={item.aimCategoryId}
+          data-aim-instance-id={item.aimInstanceId || ''}
+          data-duration={item.duration}
+        >
+          <div className="flex items-start gap-2">
+            <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-[var(--text-primary)] font-medium truncate">
+                {item.title}
+              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <Flame className="h-3 w-3 text-teal-400" />
+                <span className="text-xs text-teal-400">Aim</span>
+                <span className="text-xs text-[var(--text-muted)]">{item.duration}min</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (item.itemType === 'review') {
+      return (
+        <div
+          key={item.id}
+          className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 border-l-amber-500 bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors"
+          data-item-type="review"
+          data-item-id={item.id}
+          data-item-title={item.title}
+          data-review-id={item.reviewId}
+          data-duration={item.duration}
+        >
+          <div className="flex items-start gap-2">
+            <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-[var(--text-primary)] font-medium truncate">
+                {item.title}
+              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <ClipboardList className="h-3 w-3 text-amber-400" />
+                <span className="text-xs text-amber-400">{item.reviewType}</span>
+                <span className="text-xs text-[var(--text-muted)]">{item.duration}min</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -128,73 +359,35 @@ export default function CalendarPage() {
       <MeetingsManager open={showMeetings} onClose={() => setShowMeetings(false)} />
 
       <div className="flex gap-6">
-        {/* Unscheduled Tasks Sidebar */}
+        {/* Unscheduled Items Sidebar */}
         <div className="w-72 flex-shrink-0">
           <div className="glass-panel p-4 sticky top-4">
             <div className="flex items-center gap-2 mb-4">
               <Clock className="h-4 w-4 text-indigo-400" />
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Unscheduled Tasks</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Unscheduled Items</h2>
               <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
-                {unscheduledTasks.length}
+                {allUnscheduledItems.length}
               </span>
             </div>
 
             <p className="text-xs text-[var(--text-muted)] mb-3">
-              Drag tasks onto the calendar to schedule them.
+              Drag items onto the calendar to schedule them.
             </p>
 
             <div
               ref={sidebarRef}
               className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto pr-1"
             >
-              {loadingTasks ? (
+              {isLoading ? (
                 <div className="text-center py-8">
-                  <div className="text-[var(--text-muted)] text-sm">Loading tasks...</div>
+                  <div className="text-[var(--text-muted)] text-sm">Loading...</div>
                 </div>
-              ) : unscheduledTasks.length === 0 ? (
+              ) : allUnscheduledItems.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-[var(--text-muted)] text-sm">All tasks are scheduled!</p>
+                  <p className="text-[var(--text-muted)] text-sm">Everything is scheduled!</p>
                 </div>
               ) : (
-                unscheduledTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className={`fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 ${
-                      PRIORITY_COLORS[task.priority] || 'border-l-gray-600'
-                    } bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors`}
-                    data-task-id={task.id}
-                    data-task-title={task.title}
-                  >
-                    <div className="flex items-start gap-2">
-                      <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-[var(--text-primary)] font-medium truncate">
-                          {task.title}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              PRIORITY_DOT_COLORS[task.priority] || 'bg-gray-500'
-                            }`}
-                          />
-                          <span className="text-xs text-[var(--text-muted)]">
-                            {task.priority.charAt(0) + task.priority.slice(1).toLowerCase()}
-                          </span>
-                          {task.taskType === 'GOAL_STACK' && task.goal && (
-                            <span className="text-xs text-indigo-400 truncate">
-                              {task.goal.title}
-                            </span>
-                          )}
-                        </div>
-                        {task.dueDate && (
-                          <p className="text-xs text-[var(--text-muted)] mt-1">
-                            Due: {new Date(task.dueDate).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
+                allUnscheduledItems.map(renderItem)
               )}
             </div>
           </div>
@@ -205,6 +398,7 @@ export default function CalendarPage() {
           <CalendarView
             onEventClick={handleEventClick}
             onExternalDrop={handleExternalDrop}
+            unscheduledTasks={allUnscheduledItems}
           />
 
           {/* Event details panel */}

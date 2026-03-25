@@ -2,22 +2,39 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { Clock, CheckCircle2, Zap, AlertTriangle } from 'lucide-react';
+import { Clock, CheckCircle2, Zap, AlertTriangle, Focus } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { DashboardGreeting } from '@/components/dashboard/DashboardGreeting';
 import { PrismStatCard } from '@/components/dashboard/PrismStatCard';
 import { WinTheDayCard } from '@/components/dashboard/WinTheDayCard';
 import { WinTheDayCelebration } from '@/components/dopamine/WinTheDayCelebration';
+import { FocusView } from '@/components/dashboard/FocusView';
+
+const FOCUS_MODE_KEY = 'prism-focus-mode';
 
 export default function DashboardPage() {
   const today = new Date().toISOString().split('T')[0];
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
+  const [focusMode, setFocusMode] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(FOCUS_MODE_KEY);
+    if (stored === 'true') setFocusMode(true);
+  }, []);
+
+  const toggleFocusMode = () => {
+    setFocusMode((prev) => {
+      const next = !prev;
+      localStorage.setItem(FOCUS_MODE_KEY, String(next));
+      return next;
+    });
+  };
 
   const [showWinCelebration, setShowWinCelebration] = useState(false);
 
-  const { data: tasks, mutate } = useSWR(`/api/tasks?date=${today}&includeUnscheduled=true`);
+  const { data: tasks, mutate } = useSWR(`/api/tasks?date=${today}&includeUnscheduled=true`, { revalidateOnFocus: true });
   const list = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
   const winTheDayTask = useMemo(() => list.find((t: any) => t.isWinTheDay) ?? null, [list]);
@@ -58,6 +75,15 @@ export default function DashboardPage() {
     mutate();
   }, [mutate]);
 
+  const handleFocusStatusChange = useCallback(async (taskId: string, newStatus: string) => {
+    await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    mutate();
+  }, [mutate]);
+
   const statCards = [
     { label: 'Total Tasks', value: stats.total, icon: Clock, color: 'text-blue-400', glowColor: '#3b82f6' },
     { label: 'Completed', value: stats.done, icon: CheckCircle2, color: 'text-green-400', glowColor: '#22c55e' },
@@ -67,30 +93,58 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {/* Greeting + streak + quick add */}
-      <DashboardGreeting onQuickAdd={() => setShowEditor(true)} />
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {statCards.map((card) => (
-          <PrismStatCard key={card.label} {...card} />
-        ))}
+      {/* Focus mode toggle */}
+      <div className="mb-4 flex justify-end">
+        <button
+          onClick={toggleFocusMode}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+            focusMode
+              ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1]'
+          }`}
+        >
+          <Focus className="h-3.5 w-3.5" />
+          {focusMode ? 'Full View' : 'Focus Mode'}
+        </button>
       </div>
 
-      {/* Win the Day */}
-      <WinTheDayCard task={winTheDayTask} />
-      <WinTheDayCelebration show={showWinCelebration} onComplete={() => setShowWinCelebration(false)} />
+      {focusMode ? (
+        <>
+          {/* Focus mode: just WTD + sorted task list */}
+          <WinTheDayCard task={winTheDayTask} />
+          <WinTheDayCelebration show={showWinCelebration} onComplete={() => setShowWinCelebration(false)} />
+          <div className="mt-4">
+            <FocusView tasks={list} onStatusChange={handleFocusStatusChange} />
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Greeting + streak + quick add */}
+          <DashboardGreeting onQuickAdd={() => setShowEditor(true)} />
 
-      {/* Today's tasks */}
-      <div className="mb-4">
-        <h2 className="font-display text-lg font-semibold text-[var(--text-primary)] mb-4">Today&apos;s Tasks</h2>
-        <DailyTaskList
-          date={today}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onStatusChange={handleStatusChange}
-        />
-      </div>
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            {statCards.map((card) => (
+              <PrismStatCard key={card.label} {...card} />
+            ))}
+          </div>
+
+          {/* Win the Day */}
+          <WinTheDayCard task={winTheDayTask} />
+          <WinTheDayCelebration show={showWinCelebration} onComplete={() => setShowWinCelebration(false)} />
+
+          {/* Today's tasks */}
+          <div className="mb-4">
+            <h2 className="font-display text-lg font-semibold text-[var(--text-primary)] mb-4">Today&apos;s Tasks</h2>
+            <DailyTaskList
+              date={today}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onStatusChange={handleStatusChange}
+            />
+          </div>
+        </>
+      )}
 
       {showEditor && (
         <TaskEditor

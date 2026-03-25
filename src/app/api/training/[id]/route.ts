@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { enrichTrainingProgress, pickDefined } from '@/lib/api-helpers';
 
 export async function GET(
   request: NextRequest,
@@ -51,17 +52,7 @@ export async function GET(
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const totalTasks = item.trainingTasks.length;
-  const completedTasks = item.trainingTasks.filter(
-    (tt) => tt.task.status === 'DONE'
-  ).length;
-
-  return Response.json({
-    ...item,
-    totalTasks,
-    completedTasks,
-    progressPct: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
-  });
+  return Response.json(enrichTrainingProgress(item));
 }
 
 export async function PUT(
@@ -88,16 +79,13 @@ export async function PUT(
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { title, description, targetCompletionDate, goalId, status } = body;
+  const { targetCompletionDate, goalId } = body;
 
-  const data: any = {};
-  if (title !== undefined) data.title = title;
-  if (description !== undefined) data.description = description;
+  const data: any = pickDefined(body, ['title', 'description', 'status']);
   if (targetCompletionDate !== undefined) {
     data.targetCompletionDate = targetCompletionDate ? new Date(targetCompletionDate) : null;
   }
   if (goalId !== undefined) data.goalId = goalId || null;
-  if (status !== undefined) data.status = status;
 
   const updated = await prisma.trainingItem.update({
     where: { id },

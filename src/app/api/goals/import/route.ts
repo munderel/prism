@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { goalLimiter, getClientIp } from '@/lib/rate-limit';
+
 import { parseYamlToGoals, diffGoals, buildGoalTree, type GoalNode } from '@/lib/yaml-handler';
 import { cascadeProgressUp } from '@/lib/progress';
 import { cascadeKpiUpdate } from '@/lib/kpi-progress';
@@ -10,12 +10,6 @@ import { validateGoalLevel } from '@/lib/goal-validation';
 const MAX_YAML_SIZE = 256 * 1024; // 256KB
 
 export async function POST(request: NextRequest) {
-  const ip = getClientIp(request);
-  const limit = goalLimiter.check(ip);
-  if (!limit.success) {
-    return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
-  }
-
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
@@ -130,15 +124,11 @@ export async function POST(request: NextRequest) {
 
   // Recalculate monthly KPIs that have new linked weeklies
   if (kpiLinkQueue.length > 0) {
-    const monthlyGoalIds = [...new Set(kpiLinkQueue.map((l) => l.parentGoalId))];
-    for (const goalId of monthlyGoalIds) {
-      const monthlyKpis = await prisma.kpi.findMany({
-        where: { goalId, linkedFrom: { some: {} } },
-      });
-      for (const mk of monthlyKpis) {
-        await cascadeKpiUpdate(mk.id);
-      }
-    }
+    const monthlyGoalIds = Array.from(new Set(kpiLinkQueue.map((l) => l.parentGoalId)));
+    const monthlyKpis = await prisma.kpi.findMany({
+      where: { goalId: { in: monthlyGoalIds }, linkedFrom: { some: {} } },
+    });
+    await Promise.all(monthlyKpis.map((mk) => cascadeKpiUpdate(mk.id)));
   }
 
   // Create ConfigVersion
@@ -227,7 +217,7 @@ async function createNewGoals(
             data: {
               ownerId,
               goalId: created.id,
-              taskType: 'GOAL_STACK',
+              taskType: 'IMPROVE',
               title: task.title,
               description: task.description ?? null,
               status: (task.status as any) ?? 'TODO',

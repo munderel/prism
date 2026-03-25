@@ -4,8 +4,8 @@ import { computeIndividualReport, computeLeverageAnalysis } from '../lib/reports
 describe('computeIndividualReport', () => {
   it('computes completion and failure rates', () => {
     const tasks = [
-      { status: 'DONE', taskType: 'GOAL_STACK', completedAt: new Date(), failedAt: null, recurrenceRule: null, title: 'A' },
-      { status: 'DONE', taskType: 'GOAL_STACK', completedAt: new Date(), failedAt: null, recurrenceRule: null, title: 'B' },
+      { status: 'DONE', taskType: 'IMPROVE', completedAt: new Date(), failedAt: null, recurrenceRule: null, title: 'A' },
+      { status: 'DONE', taskType: 'IMPROVE', completedAt: new Date(), failedAt: null, recurrenceRule: null, title: 'B' },
       { status: 'DROPPED', taskType: 'REACT', completedAt: null, failedAt: new Date(), recurrenceRule: null, title: 'C' },
       { status: 'TODO', taskType: 'MAINTENANCE', completedAt: null, failedAt: null, recurrenceRule: 'FREQ=DAILY', title: 'D' },
     ];

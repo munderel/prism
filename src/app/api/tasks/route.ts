@@ -1,9 +1,10 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { taskLimiter, getClientIp } from '@/lib/rate-limit';
+
 import { parseRRule } from '@/lib/recurrence';
 import { createGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
+import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -70,16 +71,15 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return Response.json(tasks);
+  return new Response(JSON.stringify(tasks), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'private, max-age=5, stale-while-revalidate=30',
+    },
+  });
 }
 
 export async function POST(request: NextRequest) {
-  const ip = getClientIp(request);
-  const limit = taskLimiter.check(ip);
-  if (!limit.success) {
-    return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
-  }
-
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
@@ -94,10 +94,10 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'estimatedMinutes required and must be > 0' }, { status: 400 });
   }
 
-  // GOAL_STACK tasks require a goalId
-  if (taskType === 'GOAL_STACK') {
+  // IMPROVE tasks require a goalId
+  if (taskType === 'IMPROVE') {
     if (!goalId) {
-      return Response.json({ error: 'goalId is required for GOAL_STACK tasks' }, { status: 400 });
+      return Response.json({ error: 'goalId is required for IMPROVE tasks' }, { status: 400 });
     }
     // Verify goal ownership
     const goal = await prisma.goal.findUnique({
@@ -134,16 +134,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Auto-unflag other Win the Day tasks for the same user + date
   if (isWinTheDay && dueDate) {
-    await prisma.task.updateMany({
-      where: {
-        ownerId: auth.userId,
-        dueDate: new Date(dueDate),
-        isWinTheDay: true,
-      },
-      data: { isWinTheDay: false },
-    });
+    await unflagOtherWinTheDay(auth.userId, dueDate);
   }
 
   const task = await prisma.task.create({

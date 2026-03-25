@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { TaskCard } from './TaskCard';
 
 const SECTIONS = [
-  { key: 'GOAL_STACK', label: 'Goal Stack', color: 'text-indigo-400' },
+  { key: 'IMPROVE', label: 'Improve', color: 'text-indigo-400' },
   { key: 'REACT', label: 'React', color: 'text-yellow-400' },
   { key: 'MAINTENANCE', label: 'Maintenance', color: 'text-cyan-400' },
 ] as const;

@@ -31,6 +31,8 @@ interface GoalStackTreeProps {
   stackId: string;
   isCompanyStack: boolean;
   isAdmin: boolean;
+  showInProgress?: boolean;
+  showDueToday?: boolean;
 }
 
 interface FlatItem {
@@ -71,8 +73,8 @@ function SortableGoalCard({
   onAddTask,
   onStatusChange,
   onKpiClick,
-  isCompanyStack,
-  isAdmin,
+  isCompanyStack: _isCompanyStack,
+  isAdmin: _isAdmin,
 }: {
   item: FlatItem;
   onEdit: (goal: any) => void;
@@ -135,6 +137,8 @@ export function GoalStackTree({
   stackId,
   isCompanyStack,
   isAdmin,
+  showInProgress,
+  showDueToday,
 }: GoalStackTreeProps) {
   const { data: goalsData, isLoading, mutate: mutateGoals } = useSWR(`/api/goals?stackId=${stackId}`);
 
@@ -154,8 +158,49 @@ export function GoalStackTree({
         roots.push(node);
       }
     }
-    return flattenTree(roots);
-  }, [goalsData]);
+    let items = flattenTree(roots);
+
+    // Filter: In Progress — show goals with IN_PROGRESS status and their direct children
+    if (showInProgress) {
+      const inProgressGoalIds = new Set<string>();
+      // First pass: find all IN_PROGRESS goals
+      for (const item of items) {
+        if (item.type === 'goal' && item.goal?.status === 'IN_PROGRESS') {
+          inProgressGoalIds.add(item.goal.id);
+        }
+      }
+      // Second pass: also include children of IN_PROGRESS goals
+      for (const item of items) {
+        if (item.type === 'goal' && item.goal?.parentId && inProgressGoalIds.has(item.goal.parentId)) {
+          inProgressGoalIds.add(item.goal.id);
+        }
+      }
+      items = items.filter((item) => {
+        if (item.type === 'task') {
+          // Keep tasks whose parent goal is in progress
+          return item.task?.goalId && inProgressGoalIds.has(item.task.goalId);
+        }
+        return inProgressGoalIds.has(item.goal?.id);
+      });
+    }
+
+    // Filter: Due Today — show goals/tasks due today or overdue
+    if (showDueToday) {
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      items = items.filter((item) => {
+        if (item.type === 'task') {
+          const due = item.task?.dueDate ? new Date(item.task.dueDate) : null;
+          return due && due <= today && item.task?.status !== 'DONE';
+        }
+        const goal = item.goal;
+        const due = goal?.dueDate ? new Date(goal.dueDate) : goal?.endDate ? new Date(goal.endDate) : null;
+        return due && due <= today && goal?.status !== 'COMPLETED' && goal?.status !== 'ABANDONED';
+      });
+    }
+
+    return items;
+  }, [goalsData, showInProgress, showDueToday]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<{

@@ -48,20 +48,28 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user }) {
-      // On initial sign-in, set user ID in token
+      // On initial sign-in, cache user ID and isAdmin in token
       if (user) {
         token.id = user.id;
+        token.isAdmin = (user as any).isAdmin ?? false;
+        token.adminCheckedAt = Date.now();
       }
 
-      // Re-fetch isAdmin from DB on every request to catch role changes promptly.
-      // Tradeoff: adds one small SELECT per authenticated request. If request volume
-      // grows, consider short-TTL caching (e.g., 60s) or reducing JWT maxAge instead.
-      if (token.id) {
+      // Re-fetch isAdmin from DB every 5 minutes to catch role changes.
+      // This eliminates a DB query on every authenticated request while keeping
+      // role updates propagating within a reasonable window for an internal tool.
+      const ADMIN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+      if (
+        token.id &&
+        (!token.adminCheckedAt ||
+          Date.now() - (token.adminCheckedAt as number) > ADMIN_CACHE_TTL)
+      ) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
           select: { isAdmin: true },
         });
         token.isAdmin = dbUser?.isAdmin ?? false;
+        token.adminCheckedAt = Date.now();
       }
 
       return token;

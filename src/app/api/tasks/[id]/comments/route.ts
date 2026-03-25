@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireTaskAccess, authError } from '@/lib/auth-guard';
-import { commentLimiter, getClientIp } from '@/lib/rate-limit';
+
 import { extractMentions, resolveMentions } from '@/lib/mention-parser';
 
 export async function GET(
@@ -29,12 +29,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: taskId } = await params;
-
-  const ip = getClientIp(request);
-  const limit = commentLimiter.check(ip);
-  if (!limit.success) {
-    return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
-  }
 
   const auth = await requireTaskAccess(taskId);
   if ('error' in auth) return authError(auth);

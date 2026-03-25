@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { goalLimiter, getClientIp } from '@/lib/rate-limit';
+
 
 export async function GET() {
   const auth = await requireAuth();
@@ -30,12 +30,6 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const ip = getClientIp(request);
-  const limit = goalLimiter.check(ip);
-  if (!limit.success) {
-    return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
-  }
-
   const body = await request.json();
   const { name, isCompany } = body;
 

@@ -8,7 +8,9 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const adapter = new PrismaPg({ connectionString });
+  // Limit pool size for serverless: each instance keeps few connections,
+  // preventing "too many connections" under concurrent cold starts.
+  const adapter = new PrismaPg({ connectionString, max: 5 });
   return new PrismaClient({ adapter });
 }
 

@@ -4,6 +4,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
+import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -73,17 +74,8 @@ export async function PATCH(
   if (isAutoScheduled !== undefined) data.isAutoScheduled = isAutoScheduled;
   if (isWinTheDay !== undefined) data.isWinTheDay = isWinTheDay;
 
-  // Auto-unflag other Win the Day tasks for the same user + date
   if (isWinTheDay === true && task.dueDate) {
-    await prisma.task.updateMany({
-      where: {
-        ownerId: task.ownerId,
-        dueDate: task.dueDate,
-        isWinTheDay: true,
-        id: { not: id },
-      },
-      data: { isWinTheDay: false },
-    });
+    await unflagOtherWinTheDay(task.ownerId, task.dueDate, id);
   }
 
   // Status transitions

@@ -9,6 +9,7 @@ interface Meeting {
   description: string | null;
   cadence: string;
   dayOfWeek: number | null;
+  occurDate: string | null;
   timeStart: string;
   timeEnd: string;
   attendeeIds: string[];
@@ -23,6 +24,7 @@ interface UserOption {
 }
 
 const CADENCE_OPTIONS = [
+  { value: 'ONE_TIME', label: 'One-Time' },
   { value: 'DAILY', label: 'Daily' },
   { value: 'WEEKLY', label: 'Weekly' },
   { value: 'BIWEEKLY', label: 'Biweekly' },
@@ -42,6 +44,7 @@ const DAY_OPTIONS = [
 ];
 
 const CADENCE_LABEL: Record<string, string> = {
+  ONE_TIME: 'One-Time',
   DAILY: 'Daily',
   WEEKLY: 'Weekly',
   BIWEEKLY: 'Biweekly',
@@ -66,6 +69,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
   const [description, setDescription] = useState('');
   const [cadence, setCadence] = useState('WEEKLY');
   const [dayOfWeek, setDayOfWeek] = useState<number | null>(1);
+  const [occurDate, setOccurDate] = useState('');
   const [timeStart, setTimeStart] = useState('09:00');
   const [timeEnd, setTimeEnd] = useState('10:00');
   const [selectedAttendees, setSelectedAttendees] = useState<UserOption[]>([]);
@@ -114,6 +118,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
     setDescription('');
     setCadence('WEEKLY');
     setDayOfWeek(1);
+    setOccurDate('');
     setTimeStart('09:00');
     setTimeEnd('10:00');
     setSelectedAttendees([]);
@@ -127,6 +132,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
     setDescription(meeting.description || '');
     setCadence(meeting.cadence);
     setDayOfWeek(meeting.dayOfWeek);
+    setOccurDate(meeting.occurDate ? new Date(meeting.occurDate).toISOString().split('T')[0] : '');
     setTimeStart(meeting.timeStart);
     setTimeEnd(meeting.timeEnd);
     setEditingId(meeting.id);
@@ -146,11 +152,12 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
     e.preventDefault();
     setSaving(true);
 
-    const payload = {
+    const payload: any = {
       title,
       description: description || null,
       cadence,
-      dayOfWeek,
+      dayOfWeek: cadence === 'ONE_TIME' ? null : dayOfWeek,
+      occurDate: cadence === 'ONE_TIME' && occurDate ? new Date(occurDate).toISOString() : null,
       timeStart,
       timeEnd,
       attendeeIds: selectedAttendees.map((a) => a.id),
@@ -233,7 +240,10 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
                     <span className="rounded bg-emerald-900/40 px-2 py-0.5 text-emerald-400">
                       {CADENCE_LABEL[m.cadence] || m.cadence}
                     </span>
-                    {m.dayOfWeek !== null && (
+                    {m.cadence === 'ONE_TIME' && m.occurDate && (
+                      <span>{new Date(m.occurDate).toLocaleDateString()}</span>
+                    )}
+                    {m.cadence !== 'ONE_TIME' && m.dayOfWeek !== null && (
                       <span>{DAY_OPTIONS.find((d) => d.value === m.dayOfWeek)?.label}</span>
                     )}
                     <span>
@@ -308,21 +318,36 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
               </div>
 
               <div>
-                <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
-                <select
-                  value={dayOfWeek ?? ''}
-                  onChange={(e) =>
-                    setDayOfWeek(e.target.value === '' ? null : Number(e.target.value))
-                  }
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
-                >
-                  <option value="">Any / N/A</option>
-                  {DAY_OPTIONS.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
+                {cadence === 'ONE_TIME' ? (
+                  <>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={occurDate}
+                      onChange={(e) => setOccurDate(e.target.value)}
+                      required
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
+                    <select
+                      value={dayOfWeek ?? ''}
+                      onChange={(e) =>
+                        setDayOfWeek(e.target.value === '' ? null : Number(e.target.value))
+                      }
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
+                    >
+                      <option value="">Any / N/A</option>
+                      {DAY_OPTIONS.map((d) => (
+                        <option key={d.value} value={d.value}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
             </div>
 

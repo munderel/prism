@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor } from 'lucide-react';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
@@ -25,6 +25,7 @@ export default function SettingsPage() {
     reviewNags: true,
   });
   const [users, setUsers] = useState<any[]>([]);
+  const [hiddenFeatures, setHiddenFeatures] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
@@ -63,6 +64,9 @@ export default function SettingsPage() {
       const data = await res.json();
       setMtp(data.mtp ?? '');
       setTimezone(data.timezone ?? 'America/New_York');
+      if (Array.isArray(data.hiddenFeatures)) {
+        setHiddenFeatures(data.hiddenFeatures);
+      }
       if (data.notificationPreference) {
         setNotifPrefs(data.notificationPreference);
       }
@@ -87,7 +91,7 @@ export default function SettingsPage() {
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mtp, timezone, notificationPrefs: notifPrefs }),
+      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs }),
     });
     setMessageType('success');
     setMessage('Settings saved!');
@@ -259,6 +263,50 @@ export default function SettingsPage() {
               })}
             </div>
           )}
+        </section>
+
+        {/* Visible Features */}
+        <section className="glass-panel p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <Eye className="h-5 w-5 text-indigo-400" />
+            Visible Features
+          </h2>
+          <p className="text-xs text-[var(--text-muted)] mb-4">Toggle which features appear in your sidebar. Hidden features are still accessible via URL.</p>
+          <div className="space-y-3">
+            {[
+              { href: '/goals', label: 'Goal Stack' },
+              { href: '/training', label: 'Training' },
+              { href: '/tasks', label: 'Tasks' },
+              { href: '/ideas', label: 'Ideas' },
+              { href: '/aims', label: 'Aims' },
+              { href: '/calendar', label: 'Calendar' },
+              { href: '/reviews', label: 'Reviews' },
+              { href: '/powerdown', label: 'Power Down' },
+              { href: '/leaderboard', label: 'Leaderboard' },
+              { href: '/reports', label: 'Reports' },
+              { href: '/processes', label: 'Processes' },
+            ].map(({ href, label }) => (
+              <label key={href} className="flex items-center justify-between">
+                <span className="text-sm text-[var(--text-secondary)]">{label}</span>
+                <input
+                  type="checkbox"
+                  checked={!hiddenFeatures.includes(href)}
+                  onChange={(e) => {
+                    setHiddenFeatures((prev) =>
+                      e.target.checked
+                        ? prev.filter((f) => f !== href)
+                        : [...prev, href]
+                    );
+                  }}
+                  className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+                />
+              </label>
+            ))}
+          </div>
+          <button onClick={saveUserSettings} disabled={saving}
+            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+            Save
+          </button>
         </section>
 
         {/* MTP */}

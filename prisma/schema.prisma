@@ -57,6 +57,7 @@ model User {
   isAdmin               Boolean   @default(false)
   hasCompletedOnboarding Boolean  @default(false)
   timezone              String    @default("America/New_York")
+  hiddenFeatures        Json      @default("[]")
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -175,7 +176,7 @@ model GoalLink {
 // === TASKS & TRACKING ===
 
 enum TaskType {
-  GOAL_STACK
+  IMPROVE    @map("GOAL_STACK")
   REACT
   MAINTENANCE
 }
@@ -289,6 +290,8 @@ model Review {
   startDate           DateTime?
   recurrenceDayOfWeek Int?
   isTeamReview        Boolean    @default(false)
+  timeBlockStart      DateTime?
+  timeBlockEnd        DateTime?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -413,6 +416,7 @@ model Invitation {
 // === BUSINESS PROCESSES ===
 
 enum ProcessCadence {
+  ONE_TIME
   DAILY
   WEEKLY
   BIWEEKLY
@@ -502,6 +506,7 @@ model Meeting {
   description String?         @db.Text
   cadence     ProcessCadence
   dayOfWeek   Int?            // 0=Sun, 1=Mon, ... 6=Sat
+  occurDate   DateTime?       // specific date for ONE_TIME meetings
   timeStart   String          // "09:00" format
   timeEnd     String          // "10:00" format
   attendeeIds Json            // String[] of user IDs

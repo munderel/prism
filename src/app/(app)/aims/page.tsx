@@ -50,13 +50,11 @@ export default function AimsPage() {
 
   const isLoading = catsLoading || aimsLoading;
 
-  // Build a map of user preferences by category ID
   const userAimMap = new Map<string, UserAim>();
   userAims?.forEach((ua) => userAimMap.set(ua.aimCategoryId, ua));
 
   const isActive = (catId: string) => {
     const ua = userAimMap.get(catId);
-    // If no UserAim record exists, default categories are active
     return ua ? ua.isActive : true;
   };
 
@@ -108,7 +106,9 @@ export default function AimsPage() {
 
     if (cat.activities) {
       const defaultActs = (cat.activities as string[]) || [];
-      const changed = JSON.stringify(editActivities) !== JSON.stringify(defaultActs);
+      const changed =
+        editActivities.length !== defaultActs.length ||
+        editActivities.some((a, i) => a !== defaultActs[i]);
       if (changed) {
         payload.customActivities = editActivities;
       }
