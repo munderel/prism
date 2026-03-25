@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { taskType, title, description, priority, dueDate, goalId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd } = body;
+  const { taskType, title, description, priority, dueDate, goalId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay } = body;
 
   if (!taskType || !title) {
     return Response.json({ error: 'taskType and title are required' }, { status: 400 });
@@ -121,6 +121,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Auto-unflag other Win the Day tasks for the same user + date
+  if (isWinTheDay && dueDate) {
+    await prisma.task.updateMany({
+      where: {
+        ownerId: auth.userId,
+        dueDate: new Date(dueDate),
+        isWinTheDay: true,
+      },
+      data: { isWinTheDay: false },
+    });
+  }
+
   const task = await prisma.task.create({
     data: {
       ownerId: auth.userId,
@@ -137,6 +149,7 @@ export async function POST(request: NextRequest) {
       estimatedMinutes,
       preferredTimeStart: preferredTimeStart ?? null,
       preferredTimeEnd: preferredTimeEnd ?? null,
+      isWinTheDay: isWinTheDay ?? false,
     },
     include: {
       goal: { select: { id: true, title: true, level: true } },
