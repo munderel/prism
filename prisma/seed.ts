@@ -1,4 +1,4 @@
-import { PrismaClient, ReviewType } from '@prisma/client';
+import { PrismaClient, Prisma, ReviewType } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 const connectionString = process.env.DATABASE_URL ?? 'postgresql://goaldash:goaldash@localhost:5433/goaldash';
@@ -83,7 +83,12 @@ async function main() {
 
   for (const template of templates) {
     await prisma.reviewTemplate.upsert({
-      where: { reviewType: template.reviewType },
+      where: {
+        reviewType_isTeamTemplate: {
+          reviewType: template.reviewType,
+          isTeamTemplate: false,
+        },
+      },
       update: {
         checklistItems: template.checklistItems,
         processSteps: template.processSteps,
@@ -111,7 +116,117 @@ async function main() {
     },
   });
 
-  console.log(`Seed complete: 4 ReviewTemplates + CompanySettings + Admin user (${adminUser.email})`);
+  // Seed default AimCategories
+  const aimCategories: Array<{
+    name: string;
+    description: string;
+    defaultFrequency: number;
+    defaultDurationMin: number;
+    isGroupable: boolean;
+    isDefault: boolean;
+    isDaily: boolean;
+    activities: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  }> = [
+    {
+      name: 'Deep Work',
+      description: 'Focused, uninterrupted work session on your most important task',
+      defaultFrequency: 7, // daily
+      defaultDurationMin: 90,
+      isGroupable: false,
+      isDefault: true,
+      isDaily: true,
+      activities: Prisma.JsonNull,
+    },
+    {
+      name: 'Flow Activity',
+      description: 'Engaging in an activity that produces a flow state',
+      defaultFrequency: 2,
+      defaultDurationMin: 180,
+      isGroupable: true,
+      isDefault: true,
+      isDaily: false,
+      activities: Prisma.JsonNull,
+    },
+    {
+      name: 'Exercise',
+      description: 'Physical training session — strength, cardio, or sport',
+      defaultFrequency: 3,
+      defaultDurationMin: 60,
+      isGroupable: true,
+      isDefault: true,
+      isDaily: false,
+      activities: Prisma.JsonNull,
+    },
+    {
+      name: 'Active Recovery',
+      description: 'Low-intensity recovery activities to support performance',
+      defaultFrequency: 3,
+      defaultDurationMin: 30,
+      isGroupable: true,
+      isDefault: true,
+      isDaily: false,
+      activities: ['sauna', 'massage', 'mindfulness', 'light yoga'],
+    },
+    {
+      name: 'Train Weakness',
+      description: 'Deliberate practice targeting your biggest skill gap',
+      defaultFrequency: 1,
+      defaultDurationMin: 45,
+      isGroupable: false,
+      isDefault: true,
+      isDaily: false,
+      activities: Prisma.JsonNull,
+    },
+    {
+      name: 'Get Feedback',
+      description: 'Seek specific feedback from peers, mentors, or customers',
+      defaultFrequency: 1,
+      defaultDurationMin: 45,
+      isGroupable: false,
+      isDefault: true,
+      isDaily: false,
+      activities: Prisma.JsonNull,
+    },
+    {
+      name: 'Social Support',
+      description: 'Meaningful social connection — dinner, call, or group activity',
+      defaultFrequency: 1,
+      defaultDurationMin: 120,
+      isGroupable: true,
+      isDefault: true,
+      isDaily: false,
+      activities: Prisma.JsonNull,
+    },
+  ];
+
+  for (const cat of aimCategories) {
+    await prisma.aimCategory.upsert({
+      where: { id: cat.name.toLowerCase().replace(/\s+/g, '-') },
+      update: {
+        name: cat.name,
+        description: cat.description,
+        defaultFrequency: cat.defaultFrequency,
+        defaultDurationMin: cat.defaultDurationMin,
+        isGroupable: cat.isGroupable,
+        isDefault: cat.isDefault,
+        isDaily: cat.isDaily,
+        activities: cat.activities,
+      },
+      create: {
+        id: cat.name.toLowerCase().replace(/\s+/g, '-'),
+        name: cat.name,
+        description: cat.description,
+        defaultFrequency: cat.defaultFrequency,
+        defaultDurationMin: cat.defaultDurationMin,
+        isGroupable: cat.isGroupable,
+        isDefault: cat.isDefault,
+        isDaily: cat.isDaily,
+        activities: cat.activities,
+      },
+    });
+  }
+
+  console.log(`Seed complete: 4 ReviewTemplates + CompanySettings + Admin user (${adminUser.email}) + 7 AimCategories`);
 }
 
 main()

@@ -79,6 +79,8 @@ model User {
   processExecutions    ProcessExecution[]
   meetings             Meeting[]
   ideas                Idea[]
+  userAims             UserAim[]
+  aimInstances         AimInstance[]
 }
 
 model CompanySettings {
@@ -604,4 +606,57 @@ model TaskAttachment {
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   @@index([taskId])
+}
+
+// === AIMS ===
+
+model AimCategory {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?  @db.Text
+  defaultFrequency  Int
+  defaultDurationMin Int
+  isGroupable       Boolean  @default(false)
+  isDefault         Boolean  @default(true)
+  isDaily           Boolean  @default(false)
+  activities        Json?
+  createdAt         DateTime @default(now())
+
+  userAims     UserAim[]
+  aimInstances AimInstance[]
+}
+
+model UserAim {
+  id              String   @id @default(cuid())
+  userId          String
+  aimCategoryId   String
+  isActive        Boolean  @default(true)
+  customDuration  Int?
+  customFrequency Int?
+  customActivities Json?
+  createdAt       DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, aimCategoryId])
+}
+
+model AimInstance {
+  id             String    @id @default(cuid())
+  userId         String
+  aimCategoryId  String
+  scheduledDate  DateTime
+  timeBlockStart DateTime?
+  timeBlockEnd   DateTime?
+  isGroupOpen    Boolean   @default(false)
+  status         String    @default("SCHEDULED")
+  completedAt    DateTime?
+  activityNote   String?
+  createdAt      DateTime  @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, scheduledDate])
 }
