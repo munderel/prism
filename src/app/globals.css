@@ -2,24 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Light mode (default) ── */
 :root {
+  --background: #f8f7f4;
+  --foreground: #1a1a2e;
+  --prism-gradient: linear-gradient(135deg, #8b5cf6, #6366f1, #06b6d4, #14b8a6);
+  --prism-glow: 0 0 20px rgba(99, 102, 241, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(99, 102, 241, 0.18);
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-raised: #f5f3f0;
+  --text-primary: #1a1a2e;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --hover-bg: rgba(0, 0, 0, 0.04);
+  --input-bg: rgba(0, 0, 0, 0.03);
+  --shimmer-color: rgba(0, 0, 0, 0.04);
+  --noise-opacity: 0.015;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Dark mode ── */
+.dark {
   --background: #050510;
   --foreground: #ededed;
-  --prism-gradient: linear-gradient(135deg, #8b5cf6, #6366f1, #06b6d4, #14b8a6);
   --prism-glow: 0 0 20px rgba(99, 102, 241, 0.15);
   --glass-bg: rgba(15, 15, 25, 0.7);
   --glass-border: rgba(99, 102, 241, 0.12);
+  --surface: rgba(15, 15, 25, 0.7);
+  --surface-raised: rgba(25, 25, 40, 0.8);
+  --text-primary: #ffffff;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-color: rgba(255, 255, 255, 0.06);
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --shimmer-color: rgba(255, 255, 255, 0.1);
+  --noise-opacity: 0.03;
+  --shadow-sm: none;
+  --shadow-md: none;
 }
 
+/* ── Body ── */
 body {
   color: var(--foreground);
   background: var(--background);
+  min-height: 100vh;
+}
+
+.dark body,
+:is(.dark) body {
   background-image:
     radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
     radial-gradient(ellipse at 80% 20%, rgba(6, 182, 212, 0.04) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 100%, rgba(139, 92, 246, 0.04) 0%, transparent 40%);
   background-attachment: fixed;
-  min-height: 100vh;
+}
+
+:root body {
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(6, 182, 212, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(168, 130, 100, 0.03) 0%, transparent 40%);
+  background-attachment: fixed;
 }
 
 @layer utilities {
@@ -35,6 +82,7 @@ body {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-radius: 0.75rem;
+    box-shadow: var(--shadow-sm);
   }
 
   .prism-text {
@@ -70,7 +118,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  background: linear-gradient(90deg, transparent, var(--shimmer-color), transparent);
   animation: shimmer 2s infinite;
 }
 
@@ -80,13 +128,13 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.03;
+  opacity: var(--noise-opacity);
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
   background-repeat: repeat;
   background-size: 256px 256px;
 }
 
-/* FullCalendar dark theme */
+/* ── FullCalendar dark theme ── */
 .fc-dark-theme .fc {
   --fc-border-color: #1f2937;
   --fc-button-bg-color: #374151;
@@ -112,6 +160,55 @@ body {
   border-color: #1f2937;
 }
 
+.fc-dark-theme .fc .fc-prev-button .fc-icon,
+.fc-dark-theme .fc .fc-next-button .fc-icon {
+  font-size: 0;
+}
+
+.fc-dark-theme .fc .fc-prev-button .fc-icon::after {
+  content: '\2039';
+  font-size: 1.5em;
+  line-height: 1;
+}
+
+.fc-dark-theme .fc .fc-next-button .fc-icon::after {
+  content: '\203A';
+  font-size: 1.5em;
+  line-height: 1;
+}
+
+.fc-dark-theme .fc .ghost-event {
+  border: 2px dashed #6366f1 !important;
+  background-color: rgba(99, 102, 241, 0.15) !important;
+  opacity: 0.8;
+}
+
+/* ── FullCalendar light theme ── */
+.fc-light-theme .fc {
+  --fc-border-color: #e5e7eb;
+  --fc-button-bg-color: #f3f4f6;
+  --fc-button-border-color: #d1d5db;
+  --fc-button-hover-bg-color: #e5e7eb;
+  --fc-button-hover-border-color: #9ca3af;
+  --fc-button-active-bg-color: #6366f1;
+  --fc-button-active-border-color: #6366f1;
+  --fc-today-bg-color: rgba(99, 102, 241, 0.06);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: #f9fafb;
+  --fc-list-event-hover-bg-color: #f3f4f6;
+  --fc-event-bg-color: #6366f1;
+  --fc-event-border-color: #6366f1;
+  color: #1f2937;
+}
+
+.fc-light-theme .fc .fc-col-header-cell {
+  background-color: #f9fafb;
+}
+
+.fc-light-theme .fc .fc-timegrid-slot {
+  border-color: #e5e7eb;
+}
+
 /* Mobile responsive sidebar */
 @media (max-width: 1023px) {
   .mobile-bottom-nav {
@@ -122,8 +219,8 @@ body {
     z-index: 40;
     display: flex;
     justify-content: space-around;
-    background: #030712;
-    border-top: 1px solid #1f2937;
+    background: var(--background);
+    border-top: 1px solid var(--border-color);
     padding: 0.5rem 0;
   }
 }
