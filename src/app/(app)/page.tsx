@@ -7,8 +7,6 @@ import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { DashboardGreeting } from '@/components/dashboard/DashboardGreeting';
 import { PrismStatCard } from '@/components/dashboard/PrismStatCard';
-import { GoalProgressSummary } from '@/components/dashboard/GoalProgressSummary';
-import { WeeklySparkline } from '@/components/dashboard/WeeklySparkline';
 
 export default function DashboardPage() {
   const today = new Date().toISOString().split('T')[0];
@@ -63,15 +61,9 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Goal progress summary */}
-      <GoalProgressSummary />
-
-      {/* Weekly completion trend */}
-      <WeeklySparkline />
-
       {/* Today's tasks */}
       <div className="mb-4">
-        <h2 className="font-display text-lg font-semibold text-white mb-4">Today&apos;s Tasks</h2>
+        <h2 className="font-display text-lg font-semibold text-[var(--text-primary)] mb-4">Today&apos;s Tasks</h2>
         <DailyTaskList
           date={today}
           onEdit={handleEdit}
