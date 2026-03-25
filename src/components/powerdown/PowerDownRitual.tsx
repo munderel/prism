@@ -85,6 +85,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         taskType: 'REACT',
         title: newTaskTitle,
         dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+        estimatedMinutes: 30,
       }),
     });
     setNewTaskTitle('');
