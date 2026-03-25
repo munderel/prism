@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User } from 'lucide-react';
 import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
 
 const REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'] as const;
@@ -40,17 +41,29 @@ const getNextScheduledDate = (type: string): string => {
   }
 };
 
+type TabValue = 'my' | 'team';
+
 export default function ReviewsPage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.isAdmin ?? false;
   const { data: reviewsData, isLoading: loading, mutate: mutateReviews } = useSWR('/api/reviews');
-  const reviews = Array.isArray(reviewsData) ? reviewsData : [];
+  const allReviews = Array.isArray(reviewsData) ? reviewsData : [];
   const [selectedReview, setSelectedReview] = useState<string | null>(null);
   const [settingUpCadences, setSettingUpCadences] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabValue>('my');
+  const [creatingTeamReview, setCreatingTeamReview] = useState(false);
+  const [teamReviewType, setTeamReviewType] = useState<string>('WEEKLY');
 
-  const createReview = async (reviewType: string) => {
+  // Filter reviews by tab
+  const reviews = allReviews.filter((r: any) =>
+    activeTab === 'team' ? r.isTeamReview : !r.isTeamReview
+  );
+
+  const createReview = async (reviewType: string, isTeamReview = false) => {
     const res = await fetch('/api/reviews', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewType }),
+      body: JSON.stringify({ reviewType, isTeamReview }),
     });
     if (res.ok) mutateReviews();
   };
@@ -73,7 +86,7 @@ export default function ReviewsPage() {
     });
     if (res.ok) {
       if (selectedReview) {
-        const sel = reviews.find((r) => r.id === selectedReview);
+        const sel = reviews.find((r: any) => r.id === selectedReview);
         if (sel && sel.reviewType === reviewType && !sel.completedAt) {
           setSelectedReview(null);
         }
@@ -82,13 +95,18 @@ export default function ReviewsPage() {
     }
   };
 
-  const now = new Date();
-  const pendingReviews = reviews.filter((r) => !r.completedAt);
-  const upcomingReviews = pendingReviews.filter((r) => new Date(r.scheduledDate) > now);
-  const completedReviews = reviews.filter((r) => r.completedAt);
+  const handleCreateTeamReview = async () => {
+    setCreatingTeamReview(false);
+    await createReview(teamReviewType, true);
+  };
 
-  // Determine which cadences already have a pending/upcoming review
-  const scheduledTypes = new Set(pendingReviews.map((r) => r.reviewType));
+  const now = new Date();
+  const pendingReviews = reviews.filter((r: any) => !r.completedAt);
+  const upcomingReviews = pendingReviews.filter((r: any) => new Date(r.scheduledDate) > now);
+  const completedReviews = reviews.filter((r: any) => r.completedAt);
+
+  // Determine which cadences already have a pending/upcoming review (only for My Reviews tab)
+  const scheduledTypes = new Set(pendingReviews.map((r: any) => r.reviewType));
 
   const setupCadences = async () => {
     setSettingUpCadences(true);
@@ -106,141 +124,236 @@ export default function ReviewsPage() {
     setSettingUpCadences(false);
   };
 
-  if (loading) return <div className="text-gray-500 py-12 text-center">Loading...</div>;
+  if (loading) return <div className="text-[var(--text-muted)] py-12 text-center">Loading...</div>;
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
           <ClipboardCheck className="h-6 w-6 text-prism-indigo" />
           Reviews
         </h1>
       </div>
 
+      {/* Tabs: My Reviews | Team Reviews */}
+      <div className="flex items-center gap-1 mb-6 border-b border-gray-700/50 pb-0">
+        <button
+          onClick={() => { setActiveTab('my'); setSelectedReview(null); }}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'my'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+          }`}
+        >
+          <User className="h-4 w-4" />
+          My Reviews
+        </button>
+        <button
+          onClick={() => { setActiveTab('team'); setSelectedReview(null); }}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'team'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+          }`}
+        >
+          <Users className="h-4 w-4" />
+          Team Reviews
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
+          {/* Team Review: Admin create button */}
+          {activeTab === 'team' && isAdmin && (
+            <div className="glass-panel p-4">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
+                <Users className="h-4 w-4 text-indigo-400" />
+                Create Team Review
+              </h3>
+              {creatingTeamReview ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-[var(--text-muted)] mb-1">Review Type</label>
+                    <select
+                      value={teamReviewType}
+                      onChange={(e) => setTeamReviewType(e.target.value)}
+                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    >
+                      {REVIEW_TYPES.map((type) => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCreateTeamReview}
+                      className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-500 transition-colors"
+                    >
+                      Create
+                    </button>
+                    <button
+                      onClick={() => setCreatingTeamReview(false)}
+                      className="rounded-lg border border-gray-700 px-3 py-2 text-xs text-[var(--text-muted)] hover:bg-gray-800 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setCreatingTeamReview(true)}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg border border-indigo-600/30 bg-indigo-600/20 px-3 py-2 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-600/30"
+                >
+                  <Plus className="h-3 w-3" />
+                  New Team Review
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Team Reviews: empty state for non-admin */}
+          {activeTab === 'team' && !isAdmin && reviews.length === 0 && (
+            <div className="glass-panel p-6 text-center">
+              <p className="text-xs text-[var(--text-muted)]">No team reviews scheduled yet. Ask an admin to create one.</p>
+            </div>
+          )}
+
           {/* Upcoming Reviews */}
           {upcomingReviews.length > 0 && (
             <div className="rounded-xl border border-indigo-600/30 bg-indigo-950/20 p-4">
-              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-indigo-400" />
                 Upcoming Reviews
               </h3>
               <div className="space-y-2">
-                {upcomingReviews.map((r) => (
+                {upcomingReviews.map((r: any) => (
                   <div key={r.id} className="flex items-center gap-1">
                     <button
                       onClick={() => setSelectedReview(r.id)}
                       className={`flex-1 flex items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
-                        selectedReview === r.id ? 'bg-indigo-600/20 border border-indigo-600/30' : 'bg-gray-800/50 hover:bg-gray-800'
+                        selectedReview === r.id ? 'bg-indigo-600/20 border border-indigo-600/30' : 'bg-[var(--surface)] hover:bg-[var(--surface-raised)]'
                       }`}
                     >
                       <div className="flex items-center gap-2">
                         <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${typeColors[r.reviewType]}`}>
                           {r.reviewType}
                         </span>
-                        <span className="text-xs text-gray-400">
+                        {r.isTeamReview && (
+                          <Users className="h-3 w-3 text-indigo-400" />
+                        )}
+                        <span className="text-xs text-[var(--text-secondary)]">
                           {new Date(r.scheduledDate).toLocaleDateString()}
                         </span>
                       </div>
                     </button>
-                    <button
-                      onClick={() => cancelReview(r.id)}
-                      className="rounded p-1 text-red-400/60 hover:bg-red-600/20 hover:text-red-400 transition-colors"
-                      title="Cancel this review"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    {(activeTab === 'my' || isAdmin) && (
+                      <button
+                        onClick={() => cancelReview(r.id)}
+                        className="rounded p-1 text-red-400/60 hover:bg-red-600/20 hover:text-red-400 transition-colors"
+                        title="Cancel this review"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Set Up Cadences */}
-          <div className="glass-panel p-4">
-            <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-              <CalendarClock className="h-4 w-4 text-indigo-400" />
-              Review Cadences
-            </h3>
-            <div className="space-y-2 mb-3">
-              {REVIEW_TYPES.map((type) => (
-                <div key={type} className="flex items-center justify-between text-xs">
-                  <span className={`inline-flex items-center rounded-md border px-2 py-0.5 font-medium ${typeColors[type]}`}>
-                    {type}
-                  </span>
-                  {scheduledTypes.has(type) ? (
-                    <div className="flex items-center gap-2">
-                      <span className="flex items-center gap-1 text-green-400">
-                        <Check className="h-3 w-3" />
-                        Scheduled
-                      </span>
-                      <button
-                        onClick={() => stopRecurring(type)}
-                        className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-red-400 hover:bg-red-600/20 hover:text-red-300 transition-colors"
-                        title={`Stop all future ${type} reviews`}
-                      >
-                        <StopCircle className="h-3 w-3" />
-                        <span className="text-[10px]">Stop</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-gray-600">{getNextScheduledDate(type)}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            {scheduledTypes.size < REVIEW_TYPES.length && (
-              <button
-                onClick={setupCadences}
-                disabled={settingUpCadences}
-                className="w-full flex items-center justify-center gap-2 rounded-lg border border-indigo-600/30 bg-indigo-600/20 px-3 py-2 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-600/30 disabled:opacity-50"
-              >
-                <Plus className="h-3 w-3" />
-                {settingUpCadences ? 'Setting up...' : `Set Up ${REVIEW_TYPES.length - scheduledTypes.size} Cadence${REVIEW_TYPES.length - scheduledTypes.size === 1 ? '' : 's'}`}
-              </button>
-            )}
-            {scheduledTypes.size === REVIEW_TYPES.length && (
-              <p className="text-xs text-green-400/70 text-center">All cadences are set up</p>
-            )}
-          </div>
-
-          {/* Quick create buttons */}
-          <div className="glass-panel p-4">
-            <h3 className="text-sm font-semibold text-white mb-3">Schedule Review</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {REVIEW_TYPES.map((type) => (
+          {/* Set Up Cadences - only for My Reviews tab */}
+          {activeTab === 'my' && (
+            <div className="glass-panel p-4">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-indigo-400" />
+                Review Cadences
+              </h3>
+              <div className="space-y-2 mb-3">
+                {REVIEW_TYPES.map((type) => (
+                  <div key={type} className="flex items-center justify-between text-xs">
+                    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 font-medium ${typeColors[type]}`}>
+                      {type}
+                    </span>
+                    {scheduledTypes.has(type) ? (
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1 text-green-400">
+                          <Check className="h-3 w-3" />
+                          Scheduled
+                        </span>
+                        <button
+                          onClick={() => stopRecurring(type)}
+                          className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-red-400 hover:bg-red-600/20 hover:text-red-300 transition-colors"
+                          title={`Stop all future ${type} reviews`}
+                        >
+                          <StopCircle className="h-3 w-3" />
+                          <span className="text-[10px]">Stop</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[var(--text-muted)]">{getNextScheduledDate(type)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {scheduledTypes.size < REVIEW_TYPES.length && (
                 <button
-                  key={type}
-                  onClick={() => createReview(type)}
-                  className={`flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:opacity-80 ${typeColors[type]}`}
+                  onClick={setupCadences}
+                  disabled={settingUpCadences}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg border border-indigo-600/30 bg-indigo-600/20 px-3 py-2 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-600/30 disabled:opacity-50"
                 >
                   <Plus className="h-3 w-3" />
-                  {type}
+                  {settingUpCadences ? 'Setting up...' : `Set Up ${REVIEW_TYPES.length - scheduledTypes.size} Cadence${REVIEW_TYPES.length - scheduledTypes.size === 1 ? '' : 's'}`}
                 </button>
-              ))}
+              )}
+              {scheduledTypes.size === REVIEW_TYPES.length && (
+                <p className="text-xs text-green-400/70 text-center">All cadences are set up</p>
+              )}
             </div>
-          </div>
+          )}
+
+          {/* Quick create buttons - only for My Reviews tab */}
+          {activeTab === 'my' && (
+            <div className="glass-panel p-4">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Schedule Review</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {REVIEW_TYPES.map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => createReview(type)}
+                    className={`flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:opacity-80 ${typeColors[type]}`}
+                  >
+                    <Plus className="h-3 w-3" />
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Pending reviews */}
           <div className="glass-panel p-4">
-            <h3 className="text-sm font-semibold text-white mb-3">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">
               Pending ({pendingReviews.length})
             </h3>
             <div className="space-y-2">
-              {pendingReviews.map((r) => (
+              {pendingReviews.map((r: any) => (
                 <div key={r.id} className="flex items-center gap-1">
                   <button
                     onClick={() => setSelectedReview(r.id)}
                     className={`flex-1 flex items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
-                      selectedReview === r.id ? 'bg-indigo-600/20 border border-indigo-600/30' : 'bg-gray-800/50 hover:bg-gray-800'
+                      selectedReview === r.id ? 'bg-indigo-600/20 border border-indigo-600/30' : 'bg-[var(--surface)] hover:bg-[var(--surface-raised)]'
                     }`}
                   >
                     <div>
-                      <span className={`text-xs font-medium ${typeColors[r.reviewType]?.split(' ')[0]}`}>
-                        {r.reviewType}
-                      </span>
-                      <p className="text-xs text-gray-500">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-xs font-medium ${typeColors[r.reviewType]?.split(' ')[0]}`}>
+                          {r.reviewType}
+                        </span>
+                        {r.isTeamReview && (
+                          <Users className="h-3 w-3 text-indigo-400" />
+                        )}
+                      </div>
+                      <p className="text-xs text-[var(--text-muted)]">
                         Due: {new Date(r.scheduledDate).toLocaleDateString()}
                       </p>
                     </div>
@@ -248,30 +361,37 @@ export default function ReviewsPage() {
                       <span className="text-xs text-red-400">Overdue</span>
                     )}
                   </button>
-                  <button
-                    onClick={() => cancelReview(r.id)}
-                    className="rounded p-1 text-red-400/60 hover:bg-red-600/20 hover:text-red-400 transition-colors"
-                    title="Cancel this review"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  {(activeTab === 'my' || isAdmin) && (
+                    <button
+                      onClick={() => cancelReview(r.id)}
+                      className="rounded p-1 text-red-400/60 hover:bg-red-600/20 hover:text-red-400 transition-colors"
+                      title="Cancel this review"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               ))}
               {pendingReviews.length === 0 && (
-                <p className="text-xs text-gray-600">No pending reviews.</p>
+                <p className="text-xs text-[var(--text-muted)]">No pending reviews.</p>
               )}
             </div>
           </div>
 
           {/* Completed reviews */}
           <div className="glass-panel p-4">
-            <h3 className="text-sm font-semibold text-white mb-3">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">
               Completed ({completedReviews.length})
             </h3>
             <div className="space-y-1">
-              {completedReviews.slice(0, 10).map((r) => (
-                <div key={r.id} className="flex items-center justify-between text-xs text-gray-500 py-1">
-                  <span>{r.reviewType}</span>
+              {completedReviews.slice(0, 10).map((r: any) => (
+                <div key={r.id} className="flex items-center justify-between text-xs text-[var(--text-muted)] py-1">
+                  <div className="flex items-center gap-1.5">
+                    <span>{r.reviewType}</span>
+                    {r.isTeamReview && (
+                      <Users className="h-3 w-3 text-indigo-400/50" />
+                    )}
+                  </div>
                   <span>{new Date(r.completedAt).toLocaleDateString()}</span>
                 </div>
               ))}
@@ -291,7 +411,7 @@ export default function ReviewsPage() {
             />
           ) : (
             <div className="glass-panel p-12 text-center">
-              <p className="text-gray-600">Select a review to begin</p>
+              <p className="text-[var(--text-muted)]">Select a review to begin</p>
             </div>
           )}
         </div>
