@@ -9,6 +9,7 @@ import {
   Target,
   CheckSquare,
   Lightbulb,
+  BookOpen,
   Flame,
   Calendar,
   ClipboardCheck,
@@ -27,6 +28,7 @@ const navSections = [
     items: [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/goals', label: 'Goal Stack', icon: Target },
+      { href: '/training', label: 'Training', icon: BookOpen },
       { href: '/tasks', label: 'Tasks', icon: CheckSquare },
       { href: '/ideas', label: 'Ideas', icon: Lightbulb },
     ],
