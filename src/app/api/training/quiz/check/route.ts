@@ -1,6 +1,7 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { openrouter, AIError } from '@/lib/openrouter';
 import { quizCheckPrompt } from '@/lib/ai-prompts';
+import { prisma } from '@/lib/prisma';
 
 const MAX_INPUT_LENGTH = 10000;
 
@@ -15,11 +16,34 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { questions, userAnswers } = body;
+  const { quizAttemptId, questions, userAnswers } = body;
 
-  if (!Array.isArray(questions) || questions.length === 0) {
+  // If quizAttemptId is provided, load questions from the attempt
+  let questionsToGrade = questions;
+  let quizAttempt: any = null;
+
+  if (quizAttemptId) {
+    quizAttempt = await prisma.quizAttempt.findUnique({
+      where: { id: quizAttemptId },
+      include: {
+        trainingItem: { select: { ownerId: true } },
+      },
+    });
+    if (!quizAttempt) {
+      return Response.json({ error: 'Quiz attempt not found' }, { status: 404 });
+    }
+    if (quizAttempt.trainingItem && quizAttempt.trainingItem.ownerId !== auth.userId && !auth.session.user.isAdmin) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    // Use stored questions if not explicitly provided
+    if (!questionsToGrade) {
+      questionsToGrade = quizAttempt.questions;
+    }
+  }
+
+  if (!Array.isArray(questionsToGrade) || questionsToGrade.length === 0) {
     return Response.json(
-      { error: 'questions must be a non-empty array' },
+      { error: 'questions must be a non-empty array (or provide quizAttemptId)' },
       { status: 400 }
     );
   }
@@ -32,7 +56,7 @@ export async function POST(request: Request) {
   }
 
   // Validate total serialized input length
-  const serialized = JSON.stringify({ questions, userAnswers });
+  const serialized = JSON.stringify({ questions: questionsToGrade, userAnswers });
   if (serialized.length > MAX_INPUT_LENGTH) {
     return Response.json(
       { error: 'Input too large, must be under 10000 characters total' },
@@ -41,9 +65,26 @@ export async function POST(request: Request) {
   }
 
   try {
-    const messages = quizCheckPrompt(questions, userAnswers);
-    const result = await openrouter.chatJSON(messages);
-    return Response.json(result);
+    const messages = quizCheckPrompt(questionsToGrade, userAnswers);
+    const result = await openrouter.chatJSON<any>(messages);
+
+    // Update QuizAttempt if we have one
+    if (quizAttemptId && quizAttempt) {
+      await prisma.quizAttempt.update({
+        where: { id: quizAttemptId },
+        data: {
+          userAnswers,
+          score: result.score ?? null,
+          llmFeedback: result,
+          completedAt: new Date(),
+        },
+      });
+    }
+
+    return Response.json({
+      ...result,
+      quizAttemptId: quizAttemptId || null,
+    });
   } catch (err) {
     if (err instanceof AIError) {
       const status = err.code === 'RATE_LIMITED' ? 429 : err.code === 'API_KEY_INVALID' ? 503 : 502;
