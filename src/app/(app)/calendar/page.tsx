@@ -35,6 +35,7 @@ interface UnscheduledAim {
   aimInstanceId?: string;
   duration: number;
   source: 'aims';
+  activities: string[] | null;
 }
 
 interface UnscheduledReview {
@@ -62,6 +63,7 @@ type UnscheduledItem = {
   // Aim-specific
   aimCategoryId?: string;
   aimInstanceId?: string;
+  activities?: string[] | null;
   // Review-specific
   reviewId?: string;
   reviewType?: string;
@@ -89,6 +91,20 @@ export default function CalendarPage() {
   const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?status=TODO');
   const { data: aimsData, isLoading: loadingAims, mutate: mutateAims } = useSWR<UnscheduledAim[]>('/api/aims/unscheduled');
   const { data: reviewsData, isLoading: loadingReviews, mutate: mutateReviews } = useSWR<UnscheduledReview[]>('/api/reviews/unscheduled');
+  const { data: settingsData } = useSWR('/api/settings?scope=user');
+
+  const scheduleSettings = useMemo(() => {
+    if (!settingsData) return undefined;
+    const s = settingsData;
+    return {
+      autoScheduleEnabled: s.autoScheduleEnabled ?? true,
+      workingHoursStart: s.workingHoursStart ?? '09:00',
+      workingHoursEnd: s.workingHoursEnd ?? '17:00',
+      casualHoursStart: s.casualHoursStart ?? '17:00',
+      casualHoursEnd: s.casualHoursEnd ?? '22:00',
+      taskSchedulePeriod: s.taskSchedulePeriod ?? 'both',
+    };
+  }, [settingsData]);
 
   const unscheduledTasks = useMemo(() => {
     const tasks = Array.isArray(tasksData) ? tasksData : [];
@@ -125,6 +141,7 @@ export default function CalendarPage() {
           duration: aim.duration,
           aimCategoryId: aim.aimCategoryId,
           aimInstanceId: aim.aimInstanceId,
+          activities: aim.activities,
         });
       }
     }
@@ -188,6 +205,7 @@ export default function CalendarPage() {
             taskId: eventEl.getAttribute('data-task-id') || undefined,
             aimCategoryId: eventEl.getAttribute('data-aim-category-id') || undefined,
             aimInstanceId: eventEl.getAttribute('data-aim-instance-id') || undefined,
+            activities: eventEl.getAttribute('data-activities') || undefined,
             reviewId: eventEl.getAttribute('data-review-id') || undefined,
             source: itemType === 'task' ? 'tasks' : itemType === 'aim' ? 'aims' : 'reviews',
           },
@@ -289,6 +307,7 @@ export default function CalendarPage() {
           data-aim-category-id={item.aimCategoryId}
           data-aim-instance-id={item.aimInstanceId || ''}
           data-duration={item.duration}
+          data-activities={item.activities ? JSON.stringify(item.activities) : ''}
         >
           <div className="flex items-start gap-2">
             <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
@@ -399,6 +418,7 @@ export default function CalendarPage() {
             onEventClick={handleEventClick}
             onExternalDrop={handleExternalDrop}
             unscheduledTasks={allUnscheduledItems}
+            scheduleSettings={scheduleSettings}
           />
 
           {/* Event details panel */}

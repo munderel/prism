@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { getEffectiveDuration, getEffectiveFrequency } from '@/lib/aim-phases';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -16,11 +17,38 @@ export async function GET() {
   weekEnd.setDate(weekStart.getDate() + 6);
   weekEnd.setHours(23, 59, 59, 999);
 
-  // Get all active user aims
-  const activeAims = await prisma.userAim.findMany({
-    where: { userId: auth.userId, isActive: true },
+  // Get all active user aims (explicit UserAim rows with isActive: true)
+  const userAims = await prisma.userAim.findMany({
+    where: { userId: auth.userId },
     include: { aimCategory: true },
   });
+
+  // Also get default aim categories that have no UserAim record yet
+  // (the UI treats these as active by default)
+  const userAimCategoryIds = new Set(userAims.map((ua) => ua.aimCategoryId));
+  const defaultCategories = await prisma.aimCategory.findMany({
+    where: { isDefault: true, id: { notIn: Array.from(userAimCategoryIds) } },
+  });
+
+  // Combine: explicit active aims + default categories without a UserAim record
+  const activeAims = [
+    ...userAims
+      .filter((ua) => ua.isActive)
+      .map((ua) => ({
+        aimCategoryId: ua.aimCategoryId,
+        aimCategory: ua.aimCategory,
+        customFrequency: ua.customFrequency,
+        customDuration: ua.customDuration,
+        currentPhase: ua.currentPhase,
+      })),
+    ...defaultCategories.map((cat) => ({
+      aimCategoryId: cat.id,
+      aimCategory: cat,
+      customFrequency: null as number | null,
+      customDuration: null as number | null,
+      currentPhase: 'SEED',
+    })),
+  ];
 
   // Get existing instances for this week
   const existingInstances = await prisma.aimInstance.findMany({
@@ -39,13 +67,24 @@ export async function GET() {
     aimInstanceId?: string;
     duration: number;
     source: 'aims';
+    activities: string[] | null;
   }> = [];
 
-  for (const ua of activeAims) {
-    const frequency = ua.customFrequency ?? ua.aimCategory.defaultFrequency;
-    const duration = ua.customDuration ?? ua.aimCategory.defaultDurationMin;
+  for (const aim of activeAims) {
+    // Use phased effective values based on habit-building progression
+    const userAimLike = {
+      customDuration: aim.customDuration,
+      customFrequency: aim.customFrequency,
+      currentPhase: aim.currentPhase,
+      aimCategory: {
+        defaultDurationMin: aim.aimCategory.defaultDurationMin,
+        defaultFrequency: aim.aimCategory.defaultFrequency,
+      },
+    };
+    const frequency = getEffectiveFrequency(userAimLike);
+    const duration = getEffectiveDuration(userAimLike);
     const categoryInstances = existingInstances.filter(
-      (i) => i.aimCategoryId === ua.aimCategoryId
+      (i) => i.aimCategoryId === aim.aimCategoryId
     );
 
     // Existing instances without time blocks (need scheduling)
@@ -56,11 +95,12 @@ export async function GET() {
       items.push({
         id: `aim-instance-${inst.id}`,
         type: 'aim',
-        title: `${ua.aimCategory.name}`,
-        aimCategoryId: ua.aimCategoryId,
+        title: `${aim.aimCategory.name}`,
+        aimCategoryId: aim.aimCategoryId,
         aimInstanceId: inst.id,
         duration,
         source: 'aims',
+        activities: Array.isArray(aim.aimCategory.activities) ? aim.aimCategory.activities as string[] : null,
       });
     }
 
@@ -69,12 +109,13 @@ export async function GET() {
     const missing = Math.max(0, frequency - totalExisting);
     for (let i = 0; i < missing; i++) {
       items.push({
-        id: `aim-new-${ua.aimCategoryId}-${i}`,
+        id: `aim-new-${aim.aimCategoryId}-${i}`,
         type: 'aim',
-        title: `${ua.aimCategory.name}`,
-        aimCategoryId: ua.aimCategoryId,
+        title: `${aim.aimCategory.name}`,
+        aimCategoryId: aim.aimCategoryId,
         duration,
         source: 'aims',
+        activities: Array.isArray(aim.aimCategory.activities) ? aim.aimCategory.activities as string[] : null,
       });
     }
   }

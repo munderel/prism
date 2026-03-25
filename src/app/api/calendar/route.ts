@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
               lte: new Date(end),
             },
           },
-          include: { aimCategory: true },
+          include: { aimCategory: true, tasks: { select: { id: true, title: true, status: true } } },
         })
       : Promise.resolve([]),
   ]);
@@ -221,17 +221,22 @@ export async function GET(request: NextRequest) {
 
   // Process Aim instances
   for (const aim of aimInstances) {
+    const aimTitle = aim.selectedActivity
+      ? `${aim.aimCategory.name}: ${aim.selectedActivity}`
+      : aim.aimCategory.name;
     events.push({
       id: `aim-${aim.id}`,
-      title: aim.isGroupOpen ? `🤝 ${aim.aimCategory.name}` : aim.aimCategory.name,
+      title: aim.isGroupOpen ? `\u{1F91D} ${aimTitle}` : aimTitle,
       start: aim.timeBlockStart?.toISOString() ?? aim.scheduledDate.toISOString(),
       end: aim.timeBlockEnd?.toISOString() ?? undefined,
       allDay: !aim.timeBlockStart,
       source: 'aims',
       aimInstanceId: aim.id,
       aimCategoryId: aim.aimCategoryId,
+      aimCategoryName: aim.aimCategory.name,
       status: aim.status,
       isGroupOpen: aim.isGroupOpen,
+      tasks: (aim as any).tasks || [],
       backgroundColor: aim.isGroupOpen ? '#0d9488' : '#14b8a6',
       color: aim.isGroupOpen ? '#0d9488' : '#14b8a6',
     });

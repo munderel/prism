@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { aimCategoryId, scheduledDate, timeBlockStart, timeBlockEnd, isGroupOpen } = body;
+  const { aimCategoryId, scheduledDate, timeBlockStart, timeBlockEnd, isGroupOpen, selectedActivity } = body;
 
   if (!aimCategoryId) {
     return Response.json({ error: 'aimCategoryId is required' }, { status: 400 });
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
       timeBlockStart: timeBlockStart ? new Date(timeBlockStart) : null,
       timeBlockEnd: timeBlockEnd ? new Date(timeBlockEnd) : null,
       isGroupOpen: isGroupOpen ?? false,
+      selectedActivity: selectedActivity ?? null,
     },
     include: { aimCategory: true },
   });

@@ -6,8 +6,21 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { autoSchedule, type ProposedSlot, type CalendarEvent as ScheduleEvent, type SchedulableTask } from '@/lib/scheduling-engine';
-import { Sparkles, Check, X } from 'lucide-react';
+import { autoSchedule, autoScheduleWithPeriods, type ProposedSlot, type CalendarEvent as ScheduleEvent, type SchedulableTask, type ScheduleSettings } from '@/lib/scheduling-engine';
+import { Sparkles, Check, X, ListTodo, Save, Loader2 } from 'lucide-react';
+import { ActivitySelectModal } from './ActivitySelectModal';
+
+interface AimTask {
+  id: string;
+  title: string;
+  status: string;
+}
+
+interface SelectedAimInstance {
+  aimInstanceId: string;
+  title: string;
+  tasks: AimTask[];
+}
 
 interface CalendarViewProps {
   onEventClick?: (info: any) => void;
@@ -15,6 +28,14 @@ interface CalendarViewProps {
   onExternalDrop?: (itemId: string, start: Date, end: Date, itemType?: string) => void;
   unscheduledTasks?: any[];
   onBatchScheduleConfirm?: (slots: Array<{ id: string; timeBlockStart: string; timeBlockEnd: string; isAutoScheduled: boolean; isPinned: boolean; itemType?: string }>) => void;
+  scheduleSettings?: {
+    autoScheduleEnabled: boolean;
+    workingHoursStart: string;
+    workingHoursEnd: string;
+    casualHoursStart: string;
+    casualHoursEnd: string;
+    taskSchedulePeriod: string;
+  };
 }
 
 const SOURCE_FILTERS = [
@@ -25,13 +46,25 @@ const SOURCE_FILTERS = [
   { key: 'google', label: 'Google Calendar', color: 'bg-purple-500' },
 ];
 
-export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm }: CalendarViewProps) {
+export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings }: CalendarViewProps) {
   const calendarRef = useRef<any>(null);
   const [events, setEvents] = useState<any[]>([]);
   const { resolvedTheme } = useTheme();
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
   const [showGhosts, setShowGhosts] = useState(false);
+
+  // Activity selection modal state
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [pendingAimDrop, setPendingAimDrop] = useState<{ info: any; startISO: string; endISO: string } | null>(null);
+  const [pendingActivities, setPendingActivities] = useState<string[]>([]);
+  const [pendingAimName, setPendingAimName] = useState('');
+
+  // Task assignment panel state (Deep Work as task container)
+  const [selectedAimInstance, setSelectedAimInstance] = useState<SelectedAimInstance | null>(null);
+  const [showTaskAssignment, setShowTaskAssignment] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [savingTasks, setSavingTasks] = useState(false);
 
   const fetchEvents = async (start: string, end: string) => {
     const res = await fetch(`/api/calendar?start=${start}&end=${end}&source=all`);
@@ -61,6 +94,63 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     });
   };
 
+  // --- Task assignment handlers ---
+  const handleEventClick = (info: any) => {
+    const props = info.event.extendedProps || {};
+
+    // If this is an aim event, open the task assignment panel
+    if (props.aimInstanceId) {
+      const aimData: SelectedAimInstance = {
+        aimInstanceId: props.aimInstanceId,
+        title: props.aimCategoryName || info.event.title,
+        tasks: props.tasks || [],
+      };
+      setSelectedAimInstance(aimData);
+      // Pre-select currently assigned tasks
+      const currentIds = new Set<string>((aimData.tasks || []).map((t: AimTask) => t.id));
+      setSelectedTaskIds(currentIds);
+      setShowTaskAssignment(true);
+      return;
+    }
+
+    // Otherwise, delegate to parent handler
+    onEventClick?.(info);
+  };
+
+  const handleCloseTaskAssignment = () => {
+    setShowTaskAssignment(false);
+    setSelectedAimInstance(null);
+    setSelectedTaskIds(new Set());
+  };
+
+  const toggleTaskSelection = (taskId: string) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const handleSaveTaskAssignment = async () => {
+    if (!selectedAimInstance) return;
+    setSavingTasks(true);
+    try {
+      const res = await fetch(`/api/aims/instances/${selectedAimInstance.aimInstanceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskIds: Array.from(selectedTaskIds) }),
+      });
+      if (res.ok) {
+        handleCloseTaskAssignment();
+        refreshCalendar();
+      }
+    } finally {
+      setSavingTasks(false);
+    }
+  };
+
+  // --- Event receive / drop handlers ---
   const handleEventReceive = async (info: any) => {
     const props = info.event.extendedProps || {};
     const itemType = props.itemType || 'task';
@@ -72,6 +162,26 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     if (itemType === 'aim') {
       const aimInstanceId = props.aimInstanceId;
       const aimCategoryId = props.aimCategoryId;
+
+      // Check if this aim has activities that need selection
+      let activities: string[] = [];
+      try {
+        const activitiesRaw = props.activities;
+        if (activitiesRaw) {
+          activities = JSON.parse(activitiesRaw);
+        }
+      } catch {
+        // ignore parse errors
+      }
+
+      if (activities.length > 0) {
+        // Store the drop info and show the activity selection modal
+        setPendingAimDrop({ info, startISO, endISO });
+        setPendingActivities(activities);
+        setPendingAimName(info.event.title);
+        setShowActivityModal(true);
+        return;
+      }
 
       if (aimInstanceId) {
         // Update existing instance with time block
@@ -179,25 +289,54 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       review: 'HIGH',
     };
 
-    const schedulableTasks: SchedulableTask[] = unscheduledTasks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      estimatedMinutes: t.duration ?? t.estimatedMinutes ?? 60,
-      priority: t.priority ?? priorityMap[t.itemType] ?? 'MEDIUM',
-      dueDate: t.dueDate ? new Date(t.dueDate) : t.scheduledDate ? new Date(t.scheduledDate) : null,
-      preferredTimeStart: t.preferredTimeStart ?? null,
-      preferredTimeEnd: t.preferredTimeEnd ?? null,
-    }));
+    const schedulableTasks: SchedulableTask[] = unscheduledTasks.map((t) => {
+      // Determine scheduling period based on item type
+      let schedulingPeriod: 'working' | 'casual' | 'both' | undefined;
+      if (scheduleSettings) {
+        if (t.itemType === 'aim') {
+          // Use the aim's own schedule period if present, otherwise default to 'both'
+          schedulingPeriod = t.schedulePeriod ?? 'both';
+        } else if (t.itemType === 'review') {
+          schedulingPeriod = 'working';
+        } else {
+          // Tasks use the global taskSchedulePeriod from settings
+          schedulingPeriod = (scheduleSettings.taskSchedulePeriod as 'working' | 'casual' | 'both') ?? 'both';
+        }
+      }
+
+      return {
+        id: t.id,
+        title: t.title,
+        estimatedMinutes: t.duration ?? t.estimatedMinutes ?? 60,
+        priority: t.priority ?? priorityMap[t.itemType] ?? 'MEDIUM',
+        dueDate: t.dueDate ? new Date(t.dueDate) : t.scheduledDate ? new Date(t.scheduledDate) : null,
+        preferredTimeStart: t.preferredTimeStart ?? null,
+        preferredTimeEnd: t.preferredTimeEnd ?? null,
+        schedulingPeriod,
+      };
+    });
 
     const existingCalEvents: ScheduleEvent[] = events.map((e) => ({
       start: new Date(e.start),
       end: new Date(e.end),
     }));
 
-    const proposed = autoSchedule(schedulableTasks, existingCalEvents, {
-      start: '06:00',
-      end: '22:00',
-    });
+    let proposed: ProposedSlot[];
+
+    if (scheduleSettings) {
+      // Use period-aware scheduling with user settings
+      const settings: ScheduleSettings = {
+        workingHours: { start: scheduleSettings.workingHoursStart, end: scheduleSettings.workingHoursEnd },
+        casualHours: { start: scheduleSettings.casualHoursStart, end: scheduleSettings.casualHoursEnd },
+      };
+      proposed = autoScheduleWithPeriods(schedulableTasks, existingCalEvents, settings);
+    } else {
+      // Fallback to original behavior
+      proposed = autoSchedule(schedulableTasks, existingCalEvents, {
+        start: '06:00',
+        end: '22:00',
+      });
+    }
 
     setGhostEvents(proposed);
     setShowGhosts(true);
@@ -283,6 +422,61 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     setShowGhosts(false);
   };
 
+  const handleActivitySelect = async (activity: string) => {
+    if (!pendingAimDrop) return;
+
+    const { info, startISO, endISO } = pendingAimDrop;
+    const props = info.event.extendedProps || {};
+    const aimInstanceId = props.aimInstanceId;
+    const aimCategoryId = props.aimCategoryId;
+
+    if (aimInstanceId) {
+      await fetch(`/api/aims/instances/${aimInstanceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO, selectedActivity: activity }),
+      });
+    } else if (aimCategoryId) {
+      await fetch('/api/aims/instances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          aimCategoryId,
+          scheduledDate: startISO,
+          timeBlockStart: startISO,
+          timeBlockEnd: endISO,
+          selectedActivity: activity,
+        }),
+      });
+    }
+
+    const start = info.event.start;
+    const end = info.event.end || new Date(start.getTime() + 60 * 60 * 1000);
+
+    setShowActivityModal(false);
+    setPendingAimDrop(null);
+    setPendingActivities([]);
+    setPendingAimName('');
+    refreshCalendar();
+    onExternalDrop?.(info.event.id, start, end, 'aim');
+  };
+
+  const handleActivityModalClose = () => {
+    // If they cancel, revert the dropped event from the calendar
+    if (pendingAimDrop) {
+      pendingAimDrop.info.event.remove();
+    }
+    setShowActivityModal(false);
+    setPendingAimDrop(null);
+    setPendingActivities([]);
+    setPendingAimName('');
+  };
+
+  // Get TODO tasks available for assignment (from unscheduledTasks prop)
+  const availableTodoTasks = (unscheduledTasks || []).filter(
+    (t: any) => t.itemType !== 'aim' && t.itemType !== 'review' && (t.status === 'TODO' || t.status === 'IN_PROGRESS')
+  );
+
   const filteredEvents = events.filter((e) => activeFilters.has(e.source));
 
   const ghostCalendarEvents = showGhosts ? ghostEvents.map(g => {
@@ -311,7 +505,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const allDisplayEvents = [...filteredEvents, ...ghostCalendarEvents];
 
   return (
-    <div>
+    <div className="relative">
       {/* Filter toggles */}
       <div className="flex items-center gap-3 mb-4">
         {SOURCE_FILTERS.map(({ key, label, color }) => (
@@ -332,7 +526,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
       {/* Auto-schedule button / Confirm-Dismiss buttons */}
       <div className="flex items-center gap-2 mb-4">
-        {!showGhosts && unscheduledTasks && unscheduledTasks.length > 0 && (
+        {!showGhosts && unscheduledTasks && unscheduledTasks.length > 0 && scheduleSettings?.autoScheduleEnabled !== false && (
           <button
             onClick={handleAutoSchedule}
             className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
@@ -362,6 +556,15 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         )}
       </div>
 
+      {/* Activity selection modal for aims with activities */}
+      <ActivitySelectModal
+        open={showActivityModal}
+        onClose={handleActivityModalClose}
+        onSelect={handleActivitySelect}
+        activities={pendingActivities}
+        aimName={pendingAimName}
+      />
+
       {/* Calendar */}
       <div className={`${resolvedTheme === 'dark' ? 'fc-dark-theme' : 'fc-light-theme'} glass-panel p-4`}>
         <FullCalendar
@@ -379,7 +582,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           droppable={true}
           eventDrop={handleEventDrop}
           eventReceive={handleEventReceive}
-          eventClick={onEventClick}
+          eventClick={handleEventClick}
           select={onDateSelect}
           datesSet={handleDatesSet}
           height="auto"
@@ -387,17 +590,141 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           slotMinTime="06:00:00"
           slotMaxTime="22:00:00"
           eventDidMount={(info) => {
+            const props = info.event.extendedProps || {};
             // Show pin icon on pinned events
-            if (info.event.extendedProps?.isPinned) {
+            if (props.isPinned) {
               const pinEl = document.createElement('span');
               pinEl.textContent = '\u{1F4CC}';
               pinEl.style.cssText = 'position:absolute;top:2px;right:4px;font-size:10px;';
               info.el.style.position = 'relative';
               info.el.appendChild(pinEl);
             }
+            // Show task count badge on aim events with assigned tasks
+            if (props.aimInstanceId && props.tasks && props.tasks.length > 0) {
+              const badge = document.createElement('span');
+              const doneCount = props.tasks.filter((t: AimTask) => t.status === 'DONE').length;
+              badge.textContent = `${doneCount}/${props.tasks.length}`;
+              badge.style.cssText = 'position:absolute;bottom:2px;right:4px;font-size:9px;background:rgba(0,0,0,0.4);color:#fff;border-radius:4px;padding:0 4px;line-height:1.4;';
+              info.el.style.position = 'relative';
+              info.el.appendChild(badge);
+            }
           }}
         />
       </div>
+
+      {/* Task Assignment Panel (overlay for Deep Work container) */}
+      {showTaskAssignment && selectedAimInstance && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div
+            className="glass-panel w-full max-w-md mx-4 rounded-xl border border-[var(--border-color)] shadow-2xl"
+            style={{ maxHeight: '80vh' }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-color)]">
+              <div className="flex items-center gap-2">
+                <ListTodo className="h-5 w-5 text-teal-400" />
+                <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                  {selectedAimInstance.title}
+                </h3>
+              </div>
+              <button
+                onClick={handleCloseTaskAssignment}
+                className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 120px)' }}>
+              {/* Currently assigned tasks */}
+              {selectedAimInstance.tasks.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-2">
+                    Assigned Tasks
+                  </p>
+                  <ul className="space-y-1">
+                    {selectedAimInstance.tasks.map((task) => (
+                      <li key={task.id} className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                        <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                          task.status === 'DONE' ? 'bg-emerald-400' : task.status === 'IN_PROGRESS' ? 'bg-blue-400' : 'bg-gray-400'
+                        }`} />
+                        <span className={task.status === 'DONE' ? 'line-through opacity-60' : ''}>
+                          {task.title}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Available tasks to assign */}
+              <div>
+                <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-2">
+                  Select Tasks for This Block
+                </p>
+                {availableTodoTasks.length === 0 ? (
+                  <p className="text-sm text-[var(--text-muted)] italic">No unscheduled tasks available.</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {availableTodoTasks.map((task: any) => {
+                      const taskId = task.taskId || task.id?.replace('task-', '') || task.id;
+                      const isSelected = selectedTaskIds.has(taskId);
+                      return (
+                        <li key={taskId}>
+                          <label
+                            className={`flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer transition-colors ${
+                              isSelected
+                                ? 'bg-teal-500/15 border border-teal-500/30'
+                                : 'hover:bg-[var(--surface-raised)] border border-transparent'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleTaskSelection(taskId)}
+                              className="rounded border-[var(--border-color)] text-teal-500 focus:ring-teal-500/30 h-4 w-4"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm text-[var(--text-primary)] block truncate">{task.title}</span>
+                              {task.goalTitle && (
+                                <span className="text-xs text-[var(--text-muted)] block truncate">{task.goalTitle}</span>
+                              )}
+                            </div>
+                            {task.estimatedMinutes && (
+                              <span className="text-xs text-[var(--text-muted)] flex-shrink-0">
+                                {task.estimatedMinutes}m
+                              </span>
+                            )}
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            {/* Footer with save button */}
+            <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--border-color)]">
+              <span className="text-xs text-[var(--text-muted)]">
+                {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? 's' : ''} selected
+              </span>
+              <button
+                onClick={handleSaveTaskAssignment}
+                disabled={savingTasks}
+                className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              >
+                {savingTasks ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
