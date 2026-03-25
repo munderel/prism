@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User } from 'lucide-react';
+import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User, Download } from 'lucide-react';
 import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
 
 const REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'] as const;
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 
 const typeColors: Record<string, string> = {
   WEEKLY: 'text-green-400 bg-green-600/20 border-green-600/30',
@@ -54,16 +56,32 @@ export default function ReviewsPage() {
   const [creatingTeamReview, setCreatingTeamReview] = useState(false);
   const [teamReviewType, setTeamReviewType] = useState<string>('WEEKLY');
 
+  // Cadence setup: start date + day-of-week
+  const [cadenceStartDate, setCadenceStartDate] = useState<string>('');
+  const [cadenceDayOfWeek, setCadenceDayOfWeek] = useState<string>('');
+
+  // Export modal state
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportType, setExportType] = useState<string>('');
+  const [exportFrom, setExportFrom] = useState<string>('');
+  const [exportTo, setExportTo] = useState<string>('');
+  const [exportFormat, setExportFormat] = useState<'json' | 'csv'>('csv');
+  const [exportScope, setExportScope] = useState<string>('');
+  const [exporting, setExporting] = useState(false);
+
   // Filter reviews by tab
   const reviews = allReviews.filter((r: any) =>
     activeTab === 'team' ? r.isTeamReview : !r.isTeamReview
   );
 
-  const createReview = async (reviewType: string, isTeamReview = false) => {
+  const createReview = async (reviewType: string, isTeamReview = false, startDate?: string, recurrenceDayOfWeek?: number) => {
+    const payload: any = { reviewType, isTeamReview };
+    if (startDate) payload.startDate = startDate;
+    if (recurrenceDayOfWeek !== undefined) payload.recurrenceDayOfWeek = recurrenceDayOfWeek;
     const res = await fetch('/api/reviews', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewType, isTeamReview }),
+      body: JSON.stringify(payload),
     });
     if (res.ok) mutateReviews();
   };
@@ -111,17 +129,65 @@ export default function ReviewsPage() {
   const setupCadences = async () => {
     setSettingUpCadences(true);
     const typesToCreate = REVIEW_TYPES.filter((t) => !scheduledTypes.has(t));
+    const payload: any = {};
+    if (cadenceStartDate) payload.startDate = cadenceStartDate;
+    if (cadenceDayOfWeek !== '') payload.recurrenceDayOfWeek = Number(cadenceDayOfWeek);
     await Promise.all(
       typesToCreate.map((reviewType) =>
         fetch('/api/reviews', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reviewType }),
+          body: JSON.stringify({ reviewType, ...payload }),
         })
       )
     );
     await mutateReviews();
     setSettingUpCadences(false);
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    const params = new URLSearchParams();
+    params.set('format', exportFormat);
+    if (exportType) params.set('type', exportType);
+    if (exportFrom) params.set('from', new Date(exportFrom).toISOString());
+    if (exportTo) params.set('to', new Date(exportTo).toISOString());
+    if (exportScope) params.set('scope', exportScope);
+
+    try {
+      const res = await fetch(`/api/reviews/export?${params.toString()}`);
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || 'Export failed');
+        return;
+      }
+
+      if (exportFormat === 'csv') {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `reviews-export-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `reviews-export-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+      setShowExportModal(false);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) return <div className="text-[var(--text-muted)] py-12 text-center">Loading...</div>;
@@ -133,6 +199,13 @@ export default function ReviewsPage() {
           <ClipboardCheck className="h-6 w-6 text-prism-indigo" />
           Reviews
         </h1>
+        <button
+          onClick={() => setShowExportModal(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-gray-700 hover:text-[var(--text-primary)]"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export
+        </button>
       </div>
 
       {/* Tabs: My Reviews | Team Reviews */}
@@ -296,14 +369,38 @@ export default function ReviewsPage() {
                 ))}
               </div>
               {scheduledTypes.size < REVIEW_TYPES.length && (
-                <button
-                  onClick={setupCadences}
-                  disabled={settingUpCadences}
-                  className="w-full flex items-center justify-center gap-2 rounded-lg border border-indigo-600/30 bg-indigo-600/20 px-3 py-2 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-600/30 disabled:opacity-50"
-                >
-                  <Plus className="h-3 w-3" />
-                  {settingUpCadences ? 'Setting up...' : `Set Up ${REVIEW_TYPES.length - scheduledTypes.size} Cadence${REVIEW_TYPES.length - scheduledTypes.size === 1 ? '' : 's'}`}
-                </button>
+                <div className="space-y-3 mt-3 pt-3 border-t border-gray-700/50">
+                  <div>
+                    <label className="block text-xs text-[var(--text-muted)] mb-1">Start Date (optional)</label>
+                    <input
+                      type="date"
+                      value={cadenceStartDate}
+                      onChange={(e) => setCadenceStartDate(e.target.value)}
+                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--text-muted)] mb-1">Preferred Day of Week (optional)</label>
+                    <select
+                      value={cadenceDayOfWeek}
+                      onChange={(e) => setCadenceDayOfWeek(e.target.value)}
+                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="">Auto (default)</option>
+                      {DAY_NAMES.map((day, idx) => (
+                        <option key={day} value={idx}>{day}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={setupCadences}
+                    disabled={settingUpCadences}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg border border-indigo-600/30 bg-indigo-600/20 px-3 py-2 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-600/30 disabled:opacity-50"
+                  >
+                    <Plus className="h-3 w-3" />
+                    {settingUpCadences ? 'Setting up...' : `Set Up ${REVIEW_TYPES.length - scheduledTypes.size} Cadence${REVIEW_TYPES.length - scheduledTypes.size === 1 ? '' : 's'}`}
+                  </button>
+                </div>
               )}
               {scheduledTypes.size === REVIEW_TYPES.length && (
                 <p className="text-xs text-green-400/70 text-center">All cadences are set up</p>
@@ -416,6 +513,119 @@ export default function ReviewsPage() {
           )}
         </div>
       </div>
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                <Download className="h-5 w-5 text-indigo-400" />
+                Export Reviews
+              </h2>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="rounded p-1 text-[var(--text-muted)] hover:bg-gray-800 hover:text-[var(--text-primary)] transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-[var(--text-muted)] mb-1">Review Type</label>
+                <select
+                  value={exportType}
+                  onChange={(e) => setExportType(e.target.value)}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">All Types</option>
+                  {REVIEW_TYPES.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-[var(--text-muted)] mb-1">Scope</label>
+                <select
+                  value={exportScope}
+                  onChange={(e) => setExportScope(e.target.value)}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">All</option>
+                  <option value="individual">Individual</option>
+                  <option value="team">Team</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[var(--text-muted)] mb-1">From</label>
+                  <input
+                    type="date"
+                    value={exportFrom}
+                    onChange={(e) => setExportFrom(e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--text-muted)] mb-1">To</label>
+                  <input
+                    type="date"
+                    value={exportTo}
+                    onChange={(e) => setExportTo(e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-[var(--text-muted)] mb-1">Format</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setExportFormat('csv')}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      exportFormat === 'csv'
+                        ? 'border-indigo-500 bg-indigo-600/20 text-indigo-400'
+                        : 'border-gray-700 bg-gray-800 text-[var(--text-muted)] hover:bg-gray-700'
+                    }`}
+                  >
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => setExportFormat('json')}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      exportFormat === 'json'
+                        ? 'border-indigo-500 bg-indigo-600/20 text-indigo-400'
+                        : 'border-gray-700 bg-gray-800 text-[var(--text-muted)] hover:bg-gray-700'
+                    }`}
+                  >
+                    JSON
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {exporting ? 'Exporting...' : 'Download'}
+                </button>
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-[var(--text-muted)] hover:bg-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
