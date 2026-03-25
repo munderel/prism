@@ -4,14 +4,7 @@ import { useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
-
-const levelLabels: Record<string, string> = {
-  HIGH_HARD: 'HHG',
-  STRATEGIC: 'Yearly',
-  MONTHLY: 'Monthly',
-  WEEKLY: 'Weekly',
-  DAILY: 'Daily',
-};
+import { LEVEL_LABELS } from '@/lib/goal-constants';
 
 interface GoalEditorProps {
   stackId: string;
@@ -114,7 +107,7 @@ export function GoalEditor({
             <div className="mb-4">
               <span className="text-xs text-gray-400">Level: </span>
               <span className="text-xs font-medium text-prism-indigo">
-                {levelLabels[derivedLevel] ?? derivedLevel}
+                {LEVEL_LABELS[derivedLevel] ?? derivedLevel}
               </span>
             </div>
           )}

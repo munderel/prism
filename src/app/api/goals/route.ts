@@ -34,7 +34,13 @@ export async function GET(request: NextRequest) {
     orderBy: { sortOrder: 'asc' },
     include: {
       children: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } },
-      tasks: { select: { id: true, status: true } },
+      tasks: {
+        select: {
+          id: true, title: true, status: true, priority: true,
+          dueDate: true, deliverable: true, taskType: true, description: true,
+        },
+        orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
+      },
       _count: { select: { kpis: true } },
       companyGoalLinks: {
         include: {

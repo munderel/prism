@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import useSWR from 'swr';
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from '@/lib/fetcher';
 
 interface KpiEditorProps {
   goalId: string;
@@ -29,19 +28,26 @@ export function KpiEditor({
   const [name, setName] = useState(kpi?.name ?? '');
   const [type, setType] = useState<'NUMERIC' | 'BINARY'>(kpi?.type ?? 'NUMERIC');
   const [unit, setUnit] = useState(kpi?.unit ?? '');
-  const [target, setTarget] = useState(kpi?.target ?? '');
-  const [linkedMonthlyKpiId, setLinkedMonthlyKpiId] = useState(kpi?.linkedMonthlyKpiId ?? '');
+  const [target, setTarget] = useState(kpi?.targetValue ?? '');
+  const [linkedMonthlyKpiId, setLinkedMonthlyKpiId] = useState(kpi?.linkedKpiId ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const showLinkDropdown = goalLevel === 'WEEKLY' && parentGoalId;
+  const linkableLevels = ['WEEKLY', 'MONTHLY', 'STRATEGIC'];
+  const showLinkDropdown = linkableLevels.includes(goalLevel) && parentGoalId;
+
+  const parentLevelLabel: Record<string, string> = {
+    WEEKLY: 'Monthly',
+    MONTHLY: 'Yearly',
+    STRATEGIC: 'HHG',
+  };
 
   const { data: parentKpis } = useSWR(
     showLinkDropdown ? `/api/goals/${parentGoalId}/kpis` : null,
     fetcher
   );
 
-  const matchingParentKpis = parentKpis?.filter?.(
+  const matchingParentKpis = parentKpis?.kpis?.filter?.(
     (pk: any) => pk.type === type
   ) ?? [];
 
@@ -54,10 +60,10 @@ export function KpiEditor({
       const body: Record<string, any> = { name, type };
       if (type === 'NUMERIC') {
         body.unit = unit || null;
-        body.target = parseFloat(target);
+        body.targetValue = parseFloat(target);
       }
       if (showLinkDropdown && linkedMonthlyKpiId) {
-        body.linkedMonthlyKpiId = linkedMonthlyKpiId;
+        body.linkedKpiId = linkedMonthlyKpiId;
       }
 
       if (isEditing) {
@@ -192,7 +198,7 @@ export function KpiEditor({
             {showLinkDropdown && (
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  Link to Monthly KPI
+                  Link to {parentLevelLabel[goalLevel] ?? 'Parent'} KPI
                 </label>
                 <select
                   value={linkedMonthlyKpiId}

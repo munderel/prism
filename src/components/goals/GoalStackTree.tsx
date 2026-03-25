@@ -24,6 +24,8 @@ import React from 'react';
 import { GoalCard } from './GoalCard';
 import { GoalEditor } from './GoalEditor';
 import { KpiSidebar } from './KpiSidebar';
+import { TaskCardInline } from './TaskCardInline';
+import { TaskEditor } from '../tasks/TaskEditor';
 
 interface GoalStackTreeProps {
   stackId: string;
@@ -31,15 +33,29 @@ interface GoalStackTreeProps {
   isAdmin: boolean;
 }
 
-interface FlatGoal {
-  goal: any;
+interface FlatItem {
+  type: 'goal' | 'task';
+  goal?: any;
+  task?: any;
   depth: number;
+  id: string;
 }
 
-function flattenTree(goals: any[], depth = 0): FlatGoal[] {
-  const result: FlatGoal[] = [];
+function flattenTree(goals: any[], depth = 0): FlatItem[] {
+  const result: FlatItem[] = [];
   for (const goal of goals) {
-    result.push({ goal, depth });
+    // Skip DAILY goals (they've been migrated to tasks)
+    if (goal.level === 'DAILY') continue;
+
+    result.push({ type: 'goal', goal, depth, id: goal.id });
+
+    // For WEEKLY goals, inject linked tasks as children
+    if (goal.level === 'WEEKLY' && goal.tasks?.length) {
+      for (const task of goal.tasks) {
+        result.push({ type: 'task', task, depth: depth + 1, id: `task-${task.id}` });
+      }
+    }
+
     if (goal.children?.length) {
       result.push(...flattenTree(goal.children, depth + 1));
     }
@@ -52,15 +68,17 @@ function SortableGoalCard({
   onEdit,
   onDelete,
   onAddChild,
+  onAddTask,
   onStatusChange,
   onKpiClick,
   isCompanyStack,
   isAdmin,
 }: {
-  item: FlatGoal;
+  item: FlatItem;
   onEdit: (goal: any) => void;
   onDelete: (goalId: string) => void;
   onAddChild: (goal: any) => void;
+  onAddTask: (goalId: string) => void;
   onStatusChange: (goalId: string, status: string) => void;
   onKpiClick: (goal: any) => void;
   isCompanyStack: boolean;
@@ -73,7 +91,7 @@ function SortableGoalCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.goal.id });
+  } = useSortable({ id: item.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -105,11 +123,9 @@ function SortableGoalCard({
         onEdit={onEdit}
         onDelete={onDelete}
         onAddChild={onAddChild}
+        onAddTask={onAddTask}
         onStatusChange={onStatusChange}
         onKpiClick={onKpiClick}
-        isCompanyStack={isCompanyStack}
-        isAdmin={isAdmin}
-        hasLinks={item.goal.companyGoalLinks?.length > 0}
       />
     </div>
   );
@@ -122,7 +138,7 @@ export function GoalStackTree({
 }: GoalStackTreeProps) {
   const { data: goalsData, isLoading, mutate: mutateGoals } = useSWR(`/api/goals?stackId=${stackId}`);
 
-  const flatGoals = useMemo(() => {
+  const flatItems = useMemo(() => {
     const data = Array.isArray(goalsData) ? goalsData : [];
     // Build tree from flat list
     const map = new Map<string, any>();
@@ -147,6 +163,11 @@ export function GoalStackTree({
     parentGoal?: any;
     goal?: any;
   }>({ open: false });
+  const [taskEditorState, setTaskEditorState] = useState<{
+    open: boolean;
+    goalId?: string;
+    task?: any;
+  }>({ open: false });
   const [selectedGoalForKpi, setSelectedGoalForKpi] = useState<any>(null);
 
   const sensors = useSensors(
@@ -163,8 +184,13 @@ export function GoalStackTree({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const activeIndex = flatGoals.findIndex((f) => f.goal.id === active.id);
-    const overIndex = flatGoals.findIndex((f) => f.goal.id === over.id);
+    // Only reorder goals, not tasks
+    const activeItem = flatItems.find((f) => f.id === active.id);
+    if (!activeItem || activeItem.type !== 'goal') return;
+
+    const goalItems = flatItems.filter((f) => f.type === 'goal');
+    const activeIndex = goalItems.findIndex((f) => f.id === active.id);
+    const overIndex = goalItems.findIndex((f) => f.id === over.id);
     if (activeIndex === -1 || overIndex === -1) return;
 
     try {
@@ -173,11 +199,11 @@ export function GoalStackTree({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sortOrder: overIndex }),
       });
-      await mutateGoals(); // Refresh from server
+      await mutateGoals();
     } catch {
-      await mutateGoals(); // Revert on error
+      await mutateGoals();
     }
-  }, [flatGoals, mutateGoals]);
+  }, [flatItems, mutateGoals]);
 
   const handleDelete = useCallback(async (goalId: string) => {
     if (!confirm('Delete this goal and all its children?')) return;
@@ -193,6 +219,30 @@ export function GoalStackTree({
     setEditorState({ open: true, parentGoal });
   }, []);
 
+  const handleAddTask = useCallback((goalId: string) => {
+    setTaskEditorState({ open: true, goalId });
+  }, []);
+
+  const handleTaskToggle = useCallback(async (task: any) => {
+    const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
+    await fetch(`/api/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    mutateGoals();
+  }, [mutateGoals]);
+
+  const handleTaskEdit = useCallback((task: any) => {
+    setTaskEditorState({ open: true, task });
+  }, []);
+
+  const handleTaskDelete = useCallback(async (taskId: string) => {
+    if (!confirm('Delete this task?')) return;
+    await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+    mutateGoals();
+  }, [mutateGoals]);
+
   const handleStatusChange = useCallback(async (goalId: string, status: string) => {
     await fetch(`/api/goals/${goalId}`, {
       method: 'PATCH',
@@ -203,7 +253,7 @@ export function GoalStackTree({
   }, [mutateGoals]);
 
   const handleKpiClick = useCallback((goal: any) => {
-    setSelectedGoalForKpi(goal);
+    setSelectedGoalForKpi((prev: any) => prev?.id === goal.id ? null : goal);
   }, []);
 
   const handleAddRoot = useCallback(() => {
@@ -215,6 +265,11 @@ export function GoalStackTree({
     mutateGoals();
   }, [mutateGoals]);
 
+  const handleTaskEditorSave = useCallback(() => {
+    setTaskEditorState({ open: false });
+    mutateGoals();
+  }, [mutateGoals]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -222,6 +277,9 @@ export function GoalStackTree({
       </div>
     );
   }
+
+  // Only goal IDs for sortable context (tasks are not sortable in the dnd context)
+  const sortableIds = flatItems.filter((f) => f.type === 'goal').map((f) => f.id);
 
   return (
     <div className="flex gap-4">
@@ -235,7 +293,7 @@ export function GoalStackTree({
           </button>
         </div>
 
-        {flatGoals.length === 0 ? (
+        {flatItems.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-gray-500 mb-4">No goals yet. Start building your goal stack!</p>
             <button
@@ -253,24 +311,36 @@ export function GoalStackTree({
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={flatGoals.map((f) => f.goal.id)}
+              items={sortableIds}
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-2">
                 <AnimatePresence>
-                  {flatGoals.map((item) => (
-                    <SortableGoalCard
-                      key={item.goal.id}
-                      item={item}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                      onAddChild={handleAddChild}
-                      onStatusChange={handleStatusChange}
-                      onKpiClick={handleKpiClick}
-                      isCompanyStack={isCompanyStack}
-                      isAdmin={isAdmin}
-                    />
-                  ))}
+                  {flatItems.map((item) =>
+                    item.type === 'goal' ? (
+                      <SortableGoalCard
+                        key={item.id}
+                        item={item}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onAddChild={handleAddChild}
+                        onAddTask={handleAddTask}
+                        onStatusChange={handleStatusChange}
+                        onKpiClick={handleKpiClick}
+                        isCompanyStack={isCompanyStack}
+                        isAdmin={isAdmin}
+                      />
+                    ) : (
+                      <TaskCardInline
+                        key={item.id}
+                        task={item.task}
+                        depth={item.depth}
+                        onToggle={handleTaskToggle}
+                        onEdit={handleTaskEdit}
+                        onDelete={handleTaskDelete}
+                      />
+                    )
+                  )}
                 </AnimatePresence>
               </div>
             </SortableContext>
@@ -279,7 +349,7 @@ export function GoalStackTree({
               {activeId ? (
                 <div className="opacity-80">
                   <GoalCard
-                    goal={flatGoals.find((f) => f.goal.id === activeId)?.goal}
+                    goal={flatItems.find((f) => f.id === activeId)?.goal}
                     depth={0}
                     onEdit={() => {}}
                     onDelete={() => {}}
@@ -298,6 +368,15 @@ export function GoalStackTree({
             goal={editorState.goal}
             onSave={handleEditorSave}
             onClose={() => setEditorState({ open: false })}
+          />
+        )}
+
+        {taskEditorState.open && (
+          <TaskEditor
+            task={taskEditorState.task}
+            prefilledGoalId={taskEditorState.goalId}
+            onSave={handleTaskEditorSave}
+            onClose={() => setTaskEditorState({ open: false })}
           />
         )}
       </div>

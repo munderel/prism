@@ -3,17 +3,19 @@
 import { useState, useEffect } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
+import { LEVEL_LABELS } from '@/lib/goal-constants';
 
 interface TaskEditorProps {
   task?: any; // If editing
+  prefilledGoalId?: string; // Pre-select goal when creating from goal stack
   onSave: () => void;
   onClose: () => void;
 }
 
-export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
+export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEditorProps) {
   const isEditing = !!task;
 
-  const [taskType, setTaskType] = useState(task?.taskType ?? 'GOAL_STACK');
+  const [taskType, setTaskType] = useState(task?.taskType ?? (prefilledGoalId ? 'GOAL_STACK' : 'GOAL_STACK'));
   const [title, setTitle] = useState(task?.title ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
   const [priority, setPriority] = useState(task?.priority ?? 'MEDIUM');
@@ -21,7 +23,7 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
   const [dueDate, setDueDate] = useState(
     task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ''
   );
-  const [goalId, setGoalId] = useState(task?.goalId ?? '');
+  const [goalId, setGoalId] = useState(task?.goalId ?? prefilledGoalId ?? '');
   const [recurrenceFreq, setRecurrenceFreq] = useState('DAILY');
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);
   // Time blocking is now managed via the calendar drag-to-schedule UI
@@ -41,19 +43,15 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
     if (!stacksRes.ok) return;
     const stacks = await stacksRes.json();
 
-    const allGoals: any[] = [];
-    for (const stack of stacks) {
-      const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
-      if (goalsRes.ok) {
+    const results = await Promise.all(
+      stacks.map(async (stack: any) => {
+        const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
+        if (!goalsRes.ok) return [];
         const data = await goalsRes.json();
-        allGoals.push(
-          ...data.map((g: any) => ({
-            ...g,
-            stackName: stack.name,
-          }))
-        );
-      }
-    }
+        return data.map((g: any) => ({ ...g, stackName: stack.name }));
+      })
+    );
+    const allGoals = results.flat();
     setGoals(allGoals);
   };
 
@@ -225,14 +223,7 @@ export function TaskEditor({ task, onSave, onClose }: TaskEditorProps) {
                 >
                   <option value="">Select a goal...</option>
                   {goals.map((g) => {
-                    const levelLabels: Record<string, string> = {
-                      HIGH_HARD: 'HHG',
-                      STRATEGIC: 'Yearly',
-                      MONTHLY: 'Monthly',
-                      WEEKLY: 'Weekly',
-                      DAILY: 'Daily',
-                    };
-                    const levelPrefix = levelLabels[g.level] ?? g.level;
+                    const levelPrefix = LEVEL_LABELS[g.level] ?? g.level;
                     return (
                       <option key={g.id} value={g.id}>
                         [{levelPrefix}] {g.title} ({g.stackName})

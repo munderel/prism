@@ -91,110 +91,115 @@ export async function GET(request: NextRequest) {
   }
 
   const events: any[] = [];
+  const fetchAll = !source || source === 'all';
 
-  // Task time blocks
-  if (!source || source === 'all' || source === 'tasks') {
-    const tasks = await prisma.task.findMany({
-      where: {
-        ownerId: auth.userId,
-        OR: [
-          { timeBlockStart: { gte: new Date(start), lte: new Date(end) } },
-          { dueDate: { gte: new Date(start), lte: new Date(end) } },
-        ],
-      },
-      include: { goal: { select: { title: true } } },
+  // Check if user has disabled reviews
+  const prefs = await prisma.notificationPreference.findUnique({
+    where: { userId: auth.userId },
+    select: { reviewNags: true },
+  });
+  const reviewsEnabled = !prefs || prefs.reviewNags;
+
+  // Run independent queries in parallel
+  const [tasks, reviews, meetings, googleEvents] = await Promise.all([
+    (fetchAll || source === 'tasks')
+      ? prisma.task.findMany({
+          where: {
+            ownerId: auth.userId,
+            OR: [
+              { timeBlockStart: { gte: new Date(start), lte: new Date(end) } },
+              { dueDate: { gte: new Date(start), lte: new Date(end) } },
+            ],
+          },
+          include: { goal: { select: { title: true } } },
+        })
+      : Promise.resolve([]),
+    (fetchAll || source === 'reviews') && reviewsEnabled
+      ? prisma.review.findMany({
+          where: {
+            userId: auth.userId,
+            scheduledDate: { gte: new Date(start), lte: new Date(end) },
+          },
+        })
+      : Promise.resolve([]),
+    (fetchAll || source === 'meetings')
+      ? prisma.meeting.findMany({
+          include: { createdBy: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
+    (fetchAll || source === 'google')
+      ? listGoogleEvents(auth.userId, start, end).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+
+  // Process tasks
+  for (const task of tasks) {
+    events.push({
+      id: `task-${task.id}`,
+      title: task.title,
+      start: task.timeBlockStart?.toISOString() ?? task.dueDate?.toISOString(),
+      end: task.timeBlockEnd?.toISOString() ?? undefined,
+      allDay: !task.timeBlockStart,
+      source: 'task',
+      taskId: task.id,
+      status: task.status,
+      taskType: task.taskType,
+      color: task.taskType === 'GOAL_STACK' ? '#6366f1' : task.taskType === 'REACT' ? '#eab308' : '#06b6d4',
     });
+  }
 
-    for (const task of tasks) {
+  // Process reviews
+  for (const review of reviews) {
+    events.push({
+      id: `review-${review.id}`,
+      title: `${review.reviewType} Review`,
+      start: review.scheduledDate.toISOString(),
+      allDay: true,
+      source: 'review',
+      reviewId: review.id,
+      completed: !!review.completedAt,
+      color: review.completedAt ? '#22c55e' : '#f59e0b',
+    });
+  }
+
+  // Process meetings
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  for (const meeting of meetings) {
+    const attendees = (meeting.attendeeIds as string[]) || [];
+    if (!attendees.includes(auth.userId) && meeting.createdById !== auth.userId) {
+      continue;
+    }
+    const instances = generateMeetingInstances(meeting, startDate, endDate);
+    for (const instance of instances) {
       events.push({
-        id: `task-${task.id}`,
-        title: task.title,
-        start: task.timeBlockStart?.toISOString() ?? task.dueDate?.toISOString(),
-        end: task.timeBlockEnd?.toISOString() ?? undefined,
-        allDay: !task.timeBlockStart,
-        source: 'task',
-        taskId: task.id,
-        status: task.status,
-        taskType: task.taskType,
-        color: task.taskType === 'GOAL_STACK' ? '#6366f1' : task.taskType === 'REACT' ? '#eab308' : '#06b6d4',
+        id: `meeting-${meeting.id}-${instance.start.toISOString()}`,
+        title: meeting.title,
+        start: instance.start.toISOString(),
+        end: instance.end.toISOString(),
+        allDay: false,
+        source: 'meeting',
+        meetingId: meeting.id,
+        description: meeting.description,
+        cadence: meeting.cadence,
+        createdBy: meeting.createdBy.name,
+        color: '#10b981',
       });
     }
   }
 
-  // Review dates
-  if (!source || source === 'all' || source === 'reviews') {
-    const reviews = await prisma.review.findMany({
-      where: {
-        userId: auth.userId,
-        scheduledDate: { gte: new Date(start), lte: new Date(end) },
-      },
+  // Process Google Calendar events
+  for (const ge of googleEvents) {
+    events.push({
+      id: `google-${ge.id}`,
+      title: ge.summary,
+      start: ge.start?.dateTime ?? ge.start?.date,
+      end: ge.end?.dateTime ?? ge.end?.date,
+      allDay: !ge.start?.dateTime,
+      source: 'google',
+      meetLink: ge.hangoutLink,
+      color: '#9333ea',
     });
-
-    for (const review of reviews) {
-      events.push({
-        id: `review-${review.id}`,
-        title: `${review.reviewType} Review`,
-        start: review.scheduledDate.toISOString(),
-        allDay: true,
-        source: 'review',
-        reviewId: review.id,
-        completed: !!review.completedAt,
-        color: review.completedAt ? '#22c55e' : '#f59e0b',
-      });
-    }
-  }
-
-  // Meeting recurring events
-  if (!source || source === 'all' || source === 'meetings') {
-    const meetings = await prisma.meeting.findMany({
-      include: { createdBy: { select: { name: true } } },
-    });
-
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-
-    for (const meeting of meetings) {
-      // Check if user is an attendee or the creator
-      const attendees = (meeting.attendeeIds as string[]) || [];
-      if (!attendees.includes(auth.userId) && meeting.createdById !== auth.userId) {
-        continue;
-      }
-
-      // Generate recurring instances within the date range
-      const instances = generateMeetingInstances(meeting, startDate, endDate);
-      for (const instance of instances) {
-        events.push({
-          id: `meeting-${meeting.id}-${instance.start.toISOString()}`,
-          title: meeting.title,
-          start: instance.start.toISOString(),
-          end: instance.end.toISOString(),
-          allDay: false,
-          source: 'meeting',
-          meetingId: meeting.id,
-          description: meeting.description,
-          cadence: meeting.cadence,
-          createdBy: meeting.createdBy.name,
-          color: '#10b981', // emerald/green
-        });
-      }
-    }
-  }
-
-  // Google Calendar events
-  if (!source || source === 'all' || source === 'google') {
-    const googleEvents = await listGoogleEvents(auth.userId, start, end);
-    for (const ge of googleEvents) {
-      events.push({
-        id: `google-${ge.id}`,
-        title: ge.summary,
-        start: ge.start?.dateTime ?? ge.start?.date,
-        end: ge.end?.dateTime ?? ge.end?.date,
-        allDay: !ge.start?.dateTime,
-        source: 'google',
-        meetLink: ge.hangoutLink,
-        color: '#9333ea',
-      });
-    }
   }
 
   return Response.json(events);

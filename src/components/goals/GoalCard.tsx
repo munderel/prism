@@ -2,40 +2,15 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, Plus, Link, ChevronDown, BarChart3 } from 'lucide-react';
+import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3 } from 'lucide-react';
 import { GoalProgressBar } from './GoalProgressBar';
-
-const levelColors: Record<string, string> = {
-  HIGH_HARD: 'bg-gradient-to-r from-purple-600/30 via-indigo-600/30 to-cyan-600/30 text-purple-300 border-purple-500/40',
-  STRATEGIC: 'bg-violet-600/20 text-violet-400 border-violet-600/30',
-  MONTHLY: 'bg-indigo-600/20 text-indigo-400 border-indigo-600/30',
-  WEEKLY: 'bg-cyan-600/20 text-cyan-400 border-cyan-600/30',
-  DAILY: 'bg-gray-600/15 text-gray-400 border-gray-600/25',
-};
-
-const levelLabels: Record<string, string> = {
-  HIGH_HARD: 'HHG',
-  STRATEGIC: 'Yearly',
-  MONTHLY: 'Monthly',
-  WEEKLY: 'Weekly',
-  DAILY: 'Daily',
-};
-
-const statusColors: Record<string, string> = {
-  NOT_STARTED: 'text-gray-500',
-  IN_PROGRESS: 'text-yellow-400',
-  COMPLETED: 'text-green-400',
-  ABANDONED: 'text-red-400',
-};
-
-const GOAL_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED'] as const;
-
-const statusBgColors: Record<string, string> = {
-  NOT_STARTED: 'hover:bg-gray-700',
-  IN_PROGRESS: 'hover:bg-yellow-900/30',
-  COMPLETED: 'hover:bg-green-900/30',
-  ABANDONED: 'hover:bg-red-900/30',
-};
+import {
+  LEVEL_COLORS,
+  LEVEL_LABELS,
+  GOAL_STATUS_COLORS,
+  GOAL_STATUSES,
+  GOAL_STATUS_BG_COLORS,
+} from '@/lib/goal-constants';
 
 // Level-specific card styling
 function getLevelCardStyles(level: string) {
@@ -85,11 +60,9 @@ interface GoalCardProps {
   onEdit: (goal: any) => void;
   onDelete: (goalId: string) => void;
   onAddChild: (parentGoal: any) => void;
+  onAddTask?: (goalId: string) => void;
   onStatusChange?: (goalId: string, status: string) => void;
   onKpiClick?: (goal: any) => void;
-  isCompanyStack?: boolean;
-  isAdmin?: boolean;
-  hasLinks?: boolean;
 }
 
 export const GoalCard = React.memo(function GoalCard({
@@ -98,10 +71,12 @@ export const GoalCard = React.memo(function GoalCard({
   onEdit,
   onDelete,
   onAddChild,
+  onAddTask,
   onStatusChange,
   onKpiClick,
 }: GoalCardProps) {
-  const canAddChild = goal.level !== 'DAILY';
+  const canAddChild = !['DAILY', 'WEEKLY'].includes(goal.level);
+  const canAddTask = goal.level === 'WEEKLY';
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const statusRef = useRef<HTMLDivElement>(null);
   const styles = getLevelCardStyles(goal.level);
@@ -130,14 +105,16 @@ export const GoalCard = React.memo(function GoalCard({
       className="group"
       style={{ paddingLeft: `${depth * 24}px` }}
     >
-      <div className={`flex items-center gap-3 rounded-lg border border-white/[0.06] bg-[var(--glass-bg)] ${styles.padding} hover:border-white/[0.1] transition-colors ${styles.wrapper}`}>
+      <div
+        onClick={() => onKpiClick?.(goal)}
+        className={`flex items-center gap-3 rounded-lg border border-white/[0.06] bg-[var(--glass-bg)] ${styles.padding} hover:border-white/[0.1] transition-colors cursor-pointer ${styles.wrapper}`}>
         {/* Level badge */}
         <span
           className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium shrink-0 ${
-            levelColors[goal.level] ?? levelColors.DAILY
+            LEVEL_COLORS[goal.level] ?? LEVEL_COLORS.DAILY
           }`}
         >
-          {levelLabels[goal.level] ?? goal.level}
+          {LEVEL_LABELS[goal.level] ?? goal.level}
         </span>
         {goal.level === 'HIGH_HARD' && (
           <span className="text-xs text-purple-400/60 italic shrink-0">5-10 Year Goal</span>
@@ -152,7 +129,7 @@ export const GoalCard = React.memo(function GoalCard({
             <div className="relative" ref={statusRef}>
               <button
                 onClick={(e) => { e.stopPropagation(); setShowStatusMenu(!showStatusMenu); }}
-                className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-white/[0.05] ${statusColors[goal.status] ?? ''}`}
+                className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-white/[0.05] ${GOAL_STATUS_COLORS[goal.status] ?? ''}`}
               >
                 {goal.status.replace(/_/g, ' ')}
                 <ChevronDown className="h-3 w-3" />
@@ -169,7 +146,7 @@ export const GoalCard = React.memo(function GoalCard({
                           onStatusChange(goal.id, s);
                         }
                       }}
-                      className={`flex w-full items-center px-3 py-1.5 text-xs ${statusColors[s]} ${statusBgColors[s]} ${
+                      className={`flex w-full items-center px-3 py-1.5 text-xs ${GOAL_STATUS_COLORS[s]} ${GOAL_STATUS_BG_COLORS[s]} ${
                         s === goal.status ? 'font-bold' : ''
                       }`}
                     >
@@ -183,22 +160,12 @@ export const GoalCard = React.memo(function GoalCard({
               <Link className="h-3 w-3 text-prism-indigo" />
             )}
             {goal._count?.kpis > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onKpiClick?.(goal); }}
-                className="inline-flex items-center gap-1 rounded-full bg-indigo-600/20 px-2 py-0.5 text-xs text-indigo-400 hover:bg-indigo-600/30 transition-colors"
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-indigo-600/20 px-2 py-0.5 text-xs text-indigo-400"
               >
                 <BarChart3 className="h-3 w-3" />
                 {goal._count.kpis} KPI{goal._count.kpis !== 1 ? 's' : ''}
-              </button>
-            )}
-            {goal._count?.kpis > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onKpiClick?.(goal); }}
-                className="inline-flex items-center gap-1 rounded-md border border-indigo-600/30 bg-indigo-600/20 px-2 py-0.5 text-xs font-medium text-indigo-400 hover:bg-indigo-600/30 transition-colors"
-              >
-                <BarChart3 className="h-3 w-3" />
-                {goal._count.kpis} KPI{goal._count.kpis !== 1 ? 's' : ''}
-              </button>
+              </span>
             )}
           </div>
           <div className="mt-1 max-w-xs">
@@ -217,11 +184,20 @@ export const GoalCard = React.memo(function GoalCard({
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {canAddChild && (
             <button
-              onClick={() => onAddChild(goal)}
+              onClick={(e) => { e.stopPropagation(); onAddChild(goal); }}
               className="rounded p-1 text-gray-500 hover:bg-white/[0.05] hover:text-white"
               title="Add child goal"
             >
               <Plus className="h-4 w-4" />
+            </button>
+          )}
+          {canAddTask && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onAddTask?.(goal.id); }}
+              className="rounded p-1 text-gray-500 hover:bg-white/[0.05] hover:text-emerald-400"
+              title="Add task"
+            >
+              <ListTodo className="h-4 w-4" />
             </button>
           )}
           <button

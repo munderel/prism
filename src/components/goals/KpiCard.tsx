@@ -19,7 +19,7 @@ export const KpiCard = React.memo(function KpiCard({
   onDelete,
 }: KpiCardProps) {
   const [editingActual, setEditingActual] = useState(false);
-  const [actualValue, setActualValue] = useState(String(kpi.actual ?? 0));
+  const [actualValue, setActualValue] = useState(String(kpi.actualValue ?? 0));
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -31,8 +31,8 @@ export const KpiCard = React.memo(function KpiCard({
 
   const handleSaveActual = async () => {
     const parsed = parseFloat(actualValue);
-    if (!isNaN(parsed) && parsed !== kpi.actual) {
-      await onUpdate(kpi.id, { actual: parsed });
+    if (!isNaN(parsed) && parsed !== kpi.actualValue) {
+      await onUpdate(kpi.id, { actualValue: parsed });
     }
     setEditingActual(false);
   };
@@ -40,12 +40,12 @@ export const KpiCard = React.memo(function KpiCard({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSaveActual();
     if (e.key === 'Escape') {
-      setActualValue(String(kpi.actual ?? 0));
+      setActualValue(String(kpi.actualValue ?? 0));
       setEditingActual(false);
     }
   };
 
-  const pct = kpi.target > 0 ? Math.round((kpi.actual / kpi.target) * 100) : 0;
+  const pct = kpi.targetValue > 0 ? Math.round((kpi.actualValue / kpi.targetValue) * 100) : 0;
 
   if (kpi.type === 'BINARY') {
     return (
@@ -90,7 +90,7 @@ export const KpiCard = React.memo(function KpiCard({
           <button
             onClick={() =>
               onUpdate(kpi.id, {
-                completedAt: kpi.completedAt ? null : new Date().toISOString(),
+                isComplete: !kpi.isComplete,
               })
             }
             className="rounded px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-white/[0.05] transition-colors"
@@ -151,7 +151,7 @@ export const KpiCard = React.memo(function KpiCard({
             onKeyDown={handleKeyDown}
             className="w-24 rounded border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-white text-sm focus:border-indigo-500 focus:outline-none"
           />
-          <span className="text-xs text-gray-500">/ {kpi.target}{kpi.unit ? ` ${kpi.unit}` : ''}</span>
+          <span className="text-xs text-gray-500">/ {kpi.targetValue}{kpi.unit ? ` ${kpi.unit}` : ''}</span>
         </div>
       ) : (
         <div
@@ -159,7 +159,7 @@ export const KpiCard = React.memo(function KpiCard({
           className="cursor-pointer"
           title="Click to edit actual value"
         >
-          <KpiProgressBar actual={kpi.actual ?? 0} target={kpi.target ?? 0} unit={kpi.unit} />
+          <KpiProgressBar actual={kpi.actualValue ?? 0} target={kpi.targetValue ?? 0} unit={kpi.unit} />
         </div>
       )}
 

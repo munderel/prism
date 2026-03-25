@@ -37,19 +37,15 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
     const stacks = await res.json();
     const personalStacks = stacks.filter((s: any) => !s.isCompany);
 
-    const allGoals: any[] = [];
-    for (const stack of personalStacks) {
-      const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
-      if (goalsRes.ok) {
+    const results = await Promise.all(
+      personalStacks.map(async (stack: any) => {
+        const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
+        if (!goalsRes.ok) return [];
         const goals = await goalsRes.json();
-        allGoals.push(
-          ...goals.map((g: any) => ({
-            ...g,
-            ownerName: stack.owner?.name ?? 'Unknown',
-          }))
-        );
-      }
-    }
+        return goals.map((g: any) => ({ ...g, ownerName: stack.owner?.name ?? 'Unknown' }));
+      })
+    );
+    const allGoals = results.flat();
     setAvailableGoals(allGoals);
   };
 

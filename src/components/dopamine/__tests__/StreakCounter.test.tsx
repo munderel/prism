@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { render, createMockFetch } from '@/test/utils';
+import { renderWithProviders } from '@/test/utils';
 import { StreakCounter } from '../StreakCounter';
 
 // Mock framer-motion so m.div/span render as plain elements
@@ -15,12 +15,13 @@ vi.mock('framer-motion', () => ({
       return <span {...rest}>{children}</span>;
     },
   },
+  LazyMotion: ({ children }: any) => <>{children}</>,
+  domAnimation: {},
 }));
 
 describe('StreakCounter', () => {
   it('shows 0 day streak when no streak data exists', async () => {
-    global.fetch = createMockFetch({ '/api/streaks': [] });
-    render(<StreakCounter />);
+    renderWithProviders(<StreakCounter />, { swrData: { '/api/streaks': [] } });
 
     await waitFor(() => {
       expect(screen.getByText('0')).toBeInTheDocument();
@@ -29,12 +30,13 @@ describe('StreakCounter', () => {
   });
 
   it('shows correct streak count from API', async () => {
-    global.fetch = createMockFetch({
-      '/api/streaks': [
-        { streakType: 'daily_completion', currentCount: 7 },
-      ],
+    renderWithProviders(<StreakCounter />, {
+      swrData: {
+        '/api/streaks': [
+          { streakType: 'daily_completion', currentCount: 7 },
+        ],
+      },
     });
-    render(<StreakCounter />);
 
     await waitFor(() => {
       expect(screen.getByText('7')).toBeInTheDocument();
@@ -43,29 +45,30 @@ describe('StreakCounter', () => {
   });
 
   it('applies at-risk styling when atRisk prop is true', async () => {
-    global.fetch = createMockFetch({
-      '/api/streaks': [
-        { streakType: 'daily_completion', currentCount: 3 },
-      ],
+    const { container } = renderWithProviders(<StreakCounter atRisk={true} />, {
+      swrData: {
+        '/api/streaks': [
+          { streakType: 'daily_completion', currentCount: 3 },
+        ],
+      },
     });
-    const { container } = render(<StreakCounter atRisk={true} />);
 
     await waitFor(() => {
       expect(screen.getByText('3')).toBeInTheDocument();
     });
-    // The outer div should have orange border styling
     const outerDiv = container.firstChild as HTMLElement;
     expect(outerDiv.className).toContain('border-orange-600');
   });
 
   it('filters by streakType prop', async () => {
-    global.fetch = createMockFetch({
-      '/api/streaks': [
-        { streakType: 'daily_completion', currentCount: 3 },
-        { streakType: 'weekly_review', currentCount: 12 },
-      ],
+    renderWithProviders(<StreakCounter streakType="weekly_review" />, {
+      swrData: {
+        '/api/streaks': [
+          { streakType: 'daily_completion', currentCount: 3 },
+          { streakType: 'weekly_review', currentCount: 12 },
+        ],
+      },
     });
-    render(<StreakCounter streakType="weekly_review" />);
 
     await waitFor(() => {
       expect(screen.getByText('12')).toBeInTheDocument();

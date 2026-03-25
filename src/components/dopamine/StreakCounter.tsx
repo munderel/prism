@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { m } from 'framer-motion';
 import { Flame } from 'lucide-react';
+import useSWR from 'swr';
 
 interface StreakCounterProps {
   streakType?: string;
@@ -10,16 +11,11 @@ interface StreakCounterProps {
 }
 
 export function StreakCounter({ streakType = 'daily_completion', atRisk = false }: StreakCounterProps) {
-  const [streak, setStreak] = useState<any>(null);
-
-  useEffect(() => {
-    fetch('/api/streaks')
-      .then((r) => r.json())
-      .then((streaks) => {
-        const s = streaks.find((s: any) => s.streakType === streakType);
-        setStreak(s);
-      });
-  }, [streakType]);
+  const { data: streaks } = useSWR('/api/streaks');
+  const streak = useMemo(
+    () => Array.isArray(streaks) ? streaks.find((s: any) => s.streakType === streakType) : null,
+    [streaks, streakType]
+  );
 
   const count = streak?.currentCount ?? 0;
 
@@ -37,7 +33,7 @@ export function StreakCounter({ streakType = 'daily_completion', atRisk = false 
     >
       <m.div
         animate={count > 0 ? { rotate: [-5, 5, -5] } : {}}
-        transition={{ repeat: Infinity, duration: 0.5 }}
+        transition={{ repeat: Infinity, duration: 2.5, repeatType: 'mirror' }}
       >
         <Flame className={`h-5 w-5 ${atRisk ? 'text-orange-400' : count > 0 ? 'text-yellow-400' : 'text-gray-600'}`} />
       </m.div>

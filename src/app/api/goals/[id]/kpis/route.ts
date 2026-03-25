@@ -29,11 +29,12 @@ export async function GET(
     orderBy: { sortOrder: 'asc' },
   });
 
-  // For monthly goals, enrich KPIs with linked weekly actuals
-  if (goal.level === 'MONTHLY') {
+  // Enrich KPIs with linked child actuals (monthly←weekly, yearly←monthly, HHG←yearly)
+  const levelsWithChildren = ['HIGH_HARD', 'STRATEGIC', 'MONTHLY'];
+  if (levelsWithChildren.includes(goal.level)) {
     const enriched = await Promise.all(
       kpis.map(async (kpi) => {
-        const linkedWeekly = await prisma.kpi.findMany({
+        const linkedChildren = await prisma.kpi.findMany({
           where: { linkedKpiId: kpi.id },
           include: {
             goal: { select: { title: true, sortOrder: true, dueDate: true } },
@@ -41,11 +42,11 @@ export async function GET(
           orderBy: { goal: { sortOrder: 'asc' } },
         });
 
-        const linkedWeeklyActuals = linkedWeekly.map((wk, idx) => ({
+        const linkedWeeklyActuals = linkedChildren.map((child, idx) => ({
           weekLabel: `W${idx + 1}`,
-          actual: wk.type === 'NUMERIC' ? wk.actualValue : null,
-          isComplete: wk.isComplete,
-          goalTitle: wk.goal.title,
+          actual: child.type === 'NUMERIC' ? child.actualValue : null,
+          isComplete: child.isComplete,
+          goalTitle: child.goal.title,
         }));
 
         return { ...kpi, linkedWeeklyActuals };
@@ -121,7 +122,7 @@ export async function POST(
 
     if (!validateKpiLink(goal.level, goal.parentId, linkedKpi.goal.id, linkedKpi.goal.level, type, linkedKpi.type)) {
       return Response.json(
-        { error: 'Invalid link: weekly KPI must link to a monthly KPI on its parent goal with matching type' },
+        { error: 'Invalid link: KPI must link to a parent-level KPI on its parent goal with matching type' },
         { status: 400 }
       );
     }

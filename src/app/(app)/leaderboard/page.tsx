@@ -1,21 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { Trophy, Flame, CheckCircle2, Star } from 'lucide-react';
 import { m } from 'framer-motion';
+import useSWR from 'swr';
 
 export default function LeaderboardPage() {
-  const [data, setData] = useState<any>({ leaderboard: [], publicWins: [] });
-  const [loading, setLoading] = useState(true);
+  const { data: raw, isLoading } = useSWR('/api/leaderboard');
+  const data = useMemo(() => ({
+    leaderboard: raw?.leaderboard ?? [],
+    publicWins: raw?.publicWins ?? [],
+  }), [raw]);
 
-  useEffect(() => {
-    fetch('/api/leaderboard')
-      .then((r) => r.json())
-      .then((d) => setData({ leaderboard: d.leaderboard ?? [], publicWins: d.publicWins ?? [] }))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div className="text-gray-500 py-12 text-center">Loading...</div>;
+  if (isLoading) return <div className="text-gray-500 py-12 text-center">Loading...</div>;
 
   return (
     <div>
