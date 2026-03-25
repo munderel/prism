@@ -29,6 +29,9 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   // Time blocking is now managed via the calendar drag-to-schedule UI
   const [goals, setGoals] = useState<any[]>([]);
   const [deliverable, setDeliverable] = useState(task?.deliverable ?? '');
+  const [estimatedMinutes, setEstimatedMinutes] = useState(task?.estimatedMinutes ?? 60);
+  const [preferredTimeStart, setPreferredTimeStart] = useState(task?.preferredTimeStart ?? '');
+  const [preferredTimeEnd, setPreferredTimeEnd] = useState(task?.preferredTimeEnd ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -61,8 +64,10 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
     setError('');
 
     try {
-      const body: any = { title, description, priority, deliverable };
+      const body: any = { title, description, priority, deliverable, estimatedMinutes };
       if (dueDate) body.dueDate = dueDate;
+      if (preferredTimeStart) body.preferredTimeStart = preferredTimeStart;
+      if (preferredTimeEnd) body.preferredTimeEnd = preferredTimeEnd;
 
 
       if (isEditing) {
@@ -114,14 +119,14 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
-          className="w-full max-w-lg rounded-xl border border-gray-800 bg-gray-900 p-6 max-h-[90vh] overflow-y-auto"
+          className="w-full max-w-lg rounded-xl border border-[var(--border-color)] bg-background p-6 max-h-[90vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
               {isEditing ? 'Edit Task' : 'New Task'}
             </h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-white">
+            <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -132,7 +137,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             {/* Task Type (create only) */}
             {!isEditing && (
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Task Type</label>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Task Type</label>
                 <div className="flex gap-2">
                   {['GOAL_STACK', 'REACT', 'MAINTENANCE'].map((t) => (
                     <button
@@ -142,7 +147,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                       className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                         taskType === t
                           ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
-                          : 'text-gray-400 border border-gray-700 hover:border-gray-600'
+                          : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
                       }`}
                     >
                       {t === 'GOAL_STACK' ? 'Goal Stack' : t === 'REACT' ? 'React' : 'Maintenance'}
@@ -153,46 +158,97 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             )}
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Title</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 placeholder="What needs to be done?"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Description</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none resize-none"
                 placeholder="Optional details..."
               />
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Expected Deliverable</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Expected Deliverable</label>
               <input
                 type="text"
                 value={deliverable}
                 onChange={(e) => setDeliverable(e.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 placeholder="e.g., 'Final report PDF', 'Working prototype'"
               />
             </div>
 
+            {/* Estimated Duration */}
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Estimated Duration</label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {[15, 30, 45, 60, 90, 120, 180, 240].map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => setEstimatedMinutes(mins)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                      estimatedMinutes === mins
+                        ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                        : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                    }`}
+                  >
+                    {mins < 60 ? `${mins}m` : `${mins / 60}h`}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min="1"
+                value={estimatedMinutes}
+                onChange={(e) => setEstimatedMinutes(parseInt(e.target.value) || 0)}
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                placeholder="Custom minutes"
+              />
+            </div>
+
+            {/* Preferred Time Window */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Priority</label>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Preferred Time From</label>
+                <input
+                  type="time"
+                  value={preferredTimeStart}
+                  onChange={(e) => setPreferredTimeStart(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Preferred Time To</label>
+                <input
+                  type="time"
+                  value={preferredTimeEnd}
+                  onChange={(e) => setPreferredTimeEnd(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Priority</label>
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="LOW">Low</option>
                   <option value="MEDIUM">Medium</option>
@@ -202,12 +258,12 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Due Date</label>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Due Date</label>
                 <input
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -215,11 +271,11 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             {/* Goal selector for GOAL_STACK */}
             {taskType === 'GOAL_STACK' && !isEditing && (
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Linked Goal</label>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Linked Goal</label>
                 <select
                   value={goalId}
                   onChange={(e) => setGoalId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">Select a goal...</option>
                   {goals.map((g) => {
@@ -238,11 +294,11 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             {taskType === 'MAINTENANCE' && !isEditing && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Frequency</label>
+                  <label className="block text-sm text-[var(--text-secondary)] mb-1">Frequency</label>
                   <select
                     value={recurrenceFreq}
                     onChange={(e) => setRecurrenceFreq(e.target.value)}
-                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="DAILY">Daily</option>
                     <option value="WEEKLY">Weekly</option>
@@ -250,13 +306,13 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Interval</label>
+                  <label className="block text-sm text-[var(--text-secondary)] mb-1">Interval</label>
                   <input
                     type="number"
                     min="1"
                     value={recurrenceInterval}
                     onChange={(e) => setRecurrenceInterval(parseInt(e.target.value) || 1)}
-                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -265,11 +321,11 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             {/* Status (edit only) */}
             {isEditing && (
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Status</label>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Status</label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="TODO">To Do</option>
                   <option value="IN_PROGRESS">In Progress</option>
@@ -283,13 +339,13 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="rounded-lg px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={saving || !title}
+                disabled={saving || !title || estimatedMinutes <= 0}
                 className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
               >
                 {saving ? 'Saving...' : isEditing ? 'Update' : 'Create'}
