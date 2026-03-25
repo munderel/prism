@@ -40,6 +40,7 @@ export function createTask(overrides: Record<string, any> = {}) {
     preferredTimeEnd: null,
     isPinned: false,
     isAutoScheduled: false,
+    isWinTheDay: false,
     goal: null,
     processExecution: null,
     _count: { comments: 0 },

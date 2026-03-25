@@ -207,6 +207,7 @@ model Task {
   preferredTimeEnd    String?
   isPinned            Boolean          @default(false)
   isAutoScheduled     Boolean          @default(false)
+  isWinTheDay         Boolean          @default(false)
   startedAt      DateTime?
   completedAt    DateTime?
   failedAt       DateTime?
