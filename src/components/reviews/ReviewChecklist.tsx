@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { m } from 'framer-motion';
-import { CheckCircle2, Circle, BookOpen } from 'lucide-react';
+import { CheckCircle2, Circle, BookOpen, Plus, Trash2, ListTodo, Target } from 'lucide-react';
+
+type ChecklistItemType = 'checkbox' | 'text' | 'text_list' | 'auto_tasks' | 'auto_goals';
 
 interface ChecklistItem {
   title: string;
   description?: string;
+  type?: ChecklistItemType;
 }
 
 interface ProcessStep {
@@ -19,9 +22,12 @@ interface ReviewChecklistProps {
   onComplete: () => void;
 }
 
+// State shape: { [itemTitle]: boolean | string | string[] }
+type ChecklistState = Record<string, boolean | string | string[]>;
+
 export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) {
   const [review, setReview] = useState<any>(null);
-  const [checklist, setChecklist] = useState<Record<string, boolean>>({});
+  const [checklist, setChecklist] = useState<ChecklistState>({});
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -41,15 +47,34 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
     setLoading(false);
   };
 
-  const toggleItem = async (title: string) => {
-    const updated = { ...checklist, [title]: !checklist[title] };
-    setChecklist(updated);
-
+  const persistState = useCallback(async (updated: ChecklistState) => {
     await fetch(`/api/reviews/${reviewId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ checklistState: updated }),
     });
+  }, [reviewId]);
+
+  const toggleItem = async (title: string) => {
+    const updated = { ...checklist, [title]: !checklist[title] };
+    setChecklist(updated);
+    await persistState(updated);
+  };
+
+  const updateTextItem = async (title: string, value: string) => {
+    const updated = { ...checklist, [title]: value };
+    setChecklist(updated);
+    // Debounce persistence is handled by the component; persist on blur
+  };
+
+  const persistTextItem = async (title: string) => {
+    await persistState(checklist);
+  };
+
+  const updateTextListItem = async (title: string, entries: string[]) => {
+    const updated = { ...checklist, [title]: entries };
+    setChecklist(updated);
+    await persistState(updated);
   };
 
   const handleComplete = async () => {
@@ -67,7 +92,29 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
   const template = review.template;
   const items: ChecklistItem[] = template?.checklistItems ?? [];
   const steps: ProcessStep[] = template?.processSteps ?? [];
-  const allChecked = items.length > 0 && items.every((item: ChecklistItem) => checklist[item.title]);
+
+  // Check completion: all items must be "filled"
+  const isItemComplete = (item: ChecklistItem): boolean => {
+    const type = item.type ?? 'checkbox';
+    const value = checklist[item.title];
+    switch (type) {
+      case 'checkbox':
+        return value === true;
+      case 'text':
+        return typeof value === 'string' && value.trim().length > 0;
+      case 'text_list':
+        return Array.isArray(value) && value.length > 0 && value.some((v) => v.trim().length > 0);
+      case 'auto_tasks':
+      case 'auto_goals':
+        // Placeholders are always considered complete (no blocking)
+        return true;
+      default:
+        return value === true;
+    }
+  };
+
+  const allComplete = items.length > 0 && items.every(isItemComplete);
+  const completedCount = items.filter(isItemComplete).length;
 
   return (
     <div className="space-y-6">
@@ -91,27 +138,66 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
         </div>
       )}
 
-      {/* Checklist */}
+      {/* Checklist items (supports multiple types) */}
       <div className="glass-panel p-4">
         <h3 className="text-sm font-semibold text-white mb-3">Checklist</h3>
-        <div className="space-y-2">
-          {items.map((item: ChecklistItem) => (
-            <m.button
-              key={item.title}
-              onClick={() => toggleItem(item.title)}
-              className="flex items-center gap-3 w-full text-left rounded-lg px-3 py-2 hover:bg-gray-800/50 transition-colors"
-              whileTap={{ scale: 0.98 }}
-            >
-              {checklist[item.title] ? (
-                <CheckCircle2 className="h-5 w-5 text-green-400 flex-shrink-0" />
-              ) : (
-                <Circle className="h-5 w-5 text-gray-600 flex-shrink-0" />
-              )}
-              <span className={`text-sm ${checklist[item.title] ? 'text-gray-500 line-through' : 'text-white'}`}>
-                {item.title}
-              </span>
-            </m.button>
-          ))}
+        <div className="space-y-3">
+          {items.map((item: ChecklistItem) => {
+            const type = item.type ?? 'checkbox';
+
+            switch (type) {
+              case 'checkbox':
+                return (
+                  <CheckboxItem
+                    key={item.title}
+                    item={item}
+                    checked={checklist[item.title] === true}
+                    onToggle={() => toggleItem(item.title)}
+                  />
+                );
+
+              case 'text':
+                return (
+                  <TextItem
+                    key={item.title}
+                    item={item}
+                    value={(checklist[item.title] as string) ?? ''}
+                    onChange={(val) => updateTextItem(item.title, val)}
+                    onBlur={() => persistTextItem(item.title)}
+                  />
+                );
+
+              case 'text_list':
+                return (
+                  <TextListItem
+                    key={item.title}
+                    item={item}
+                    entries={(checklist[item.title] as string[]) ?? []}
+                    onChange={(entries) => updateTextListItem(item.title, entries)}
+                  />
+                );
+
+              case 'auto_tasks':
+                return (
+                  <AutoTasksPlaceholder key={item.title} item={item} />
+                );
+
+              case 'auto_goals':
+                return (
+                  <AutoGoalsPlaceholder key={item.title} item={item} />
+                );
+
+              default:
+                return (
+                  <CheckboxItem
+                    key={item.title}
+                    item={item}
+                    checked={checklist[item.title] === true}
+                    onToggle={() => toggleItem(item.title)}
+                  />
+                );
+            }
+          })}
         </div>
       </div>
 
@@ -130,11 +216,150 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
       {/* Complete button */}
       <button
         onClick={handleComplete}
-        disabled={!allChecked}
+        disabled={!allComplete}
         className="w-full rounded-lg bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50 transition-colors"
       >
-        {allChecked ? 'Complete Review' : `${items.filter((i: ChecklistItem) => checklist[i.title]).length}/${items.length} items checked`}
+        {allComplete ? 'Complete Review' : `${completedCount}/${items.length} items completed`}
       </button>
+    </div>
+  );
+}
+
+/* ===== Sub-components for each step type ===== */
+
+function CheckboxItem({ item, checked, onToggle }: { item: ChecklistItem; checked: boolean; onToggle: () => void }) {
+  return (
+    <m.button
+      onClick={onToggle}
+      className="flex items-start gap-3 w-full text-left rounded-lg px-3 py-2 hover:bg-gray-800/50 transition-colors"
+      whileTap={{ scale: 0.98 }}
+    >
+      {checked ? (
+        <CheckCircle2 className="h-5 w-5 text-green-400 flex-shrink-0 mt-0.5" />
+      ) : (
+        <Circle className="h-5 w-5 text-gray-600 flex-shrink-0 mt-0.5" />
+      )}
+      <div>
+        <span className={`text-sm ${checked ? 'text-gray-500 line-through' : 'text-white'}`}>
+          {item.title}
+        </span>
+        {item.description && (
+          <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
+        )}
+      </div>
+    </m.button>
+  );
+}
+
+function TextItem({ item, value, onChange, onBlur }: {
+  item: ChecklistItem;
+  value: string;
+  onChange: (val: string) => void;
+  onBlur: () => void;
+}) {
+  return (
+    <div className="rounded-lg px-3 py-2">
+      <label className="block text-sm text-white mb-1">{item.title}</label>
+      {item.description && (
+        <p className="text-xs text-gray-500 mb-2">{item.description}</p>
+      )}
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        rows={3}
+        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none"
+        placeholder={`Enter ${item.title.toLowerCase()}...`}
+      />
+    </div>
+  );
+}
+
+function TextListItem({ item, entries, onChange }: {
+  item: ChecklistItem;
+  entries: string[];
+  onChange: (entries: string[]) => void;
+}) {
+  const addEntry = () => {
+    onChange([...entries, '']);
+  };
+
+  const updateEntry = (index: number, value: string) => {
+    const updated = [...entries];
+    updated[index] = value;
+    onChange(updated);
+  };
+
+  const removeEntry = (index: number) => {
+    onChange(entries.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="rounded-lg px-3 py-2">
+      <label className="block text-sm text-white mb-1">{item.title}</label>
+      {item.description && (
+        <p className="text-xs text-gray-500 mb-2">{item.description}</p>
+      )}
+      <div className="space-y-2">
+        {entries.map((entry, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={entry}
+              onChange={(e) => updateEntry(index, e.target.value)}
+              className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-white text-sm focus:border-indigo-500 focus:outline-none"
+              placeholder={`Item ${index + 1}...`}
+            />
+            <button
+              onClick={() => removeEntry(index)}
+              className="rounded p-1 text-red-400/60 hover:bg-red-600/20 hover:text-red-400 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={addEntry}
+          className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors px-1 py-1"
+        >
+          <Plus className="h-3 w-3" />
+          Add entry
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AutoTasksPlaceholder({ item }: { item: ChecklistItem }) {
+  return (
+    <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4">
+      <div className="flex items-center gap-2 mb-1">
+        <ListTodo className="h-4 w-4 text-amber-400" />
+        <span className="text-sm text-white">{item.title}</span>
+      </div>
+      {item.description && (
+        <p className="text-xs text-gray-500 mb-2">{item.description}</p>
+      )}
+      <p className="text-xs text-gray-600 italic">
+        Auto-loaded tasks from the previous week will appear here. (Coming soon)
+      </p>
+    </div>
+  );
+}
+
+function AutoGoalsPlaceholder({ item }: { item: ChecklistItem }) {
+  return (
+    <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Target className="h-4 w-4 text-blue-400" />
+        <span className="text-sm text-white">{item.title}</span>
+      </div>
+      {item.description && (
+        <p className="text-xs text-gray-500 mb-2">{item.description}</p>
+      )}
+      <p className="text-xs text-gray-600 italic">
+        Goal progress will be auto-loaded here. (Coming soon)
+      </p>
     </div>
   );
 }
