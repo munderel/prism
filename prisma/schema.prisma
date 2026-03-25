@@ -202,6 +202,11 @@ model Task {
   calendarEventId String?
   timeBlockStart DateTime?
   timeBlockEnd   DateTime?
+  estimatedMinutes    Int              @default(60)
+  preferredTimeStart  String?
+  preferredTimeEnd    String?
+  isPinned            Boolean          @default(false)
+  isAutoScheduled     Boolean          @default(false)
   startedAt      DateTime?
   completedAt    DateTime?
   failedAt       DateTime?
