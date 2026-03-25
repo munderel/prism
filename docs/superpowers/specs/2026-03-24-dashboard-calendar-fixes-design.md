@@ -193,6 +193,29 @@ When a user drags an event to a new time slot (`eventDrop` callback in FullCalen
 - Manually dragged events auto-set `isPinned: true`
 - Auto-scheduled events default to `isPinned: false`
 
+## 6. Quick Task Status Switching
+
+### Problem
+
+Switching a task between statuses (TODO → IN_PROGRESS → DONE) currently requires clicking into the task or using a multi-step flow. Users need a faster way to toggle status directly from the task list.
+
+### Solution
+
+Add a clickable status chip/badge on each task card in both the **Dashboard** (DailyTaskList) and **Tasks page**. Single-click cycles: TODO → IN_PROGRESS → DONE. Long-press or right-click shows all 4 options (including DROPPED).
+
+**Files to modify:**
+- `src/components/tasks/DailyTaskList.tsx` — Add status chip to each task row
+- `src/components/tasks/TaskCard.tsx` — Add status chip component
+- `src/app/(app)/tasks/page.tsx` — Same status chip in task list view
+
+**Status chip design:**
+- TODO: Gray outline chip, click → IN_PROGRESS
+- IN_PROGRESS: Yellow filled chip with pulse animation, click → DONE
+- DONE: Green filled chip with checkmark, click → TODO (to undo)
+- DROPPED: Red chip (only accessible via right-click context menu)
+
+Each click sends `PATCH /api/tasks/{id}` with the new status. Uses optimistic updates via SWR mutate for instant feedback.
+
 ## Testing
 
 1. **Dashboard:** Verify GoalProgressSummary and WeeklySparkline no longer render. Stat cards and task list still work.
@@ -200,4 +223,5 @@ When a user drags an event to a new time slot (`eventDrop` callback in FullCalen
 3. **Task duration:** Cannot create a task without `estimatedMinutes`. Duration shows in task cards.
 4. **Auto-schedule:** Button places unscheduled tasks into open slots respecting priority, due date, and preferred time. Ghost events appear before confirmation.
 5. **Rearranging:** Moving a pinned event causes unpinned events to shift. Pinned events stay fixed.
-6. Run `npx vitest` and `npm run build`.
+6. **Status switching:** Click status chip to cycle TODO→IN_PROGRESS→DONE. Right-click shows all options including DROPPED.
+7. Run `npx vitest` and `npm run build`.
