@@ -78,6 +78,7 @@ model User {
   delegatedProcesses   Process[]          @relation("ProcessDelegate")
   processExecutions    ProcessExecution[]
   meetings             Meeting[]
+  ideas                Idea[]
 }
 
 model CompanySettings {
@@ -191,6 +192,7 @@ model Task {
   id             String       @id @default(cuid())
   ownerId        String
   goalId         String?
+  processId      String?
   taskType       TaskType
   title          String
   description    String?      @db.Text
@@ -217,9 +219,12 @@ model Task {
 
   owner    User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   goal     Goal?         @relation(fields: [goalId], references: [id])
+  process  Process?      @relation("TaskProcess", fields: [processId], references: [id])
   comments TaskComment[]
   publicWins PublicWin[]
   processExecution ProcessExecution?
+  attachments TaskAttachment[]
+  idea     Idea?
 
   @@index([ownerId])
   @@index([dueDate])
@@ -431,6 +436,8 @@ model Process {
   delegate     User?            @relation("ProcessDelegate", fields: [delegateId], references: [id])
   steps        ProcessStep[]
   executions   ProcessExecution[]
+  ideas        Idea[]
+  tasks        Task[]           @relation("TaskProcess")
 
   @@index([functionId])
   @@index([assigneeId])
@@ -526,4 +533,66 @@ model Kpi {
   @@unique([goalId, name])
   @@index([goalId])
   @@index([linkedKpiId])
+}
+
+// === IDEAS ===
+
+enum IdeaStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CONVERTED
+  ARCHIVED
+}
+
+model Idea {
+  id              String     @id @default(cuid())
+  authorId        String
+  title           String
+  description     String     @db.Text
+  processId       String?
+  confidenceScore Int
+  easeScore       Int
+  impactScore     Int
+  iceScore        Float?
+  status          IdeaStatus @default(SUBMITTED)
+  taskId          String?    @unique
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  author      User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  process     Process?          @relation(fields: [processId], references: [id])
+  task        Task?             @relation(fields: [taskId], references: [id])
+  attachments IdeaAttachment[]
+
+  @@index([authorId])
+  @@index([status])
+  @@index([iceScore])
+}
+
+model IdeaAttachment {
+  id        String   @id @default(cuid())
+  ideaId    String
+  fileName  String
+  fileUrl   String
+  fileSize  Int
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  @@index([ideaId])
+}
+
+model TaskAttachment {
+  id        String   @id @default(cuid())
+  taskId    String
+  fileName  String
+  fileUrl   String
+  fileSize  Int
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@index([taskId])
 }
