@@ -11,10 +11,14 @@ export async function POST(
 
   const { id } = await params;
   const body = await request.json();
-  const { title, description, cadence, assigneeId } = body;
+  const { title, description, cadence, assigneeId, defaultDurationMinutes } = body;
 
   if (!title || typeof title !== 'string') {
     return Response.json({ error: 'title is required' }, { status: 400 });
+  }
+
+  if (defaultDurationMinutes !== undefined && (typeof defaultDurationMinutes !== 'number' || defaultDurationMinutes <= 0)) {
+    return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
   }
 
   const process = await prisma.process.create({
@@ -24,6 +28,7 @@ export async function POST(
       description: description || null,
       cadence: cadence || 'WEEKLY',
       assigneeId: assigneeId || null,
+      ...(defaultDurationMinutes !== undefined && { defaultDurationMinutes }),
     },
     include: {
       assignee: { select: { id: true, name: true, email: true } },
