@@ -56,7 +56,7 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority, dueDate, timeBlockStart, timeBlockEnd, deliverable } = body;
+  const { title, description, status, priority, dueDate, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isPinned, isAutoScheduled } = body;
 
   const data: any = {};
   if (title !== undefined) data.title = title;
@@ -66,6 +66,11 @@ export async function PATCH(
   if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
   if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
   if (deliverable !== undefined) data.deliverable = deliverable;
+  if (estimatedMinutes !== undefined) data.estimatedMinutes = estimatedMinutes;
+  if (preferredTimeStart !== undefined) data.preferredTimeStart = preferredTimeStart;
+  if (preferredTimeEnd !== undefined) data.preferredTimeEnd = preferredTimeEnd;
+  if (isPinned !== undefined) data.isPinned = isPinned;
+  if (isAutoScheduled !== undefined) data.isAutoScheduled = isAutoScheduled;
 
   // Status transitions
   if (status !== undefined) {

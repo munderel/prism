@@ -84,10 +84,14 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { taskType, title, description, priority, dueDate, goalId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable } = body;
+  const { taskType, title, description, priority, dueDate, goalId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd } = body;
 
   if (!taskType || !title) {
     return Response.json({ error: 'taskType and title are required' }, { status: 400 });
+  }
+
+  if (!estimatedMinutes || estimatedMinutes <= 0) {
+    return Response.json({ error: 'estimatedMinutes required and must be > 0' }, { status: 400 });
   }
 
   // GOAL_STACK tasks require a goalId
@@ -130,6 +134,9 @@ export async function POST(request: NextRequest) {
       timeBlockStart: timeBlockStart ? new Date(timeBlockStart) : null,
       timeBlockEnd: timeBlockEnd ? new Date(timeBlockEnd) : null,
       deliverable: deliverable ?? null,
+      estimatedMinutes,
+      preferredTimeStart: preferredTimeStart ?? null,
+      preferredTimeEnd: preferredTimeEnd ?? null,
     },
     include: {
       goal: { select: { id: true, title: true, level: true } },

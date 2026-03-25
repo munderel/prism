@@ -234,6 +234,7 @@ async function createNewGoals(
               priority: (task.priority as any) ?? 'MEDIUM',
               dueDate: task.dueDate ? new Date(task.dueDate) : null,
               completedAt: task.status === 'DONE' ? new Date() : null,
+              estimatedMinutes: 60,
             },
           });
         }
