@@ -9,6 +9,7 @@ import {
   Target,
   CheckSquare,
   Lightbulb,
+  Flame,
   Calendar,
   ClipboardCheck,
   Moon,
@@ -33,6 +34,7 @@ const navSections = [
   {
     label: 'Rituals',
     items: [
+      { href: '/aims', label: 'Aims', icon: Flame },
       { href: '/calendar', label: 'Calendar', icon: Calendar },
       { href: '/reviews', label: 'Reviews', icon: ClipboardCheck },
       { href: '/powerdown', label: 'Power Down', icon: Moon },
