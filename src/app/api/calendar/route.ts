@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
   const reviewsEnabled = !prefs || prefs.reviewNags;
 
   // Run independent queries in parallel
-  const [tasks, reviews, meetings, googleEvents] = await Promise.all([
+  const [tasks, reviews, meetings, googleEvents, aimInstances] = await Promise.all([
     (fetchAll || source === 'tasks')
       ? prisma.task.findMany({
           where: {
@@ -129,6 +129,18 @@ export async function GET(request: NextRequest) {
       : Promise.resolve([]),
     (fetchAll || source === 'google')
       ? listGoogleEvents(auth.userId, start, end).catch(() => [])
+      : Promise.resolve([]),
+    (fetchAll || source === 'aims')
+      ? prisma.aimInstance.findMany({
+          where: {
+            userId: auth.userId,
+            scheduledDate: {
+              gte: new Date(start),
+              lte: new Date(end),
+            },
+          },
+          include: { aimCategory: true },
+        })
       : Promise.resolve([]),
   ]);
 
@@ -199,6 +211,23 @@ export async function GET(request: NextRequest) {
       source: 'google',
       meetLink: ge.hangoutLink,
       color: '#9333ea',
+    });
+  }
+
+  // Process Aim instances
+  for (const aim of aimInstances) {
+    events.push({
+      id: `aim-${aim.id}`,
+      title: aim.aimCategory.name,
+      start: aim.timeBlockStart?.toISOString() ?? aim.scheduledDate.toISOString(),
+      end: aim.timeBlockEnd?.toISOString() ?? undefined,
+      allDay: !aim.timeBlockStart,
+      source: 'aims',
+      aimInstanceId: aim.id,
+      aimCategoryId: aim.aimCategoryId,
+      status: aim.status,
+      backgroundColor: '#14b8a6',
+      color: '#14b8a6',
     });
   }
 

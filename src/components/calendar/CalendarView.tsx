@@ -21,6 +21,7 @@ const SOURCE_FILTERS = [
   { key: 'tasks', label: 'My Tasks', color: 'bg-indigo-500' },
   { key: 'reviews', label: 'Reviews', color: 'bg-yellow-500' },
   { key: 'meetings', label: 'Meetings', color: 'bg-emerald-500' },
+  { key: 'aims', label: 'Aims', color: 'bg-teal-500' },
   { key: 'google', label: 'Google Calendar', color: 'bg-purple-500' },
 ];
 
@@ -28,7 +29,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const calendarRef = useRef<any>(null);
   const [events, setEvents] = useState<any[]>([]);
   const { resolvedTheme } = useTheme();
-  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'google']));
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
   const [showGhosts, setShowGhosts] = useState(false);
 
