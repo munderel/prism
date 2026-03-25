@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, MessageSquare, RefreshCw, Target } from 'lucide-react';
+import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
 import { StatusChip } from './StatusChip';
 
@@ -13,9 +13,10 @@ interface TaskCardProps {
   onDelete: (taskId: string) => void;
   onClick?: (task: any) => void;
   onStatusChange?: (taskId: string, newStatus: string) => void;
+  onWinTheDayToggle?: (task: any) => void;
 }
 
-export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick, onStatusChange }: TaskCardProps) {
+export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick, onStatusChange, onWinTheDayToggle }: TaskCardProps) {
   const isDone = task.status === 'DONE';
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isDone;
 
@@ -28,7 +29,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
       className="group"
     >
       <div
-        className="flex items-center gap-3 glass-panel px-4 py-3 hover:border-[var(--glass-border)] transition-colors cursor-pointer"
+        className={`flex items-center gap-3 glass-panel px-4 py-3 hover:border-[var(--glass-border)] transition-colors cursor-pointer ${task.isWinTheDay ? 'border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.15)]' : ''}`}
         onClick={() => onClick?.(task)}
       >
         {/* Checkbox */}
@@ -67,6 +68,15 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
             <span className={`text-sm font-medium truncate ${isDone ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}`}>
               {task.title}
             </span>
+            {onWinTheDayToggle && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onWinTheDayToggle(task); }}
+                className="flex-shrink-0 transition-colors"
+                title={task.isWinTheDay ? 'Win the Day task' : 'Designate as Win the Day'}
+              >
+                <Star className={`h-4 w-4 ${task.isWinTheDay ? 'text-amber-400 fill-amber-400' : 'text-gray-600 hover:text-amber-400/60'}`} />
+              </button>
+            )}
             <StatusChip
               status={task.status}
               onStatusChange={(newStatus) => onStatusChange?.(task.id, newStatus)}

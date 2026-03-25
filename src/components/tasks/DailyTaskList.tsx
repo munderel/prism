@@ -59,6 +59,29 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
     onStatusChange?.();
   }, [mutate, onStatusChange]);
 
+  const handleWinTheDayToggle = useCallback(async (task: any) => {
+    const newValue = !task.isWinTheDay;
+    mutate(async (currentData: any) => {
+      await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isWinTheDay: newValue }),
+      });
+      return (Array.isArray(currentData) ? currentData : []).map((t: any) => {
+        if (t.id === task.id) return { ...t, isWinTheDay: newValue };
+        if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
+        return t;
+      });
+    }, { optimisticData: (currentData: any) => {
+      return (Array.isArray(currentData) ? currentData : []).map((t: any) => {
+        if (t.id === task.id) return { ...t, isWinTheDay: newValue };
+        if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
+        return t;
+      });
+    }, rollbackOnError: true });
+    onStatusChange?.();
+  }, [mutate, onStatusChange]);
+
   const handleStatusChange = useCallback(async (taskId: string, newStatus: string) => {
     mutate(
       async (currentData: any) => {
@@ -133,6 +156,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
                       onDelete={onDelete}
                       onClick={onClick}
                       onStatusChange={handleStatusChange}
+                      onWinTheDayToggle={handleWinTheDayToggle}
                     />
                   ))
                 )}
