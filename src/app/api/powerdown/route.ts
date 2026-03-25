@@ -60,7 +60,7 @@ export async function PATCH(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { sessionId, currentStep, checklistState, tomorrowPlan, complete } = body;
+  const { sessionId, currentStep, checklistState, tomorrowPlan, distractions, gratitudes, ideas, clearGoals, complete } = body;
 
   if (!sessionId) {
     return Response.json({ error: 'sessionId is required' }, { status: 400 });
@@ -75,6 +75,10 @@ export async function PATCH(request: NextRequest) {
   if (currentStep !== undefined) data.currentStep = currentStep;
   if (checklistState !== undefined) data.checklistState = checklistState;
   if (tomorrowPlan !== undefined) data.tomorrowPlan = tomorrowPlan;
+  if (distractions !== undefined) data.distractions = distractions;
+  if (gratitudes !== undefined) data.gratitudes = gratitudes;
+  if (ideas !== undefined) data.ideas = ideas;
+  if (clearGoals !== undefined) data.clearGoals = clearGoals;
   if (complete) data.completedAt = new Date();
 
   const updated = await prisma.powerdownSession.update({ where: { id: sessionId }, data });
