@@ -133,6 +133,8 @@ model Goal {
   status      GoalStatus @default(NOT_STARTED)
   progressPct Float      @default(0)
   dueDate     DateTime?
+  startDate   DateTime?
+  endDate     DateTime?
   sortOrder   Int        @default(0)
   deletedAt   DateTime?
   createdAt   DateTime   @default(now())
@@ -272,15 +274,18 @@ enum ReviewType {
 }
 
 model Review {
-  id             String     @id @default(cuid())
-  userId         String
-  reviewType     ReviewType
-  scheduledDate  DateTime
-  completedAt    DateTime?
-  notes          String?    @db.Text
-  checklistState Json?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  id                  String     @id @default(cuid())
+  userId              String
+  reviewType          ReviewType
+  scheduledDate       DateTime
+  completedAt         DateTime?
+  notes               String?    @db.Text
+  checklistState      Json?
+  startDate           DateTime?
+  recurrenceDayOfWeek Int?
+  isTeamReview        Boolean    @default(false)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -290,11 +295,14 @@ model Review {
 
 model ReviewTemplate {
   id             String     @id @default(cuid())
-  reviewType     ReviewType @unique
+  reviewType     ReviewType
   checklistItems Json
   processSteps   Json
+  isTeamTemplate Boolean    @default(false)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
+
+  @@unique([reviewType, isTeamTemplate])
 }
 
 model PowerdownSession {
@@ -425,6 +433,7 @@ model Process {
   delegateUntil DateTime?
   cadence       ProcessCadence
   cadenceRule   String?
+  defaultDurationMinutes Int    @default(60)
   sortOrder     Int             @default(0)
   lastRunAt     DateTime?
   nextDueAt     DateTime?
