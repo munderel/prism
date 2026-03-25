@@ -81,6 +81,7 @@ model User {
   ideas                Idea[]
   userAims             UserAim[]
   aimInstances         AimInstance[]
+  trainingItems        TrainingItem[]
 }
 
 model CompanySettings {
@@ -150,6 +151,7 @@ model Goal {
   individualGoalLinks GoalLink[] @relation("IndividualGoal")
   publicWins         PublicWin[]
   kpis               Kpi[]
+  trainingItems      TrainingItem[]
 
   @@index([stackId])
   @@index([parentId])
@@ -229,6 +231,7 @@ model Task {
   processExecution ProcessExecution?
   attachments TaskAttachment[]
   idea     Idea?
+  trainingTask TrainingTask?
 
   @@index([ownerId])
   @@index([dueDate])
@@ -663,4 +666,65 @@ model AimInstance {
   aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
 
   @@index([userId, scheduledDate])
+}
+
+// === TRAINING ===
+
+enum TrainingType {
+  BOOK
+  COURSE
+}
+
+model TrainingItem {
+  id                   String       @id @default(cuid())
+  ownerId              String
+  type                 TrainingType
+  title                String
+  description          String?      @db.Text
+  sourceUrl            String?
+  uploadedFileUrl      String?
+  aiMetadata           Json?
+  targetCompletionDate DateTime?
+  goalId               String?
+  status               String       @default("ACTIVE")
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  owner         User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  goal          Goal?           @relation(fields: [goalId], references: [id])
+  trainingTasks TrainingTask[]
+  quizAttempts  QuizAttempt[]
+
+  @@index([ownerId])
+}
+
+model TrainingTask {
+  id             String  @id @default(cuid())
+  trainingItemId String
+  taskId         String  @unique
+  chapterRange   String?
+  moduleIndex    Int?
+  isQuizDay      Boolean @default(false)
+  sortOrder      Int     @default(0)
+
+  trainingItem TrainingItem @relation(fields: [trainingItemId], references: [id], onDelete: Cascade)
+  task         Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([trainingItemId])
+}
+
+model QuizAttempt {
+  id             String    @id @default(cuid())
+  trainingItemId String
+  trainingTaskId String?
+  questions      Json
+  userAnswers    Json?
+  score          Float?
+  llmFeedback    Json?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  trainingItem TrainingItem @relation(fields: [trainingItemId], references: [id], onDelete: Cascade)
+
+  @@index([trainingItemId])
 }
