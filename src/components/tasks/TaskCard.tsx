@@ -3,7 +3,8 @@
 import React from 'react';
 import { m } from 'framer-motion';
 import { Pencil, Trash2, MessageSquare, RefreshCw, Target } from 'lucide-react';
-import { PRIORITY_DOT_COLORS, TASK_STATUS_COLORS } from '@/lib/goal-constants';
+import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
+import { StatusChip } from './StatusChip';
 
 interface TaskCardProps {
   task: any;
@@ -11,9 +12,10 @@ interface TaskCardProps {
   onEdit: (task: any) => void;
   onDelete: (taskId: string) => void;
   onClick?: (task: any) => void;
+  onStatusChange?: (taskId: string, newStatus: string) => void;
 }
 
-export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick }: TaskCardProps) {
+export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick, onStatusChange }: TaskCardProps) {
   const isDone = task.status === 'DONE';
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isDone;
 
@@ -26,7 +28,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
       className="group"
     >
       <div
-        className="flex items-center gap-3 glass-panel px-4 py-3 hover:border-gray-700 transition-colors cursor-pointer"
+        className="flex items-center gap-3 glass-panel px-4 py-3 hover:border-[var(--glass-border)] transition-colors cursor-pointer"
         onClick={() => onClick?.(task)}
       >
         {/* Checkbox */}
@@ -38,7 +40,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
           className={`flex-shrink-0 h-5 w-5 rounded border-2 transition-colors ${
             isDone
               ? 'bg-green-600 border-green-600'
-              : 'border-gray-600 hover:border-indigo-500'
+              : 'border-[var(--border-color)] hover:border-indigo-500'
           }`}
         >
           {isDone && (
@@ -62,15 +64,16 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
         {/* Title and meta */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`text-sm font-medium truncate ${isDone ? 'text-gray-500 line-through' : 'text-white'}`}>
+            <span className={`text-sm font-medium truncate ${isDone ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}`}>
               {task.title}
             </span>
-            <span className={`text-xs ${TASK_STATUS_COLORS[task.status] ?? ''}`}>
-              {task.status.replace('_', ' ')}
-            </span>
+            <StatusChip
+              status={task.status}
+              onStatusChange={(newStatus) => onStatusChange?.(task.id, newStatus)}
+            />
           </div>
           {task.goal?.stack?.name && (
-            <span className="text-xs text-gray-500">{task.goal.stack.name}</span>
+            <span className="text-xs text-[var(--text-muted)]">{task.goal.stack.name}</span>
           )}
           {task.taskType === 'MAINTENANCE' && task.processExecution?.process?.title && (
             <span className="text-xs text-orange-400/70">⚙ {task.processExecution.process.title}</span>
@@ -93,7 +96,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
             </span>
           )}
           {(task._count?.comments ?? 0) > 0 && (
-            <span className="flex items-center gap-0.5 text-xs text-gray-500">
+            <span className="flex items-center gap-0.5 text-xs text-[var(--text-muted)]">
               <MessageSquare className="h-3.5 w-3.5" />
               {task._count.comments}
             </span>
@@ -102,7 +105,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
 
         {/* Due date */}
         {task.dueDate && (
-          <span className={`text-xs ${isOverdue ? 'text-red-400' : 'text-gray-500'}`}>
+          <span className={`text-xs ${isOverdue ? 'text-red-400' : 'text-[var(--text-muted)]'}`}>
             {new Date(task.dueDate).toLocaleDateString()}
           </span>
         )}
@@ -111,14 +114,14 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); onEdit(task); }}
-            className="rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-white"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
             title="Edit task"
           >
             <Pencil className="h-4 w-4" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
-            className="rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-red-400"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-red-400"
             title="Delete task"
           >
             <Trash2 className="h-4 w-4" />
