@@ -59,6 +59,32 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
     onStatusChange?.();
   }, [mutate, onStatusChange]);
 
+  const handleStatusChange = useCallback(async (taskId: string, newStatus: string) => {
+    mutate(
+      async (currentData: any) => {
+        await fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        const current = Array.isArray(currentData) ? currentData : [];
+        return current.map((t: any) =>
+          t.id === taskId ? { ...t, status: newStatus } : t
+        );
+      },
+      {
+        optimisticData: (currentData: any) => {
+          const current = Array.isArray(currentData) ? currentData : [];
+          return current.map((t: any) =>
+            t.id === taskId ? { ...t, status: newStatus } : t
+          );
+        },
+        rollbackOnError: true,
+      }
+    );
+    onStatusChange?.();
+  }, [mutate, onStatusChange]);
+
   const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => ({
     key,
     label,
@@ -67,7 +93,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   })), [tasks]);
 
   if (isLoading) {
-    return <div className="text-gray-500 text-sm py-4">Loading tasks...</div>;
+    return <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>;
   }
 
   return (
@@ -79,12 +105,12 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
             className="flex items-center gap-2 mb-2 w-full text-left"
           >
             {collapsed[key] ? (
-              <ChevronRight className="h-4 w-4 text-gray-500" />
+              <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
             ) : (
-              <ChevronDown className="h-4 w-4 text-gray-500" />
+              <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
             )}
             <span className={`text-sm font-semibold ${color}`}>{label}</span>
-            <span className="text-xs text-gray-600">({sectionTasks.length})</span>
+            <span className="text-xs text-[var(--text-muted)]">({sectionTasks.length})</span>
           </button>
 
           <AnimatePresence>
@@ -96,7 +122,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
                 className="space-y-2 overflow-hidden"
               >
                 {sectionTasks.length === 0 ? (
-                  <p className="text-xs text-gray-600 pl-6">No tasks</p>
+                  <p className="text-xs text-[var(--text-muted)] pl-6">No tasks</p>
                 ) : (
                   sectionTasks.map((task) => (
                     <TaskCard
@@ -106,6 +132,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
                       onEdit={onEdit}
                       onDelete={onDelete}
                       onClick={onClick}
+                      onStatusChange={handleStatusChange}
                     />
                   ))
                 )}
