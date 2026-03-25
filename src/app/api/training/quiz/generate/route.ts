@@ -1,6 +1,7 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { openrouter, AIError } from '@/lib/openrouter';
 import { quizGenerationPrompt } from '@/lib/ai-prompts';
+import { prisma } from '@/lib/prisma';
 
 const MAX_INPUT_LENGTH = 10000;
 
@@ -15,11 +16,31 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { material, chapterRange } = body;
+  const { trainingItemId, chapterRange, material } = body;
 
-  if (!material || typeof material !== 'string' || material.length > MAX_INPUT_LENGTH) {
+  // Validate trainingItemId if provided
+  let trainingItem: any = null;
+  let materialText = material;
+
+  if (trainingItemId) {
+    trainingItem = await prisma.trainingItem.findUnique({
+      where: { id: trainingItemId },
+    });
+    if (!trainingItem) {
+      return Response.json({ error: 'Training item not found' }, { status: 404 });
+    }
+    if (trainingItem.ownerId !== auth.userId && !auth.session.user.isAdmin) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    // Use the training item title as material if not explicitly provided
+    if (!materialText) {
+      materialText = trainingItem.title;
+    }
+  }
+
+  if (!materialText || typeof materialText !== 'string' || materialText.length > MAX_INPUT_LENGTH) {
     return Response.json(
-      { error: 'material is required and must be under 10000 characters' },
+      { error: 'material (or trainingItemId with title) is required and must be under 10000 characters' },
       { status: 400 }
     );
   }
@@ -32,9 +53,22 @@ export async function POST(request: Request) {
   }
 
   try {
-    const messages = quizGenerationPrompt(material, chapterRange);
-    const result = await openrouter.chatJSON(messages);
-    return Response.json(result);
+    const messages = quizGenerationPrompt(materialText, chapterRange);
+    const result = await openrouter.chatJSON<any>(messages);
+
+    // Create QuizAttempt record with generated questions
+    const quizAttempt = await prisma.quizAttempt.create({
+      data: {
+        trainingItemId: trainingItemId || null,
+        trainingTaskId: body.trainingTaskId || null,
+        questions: result.questions ?? result,
+      },
+    });
+
+    return Response.json({
+      ...result,
+      quizAttemptId: quizAttempt.id,
+    });
   } catch (err) {
     if (err instanceof AIError) {
       const status = err.code === 'RATE_LIMITED' ? 429 : err.code === 'API_KEY_INVALID' ? 503 : 502;
