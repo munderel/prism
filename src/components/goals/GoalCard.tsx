@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
+import { useClickOutside } from '@/hooks/useClickOutside';
 import { m } from 'framer-motion';
 import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3 } from 'lucide-react';
 import { GoalProgressBar } from './GoalProgressBar';
@@ -82,17 +83,7 @@ export const GoalCard = React.memo(function GoalCard({
   const statusRef = useRef<HTMLDivElement>(null);
   const styles = getLevelCardStyles(goal.level);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (statusRef.current && !statusRef.current.contains(e.target as Node)) {
-        setShowStatusMenu(false);
-      }
-    }
-    if (showStatusMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showStatusMenu]);
+  useClickOutside(statusRef, useCallback(() => setShowStatusMenu(false), []), showStatusMenu);
 
   return (
     <m.div

@@ -84,6 +84,125 @@ const PRIORITY_DOT_COLORS: Record<string, string> = {
   LOW: 'bg-green-500',
 };
 
+/* ------------------------------------------------------------------ */
+/*  Shared card for unscheduled tasks / aims / reviews in the sidebar  */
+/* ------------------------------------------------------------------ */
+
+interface ItemTypeConfig {
+  borderClass: string;
+  icon: React.ReactNode;
+  label: string;
+  labelColor: string;
+}
+
+const ITEM_TYPE_CONFIG: Record<string, ItemTypeConfig> = {
+  task: {
+    borderClass: '', // filled dynamically from PRIORITY_COLORS
+    icon: null,       // task uses the priority dot instead
+    label: '',
+    labelColor: '',
+  },
+  aim: {
+    borderClass: 'border-l-teal-500',
+    icon: <Flame className="h-3 w-3 text-teal-400" />,
+    label: 'Aim',
+    labelColor: 'text-teal-400',
+  },
+  review: {
+    borderClass: 'border-l-amber-500',
+    icon: <ClipboardList className="h-3 w-3 text-amber-400" />,
+    label: '',        // filled dynamically from reviewType
+    labelColor: 'text-amber-400',
+  },
+};
+
+function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
+  const cfg = ITEM_TYPE_CONFIG[item.itemType];
+
+  // -- border colour --
+  const borderClass =
+    item.itemType === 'task'
+      ? PRIORITY_COLORS[item.priority || ''] || 'border-l-gray-600'
+      : cfg.borderClass;
+
+  // -- data-* attributes for drag-and-drop --
+  const dataAttrs: Record<string, string> = {
+    'data-item-type': item.itemType,
+    'data-item-id': item.id,
+    'data-item-title': item.title,
+    'data-duration': String(item.duration),
+  };
+  if (item.itemType === 'task' && item.taskId) {
+    dataAttrs['data-task-id'] = item.taskId;
+  }
+  if (item.itemType === 'aim') {
+    if (item.aimCategoryId) dataAttrs['data-aim-category-id'] = item.aimCategoryId;
+    dataAttrs['data-aim-instance-id'] = item.aimInstanceId || '';
+    dataAttrs['data-activities'] = item.activities ? JSON.stringify(item.activities) : '';
+  }
+  if (item.itemType === 'review' && item.reviewId) {
+    dataAttrs['data-review-id'] = item.reviewId;
+  }
+
+  // -- metadata row --
+  const renderMeta = () => {
+    if (item.itemType === 'task') {
+      const priorityLabel =
+        (item.priority || 'MEDIUM').charAt(0) +
+        (item.priority || 'MEDIUM').slice(1).toLowerCase();
+      return (
+        <>
+          <div className="flex items-center gap-2 mt-1">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                PRIORITY_DOT_COLORS[item.priority || ''] || 'bg-gray-500'
+              }`}
+            />
+            <span className="text-xs text-[var(--text-muted)]">{priorityLabel}</span>
+            {item.taskType === 'IMPROVE' && item.goal && (
+              <span className="text-xs text-indigo-400 truncate">{item.goal.title}</span>
+            )}
+          </div>
+          {item.dueDate && (
+            <p className="text-xs text-[var(--text-muted)] mt-1">
+              Due: {new Date(item.dueDate).toLocaleDateString()}
+            </p>
+          )}
+        </>
+      );
+    }
+
+    // aim or review
+    const label =
+      item.itemType === 'review' ? item.reviewType || 'Review' : cfg.label;
+    return (
+      <div className="flex items-center gap-2 mt-1">
+        {cfg.icon}
+        <span className={`text-xs ${cfg.labelColor}`}>{label}</span>
+        <span className="text-xs text-[var(--text-muted)]">{item.duration}min</span>
+      </div>
+    );
+  };
+
+  return (
+    <div
+      key={item.id}
+      className={`fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 ${borderClass} bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors`}
+      {...dataAttrs}
+    >
+      <div className="flex items-start gap-2">
+        <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-[var(--text-primary)] font-medium truncate">
+            {item.title}
+          </p>
+          {renderMeta()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CalendarPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
@@ -250,112 +369,9 @@ export default function CalendarPage() {
 
   const isLoading = loadingTasks || loadingAims || loadingReviews;
 
-  const renderItem = (item: UnscheduledItem) => {
-    if (item.itemType === 'task') {
-      return (
-        <div
-          key={item.id}
-          className={`fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 ${
-            PRIORITY_COLORS[item.priority || ''] || 'border-l-gray-600'
-          } bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors`}
-          data-item-type="task"
-          data-item-id={item.id}
-          data-item-title={item.title}
-          data-task-id={item.taskId}
-          data-duration={item.duration}
-        >
-          <div className="flex items-start gap-2">
-            <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-[var(--text-primary)] font-medium truncate">
-                {item.title}
-              </p>
-              <div className="flex items-center gap-2 mt-1">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    PRIORITY_DOT_COLORS[item.priority || ''] || 'bg-gray-500'
-                  }`}
-                />
-                <span className="text-xs text-[var(--text-muted)]">
-                  {(item.priority || 'MEDIUM').charAt(0) + (item.priority || 'MEDIUM').slice(1).toLowerCase()}
-                </span>
-                {item.taskType === 'IMPROVE' && item.goal && (
-                  <span className="text-xs text-indigo-400 truncate">
-                    {item.goal.title}
-                  </span>
-                )}
-              </div>
-              {item.dueDate && (
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  Due: {new Date(item.dueDate).toLocaleDateString()}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (item.itemType === 'aim') {
-      return (
-        <div
-          key={item.id}
-          className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 border-l-teal-500 bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors"
-          data-item-type="aim"
-          data-item-id={item.id}
-          data-item-title={item.title}
-          data-aim-category-id={item.aimCategoryId}
-          data-aim-instance-id={item.aimInstanceId || ''}
-          data-duration={item.duration}
-          data-activities={item.activities ? JSON.stringify(item.activities) : ''}
-        >
-          <div className="flex items-start gap-2">
-            <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-[var(--text-primary)] font-medium truncate">
-                {item.title}
-              </p>
-              <div className="flex items-center gap-2 mt-1">
-                <Flame className="h-3 w-3 text-teal-400" />
-                <span className="text-xs text-teal-400">Aim</span>
-                <span className="text-xs text-[var(--text-muted)]">{item.duration}min</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (item.itemType === 'review') {
-      return (
-        <div
-          key={item.id}
-          className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 border-l-amber-500 bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors"
-          data-item-type="review"
-          data-item-id={item.id}
-          data-item-title={item.title}
-          data-review-id={item.reviewId}
-          data-duration={item.duration}
-        >
-          <div className="flex items-start gap-2">
-            <GripVertical className="h-4 w-4 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-[var(--text-primary)] font-medium truncate">
-                {item.title}
-              </p>
-              <div className="flex items-center gap-2 mt-1">
-                <ClipboardList className="h-3 w-3 text-amber-400" />
-                <span className="text-xs text-amber-400">{item.reviewType}</span>
-                <span className="text-xs text-[var(--text-muted)]">{item.duration}min</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return null;
-  };
+  const renderItem = (item: UnscheduledItem) => (
+    <UnscheduledItemCard key={item.id} item={item} />
+  );
 
   return (
     <div>

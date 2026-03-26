@@ -32,81 +32,79 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  const handleToggle = useCallback(async (task: any) => {
-    const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
-    mutate(
-      async (currentData: any) => {
-        await fetch(`/api/tasks/${task.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: newStatus }),
-        });
-        const current = Array.isArray(currentData) ? currentData : [];
-        return current.map((t: any) =>
-          t.id === task.id ? { ...t, status: newStatus } : t
-        );
-      },
-      {
-        optimisticData: (currentData: any) => {
-          const current = Array.isArray(currentData) ? currentData : [];
-          return current.map((t: any) =>
-            t.id === task.id ? { ...t, status: newStatus } : t
+  // Shared optimistic mutation: patch a task and update local state
+  const patchTask = useCallback(
+    (taskId: string, patch: Record<string, any>, optimisticUpdate: (t: any) => any) => {
+      mutate(
+        async (currentData: any) => {
+          await fetch(`/api/tasks/${taskId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch),
+          });
+          return (Array.isArray(currentData) ? currentData : []).map((t: any) =>
+            t.id === taskId ? optimisticUpdate(t) : t
           );
         },
-        rollbackOnError: true,
-      }
-    );
-    onStatusChange?.();
-  }, [mutate, onStatusChange]);
+        {
+          optimisticData: (currentData: any) =>
+            (Array.isArray(currentData) ? currentData : []).map((t: any) =>
+              t.id === taskId ? optimisticUpdate(t) : t
+            ),
+          rollbackOnError: true,
+        }
+      );
+      onStatusChange?.();
+    },
+    [mutate, onStatusChange]
+  );
 
-  const handleWinTheDayToggle = useCallback(async (task: any) => {
-    const newValue = !task.isWinTheDay;
-    mutate(async (currentData: any) => {
-      await fetch(`/api/tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isWinTheDay: newValue }),
-      });
-      return (Array.isArray(currentData) ? currentData : []).map((t: any) => {
-        if (t.id === task.id) return { ...t, isWinTheDay: newValue };
-        if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
-        return t;
-      });
-    }, { optimisticData: (currentData: any) => {
-      return (Array.isArray(currentData) ? currentData : []).map((t: any) => {
-        if (t.id === task.id) return { ...t, isWinTheDay: newValue };
-        if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
-        return t;
-      });
-    }, rollbackOnError: true });
-    onStatusChange?.();
-  }, [mutate, onStatusChange]);
+  const handleToggle = useCallback(
+    (task: any) => {
+      const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
+      patchTask(task.id, { status: newStatus }, (t) => ({ ...t, status: newStatus }));
+    },
+    [patchTask]
+  );
 
-  const handleStatusChange = useCallback(async (taskId: string, newStatus: string) => {
-    mutate(
-      async (currentData: any) => {
-        await fetch(`/api/tasks/${taskId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: newStatus }),
-        });
-        const current = Array.isArray(currentData) ? currentData : [];
-        return current.map((t: any) =>
-          t.id === taskId ? { ...t, status: newStatus } : t
-        );
-      },
-      {
-        optimisticData: (currentData: any) => {
-          const current = Array.isArray(currentData) ? currentData : [];
-          return current.map((t: any) =>
-            t.id === taskId ? { ...t, status: newStatus } : t
-          );
+  const handleWinTheDayToggle = useCallback(
+    (task: any) => {
+      const newValue = !task.isWinTheDay;
+      // WTD toggle needs to unflag other tasks too
+      mutate(
+        async (currentData: any) => {
+          await fetch(`/api/tasks/${task.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ isWinTheDay: newValue }),
+          });
+          return (Array.isArray(currentData) ? currentData : []).map((t: any) => {
+            if (t.id === task.id) return { ...t, isWinTheDay: newValue };
+            if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
+            return t;
+          });
         },
-        rollbackOnError: true,
-      }
-    );
-    onStatusChange?.();
-  }, [mutate, onStatusChange]);
+        {
+          optimisticData: (currentData: any) =>
+            (Array.isArray(currentData) ? currentData : []).map((t: any) => {
+              if (t.id === task.id) return { ...t, isWinTheDay: newValue };
+              if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
+              return t;
+            }),
+          rollbackOnError: true,
+        }
+      );
+      onStatusChange?.();
+    },
+    [mutate, onStatusChange]
+  );
+
+  const handleStatusChange = useCallback(
+    (taskId: string, newStatus: string) => {
+      patchTask(taskId, { status: newStatus }, (t) => ({ ...t, status: newStatus }));
+    },
+    [patchTask]
+  );
 
   const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => ({
     key,

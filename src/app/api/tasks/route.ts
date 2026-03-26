@@ -1,9 +1,10 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
+import { cacheHeaders } from '@/lib/api-helpers';
 
 import { parseRRule } from '@/lib/recurrence';
-import { createGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
+import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 
 export async function GET(request: NextRequest) {
@@ -72,10 +73,7 @@ export async function GET(request: NextRequest) {
   });
 
   return new Response(JSON.stringify(tasks), {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'private, max-age=5, stale-while-revalidate=30',
-    },
+    headers: cacheHeaders(5, 30),
   });
 }
 
@@ -107,9 +105,8 @@ export async function POST(request: NextRequest) {
     if (!goal || goal.deletedAt) {
       return Response.json({ error: 'Goal not found' }, { status: 404 });
     }
-    if (!goal.stack.isCompany && goal.stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+    if (accessDenied) return accessDenied;
   }
 
   // Validate processId if provided
@@ -164,25 +161,10 @@ export async function POST(request: NextRequest) {
 
   // Sync to Google Calendar if the task has time blocks
   if (timeBlockStart && timeBlockEnd) {
-    try {
-      const hasGoogle = await hasGoogleAccount(auth.userId);
-      if (hasGoogle) {
-        const gcalEvent = await createGoogleEvent(auth.userId, {
-          summary: title,
-          description: description ?? undefined,
-          start: new Date(timeBlockStart).toISOString(),
-          end: new Date(timeBlockEnd).toISOString(),
-        });
-        if (gcalEvent?.id) {
-          await prisma.task.update({
-            where: { id: task.id },
-            data: { calendarEventId: gcalEvent.id },
-          });
-          (task as any).calendarEventId = gcalEvent.id;
-        }
-      }
-    } catch (err) {
-      console.warn('[tasks] Google Calendar sync failed on create:', err);
+    const eventId = await syncTaskCalendarEvent(auth.userId, task, 'create');
+    if (eventId) {
+      await prisma.task.update({ where: { id: task.id }, data: { calendarEventId: eventId } });
+      (task as any).calendarEventId = eventId;
     }
   }
 

@@ -1,9 +1,7 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { openrouter } from '@/lib/openrouter';
 import { taskSuggestionPrompt } from '@/lib/ai-prompts';
-import { handleAIError } from '@/lib/ai-error-handler';
-
-const MAX_INPUT_LENGTH = 10000;
+import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
 
 export async function POST(request: Request) {
   const auth = await requireAuth();
@@ -18,7 +16,7 @@ export async function POST(request: Request) {
 
   const { weeklyGoal, existingTasks } = body;
 
-  if (!weeklyGoal || typeof weeklyGoal !== 'string' || weeklyGoal.length > MAX_INPUT_LENGTH) {
+  if (!weeklyGoal || typeof weeklyGoal !== 'string' || weeklyGoal.length > MAX_AI_INPUT_LENGTH) {
     return Response.json(
       { error: 'weeklyGoal is required and must be under 10000 characters' },
       { status: 400 }
@@ -38,7 +36,7 @@ export async function POST(request: Request) {
 
   // Validate total serialized input length
   const serialized = JSON.stringify({ weeklyGoal, existingTasks: tasks });
-  if (serialized.length > MAX_INPUT_LENGTH) {
+  if (serialized.length > MAX_AI_INPUT_LENGTH) {
     return Response.json(
       { error: 'Input too large, must be under 10000 characters total' },
       { status: 400 }

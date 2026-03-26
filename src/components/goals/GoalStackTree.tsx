@@ -160,27 +160,18 @@ export function GoalStackTree({
     }
     let items = flattenTree(roots);
 
-    // Filter: In Progress — show goals with IN_PROGRESS status and their direct children
+    // Filter: In Progress — show only goals whose status is IN_PROGRESS
     if (showInProgress) {
-      const inProgressGoalIds = new Set<string>();
-      // First pass: find all IN_PROGRESS goals
-      for (const item of items) {
-        if (item.type === 'goal' && item.goal?.status === 'IN_PROGRESS') {
-          inProgressGoalIds.add(item.goal.id);
-        }
-      }
-      // Second pass: also include children of IN_PROGRESS goals
-      for (const item of items) {
-        if (item.type === 'goal' && item.goal?.parentId && inProgressGoalIds.has(item.goal.parentId)) {
-          inProgressGoalIds.add(item.goal.id);
-        }
-      }
+      const inProgressGoalIds = new Set(
+        items
+          .filter((i) => i.type === 'goal' && i.goal?.status === 'IN_PROGRESS')
+          .map((i) => i.goal!.id)
+      );
       items = items.filter((item) => {
         if (item.type === 'task') {
-          // Keep tasks whose parent goal is in progress
           return item.task?.goalId && inProgressGoalIds.has(item.task.goalId);
         }
-        return inProgressGoalIds.has(item.goal?.id);
+        return item.goal?.status === 'IN_PROGRESS';
       });
     }
 

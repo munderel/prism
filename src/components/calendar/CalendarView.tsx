@@ -46,6 +46,25 @@ const SOURCE_FILTERS = [
   { key: 'google', label: 'Google Calendar', color: 'bg-purple-500' },
 ];
 
+function scheduleItem(
+  itemType: string,
+  itemId: string,
+  startISO: string,
+  endISO: string,
+  extraData?: Record<string, unknown>
+): Promise<Response> {
+  const endpoints: Record<string, string> = {
+    aim: `/api/aims/instances/${itemId}`,
+    review: `/api/reviews/${itemId}`,
+    task: `/api/tasks/${itemId}`,
+  };
+  return fetch(endpoints[itemType] || endpoints.task, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO, ...extraData }),
+  });
+}
+
 export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings }: CalendarViewProps) {
   const calendarRef = useRef<any>(null);
   const [events, setEvents] = useState<any[]>([]);
@@ -184,12 +203,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       }
 
       if (aimInstanceId) {
-        // Update existing instance with time block
-        await fetch(`/api/aims/instances/${aimInstanceId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
-        });
+        await scheduleItem('aim', aimInstanceId, startISO, endISO);
       } else if (aimCategoryId) {
         // Create new instance with time block
         await fetch('/api/aims/instances', {
@@ -209,29 +223,16 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     } else if (itemType === 'review') {
       const reviewId = props.reviewId;
       if (reviewId) {
-        await fetch(`/api/reviews/${reviewId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
-        });
+        await scheduleItem('review', reviewId, startISO, endISO);
       }
 
       refreshCalendar();
       onExternalDrop?.(info.event.id, start, end, 'review');
     } else {
-      // Task (existing behavior)
       const taskId = props.taskId || info.event.id?.replace('task-', '');
       if (!taskId) return;
 
-      await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          timeBlockStart: startISO,
-          timeBlockEnd: endISO,
-          dueDate: startISO,
-        }),
-      });
+      await scheduleItem('task', taskId, startISO, endISO, { dueDate: startISO });
 
       refreshCalendar();
       onExternalDrop?.(taskId, start, end, 'task');
@@ -244,36 +245,17 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     const newEnd = info.event.end?.toISOString();
 
     if (eventId.startsWith('aim-instance-') || eventId.startsWith('aim-new-')) {
-      // Aim instance drag on calendar
       const aimInstanceId = info.event.extendedProps?.aimInstanceId;
       if (aimInstanceId) {
-        await fetch(`/api/aims/instances/${aimInstanceId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ timeBlockStart: newStart, timeBlockEnd: newEnd }),
-        });
+        await scheduleItem('aim', aimInstanceId, newStart, newEnd);
       }
     } else if (eventId.startsWith('review-')) {
       const reviewId = info.event.extendedProps?.reviewId || eventId.replace('review-', '');
-      await fetch(`/api/reviews/${reviewId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ timeBlockStart: newStart, timeBlockEnd: newEnd }),
-      });
+      await scheduleItem('review', reviewId, newStart, newEnd);
     } else if (eventId.startsWith('task-')) {
       const taskId = eventId.replace('task-', '');
-      await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          timeBlockStart: newStart,
-          timeBlockEnd: newEnd,
-          dueDate: newStart,
-          isPinned: true,
-        }),
-      });
+      await scheduleItem('task', taskId, newStart, newEnd, { dueDate: newStart, isPinned: true });
     } else {
-      // Unknown event type, skip
       return;
     }
 
@@ -343,8 +325,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   };
 
   const handleConfirmGhosts = async () => {
-    // Schedule each ghost event via the appropriate API
-    for (const ghost of ghostEvents) {
+    // Schedule all ghost events in parallel
+    await Promise.all(ghostEvents.map((ghost) => {
       const item = unscheduledTasks?.find((t) => t.id === ghost.taskId);
       const itemType = item?.itemType || 'task';
       const startISO = ghost.start.toISOString();
@@ -353,13 +335,9 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       if (itemType === 'aim') {
         const aimInstanceId = item?.aimInstanceId;
         if (aimInstanceId) {
-          await fetch(`/api/aims/instances/${aimInstanceId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
-          });
+          return scheduleItem('aim', aimInstanceId, startISO, endISO);
         } else if (item?.aimCategoryId) {
-          await fetch('/api/aims/instances', {
+          return fetch('/api/aims/instances', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -373,28 +351,17 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       } else if (itemType === 'review') {
         const reviewId = item?.reviewId;
         if (reviewId) {
-          await fetch(`/api/reviews/${reviewId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
-          });
+          return scheduleItem('review', reviewId, startISO, endISO);
         }
       } else {
-        // Task
         const taskId = item?.taskId || ghost.taskId.replace('task-', '');
-        await fetch(`/api/tasks/${taskId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            timeBlockStart: startISO,
-            timeBlockEnd: endISO,
-            dueDate: startISO,
-            isAutoScheduled: true,
-            isPinned: false,
-          }),
+        return scheduleItem('task', taskId, startISO, endISO, {
+          dueDate: startISO,
+          isAutoScheduled: true,
+          isPinned: false,
         });
       }
-    }
+    }));
 
     // Also call the batch callback if provided
     if (onBatchScheduleConfirm) {

@@ -33,8 +33,6 @@ export default function SettingsPage() {
   const [casualHoursEnd, setCasualHoursEnd] = useState('22:00');
   const [taskSchedulePeriod, setTaskSchedulePeriod] = useState('both');
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
 
   // Dev user creation
   const [createName, setCreateName] = useState('');
@@ -105,10 +103,8 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, autoScheduleEnabled, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod }),
     });
-    setMessageType('success');
-    setMessage('Settings saved!');
+    toast.success('Settings saved!');
     setSaving(false);
-    setTimeout(() => setMessage(''), 2000);
   };
 
   const saveCompanyMtp = async () => {
@@ -118,10 +114,8 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scope: 'company', companyMtp }),
     });
-    setMessageType('success');
-    setMessage('Company MTP saved!');
+    toast.success('Company MTP saved!');
     setSaving(false);
-    setTimeout(() => setMessage(''), 2000);
   };
 
   const toggleAdmin = async (userId: string, newValue: boolean) => {
@@ -236,16 +230,6 @@ export default function SettingsPage() {
           Settings
         </h1>
       </div>
-
-      {message && (
-        <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${
-          messageType === 'error'
-            ? 'bg-red-600/20 border-red-600/30 text-red-400'
-            : 'bg-green-600/20 border-green-600/30 text-green-400'
-        }`}>
-          {message}
-        </div>
-      )}
 
       <div className="space-y-6 max-w-2xl">
         {/* Appearance */}

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { cacheHeaders } from '@/lib/api-helpers';
 import {
   requireAuth,
   requireAdmin,
@@ -53,10 +54,7 @@ export async function GET(request: NextRequest) {
   });
 
   return new Response(JSON.stringify(goals), {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'private, max-age=10, stale-while-revalidate=60',
-    },
+    headers: cacheHeaders(10, 60),
   });
 }
 

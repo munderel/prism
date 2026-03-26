@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User, Download, PlayCircle } from 'lucide-react';
 import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
+import { getNextReviewDate } from '@/lib/review-dates';
 import { useRouter } from 'next/navigation';
 
 const REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'] as const;
@@ -18,31 +19,8 @@ const typeColors: Record<string, string> = {
   YEARLY: 'text-yellow-400 bg-yellow-600/20 border-yellow-600/30',
 };
 
-const getNextScheduledDate = (type: string): string => {
-  const now = new Date();
-  switch (type) {
-    case 'WEEKLY': {
-      const next = new Date(now);
-      next.setDate(now.getDate() + ((8 - now.getDay()) % 7 || 7));
-      return next.toISOString().split('T')[0];
-    }
-    case 'MONTHLY': {
-      const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      return next.toISOString().split('T')[0];
-    }
-    case 'QUARTERLY': {
-      const currentQ = Math.floor(now.getMonth() / 3);
-      const next = new Date(now.getFullYear(), (currentQ + 1) * 3, 1);
-      return next.toISOString().split('T')[0];
-    }
-    case 'YEARLY': {
-      const next = new Date(now.getFullYear() + 1, 0, 1);
-      return next.toISOString().split('T')[0];
-    }
-    default:
-      return now.toISOString().split('T')[0];
-  }
-};
+const getNextScheduledDate = (type: string): string =>
+  getNextReviewDate(type).toISOString().split('T')[0];
 
 type TabValue = 'my' | 'team';
 
@@ -164,28 +142,17 @@ export default function ReviewsPage() {
         return;
       }
 
-      if (exportFormat === 'csv') {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `reviews-export-${new Date().toISOString().split('T')[0]}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } else {
-        const data = await res.json();
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `reviews-export-${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
+      const blob = exportFormat === 'csv'
+        ? await res.blob()
+        : new Blob([JSON.stringify(await res.json(), null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reviews-export-${new Date().toISOString().split('T')[0]}.${exportFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
       setShowExportModal(false);
     } finally {
       setExporting(false);

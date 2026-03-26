@@ -57,6 +57,20 @@ export async function requireTaskAccess(taskId: string): Promise<AuthResult & { 
   return { ...result, task };
 }
 
+export function checkStackAccess(
+  stack: { isCompany: boolean; ownerId: string },
+  userId: string,
+  isAdmin: boolean
+): Response | null {
+  if (stack.isCompany && !isAdmin) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  if (!stack.isCompany && stack.ownerId !== userId && !isAdmin) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  return null;
+}
+
 export function requireCronSecret(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false; // No secret configured = deny all

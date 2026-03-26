@@ -2,9 +2,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { openrouter } from '@/lib/openrouter';
 import { quizCheckPrompt } from '@/lib/ai-prompts';
 import { prisma } from '@/lib/prisma';
-import { handleAIError } from '@/lib/ai-error-handler';
-
-const MAX_INPUT_LENGTH = 10000;
+import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
 
 export async function POST(request: Request) {
   const auth = await requireAuth();
@@ -58,7 +56,7 @@ export async function POST(request: Request) {
 
   // Validate total serialized input length
   const serialized = JSON.stringify({ questions: questionsToGrade, userAnswers });
-  if (serialized.length > MAX_INPUT_LENGTH) {
+  if (serialized.length > MAX_AI_INPUT_LENGTH) {
     return Response.json(
       { error: 'Input too large, must be under 10000 characters total' },
       { status: 400 }

@@ -25,27 +25,33 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  let notified = 0;
+  // Process all tasks in parallel instead of sequentially
+  const derailingTasks = tasks.filter(
+    (task) => checkTaskDerailStatus(task, task.owner.timezone) === 'derailing'
+  );
 
-  for (const task of tasks) {
-    const status = checkTaskDerailStatus(task, task.owner.timezone);
+  // Batch-fetch notification preferences for all derailing task owners
+  const ownerIds = Array.from(new Set(derailingTasks.map((t) => t.owner.id)));
+  const prefs = await prisma.notificationPreference.findMany({
+    where: { userId: { in: ownerIds } },
+  });
+  const prefsMap = new Map(prefs.map((p) => [p.userId, p]));
 
-    if (status === 'derailing') {
-      const prefs = await prisma.notificationPreference.findUnique({
-        where: { userId: task.owner.id },
-      });
+  const notifications = derailingTasks
+    .filter((task) => {
+      const pref = prefsMap.get(task.owner.id);
+      return !pref || pref.derailingAlerts;
+    })
+    .map((task) =>
+      notifyUser(
+        task.owner.id,
+        'Task Derailing!',
+        `"${task.title}" is past 6pm and not done. Take action now.`,
+        '/tasks'
+      )
+    );
 
-      if (!prefs || prefs.derailingAlerts) {
-        await notifyUser(
-          task.owner.id,
-          'Task Derailing!',
-          `"${task.title}" is past 6pm and not done. Take action now.`,
-          '/tasks'
-        );
-        notified++;
-      }
-    }
-  }
+  await Promise.all(notifications);
 
-  return Response.json({ ok: true, checked: tasks.length, notified });
+  return Response.json({ ok: true, checked: tasks.length, notified: notifications.length });
 }

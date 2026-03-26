@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIndividualReport, computeLeverageAnalysis } from '@/lib/reports';
+import { cacheHeaders } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -69,10 +70,7 @@ export async function GET(request: NextRequest) {
       goalProgress,
       leverageAnalysis,
     }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'private, max-age=60, stale-while-revalidate=300',
-      },
+      headers: cacheHeaders(60, 300),
     });
   }
 
