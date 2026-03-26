@@ -78,16 +78,16 @@ export async function deleteGoogleEvent(userId: string, eventId: string) {
  * Returns null if the user hasn't connected Google Calendar.
  */
 export async function getCalendarClient(userId: string) {
-  // Read the encrypted refresh token from User model (not the plaintext Account copy)
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { googleRefreshToken: true },
-  });
-
-  const account = await prisma.account.findFirst({
-    where: { userId, provider: 'google' },
-    select: { id: true, access_token: true, expires_at: true },
-  });
+  const [user, account] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { googleRefreshToken: true },
+    }),
+    prisma.account.findFirst({
+      where: { userId, provider: 'google' },
+      select: { id: true, access_token: true, expires_at: true },
+    }),
+  ]);
 
   if (!user?.googleRefreshToken || !account) return null;
 
@@ -154,6 +154,48 @@ export async function listGoogleEvents(
     return response.data.items ?? [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Safely sync a task to Google Calendar: create, update, or delete event.
+ * Swallows errors so callers don't need try/catch.
+ */
+export async function syncTaskCalendarEvent(
+  userId: string,
+  task: { calendarEventId?: string | null; title: string; description?: string | null; timeBlockStart?: Date | string | null; timeBlockEnd?: Date | string | null },
+  action: 'create' | 'update' | 'delete'
+): Promise<string | null> {
+  try {
+    if (action === 'delete' && task.calendarEventId) {
+      await deleteGoogleEvent(userId, task.calendarEventId);
+      return null;
+    }
+
+    if (action === 'update' && task.calendarEventId) {
+      await updateGoogleEvent(userId, task.calendarEventId, {
+        summary: task.title,
+        description: task.description ?? undefined,
+        start: task.timeBlockStart ? new Date(task.timeBlockStart).toISOString() : undefined,
+        end: task.timeBlockEnd ? new Date(task.timeBlockEnd).toISOString() : undefined,
+      });
+      return task.calendarEventId;
+    }
+
+    if (action === 'create' && task.timeBlockStart && task.timeBlockEnd) {
+      const gcalEvent = await createGoogleEvent(userId, {
+        summary: task.title,
+        description: task.description ?? undefined,
+        start: new Date(task.timeBlockStart).toISOString(),
+        end: new Date(task.timeBlockEnd).toISOString(),
+      });
+      return gcalEvent?.id ?? null;
+    }
+
+    return task.calendarEventId ?? null;
+  } catch (err) {
+    console.warn('[calendar] Google Calendar sync failed:', err);
+    return task.calendarEventId ?? null;
   }
 }
 

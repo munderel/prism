@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { pickDefined } from '@/lib/api-helpers';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
@@ -57,22 +58,15 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority, dueDate, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isPinned, isAutoScheduled, isWinTheDay } = body;
+  const { status, dueDate, timeBlockStart, timeBlockEnd, isWinTheDay } = body;
 
-  const data: any = {};
-  if (title !== undefined) data.title = title;
-  if (description !== undefined) data.description = description;
-  if (priority !== undefined) data.priority = priority;
+  const data: any = pickDefined(body, [
+    'title', 'description', 'priority', 'deliverable', 'estimatedMinutes',
+    'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay',
+  ]);
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
   if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
   if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
-  if (deliverable !== undefined) data.deliverable = deliverable;
-  if (estimatedMinutes !== undefined) data.estimatedMinutes = estimatedMinutes;
-  if (preferredTimeStart !== undefined) data.preferredTimeStart = preferredTimeStart;
-  if (preferredTimeEnd !== undefined) data.preferredTimeEnd = preferredTimeEnd;
-  if (isPinned !== undefined) data.isPinned = isPinned;
-  if (isAutoScheduled !== undefined) data.isAutoScheduled = isAutoScheduled;
-  if (isWinTheDay !== undefined) data.isWinTheDay = isWinTheDay;
 
   if (isWinTheDay === true && task.dueDate) {
     await unflagOtherWinTheDay(task.ownerId, task.dueDate, id);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, ChevronRight, Moon, PartyPopper, AlertCircle, Heart, Lightbulb, Calendar, X } from 'lucide-react';
 
@@ -15,6 +15,70 @@ const STEPS = [
   { num: 8, title: "Tomorrow's Calendar", description: 'Review your calendar for tomorrow.' },
   { num: 9, title: 'Power Down Complete', description: 'Clear your mind. You\'re done for the day.' },
 ];
+
+interface ListCaptureStepProps {
+  items: string[];
+  setItems: (items: string[]) => void;
+  icon: ReactNode;
+  placeholder: string;
+  emptyText?: string;
+  prompt: string;
+  color: string;
+  children?: ReactNode;
+}
+
+function ListCaptureStep({ items, setItems, icon, placeholder, emptyText, prompt, children }: ListCaptureStepProps) {
+  const [inputValue, setInputValue] = useState('');
+
+  const addItem = () => {
+    if (inputValue.trim()) {
+      setItems([...items, inputValue.trim()]);
+      setInputValue('');
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 mb-2">
+        {icon}
+        <p className="text-sm text-gray-400">{prompt}</p>
+      </div>
+      {children}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') addItem();
+          }}
+          placeholder={placeholder}
+          className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+        />
+        <button
+          onClick={addItem}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
+        >
+          Add
+        </button>
+      </div>
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center justify-between rounded-lg bg-gray-800/50 px-3 py-2">
+          <span className="text-sm text-white">{item}</span>
+          <button
+            onClick={() => setItems(items.filter((_, j) => j !== i))}
+            className="text-gray-500 hover:text-red-400"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+      {emptyText && items.length === 0 && (
+        <p className="text-xs text-gray-600">{emptyText}</p>
+      )}
+    </div>
+  );
+}
 
 interface PowerDownRitualProps {
   onComplete: () => void;
@@ -31,11 +95,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [completed, setCompleted] = useState(false);
 
   const [distractions, setDistractions] = useState<string[]>([]);
-  const [newDistraction, setNewDistraction] = useState('');
   const [gratitudes, setGratitudes] = useState<string[]>([]);
-  const [newGratitude, setNewGratitude] = useState('');
   const [ideas, setIdeas] = useState<string[]>([]);
-  const [newIdea, setNewIdea] = useState('');
   const [clearGoals, setClearGoals] = useState<any[]>([]);
 
   const [timerSeconds, setTimerSeconds] = useState(300);
@@ -231,61 +292,27 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
             {/* Step 2: Record Distractions */}
             {currentStep === 2 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-5 w-5 text-orange-400" />
-                  <p className="text-sm text-gray-400">What distracted you today?</p>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newDistraction}
-                    onChange={(e) => setNewDistraction(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newDistraction.trim()) {
-                        setDistractions([...distractions, newDistraction.trim()]);
-                        setNewDistraction('');
-                      }
-                    }}
-                    placeholder="e.g. Slack notifications, impromptu meeting..."
-                    className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                  />
-                  <button
-                    onClick={() => {
-                      if (newDistraction.trim()) {
-                        setDistractions([...distractions, newDistraction.trim()]);
-                        setNewDistraction('');
-                      }
-                    }}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
-                  >
-                    Add
-                  </button>
-                </div>
-                {distractions.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-lg bg-gray-800/50 px-3 py-2">
-                    <span className="text-sm text-white">{item}</span>
-                    <button
-                      onClick={() => setDistractions(distractions.filter((_, j) => j !== i))}
-                      className="text-gray-500 hover:text-red-400"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-                {distractions.length === 0 && (
-                  <p className="text-xs text-gray-600">No distractions recorded yet. Skip if it was a focused day!</p>
-                )}
-              </div>
+              <ListCaptureStep
+                items={distractions}
+                setItems={setDistractions}
+                icon={<AlertCircle className="h-5 w-5 text-orange-400" />}
+                prompt="What distracted you today?"
+                placeholder="e.g. Slack notifications, impromptu meeting..."
+                emptyText="No distractions recorded yet. Skip if it was a focused day!"
+                color="orange"
+              />
             )}
 
             {/* Step 3: Daily Gratitude */}
             {currentStep === 3 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Heart className="h-5 w-5 text-pink-400" />
-                  <p className="text-sm text-gray-400">What are you grateful for today?</p>
-                </div>
+              <ListCaptureStep
+                items={gratitudes}
+                setItems={setGratitudes}
+                icon={<Heart className="h-5 w-5 text-pink-400" />}
+                prompt="What are you grateful for today?"
+                placeholder="I'm grateful for..."
+                color="pink"
+              >
                 <div className="text-center mb-4">
                   <span className="text-3xl font-mono text-white">{timerDisplay}</span>
                   <div className="mt-2">
@@ -309,94 +336,20 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newGratitude}
-                    onChange={(e) => setNewGratitude(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newGratitude.trim()) {
-                        setGratitudes([...gratitudes, newGratitude.trim()]);
-                        setNewGratitude('');
-                      }
-                    }}
-                    placeholder="I'm grateful for..."
-                    className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                  />
-                  <button
-                    onClick={() => {
-                      if (newGratitude.trim()) {
-                        setGratitudes([...gratitudes, newGratitude.trim()]);
-                        setNewGratitude('');
-                      }
-                    }}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
-                  >
-                    Add
-                  </button>
-                </div>
-                {gratitudes.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-lg bg-gray-800/50 px-3 py-2">
-                    <span className="text-sm text-white">{item}</span>
-                    <button
-                      onClick={() => setGratitudes(gratitudes.filter((_, j) => j !== i))}
-                      className="text-gray-500 hover:text-red-400"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
+              </ListCaptureStep>
             )}
 
             {/* Step 4: Capture Ideas */}
             {currentStep === 4 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Lightbulb className="h-5 w-5 text-yellow-400" />
-                  <p className="text-sm text-gray-400">Any ideas bouncing around? Get them out of your head.</p>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newIdea}
-                    onChange={(e) => setNewIdea(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newIdea.trim()) {
-                        setIdeas([...ideas, newIdea.trim()]);
-                        setNewIdea('');
-                      }
-                    }}
-                    placeholder="Idea, thought, or shower insight..."
-                    className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                  />
-                  <button
-                    onClick={() => {
-                      if (newIdea.trim()) {
-                        setIdeas([...ideas, newIdea.trim()]);
-                        setNewIdea('');
-                      }
-                    }}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
-                  >
-                    Add
-                  </button>
-                </div>
-                {ideas.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-lg bg-gray-800/50 px-3 py-2">
-                    <span className="text-sm text-white">{item}</span>
-                    <button
-                      onClick={() => setIdeas(ideas.filter((_, j) => j !== i))}
-                      className="text-gray-500 hover:text-red-400"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-                {ideas.length === 0 && (
-                  <p className="text-xs text-gray-600">No ideas? That&apos;s fine -- skip ahead.</p>
-                )}
-              </div>
+              <ListCaptureStep
+                items={ideas}
+                setItems={setIdeas}
+                icon={<Lightbulb className="h-5 w-5 text-yellow-400" />}
+                prompt="Any ideas bouncing around? Get them out of your head."
+                placeholder="Idea, thought, or shower insight..."
+                emptyText="No ideas? That's fine -- skip ahead."
+                color="yellow"
+              />
             )}
 
             {/* Step 5: Capture Loose Ends (was step 2) */}

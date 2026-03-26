@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIceScore } from '@/lib/scoring';
+import { pickDefined } from '@/lib/api-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -57,12 +58,10 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, processId, confidenceScore, easeScore, impactScore, status } = body;
+  const { confidenceScore, easeScore, impactScore, status } = body;
 
-  const data: any = {};
-  if (title !== undefined) data.title = title;
-  if (description !== undefined) data.description = description;
-  if (processId !== undefined) data.processId = processId || null;
+  const data: any = pickDefined(body, ['title', 'description']);
+  if (body.processId !== undefined) data.processId = body.processId || null;
 
   // Handle score updates
   const newImpact = impactScore ?? idea.impactScore;

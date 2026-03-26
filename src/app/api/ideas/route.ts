@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIceScore } from '@/lib/scoring';
+import { parsePagination } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -11,8 +12,7 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status');
   const search = searchParams.get('search');
   const sort = searchParams.get('sort') ?? 'createdAt';
-  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10)));
+  const { page, limit, skip } = parsePagination(searchParams);
 
   const where: any = {};
 
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     prisma.idea.findMany({
       where,
       orderBy,
-      skip: (page - 1) * limit,
+      skip,
       take: limit,
       include: {
         author: { select: { id: true, name: true, image: true } },

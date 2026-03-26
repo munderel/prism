@@ -2,9 +2,10 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
   requireAuth,
-  requireAdmin,
   authError,
+  checkStackAccess,
 } from '@/lib/auth-guard';
+import { pickDefined } from '@/lib/api-helpers';
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
 
@@ -41,10 +42,8 @@ export async function GET(
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
-  // Ownership check: non-admins can only see own stacks and company stacks
-  if (!goal.stack.isCompany && goal.stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  if (accessDenied) return accessDenied;
 
   return Response.json(goal);
 }
@@ -66,12 +65,8 @@ export async function PATCH(
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
-  if (goal.stack.isCompany) {
-    const adminAuth = await requireAdmin();
-    if ('error' in adminAuth) return authError(adminAuth);
-  } else if (goal.stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const accessDeniedPatch = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  if (accessDeniedPatch) return accessDeniedPatch;
 
   const body = await request.json();
   const { title, description, status, dueDate, level } = body;
@@ -87,12 +82,8 @@ export async function PATCH(
     }
   }
 
-  const data: Record<string, any> = {};
-  if (title !== undefined) data.title = title;
-  if (description !== undefined) data.description = description;
-  if (status !== undefined) data.status = status;
+  const data: Record<string, any> = pickDefined(body, ['title', 'description', 'status', 'level']);
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
-  if (level !== undefined) data.level = level;
 
   // If marking as COMPLETED, set progress to 100
   if (status === 'COMPLETED') {
@@ -125,12 +116,8 @@ export async function DELETE(
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
-  if (goal.stack.isCompany) {
-    const adminAuth = await requireAdmin();
-    if ('error' in adminAuth) return authError(adminAuth);
-  } else if (goal.stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const accessDeniedDel = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  if (accessDeniedDel) return accessDeniedDel;
 
   // Soft-delete this goal and all descendants
   const now = new Date();
@@ -143,25 +130,23 @@ export async function DELETE(
   return Response.json({ ok: true });
 }
 
-const MAX_GOAL_DEPTH = 20;
+async function softDeleteDescendants(goalId: string, now: Date) {
+  // Collect all descendant IDs in a single loop instead of recursive queries
+  const idsToDelete = [goalId];
+  let frontier = [goalId];
 
-async function softDeleteDescendants(goalId: string, now: Date, depth = 0) {
-  if (depth > MAX_GOAL_DEPTH) {
-    console.warn(`softDeleteDescendants: max depth ${MAX_GOAL_DEPTH} exceeded at goal ${goalId}, stopping recursion`);
-    return;
+  while (frontier.length > 0) {
+    const children = await prisma.goal.findMany({
+      where: { parentId: { in: frontier }, deletedAt: null },
+      select: { id: true },
+    });
+    frontier = children.map((c) => c.id);
+    idsToDelete.push(...frontier);
   }
 
-  await prisma.goal.update({
-    where: { id: goalId },
+  // Batch update all descendants at once
+  await prisma.goal.updateMany({
+    where: { id: { in: idsToDelete } },
     data: { deletedAt: now },
   });
-
-  const children = await prisma.goal.findMany({
-    where: { parentId: goalId, deletedAt: null },
-    select: { id: true },
-  });
-
-  for (const child of children) {
-    await softDeleteDescendants(child.id, now, depth + 1);
-  }
 }

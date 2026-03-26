@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
+import { useClickOutside } from '@/hooks/useClickOutside';
 
 interface StatusChipProps {
   status: string;
@@ -29,17 +30,7 @@ export const StatusChip = React.memo(function StatusChip({ status, onStatusChang
   const menuRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLSpanElement>(null);
 
-  // Close menu on outside click
-  useEffect(() => {
-    if (!menuOpen) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [menuOpen]);
+  useClickOutside(menuRef, useCallback(() => setMenuOpen(false), []), menuOpen);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();

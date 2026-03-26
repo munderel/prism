@@ -14,9 +14,8 @@ import { FocusView } from '@/components/dashboard/FocusView';
 const FOCUS_MODE_KEY = 'prism-focus-mode';
 
 export default function DashboardPage() {
-  const today = new Date().toISOString().split('T')[0];
-  const [showEditor, setShowEditor] = useState(false);
-  const [editingTask, setEditingTask] = useState<any>(null);
+  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const [editingTask, setEditingTask] = useState<any | 'new' | null>(null);
   const [focusMode, setFocusMode] = useState(false);
 
   useEffect(() => {
@@ -58,7 +57,6 @@ export default function DashboardPage() {
 
   const refresh = useCallback(() => {
     mutate();
-    setShowEditor(false);
     setEditingTask(null);
   }, [mutate]);
 
@@ -93,7 +91,6 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {/* Focus mode toggle */}
       <div className="mb-4 flex justify-end">
         <button
           onClick={toggleFocusMode}
@@ -110,7 +107,6 @@ export default function DashboardPage() {
 
       {focusMode ? (
         <>
-          {/* Focus mode: just WTD + sorted task list */}
           <WinTheDayCard task={winTheDayTask} />
           <WinTheDayCelebration show={showWinCelebration} onComplete={() => setShowWinCelebration(false)} />
           <div className="mt-4">
@@ -119,25 +115,22 @@ export default function DashboardPage() {
         </>
       ) : (
         <>
-          {/* Greeting + streak + quick add */}
-          <DashboardGreeting onQuickAdd={() => setShowEditor(true)} />
+          <DashboardGreeting onQuickAdd={() => setEditingTask('new')} />
 
-          {/* Stat cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {statCards.map((card) => (
               <PrismStatCard key={card.label} {...card} />
             ))}
           </div>
 
-          {/* Win the Day */}
           <WinTheDayCard task={winTheDayTask} />
           <WinTheDayCelebration show={showWinCelebration} onComplete={() => setShowWinCelebration(false)} />
 
-          {/* Today's tasks */}
           <div className="mb-4">
             <h2 className="font-display text-lg font-semibold text-[var(--text-primary)] mb-4">Today&apos;s Tasks</h2>
             <DailyTaskList
               date={today}
+              prefetchedTasks={list}
               onEdit={handleEdit}
               onDelete={handleDelete}
               onStatusChange={handleStatusChange}
@@ -146,16 +139,9 @@ export default function DashboardPage() {
         </>
       )}
 
-      {showEditor && (
-        <TaskEditor
-          onSave={refresh}
-          onClose={() => setShowEditor(false)}
-        />
-      )}
-
       {editingTask && (
         <TaskEditor
-          task={editingTask}
+          task={editingTask === 'new' ? undefined : editingTask}
           onSave={refresh}
           onClose={() => setEditingTask(null)}
         />

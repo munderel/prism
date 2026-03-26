@@ -4,6 +4,7 @@ import React from 'react';
 import { m } from 'framer-motion';
 import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
+import { isTaskOverdue } from '@/lib/task-utils';
 import { StatusChip } from './StatusChip';
 
 interface TaskCardProps {
@@ -18,7 +19,7 @@ interface TaskCardProps {
 
 export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick, onStatusChange, onWinTheDayToggle }: TaskCardProps) {
   const isDone = task.status === 'DONE';
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isDone;
+  const isOverdue = isTaskOverdue(task);
 
   return (
     <m.div

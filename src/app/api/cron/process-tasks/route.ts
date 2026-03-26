@@ -22,64 +22,63 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  const results = [];
+  const results = await Promise.all(
+    dueProcesses.map(async (process) => {
+      // Determine responsible user
+      let responsibleUserId: string | null = null;
 
-  for (const process of dueProcesses) {
-    // Determine responsible user
-    let responsibleUserId: string | null = null;
+      if (
+        process.delegateId &&
+        process.delegateUntil &&
+        process.delegateUntil >= today
+      ) {
+        responsibleUserId = process.delegateId;
+      } else if (process.assigneeId) {
+        responsibleUserId = process.assigneeId;
+      }
 
-    if (
-      process.delegateId &&
-      process.delegateUntil &&
-      process.delegateUntil >= today
-    ) {
-      responsibleUserId = process.delegateId;
-    } else if (process.assigneeId) {
-      responsibleUserId = process.assigneeId;
-    }
+      if (!responsibleUserId) {
+        return { processId: process.id, skipped: true, reason: 'no responsible user' };
+      }
 
-    if (!responsibleUserId) {
-      results.push({ processId: process.id, skipped: true, reason: 'no responsible user' });
-      continue;
-    }
+      // Create task and execution in a transaction
+      const { task, execution } = await prisma.$transaction(async (tx) => {
+        const task = await tx.task.create({
+          data: {
+            ownerId: responsibleUserId!,
+            taskType: 'MAINTENANCE',
+            title: process.title,
+            description: process.description,
+            dueDate: computeNextDueDate(process.cadence, now),
+            status: 'TODO',
+            priority: 'MEDIUM',
+            estimatedMinutes: process.defaultDurationMinutes,
+          },
+        });
 
-    // Create task and execution in a transaction
-    const { task, execution } = await prisma.$transaction(async (tx) => {
-      const task = await tx.task.create({
-        data: {
-          ownerId: responsibleUserId!,
-          taskType: 'MAINTENANCE',
-          title: process.title,
-          description: process.description,
-          dueDate: computeNextDueDate(process.cadence, now),
-          status: 'TODO',
-          priority: 'MEDIUM',
-          estimatedMinutes: process.defaultDurationMinutes,
-        },
+        const execution = await tx.processExecution.create({
+          data: {
+            processId: process.id,
+            executedById: responsibleUserId,
+            scheduledDate: now,
+            taskId: task.id,
+          },
+        });
+
+        await tx.process.update({
+          where: { id: process.id },
+          data: {
+            lastRunAt: now,
+            nextDueAt: computeNextDueDate(process.cadence, now),
+          },
+        });
+
+        return { task, execution };
       });
 
-      const execution = await tx.processExecution.create({
-        data: {
-          processId: process.id,
-          executedById: responsibleUserId,
-          scheduledDate: now,
-          taskId: task.id,
-        },
-      });
-
-      await tx.process.update({
-        where: { id: process.id },
-        data: {
-          lastRunAt: now,
-          nextDueAt: computeNextDueDate(process.cadence, now),
-        },
-      });
-
-      return { task, execution };
-    });
-
-    results.push({ processId: process.id, taskId: task.id, executionId: execution.id });
-  }
+      return { processId: process.id, taskId: task.id, executionId: execution.id };
+    })
+  );
 
   return Response.json({ processed: results.length, results });
 }

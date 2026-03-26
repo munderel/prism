@@ -2,9 +2,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { openrouter } from '@/lib/openrouter';
 import { quizGenerationPrompt } from '@/lib/ai-prompts';
 import { prisma } from '@/lib/prisma';
-import { handleAIError } from '@/lib/ai-error-handler';
-
-const MAX_INPUT_LENGTH = 10000;
+import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
 
 export async function POST(request: Request) {
   const auth = await requireAuth();
@@ -39,14 +37,14 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!materialText || typeof materialText !== 'string' || materialText.length > MAX_INPUT_LENGTH) {
+  if (!materialText || typeof materialText !== 'string' || materialText.length > MAX_AI_INPUT_LENGTH) {
     return Response.json(
       { error: 'material (or trainingItemId with title) is required and must be under 10000 characters' },
       { status: 400 }
     );
   }
 
-  if (!chapterRange || typeof chapterRange !== 'string' || chapterRange.length > MAX_INPUT_LENGTH) {
+  if (!chapterRange || typeof chapterRange !== 'string' || chapterRange.length > MAX_AI_INPUT_LENGTH) {
     return Response.json(
       { error: 'chapterRange is required and must be under 10000 characters' },
       { status: 400 }

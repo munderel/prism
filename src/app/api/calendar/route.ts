@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { listGoogleEvents, createGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
+import { listGoogleEvents, createGoogleEvent } from '@/lib/calendar';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -21,17 +21,31 @@ export async function GET(request: NextRequest) {
   // Availability mode: return busy slots from all sources
   if (availability === 'true') {
     const busySlots: { start: string; end: string; title: string }[] = [];
+    const rangeStart = new Date(start);
+    const rangeEnd = new Date(end);
 
-    // 1. Task time blocks
-    const tasks = await prisma.task.findMany({
-      where: {
-        ownerId: auth.userId,
-        timeBlockStart: { gte: new Date(start), lte: new Date(end) },
-        timeBlockEnd: { not: null },
-        status: { notIn: ['DONE', 'DROPPED'] },
-      },
-      select: { title: true, timeBlockStart: true, timeBlockEnd: true },
-    });
+    const [tasks, meetings, googleEvents] = await Promise.all([
+      prisma.task.findMany({
+        where: {
+          ownerId: auth.userId,
+          timeBlockStart: { gte: rangeStart, lte: rangeEnd },
+          timeBlockEnd: { not: null },
+          status: { notIn: ['DONE', 'DROPPED'] },
+        },
+        select: { title: true, timeBlockStart: true, timeBlockEnd: true },
+      }),
+      prisma.meeting.findMany({
+        where: {
+          OR: [
+            { cadence: { not: 'ONE_TIME' } },
+            { occurDate: { gte: rangeStart, lte: rangeEnd } },
+          ],
+        },
+        include: { createdBy: { select: { name: true } } },
+      }),
+      listGoogleEvents(auth.userId, start, end).catch(() => []),
+    ]);
+
     for (const t of tasks) {
       if (t.timeBlockStart && t.timeBlockEnd) {
         busySlots.push({
@@ -42,12 +56,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. Meetings
-    const meetings = await prisma.meeting.findMany({
-      include: { createdBy: { select: { name: true } } },
-    });
-    const rangeStart = new Date(start);
-    const rangeEnd = new Date(end);
     for (const meeting of meetings) {
       const attendees = (meeting.attendeeIds as string[]) || [];
       if (!attendees.includes(auth.userId) && meeting.createdById !== auth.userId) {
@@ -63,28 +71,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. Google Calendar events (if linked)
-    try {
-      const hasGoogle = await hasGoogleAccount(auth.userId);
-      if (hasGoogle) {
-        const googleEvents = await listGoogleEvents(auth.userId, start, end);
-        for (const ge of googleEvents) {
-          const geStart = ge.start?.dateTime ?? ge.start?.date;
-          const geEnd = ge.end?.dateTime ?? ge.end?.date;
-          if (geStart && geEnd) {
-            busySlots.push({
-              start: geStart,
-              end: geEnd,
-              title: ge.summary ?? 'Google Calendar Event',
-            });
-          }
-        }
+    for (const ge of googleEvents) {
+      const geStart = ge.start?.dateTime ?? ge.start?.date;
+      const geEnd = ge.end?.dateTime ?? ge.end?.date;
+      if (geStart && geEnd) {
+        busySlots.push({
+          start: geStart,
+          end: geEnd,
+          title: ge.summary ?? 'Google Calendar Event',
+        });
       }
-    } catch (err) {
-      console.warn('[calendar] Google availability check failed:', err);
     }
 
-    // Sort by start time
     busySlots.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
     return Response.json(busySlots);
@@ -127,6 +125,12 @@ export async function GET(request: NextRequest) {
       : Promise.resolve([]),
     (fetchAll || source === 'meetings')
       ? prisma.meeting.findMany({
+          where: {
+            OR: [
+              { cadence: { not: 'ONE_TIME' } },
+              { occurDate: { gte: new Date(start), lte: new Date(end) } },
+            ],
+          },
           include: { createdBy: { select: { name: true } } },
         })
       : Promise.resolve([]),

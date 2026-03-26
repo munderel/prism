@@ -20,7 +20,6 @@ export default function GoalsPage() {
   const { data: stacksData, isLoading, mutate: mutateStacks } = useSWR('/api/stacks');
   const stacks = useMemo(() => (Array.isArray(stacksData) ? stacksData : []), [stacksData]);
   const [selectedStackId, setSelectedStackId] = useState<string | null>(null);
-  const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newStackName, setNewStackName] = useState('');
   const [showInProgress, setShowInProgress] = useState(false);
@@ -83,7 +82,7 @@ export default function GoalsPage() {
             stackId={selectedStack.id}
             stackName={selectedStack.name}
             onImportComplete={() => {
-              setTreeRefreshKey((k) => k + 1);
+              mutateStacks();
             }}
           />
         )}
@@ -183,7 +182,7 @@ export default function GoalsPage() {
       {/* Tree */}
       {selectedStack ? (
         <m.div
-          key={`${selectedStackId}-${treeRefreshKey}`}
+          key={selectedStackId}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.2 }}

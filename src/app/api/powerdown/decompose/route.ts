@@ -1,8 +1,7 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { openrouter, AIError } from '@/lib/openrouter';
+import { openrouter } from '@/lib/openrouter';
 import { clearGoalsPrompt } from '@/lib/ai-prompts';
-
-const MAX_INPUT_LENGTH = 10000;
+import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
 
 export async function POST(request: Request) {
   const auth = await requireAuth();
@@ -17,14 +16,14 @@ export async function POST(request: Request) {
 
   const { title, description } = body;
 
-  if (!title || typeof title !== 'string' || title.length > MAX_INPUT_LENGTH) {
+  if (!title || typeof title !== 'string' || title.length > MAX_AI_INPUT_LENGTH) {
     return Response.json(
       { error: 'title is required and must be under 10000 characters' },
       { status: 400 }
     );
   }
 
-  if (description && (typeof description !== 'string' || description.length > MAX_INPUT_LENGTH)) {
+  if (description && (typeof description !== 'string' || description.length > MAX_AI_INPUT_LENGTH)) {
     return Response.json(
       { error: 'description must be under 10000 characters' },
       { status: 400 }
@@ -36,14 +35,6 @@ export async function POST(request: Request) {
     const result = await openrouter.chatJSON(messages);
     return Response.json(result);
   } catch (err) {
-    if (err instanceof AIError) {
-      const status = err.code === 'RATE_LIMITED' ? 429 : err.code === 'API_KEY_INVALID' ? 503 : 502;
-      return Response.json(
-        { error: 'AI service temporarily unavailable. Please try again later.' },
-        { status }
-      );
-    }
-    console.error('[powerdown/decompose] Unexpected error:', err);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
+    return handleAIError(err, 'powerdown/decompose');
   }
 }

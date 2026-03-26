@@ -1,10 +1,8 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { openrouter } from '@/lib/openrouter';
 import { courseBreakdownPrompt } from '@/lib/ai-prompts';
-import { prisma } from '@/lib/prisma';
-import { handleAIError } from '@/lib/ai-error-handler';
-
-const MAX_INPUT_LENGTH = 10000;
+import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
+import { createTrainingItemWithTasks, TaskEntry } from '@/lib/training-helpers';
 
 interface Lesson {
   lessonNumber: number;
@@ -40,14 +38,14 @@ export async function POST(request: Request) {
 
   const { title, syllabus, targetCompletionDate, goalId } = body;
 
-  if (!title || typeof title !== 'string' || title.length > MAX_INPUT_LENGTH) {
+  if (!title || typeof title !== 'string' || title.length > MAX_AI_INPUT_LENGTH) {
     return Response.json(
       { error: 'title is required and must be under 10000 characters' },
       { status: 400 }
     );
   }
 
-  if (syllabus && (typeof syllabus !== 'string' || syllabus.length > MAX_INPUT_LENGTH)) {
+  if (syllabus && (typeof syllabus !== 'string' || syllabus.length > MAX_AI_INPUT_LENGTH)) {
     return Response.json(
       { error: 'syllabus must be under 10000 characters' },
       { status: 400 }
@@ -58,16 +56,10 @@ export async function POST(request: Request) {
     const messages = courseBreakdownPrompt(title, syllabus);
     const breakdown = await openrouter.chatJSON<CourseBreakdown>(messages);
 
-    const now = new Date();
     const target = targetCompletionDate ? new Date(targetCompletionDate) : null;
 
     // Build flat task list from modules/lessons
-    const taskEntries: {
-      label: string;
-      moduleIndex: number;
-      isQuizDay: boolean;
-      estimatedMinutes: number;
-    }[] = [];
+    const taskEntries: TaskEntry[] = [];
 
     const modules = breakdown.modules ?? [];
 
@@ -76,6 +68,7 @@ export async function POST(request: Request) {
       for (const lesson of lessons) {
         taskEntries.push({
           label: `Module ${mod.moduleNumber}: ${lesson.title}`,
+          chapterRange: null,
           moduleIndex: mod.moduleNumber,
           isQuizDay: false,
           estimatedMinutes: lesson.estimatedMinutes || 45,
@@ -86,6 +79,7 @@ export async function POST(request: Request) {
       if (mod.quizAfter) {
         taskEntries.push({
           label: `Quiz: Module ${mod.moduleNumber} - ${mod.title}`,
+          chapterRange: null,
           moduleIndex: mod.moduleNumber,
           isQuizDay: true,
           estimatedMinutes: 30,
@@ -93,69 +87,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Calculate evenly spread due dates
-    const totalEntries = taskEntries.length;
-    const getDueDate = (index: number): Date | null => {
-      if (!target || totalEntries <= 1) return target;
-      const totalMs = target.getTime() - now.getTime();
-      const stepMs = totalMs / totalEntries;
-      return new Date(now.getTime() + stepMs * (index + 1));
-    };
-
-    const result = await prisma.$transaction(async (tx) => {
-      const trainingItem = await tx.trainingItem.create({
-        data: {
-          ownerId: auth.userId,
-          type: 'COURSE',
-          title: breakdown.title || title,
-          description: syllabus ?? null,
-          aiMetadata: breakdown as any,
-          targetCompletionDate: target,
-          goalId: goalId ?? null,
-        },
-      });
-
-      for (let i = 0; i < taskEntries.length; i++) {
-        const entry = taskEntries[i];
-        const dueDate = getDueDate(i);
-
-        const task = await tx.task.create({
-          data: {
-            ownerId: auth.userId,
-            taskType: 'IMPROVE',
-            title: entry.label,
-            description: `Part of training: ${title}`,
-            priority: 'MEDIUM',
-            dueDate,
-            goalId: goalId ?? null,
-            estimatedMinutes: entry.estimatedMinutes,
-          },
-        });
-
-        await tx.trainingTask.create({
-          data: {
-            trainingItemId: trainingItem.id,
-            taskId: task.id,
-            chapterRange: null,
-            moduleIndex: entry.moduleIndex,
-            isQuizDay: entry.isQuizDay,
-            sortOrder: i,
-          },
-        });
-      }
-
-      return tx.trainingItem.findUnique({
-        where: { id: trainingItem.id },
-        include: {
-          trainingTasks: {
-            include: {
-              task: { select: { id: true, title: true, status: true, dueDate: true } },
-            },
-            orderBy: { sortOrder: 'asc' },
-          },
-          goal: { select: { id: true, title: true, level: true } },
-        },
-      });
+    const result = await createTrainingItemWithTasks({
+      userId: auth.userId,
+      type: 'COURSE',
+      title,
+      resolvedTitle: breakdown.title || title,
+      description: syllabus ?? null,
+      aiMetadata: breakdown,
+      targetCompletionDate: target,
+      goalId: goalId ?? null,
+      taskEntries,
     });
 
     return Response.json(result, { status: 201 });
