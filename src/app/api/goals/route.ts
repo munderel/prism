@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { stackId, parentId, level, title, description, dueDate } = body;
+  const { stackId, parentId, level, title, description, dueDate, startDate, endDate, autoGenerate } = body;
 
   if (!stackId || !level || !title) {
     return Response.json(
@@ -110,6 +110,166 @@ export async function POST(request: NextRequest) {
     where: { stackId, parentId: parentId ?? null, deletedAt: null },
   });
 
+  // Auto-generate yearly + monthly children for HHG
+  if (autoGenerate && level === 'HIGH_HARD' && startDate && endDate) {
+    const hhgStart = new Date(startDate);
+    const hhgEnd = new Date(endDate);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const hhg = await tx.goal.create({
+        data: {
+          stackId,
+          parentId: parentId ?? null,
+          level,
+          title,
+          description: description ?? null,
+          dueDate: dueDate ? new Date(dueDate) : null,
+          startDate: hhgStart,
+          endDate: hhgEnd,
+          sortOrder: siblingCount,
+        },
+      });
+
+      const startYear = hhgStart.getFullYear();
+      const endYear = hhgEnd.getFullYear();
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      ];
+
+      // Build year goals first, then batch-create monthly goals per year
+      const yearGoals: { id: string; year: number }[] = [];
+      let yearOrder = 0;
+      for (let year = startYear; year <= endYear; year++) {
+        const yearGoal = await tx.goal.create({
+          data: {
+            stackId,
+            parentId: hhg.id,
+            level: 'STRATEGIC',
+            title: `Yearly Goal ${yearOrder + 1}`,
+            startDate: new Date(year, 0, 1),
+            endDate: new Date(year, 11, 31, 23, 59, 59, 999),
+            sortOrder: yearOrder++,
+          },
+        });
+        yearGoals.push({ id: yearGoal.id, year });
+      }
+
+      // Determine week start day from stack settings (0 = Sunday, 1 = Monday)
+      const weekStartDay = stack.weekStartDay ?? 0;
+
+      // Batch-create ALL monthly goals across all years in one pass
+      const allMonthData: {
+        stackId: string;
+        parentId: string;
+        level: 'MONTHLY';
+        title: string;
+        startDate: Date;
+        endDate: Date;
+        sortOrder: number;
+      }[] = [];
+
+      const yearGoalIds = yearGoals.map((yg) => yg.id);
+
+      for (const { id: yearGoalId, year } of yearGoals) {
+        const firstMonth = year === startYear ? hhgStart.getMonth() : 0;
+        const lastMonth = year === endYear ? hhgEnd.getMonth() : 11;
+
+        for (let month = firstMonth; month <= lastMonth; month++) {
+          allMonthData.push({
+            stackId,
+            parentId: yearGoalId,
+            level: 'MONTHLY' as const,
+            title: `${monthNames[month]} ${year}`,
+            startDate: new Date(year, month, 1),
+            endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+            sortOrder: month - firstMonth,
+          });
+        }
+      }
+
+      if (allMonthData.length > 0) {
+        await tx.goal.createMany({ data: allMonthData });
+      }
+
+      // Single query to get ALL monthly goals for this HHG
+      const allMonthlyGoals = await tx.goal.findMany({
+        where: {
+          stackId,
+          parentId: { in: yearGoalIds },
+          level: 'MONTHLY',
+          deletedAt: null,
+        },
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true, startDate: true, endDate: true },
+      });
+
+      // Generate weekly goals for each month
+      const allWeekData: {
+        stackId: string;
+        parentId: string;
+        level: 'WEEKLY';
+        title: string;
+        startDate: Date;
+        endDate: Date;
+        sortOrder: number;
+      }[] = [];
+
+      for (const monthGoal of allMonthlyGoals) {
+        if (!monthGoal.startDate || !monthGoal.endDate) continue;
+
+        const monthStart = new Date(monthGoal.startDate);
+        const monthEnd = new Date(monthGoal.endDate);
+        let weekNum = 1;
+
+        // Find the first week start day on or before the 1st of the month
+        let cursor = new Date(monthStart);
+        const cursorDay = cursor.getDay(); // 0=Sun..6=Sat
+        // Rewind to the previous week start day (or stay if already on it)
+        const diff = (cursorDay - weekStartDay + 7) % 7;
+        if (diff > 0) {
+          cursor.setDate(cursor.getDate() - diff);
+        }
+        // Clamp to month start (first week begins no earlier than the 1st)
+        if (cursor < monthStart) {
+          cursor = new Date(monthStart);
+        }
+
+        while (cursor <= monthEnd) {
+          const weekStart = new Date(cursor);
+
+          // Week end = 6 days after the week start day, or month end
+          const naturalEnd = new Date(cursor);
+          naturalEnd.setDate(naturalEnd.getDate() + 6);
+          const weekEnd = naturalEnd > monthEnd ? new Date(monthEnd) : naturalEnd;
+          weekEnd.setHours(23, 59, 59, 999);
+
+          allWeekData.push({
+            stackId,
+            parentId: monthGoal.id,
+            level: 'WEEKLY' as const,
+            title: `Week ${weekNum}`,
+            startDate: weekStart,
+            endDate: weekEnd,
+            sortOrder: weekNum - 1,
+          });
+
+          weekNum++;
+          // Move cursor to next week start
+          cursor.setDate(cursor.getDate() + 7);
+        }
+      }
+
+      if (allWeekData.length > 0) {
+        await tx.goal.createMany({ data: allWeekData });
+      }
+
+      return hhg;
+    });
+
+    return Response.json(result, { status: 201 });
+  }
+
   const goal = await prisma.goal.create({
     data: {
       stackId,
@@ -118,6 +278,8 @@ export async function POST(request: NextRequest) {
       title,
       description: description ?? null,
       dueDate: dueDate ? new Date(dueDate) : null,
+      startDate: startDate ? new Date(startDate) : null,
+      endDate: endDate ? new Date(endDate) : null,
       sortOrder: siblingCount,
     },
   });

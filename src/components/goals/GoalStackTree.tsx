@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
+import { fetcher } from '@/lib/fetcher';
 import {
   DndContext,
   closestCenter,
@@ -298,13 +299,15 @@ export function GoalStackTree({
 
   const handleEditorSave = useCallback(() => {
     setEditorState({ open: false });
-    mutateGoals();
-  }, [mutateGoals]);
+    // Pass a fresh fetch to mutate so it bypasses SWR's dedupingInterval
+    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+  }, [mutateGoals, stackId]);
 
   const handleTaskEditorSave = useCallback(() => {
     setTaskEditorState({ open: false });
-    mutateGoals();
-  }, [mutateGoals]);
+    // Pass a fresh fetch to mutate so it bypasses SWR's dedupingInterval
+    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+  }, [mutateGoals, stackId]);
 
   if (isLoading) {
     return (

@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
-import { ListTodo, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ListTodo, Plus, ChevronLeft, ChevronRight, CalendarRange } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
+import { AgendaView } from '@/components/tasks/AgendaView';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { TaskComments } from '@/components/tasks/TaskComments';
 
-type ViewMode = 'day' | 'week' | 'month';
+type ViewMode = 'day' | 'week' | 'month' | 'agenda';
 
 function getMonday(d: Date): Date {
   const date = new Date(d);
@@ -167,10 +168,11 @@ export default function TasksPage() {
     return formatMonthLabel(currentDate);
   };
 
-  const VIEW_TABS: { key: ViewMode; label: string }[] = [
+  const VIEW_TABS: { key: ViewMode; label: string; icon?: React.ReactNode }[] = [
     { key: 'day', label: 'Day' },
     { key: 'week', label: 'Week' },
     { key: 'month', label: 'Month' },
+    { key: 'agenda', label: 'Agenda', icon: <CalendarRange className="h-3.5 w-3.5" /> },
   ];
 
   return (
@@ -191,23 +193,24 @@ export default function TasksPage() {
 
       {/* View mode tabs */}
       <div className="mb-4 flex items-center gap-2">
-        {VIEW_TABS.map(({ key, label }) => (
+        {VIEW_TABS.map(({ key, label, icon }) => (
           <button
             key={key}
             onClick={() => setViewMode(key)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+            className={`rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
               viewMode === key
                 ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
                 : 'text-[var(--text-secondary)] border border-[var(--surface-raised)] hover:border-[var(--border-color)] hover:text-[var(--text-primary)]'
             }`}
           >
+            {icon}
             {label}
           </button>
         ))}
       </div>
 
-      {/* Date navigation bar */}
-      <div className="mb-6 flex items-center gap-3">
+      {/* Date navigation bar (hidden in agenda view — agenda is always anchored to today) */}
+      {viewMode !== 'agenda' && <div className="mb-6 flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
           className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--glass-border)] transition-colors"
@@ -243,12 +246,19 @@ export default function TasksPage() {
         >
           Today
         </button>
-      </div>
+      </div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Task list area */}
         <div className="lg:col-span-2">
-          {viewMode === 'day' ? (
+          {viewMode === 'agenda' ? (
+            <AgendaView
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onClick={handleTaskClick}
+              onStatusChange={() => mutateRange()}
+            />
+          ) : viewMode === 'day' ? (
             /* Day view: single DailyTaskList */
             <DailyTaskList
               date={date}

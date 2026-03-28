@@ -42,12 +42,91 @@ export async function GET(request: NextRequest) {
   return Response.json(reviews);
 }
 
+/**
+ * Compute the next scheduled date from a monthly recurrence rule.
+ * Rules: 'last-friday', 'last-monday', '1st-monday', '1st-friday', '15th'
+ */
+function computeMonthlyDate(rule: string, after: Date): Date {
+  const year = after.getFullYear();
+  let month = after.getMonth();
+
+  const tryMonth = (m: number, y: number): Date | null => {
+    if (rule === '15th') {
+      const d = new Date(y, m, 15);
+      return d > after ? d : null;
+    }
+    const dayMap: Record<string, number> = { monday: 1, friday: 5 };
+    const parts = rule.split('-');
+    if (parts[0] === 'last') {
+      const targetDay = dayMap[parts[1]] ?? 5;
+      // Last occurrence: start from last day of month and go backward
+      const lastDay = new Date(y, m + 1, 0);
+      const diff = (lastDay.getDay() - targetDay + 7) % 7;
+      const d = new Date(y, m, lastDay.getDate() - diff);
+      return d > after ? d : null;
+    }
+    if (parts[0] === '1st') {
+      const targetDay = dayMap[parts[1]] ?? 1;
+      const firstDay = new Date(y, m, 1);
+      const diff = (targetDay - firstDay.getDay() + 7) % 7;
+      const d = new Date(y, m, 1 + diff);
+      return d > after ? d : null;
+    }
+    return null;
+  };
+
+  // Try current month, then next month, etc
+  for (let i = 0; i < 13; i++) {
+    const m = (month + i) % 12;
+    const y = year + Math.floor((month + i) / 12);
+    const result = tryMonth(m, y);
+    if (result) return result;
+  }
+
+  // Fallback
+  return new Date(year, month + 1, 1);
+}
+
+/**
+ * Compute the next scheduled date from a yearly recurrence rule.
+ * Rules: 'last-sat-dec', 'dec-30', 'dec-31', 'custom'
+ */
+function computeYearlyDate(rule: string, after: Date, customDate?: string): Date {
+  const year = after.getFullYear();
+
+  if (rule === 'dec-30') {
+    const d = new Date(year, 11, 30);
+    return d > after ? d : new Date(year + 1, 11, 30);
+  }
+  if (rule === 'dec-31') {
+    const d = new Date(year, 11, 31);
+    return d > after ? d : new Date(year + 1, 11, 31);
+  }
+  if (rule === 'last-sat-dec') {
+    // Last Saturday of December
+    const dec31 = new Date(year, 11, 31);
+    const diff = (dec31.getDay() - 6 + 7) % 7;
+    const d = new Date(year, 11, 31 - diff);
+    return d > after ? d : (() => {
+      const dec31Next = new Date(year + 1, 11, 31);
+      const diff2 = (dec31Next.getDay() - 6 + 7) % 7;
+      return new Date(year + 1, 11, 31 - diff2);
+    })();
+  }
+  if (rule === 'custom' && customDate) {
+    const d = new Date(customDate);
+    return d > after ? d : new Date(d.getFullYear() + 1, d.getMonth(), d.getDate());
+  }
+
+  return new Date(year + 1, 0, 1);
+}
+
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { reviewType, startDate, recurrenceDayOfWeek, isTeamReview } = body;
+  const { reviewType, startDate, recurrenceDayOfWeek, isTeamReview, scheduleConfig } = body;
 
   if (!reviewType) {
     return Response.json({ error: 'reviewType is required' }, { status: 400 });
@@ -74,9 +153,28 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'An incomplete review of this type already exists' }, { status: 409 });
   }
 
-  // Calculate scheduled date: use startDate + recurrenceDayOfWeek if provided
+  const now = new Date();
+
+  // Calculate scheduled date, using scheduleConfig recurrence rules when provided
   let scheduledDate: Date;
-  if (startDate && recurrenceDayOfWeek !== undefined && recurrenceDayOfWeek !== null) {
+  if (scheduleConfig) {
+    const configType = scheduleConfig.type as string;
+    if (configType === 'weekly' && scheduleConfig.dayOfWeek !== null && scheduleConfig.dayOfWeek !== undefined) {
+      const dayOfWeek = scheduleConfig.dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+      if (now.getDay() === dayOfWeek) {
+        // If today is the target day, schedule for next week
+        scheduledDate = nextDay(now, dayOfWeek);
+      } else {
+        scheduledDate = nextDay(now, dayOfWeek);
+      }
+    } else if (configType === 'monthly' && scheduleConfig.recurrenceRule) {
+      scheduledDate = computeMonthlyDate(scheduleConfig.recurrenceRule, now);
+    } else if (configType === 'yearly' && scheduleConfig.recurrenceRule) {
+      scheduledDate = computeYearlyDate(scheduleConfig.recurrenceRule, now, scheduleConfig.customDate);
+    } else {
+      scheduledDate = getNextReviewDate(reviewType);
+    }
+  } else if (startDate && recurrenceDayOfWeek !== undefined && recurrenceDayOfWeek !== null) {
     // Find the next occurrence of the specified day of week on or after startDate
     const base = new Date(startDate);
     const dayOfWeek = recurrenceDayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -91,14 +189,29 @@ export async function POST(request: NextRequest) {
     scheduledDate = getNextReviewDate(reviewType);
   }
 
+  // If scheduleConfig provides time + duration, compute time blocks
+  let timeBlockStart: Date | undefined;
+  let timeBlockEnd: Date | undefined;
+  if (scheduleConfig?.time && scheduleConfig?.duration) {
+    const [h, m] = (scheduleConfig.time as string).split(':').map(Number);
+    const durationMin = scheduleConfig.duration as number;
+    const blockStart = new Date(scheduledDate);
+    blockStart.setHours(h, m, 0, 0);
+    const blockEnd = new Date(blockStart.getTime() + durationMin * 60 * 1000);
+    timeBlockStart = blockStart;
+    timeBlockEnd = blockEnd;
+  }
+
   const review = await prisma.review.create({
     data: {
       userId: auth.userId,
       reviewType,
       scheduledDate,
       startDate: startDate ? new Date(startDate) : undefined,
-      recurrenceDayOfWeek: recurrenceDayOfWeek ?? undefined,
+      recurrenceDayOfWeek: recurrenceDayOfWeek ?? (scheduleConfig?.dayOfWeek !== null && scheduleConfig?.dayOfWeek !== undefined ? scheduleConfig.dayOfWeek : undefined),
       isTeamReview: isTeamReview ?? false,
+      ...(timeBlockStart ? { timeBlockStart } : {}),
+      ...(timeBlockEnd ? { timeBlockEnd } : {}),
     },
   });
 

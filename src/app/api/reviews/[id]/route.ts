@@ -83,6 +83,19 @@ export async function PATCH(
 
     if (!prefs || prefs.reviewNags) {
       const nextDate = getNextReviewDate(review.reviewType);
+
+      // Propagate time block pattern to the next review instance
+      let nextTimeBlockStart: Date | undefined;
+      let nextTimeBlockEnd: Date | undefined;
+      if (review.timeBlockStart && review.timeBlockEnd) {
+        const prevStart = new Date(review.timeBlockStart);
+        const prevEnd = new Date(review.timeBlockEnd);
+        const durationMs = prevEnd.getTime() - prevStart.getTime();
+        nextTimeBlockStart = new Date(nextDate);
+        nextTimeBlockStart.setHours(prevStart.getHours(), prevStart.getMinutes(), 0, 0);
+        nextTimeBlockEnd = new Date(nextTimeBlockStart.getTime() + durationMs);
+      }
+
       await prisma.review.create({
         data: {
           userId: auth.userId,
@@ -91,6 +104,8 @@ export async function PATCH(
           isTeamReview: review.isTeamReview,
           startDate: review.startDate,
           recurrenceDayOfWeek: review.recurrenceDayOfWeek,
+          ...(nextTimeBlockStart ? { timeBlockStart: nextTimeBlockStart } : {}),
+          ...(nextTimeBlockEnd ? { timeBlockEnd: nextTimeBlockEnd } : {}),
         },
       });
     }

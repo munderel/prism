@@ -1,0 +1,561 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  Target, Plus, Pencil, Trash2, BarChart3,
+  ChevronRight, ChevronDown, Save, X,
+} from 'lucide-react';
+
+interface Kpi {
+  id: string;
+  name: string;
+  type: 'NUMERIC' | 'BOOLEAN';
+  targetValue: number | null;
+  unit: string | null;
+  isNew?: boolean;
+}
+
+interface WeeklyGoal {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  level: string;
+  startDate: string | null;
+  endDate: string | null;
+  parentTitle?: string;
+  kpis: Kpi[];
+}
+
+interface StepWeeklyGoalsProps {
+  reviewId: string;
+  onGoalsUpdated?: () => void;
+}
+
+export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsProps) {
+  const [goals, setGoals] = useState<WeeklyGoal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+
+  // Inline creation state
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  // KPI creation state per goal
+  const [addingKpiForGoal, setAddingKpiForGoal] = useState<string | null>(null);
+  const [newKpiName, setNewKpiName] = useState('');
+  const [newKpiType, setNewKpiType] = useState<'NUMERIC' | 'BOOLEAN'>('NUMERIC');
+  const [newKpiTarget, setNewKpiTarget] = useState('');
+  const [newKpiUnit, setNewKpiUnit] = useState('');
+
+  const [saving, setSaving] = useState<string | null>(null);
+  const [stackId, setStackId] = useState<string | null>(null);
+  const [monthlyParentId, setMonthlyParentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchWeeklyGoals();
+  }, []);
+
+  const fetchWeeklyGoals = async () => {
+    try {
+      const stacksRes = await fetch('/api/stacks');
+      if (!stacksRes.ok) { setLoading(false); return; }
+      const stacks = await stacksRes.json();
+
+      const now = new Date();
+      // Current week boundaries
+      const weekStart = new Date(now);
+      const dayOfWeek = weekStart.getDay();
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      weekStart.setDate(weekStart.getDate() + mondayOffset);
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      // Next week boundaries
+      const nextWeekStart = new Date(weekEnd);
+      nextWeekStart.setDate(nextWeekStart.getDate() + 1);
+      nextWeekStart.setHours(0, 0, 0, 0);
+      const nextWeekEnd = new Date(nextWeekStart);
+      nextWeekEnd.setDate(nextWeekEnd.getDate() + 6);
+      nextWeekEnd.setHours(23, 59, 59, 999);
+
+      const result: WeeklyGoal[] = [];
+
+      for (const stack of stacks) {
+        if (!stackId && !stack.isCompany) {
+          setStackId(stack.id);
+        }
+
+        const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
+        if (!goalsRes.ok) continue;
+        const allGoals = await goalsRes.json();
+
+        for (const g of allGoals) {
+          // Find monthly goals for the current month to use as parent for new weekly goals
+          if (g.level === 'MONTHLY' && !monthlyParentId && !stack.isCompany) {
+            const gs = g.startDate ? new Date(g.startDate) : null;
+            const ge = g.endDate ? new Date(g.endDate) : null;
+            if (gs && ge && gs <= now && ge >= now) {
+              setMonthlyParentId(g.id);
+            }
+          }
+
+          if (g.level !== 'WEEKLY') continue;
+          if (!g.startDate || !g.endDate) continue;
+
+          const gs = new Date(g.startDate);
+          const ge = new Date(g.endDate);
+
+          // Show weekly goals for the upcoming week (or current week)
+          const isCurrentWeek = gs <= weekEnd && ge >= weekStart;
+          const isNextWeek = gs <= nextWeekEnd && ge >= nextWeekStart;
+          if (!isCurrentWeek && !isNextWeek) continue;
+
+          // Fetch KPIs
+          let kpis: Kpi[] = [];
+          try {
+            const kpisRes = await fetch(`/api/goals/${g.id}/kpis`);
+            if (kpisRes.ok) {
+              const kpiData = await kpisRes.json();
+              kpis = kpiData.kpis ?? kpiData;
+            }
+          } catch {
+            // ignore
+          }
+
+          // Get parent title
+          let parentTitle = '';
+          try {
+            const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
+            if (detailRes.ok) {
+              const detail = await detailRes.json();
+              if (detail.parent) parentTitle = detail.parent.title;
+            }
+          } catch {
+            // ignore
+          }
+
+          result.push({
+            id: g.id,
+            title: g.title,
+            description: g.description ?? null,
+            status: g.status,
+            level: g.level,
+            startDate: g.startDate,
+            endDate: g.endDate,
+            parentTitle,
+            kpis,
+          });
+        }
+      }
+
+      setGoals(result);
+    } catch {
+      // silently fail
+    }
+    setLoading(false);
+  };
+
+  const toggleExpand = (goalId: string) => {
+    setExpandedGoals((prev) => {
+      const next = new Set(prev);
+      if (next.has(goalId)) next.delete(goalId);
+      else next.add(goalId);
+      return next;
+    });
+  };
+
+  const startEditing = (goal: WeeklyGoal) => {
+    setEditingGoalId(goal.id);
+    setEditTitle(goal.title);
+    setEditDescription(goal.description ?? '');
+  };
+
+  const saveEdit = async (goalId: string) => {
+    setSaving(goalId);
+    try {
+      await fetch(`/api/goals/${goalId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editTitle, description: editDescription || null }),
+      });
+      setGoals((prev) =>
+        prev.map((g) =>
+          g.id === goalId ? { ...g, title: editTitle, description: editDescription || null } : g
+        )
+      );
+      setEditingGoalId(null);
+      onGoalsUpdated?.();
+    } catch {
+      // silently fail
+    }
+    setSaving(null);
+  };
+
+  const createGoal = async () => {
+    if (!newTitle.trim() || !stackId) return;
+    setCreating(true);
+    try {
+      const body: Record<string, any> = {
+        stackId,
+        level: 'WEEKLY',
+        title: newTitle.trim(),
+        description: newDescription.trim() || null,
+      };
+      if (monthlyParentId) body.parentId = monthlyParentId;
+
+      // Set dates for current week
+      const now = new Date();
+      const weekStart = new Date(now);
+      const dayOfWeek = weekStart.getDay();
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      weekStart.setDate(weekStart.getDate() + mondayOffset);
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      body.startDate = weekStart.toISOString().split('T')[0];
+      body.endDate = weekEnd.toISOString().split('T')[0];
+
+      const res = await fetch('/api/goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setGoals((prev) => [
+          ...prev,
+          {
+            id: created.id,
+            title: created.title,
+            description: created.description,
+            status: created.status ?? 'NOT_STARTED',
+            level: 'WEEKLY',
+            startDate: created.startDate,
+            endDate: created.endDate,
+            parentTitle: '',
+            kpis: [],
+          },
+        ]);
+        setNewTitle('');
+        setNewDescription('');
+        setShowCreateForm(false);
+        onGoalsUpdated?.();
+      }
+    } catch {
+      // silently fail
+    }
+    setCreating(false);
+  };
+
+  const addKpi = async (goalId: string) => {
+    if (!newKpiName.trim()) return;
+    setSaving(goalId);
+    try {
+      const body: Record<string, any> = {
+        name: newKpiName.trim(),
+        type: newKpiType,
+      };
+      if (newKpiType === 'NUMERIC') {
+        body.targetValue = parseFloat(newKpiTarget) || null;
+        body.unit = newKpiUnit.trim() || null;
+      }
+
+      const res = await fetch(`/api/goals/${goalId}/kpis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setGoals((prev) =>
+          prev.map((g) =>
+            g.id === goalId
+              ? { ...g, kpis: [...g.kpis, { id: created.id, name: created.name, type: created.type, targetValue: created.targetValue, unit: created.unit }] }
+              : g
+          )
+        );
+        setAddingKpiForGoal(null);
+        setNewKpiName('');
+        setNewKpiTarget('');
+        setNewKpiUnit('');
+        setNewKpiType('NUMERIC');
+      }
+    } catch {
+      // silently fail
+    }
+    setSaving(null);
+  };
+
+  if (loading) {
+    return <div className="text-[var(--text-muted)] text-sm py-4">Loading weekly goals...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+        <Target className="h-4 w-4 text-blue-400" />
+        <p className="text-sm">
+          Review existing weekly goals and create new ones. Add KPIs to track progress.
+        </p>
+      </div>
+
+      {/* Existing goals */}
+      {goals.length > 0 ? (
+        <div className="space-y-3">
+          {goals.map((goal) => {
+            const isExpanded = expandedGoals.has(goal.id);
+            const isEditing = editingGoalId === goal.id;
+
+            return (
+              <div
+                key={goal.id}
+                className="rounded-lg border border-[var(--border-color)] bg-[var(--surface)] overflow-hidden"
+              >
+                {/* Goal header */}
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <button onClick={() => toggleExpand(goal.id)} className="flex-shrink-0">
+                    {isExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
+                    )}
+                  </button>
+
+                  <Target className="h-4 w-4 text-blue-400 flex-shrink-0" />
+
+                  <div className="flex-1 min-w-0">
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={editDescription}
+                          onChange={(e) => setEditDescription(e.target.value)}
+                          placeholder="Description (optional)"
+                          className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                        />
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => saveEdit(goal.id)}
+                            disabled={saving === goal.id}
+                            className="text-xs bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-500 disabled:opacity-50"
+                          >
+                            <Save className="h-3 w-3 inline mr-1" />
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingGoalId(null)}
+                            className="text-xs text-[var(--text-muted)] px-2 py-1 hover:text-[var(--text-secondary)]"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                          {goal.title}
+                        </p>
+                        {goal.parentTitle && (
+                          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
+                            under {goal.parentTitle}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {!isEditing && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        goal.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
+                        goal.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
+                        'bg-[var(--surface-raised)] text-[var(--text-muted)]'
+                      }`}>
+                        {goal.status.replace('_', ' ')}
+                      </span>
+                      <button
+                        onClick={() => startEditing(goal)}
+                        className="p-1 text-[var(--text-muted)] hover:text-indigo-400 transition-colors"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Expanded KPI section */}
+                {isExpanded && (
+                  <div className="border-t border-[var(--border-color)] px-4 py-3 bg-[var(--surface-raised)]/30 space-y-3">
+                    {goal.description && (
+                      <p className="text-xs text-[var(--text-muted)] italic">{goal.description}</p>
+                    )}
+
+                    {/* KPIs */}
+                    {goal.kpis.length > 0 ? (
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide flex items-center gap-1">
+                          <BarChart3 className="h-3 w-3" />
+                          KPIs
+                        </h4>
+                        {goal.kpis.map((kpi) => (
+                          <div
+                            key={kpi.id}
+                            className="flex items-center gap-2 text-xs rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2"
+                          >
+                            <span className="text-[var(--text-primary)] flex-1">{kpi.name}</span>
+                            <span className="text-[var(--text-muted)]">
+                              {kpi.type === 'NUMERIC'
+                                ? `Target: ${kpi.targetValue ?? '?'}${kpi.unit ? ` ${kpi.unit}` : ''}`
+                                : 'Yes/No'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[var(--text-muted)]">No KPIs yet.</p>
+                    )}
+
+                    {/* Add KPI form */}
+                    {addingKpiForGoal === goal.id ? (
+                      <div className="space-y-2 rounded border border-[var(--border-color)] bg-[var(--surface)] p-3">
+                        <input
+                          type="text"
+                          value={newKpiName}
+                          onChange={(e) => setNewKpiName(e.target.value)}
+                          placeholder="KPI name"
+                          className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                        />
+                        <div className="flex gap-2">
+                          <select
+                            value={newKpiType}
+                            onChange={(e) => setNewKpiType(e.target.value as 'NUMERIC' | 'BOOLEAN')}
+                            className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                          >
+                            <option value="NUMERIC">Numeric</option>
+                            <option value="BOOLEAN">Yes/No</option>
+                          </select>
+                          {newKpiType === 'NUMERIC' && (
+                            <>
+                              <input
+                                type="number"
+                                value={newKpiTarget}
+                                onChange={(e) => setNewKpiTarget(e.target.value)}
+                                placeholder="Target"
+                                className="w-20 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                              />
+                              <input
+                                type="text"
+                                value={newKpiUnit}
+                                onChange={(e) => setNewKpiUnit(e.target.value)}
+                                placeholder="Unit"
+                                className="w-16 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                              />
+                            </>
+                          )}
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => addKpi(goal.id)}
+                            disabled={!newKpiName.trim() || saving === goal.id}
+                            className="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-500 disabled:opacity-50"
+                          >
+                            Add KPI
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddingKpiForGoal(null);
+                              setNewKpiName('');
+                              setNewKpiTarget('');
+                              setNewKpiUnit('');
+                            }}
+                            className="text-xs text-[var(--text-muted)] px-2 py-1 hover:text-[var(--text-secondary)]"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setAddingKpiForGoal(goal.id)}
+                        className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add KPI
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-6 text-center">
+          <Target className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-2" />
+          <p className="text-sm text-[var(--text-muted)]">No weekly goals found for the upcoming week.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Create one below to get started.</p>
+        </div>
+      )}
+
+      {/* Create new goal form */}
+      {showCreateForm ? (
+        <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4 space-y-3">
+          <h4 className="text-sm font-medium text-[var(--text-primary)]">Create Weekly Goal</h4>
+          <input
+            type="text"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Goal title"
+            className="w-full rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+          />
+          <input
+            type="text"
+            value={newDescription}
+            onChange={(e) => setNewDescription(e.target.value)}
+            placeholder="Description (optional)"
+            className="w-full rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={createGoal}
+              disabled={!newTitle.trim() || creating}
+              className="text-sm bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-500 disabled:opacity-50"
+            >
+              {creating ? 'Creating...' : 'Create Goal'}
+            </button>
+            <button
+              onClick={() => { setShowCreateForm(false); setNewTitle(''); setNewDescription(''); }}
+              className="text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] px-3 py-2"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="flex items-center justify-center gap-2 w-full rounded-lg border border-dashed border-[var(--border-color)] px-4 py-3 text-sm text-[var(--text-muted)] hover:border-indigo-500/30 hover:text-indigo-400 transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          Create New Weekly Goal
+        </button>
+      )}
+    </div>
+  );
+}

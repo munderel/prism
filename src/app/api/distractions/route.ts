@@ -1,0 +1,55 @@
+import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { requireAuth, authError } from '@/lib/auth-guard';
+
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
+
+  const { searchParams } = new URL(request.url);
+  const startDate = searchParams.get('startDate');
+  const endDate = searchParams.get('endDate');
+
+  const where: any = { userId: auth.userId };
+
+  if (startDate && endDate) {
+    const rangeStart = new Date(startDate);
+    const rangeEnd = new Date(endDate);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+    where.logDate = { gte: rangeStart, lt: rangeEnd };
+  }
+
+  const distractions = await prisma.distractionLog.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return Response.json(distractions);
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
+
+  const body = await request.json();
+  const { content, notes, logDate, source } = body;
+
+  if (!content) {
+    return Response.json({ error: 'content is required' }, { status: 400 });
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const distraction = await prisma.distractionLog.create({
+    data: {
+      userId: auth.userId,
+      content,
+      notes: notes ?? null,
+      logDate: logDate ? new Date(logDate) : today,
+      source: source ?? 'powerdown',
+    },
+  });
+
+  return Response.json(distraction, { status: 201 });
+}

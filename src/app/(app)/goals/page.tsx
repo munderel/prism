@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { m } from 'framer-motion';
-import { Building2, User, Target, Filter, CalendarClock } from 'lucide-react';
+import { Building2, User, Users, Target, Filter, CalendarClock, Trash2, Calendar } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 
 const GoalStackTree = dynamic(
@@ -22,6 +22,7 @@ export default function GoalsPage() {
   const [selectedStackId, setSelectedStackId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newStackName, setNewStackName] = useState('');
+  const [newStackVisibility, setNewStackVisibility] = useState<'private' | 'group' | 'company'>('private');
   const [showInProgress, setShowInProgress] = useState(false);
   const [showDueToday, setShowDueToday] = useState(false);
 
@@ -47,18 +48,54 @@ export default function GoalsPage() {
     const res = await fetch('/api/stacks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, visibility: newStackVisibility, isCompany: newStackVisibility === 'company' }),
     });
 
     if (res.ok) {
       const stack = await res.json();
       setNewStackName('');
+      setNewStackVisibility('private');
       setShowCreateForm(false);
       await mutateStacks();
       setSelectedStackId(stack.id);
     } else {
       const data = await res.json().catch(() => ({}));
       toast.error(data.error || 'Failed to create stack');
+    }
+  };
+
+  const handleDeleteStack = async (stackId: string, stackName: string) => {
+    const confirmed = window.confirm(
+      `Delete stack '${stackName}'? This will remove all goals in this stack.`
+    );
+    if (!confirmed) return;
+
+    const res = await fetch(`/api/stacks/${stackId}`, { method: 'DELETE' });
+    if (res.ok) {
+      toast.success(`Stack '${stackName}' deleted`);
+      if (selectedStackId === stackId) {
+        const remaining = stacks.filter((s) => s.id !== stackId);
+        setSelectedStackId(remaining.length > 0 ? remaining[0].id : null);
+      }
+      await mutateStacks();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || 'Failed to delete stack');
+    }
+  };
+
+  const handleToggleWeekStart = async (stackId: string, current: number) => {
+    const next = current === 0 ? 1 : 0;
+    const res = await fetch(`/api/stacks/${stackId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ weekStartDay: next }),
+    });
+    if (res.ok) {
+      await mutateStacks();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || 'Failed to update week start day');
     }
   };
 
@@ -91,23 +128,42 @@ export default function GoalsPage() {
       {/* Stack tabs */}
       <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2">
         {stacks.map((stack) => (
-          <button
-            key={stack.id}
-            onClick={() => setSelectedStackId(stack.id)}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
-              selectedStackId === stack.id
-                ? 'bg-prism-indigo/15 text-prism-indigo border border-prism-indigo/25'
-                : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            {stack.isCompany ? (
-              <Building2 className="h-4 w-4" />
-            ) : (
-              <User className="h-4 w-4" />
-            )}
-            {stack.name}
-            <span className="text-xs text-[var(--text-muted)]">({stack._count?.goals ?? 0})</span>
-          </button>
+          <div key={stack.id} className="relative flex items-center group">
+            <button
+              onClick={() => setSelectedStackId(stack.id)}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+                selectedStackId === stack.id
+                  ? 'bg-prism-indigo/15 text-prism-indigo border border-prism-indigo/25'
+                  : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              {stack.visibility === 'company' || stack.isCompany ? (
+                <Building2 className="h-4 w-4" />
+              ) : stack.visibility === 'group' ? (
+                <Users className="h-4 w-4" />
+              ) : (
+                <User className="h-4 w-4" />
+              )}
+              {stack.name}
+              {(stack.visibility === 'group') && (
+                <span className="text-[9px] bg-teal-500/20 text-teal-400 rounded px-1">Group</span>
+              )}
+              {(stack.visibility === 'company' || stack.isCompany) && (
+                <span className="text-[9px] bg-indigo-500/20 text-indigo-400 rounded px-1">Company</span>
+              )}
+              <span className="text-xs text-[var(--text-muted)]">({stack._count?.goals ?? 0})</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteStack(stack.id, stack.name);
+              }}
+              title={`Delete stack '${stack.name}'`}
+              className="ml-1 rounded p-1 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
         ))}
         <button
           onClick={handleCreateStack}
@@ -121,7 +177,7 @@ export default function GoalsPage() {
       {showCreateForm && (
         <div className="mb-6 glass-panel p-4">
           <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Create New Stack</h3>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <input
               type="text"
               value={newStackName}
@@ -134,6 +190,22 @@ export default function GoalsPage() {
               }}
               className="rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-prism-indigo focus:outline-none"
             />
+            <div className="flex gap-1">
+              {(['private', 'group', ...(isAdmin ? ['company'] : [])] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setNewStackVisibility(v as any)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                    newStackVisibility === v
+                      ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                      : 'text-[var(--text-secondary)] border border-[var(--border-color)]'
+                  }`}
+                >
+                  {v === 'private' ? 'Personal' : v === 'group' ? 'Group' : 'Company'}
+                </button>
+              ))}
+            </div>
             <button
               onClick={handleSubmitCreate}
               disabled={!newStackName.trim()}
@@ -176,6 +248,16 @@ export default function GoalsPage() {
             <CalendarClock className="h-3.5 w-3.5" />
             Due Today
           </button>
+          <div className="ml-auto flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <Calendar className="h-3.5 w-3.5" />
+            <span>Week starts:</span>
+            <button
+              onClick={() => handleToggleWeekStart(selectedStack.id, selectedStack.weekStartDay ?? 0)}
+              className="rounded-md border border-[var(--border-color)] px-2 py-0.5 text-xs font-medium text-[var(--text-secondary)] hover:border-white/[0.1] hover:text-[var(--text-primary)] transition-colors"
+            >
+              {(selectedStack.weekStartDay ?? 0) === 0 ? 'Sun' : 'Mon'}
+            </button>
+          </div>
         </div>
       )}
 

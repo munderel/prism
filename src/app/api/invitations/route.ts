@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 
+const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const RATE_LIMIT_MAX = 10; // max invitations per hour
+
 export async function GET(_request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
@@ -15,7 +18,18 @@ export async function GET(_request: NextRequest) {
     },
   });
 
-  return Response.json(invitations);
+  // Annotate each invitation with computed expiry status
+  const annotated = invitations.map((inv) => {
+    const isExpired =
+      inv.status === 'PENDING' &&
+      Date.now() - new Date(inv.createdAt).getTime() > INVITE_EXPIRY_MS;
+    return {
+      ...inv,
+      isExpired,
+    };
+  });
+
+  return Response.json(annotated);
 }
 
 export async function POST(request: NextRequest) {
@@ -38,6 +52,21 @@ export async function POST(request: NextRequest) {
 
   if (role && role !== 'admin' && role !== 'user') {
     return Response.json({ error: 'Role must be "admin" or "user"' }, { status: 400 });
+  }
+
+  // Rate limiting: max 10 invitations per hour per admin
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const recentCount = await prisma.invitation.count({
+    where: {
+      invitedById: auth.userId,
+      createdAt: { gte: oneHourAgo },
+    },
+  });
+  if (recentCount >= RATE_LIMIT_MAX) {
+    return Response.json(
+      { error: 'Rate limit exceeded. You can send up to 10 invitations per hour.' },
+      { status: 429 }
+    );
   }
 
   // Check if user already exists

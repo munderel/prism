@@ -1,0 +1,285 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { BarChart3, Target, CheckCircle2 } from 'lucide-react';
+
+interface Kpi {
+  id: string;
+  name: string;
+  type: string;
+  unit: string | null;
+  targetValue: number | null;
+  actualValue: number | null;
+  isComplete: boolean;
+  goalId: string;
+}
+
+interface GoalWithKpis {
+  id: string;
+  title: string;
+  level: string;
+  status: string;
+  progressPct: number;
+  kpis: Kpi[];
+}
+
+interface StepKpiProgressProps {
+  reviewId: string;
+  initialNotes?: string;
+  onNotesChange: (notes: string) => void;
+}
+
+export function StepKpiProgress({ reviewId, initialNotes, onNotesChange }: StepKpiProgressProps) {
+  const [goalsWithKpis, setGoalsWithKpis] = useState<GoalWithKpis[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [notes, setNotes] = useState(initialNotes ?? '');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    fetchGoalsWithKpis();
+  }, []);
+
+  useEffect(() => {
+    if (initialNotes !== undefined && initialNotes !== notes) {
+      setNotes(initialNotes);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialNotes]);
+
+  const fetchGoalsWithKpis = async () => {
+    try {
+      const stacksRes = await fetch('/api/stacks');
+      if (!stacksRes.ok) {
+        setLoading(false);
+        return;
+      }
+      const stacks = await stacksRes.json();
+
+      const result: GoalWithKpis[] = [];
+
+      for (const stack of stacks) {
+        const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
+        if (!goalsRes.ok) continue;
+        const goals = await goalsRes.json();
+
+        for (const goal of goals) {
+          if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') continue;
+          if (goal._count?.kpis === 0) continue;
+
+          // Fetch KPIs for this goal
+          const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
+          if (!kpisRes.ok) continue;
+          const kpisData = await kpisRes.json();
+          const kpis = kpisData.kpis ?? kpisData;
+
+          if (kpis.length > 0) {
+            result.push({
+              id: goal.id,
+              title: goal.title,
+              level: goal.level,
+              status: goal.status,
+              progressPct: goal.progressPct,
+              kpis,
+            });
+          }
+        }
+      }
+
+      setGoalsWithKpis(result);
+    } catch {
+      // silently fail
+    }
+    setLoading(false);
+  };
+
+  const updateKpiActual = async (kpiId: string, actualValue: number) => {
+    setSaving(kpiId);
+    try {
+      await fetch(`/api/kpis/${kpiId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actualValue }),
+      });
+
+      setGoalsWithKpis((prev) =>
+        prev.map((g) => ({
+          ...g,
+          kpis: g.kpis.map((k) => (k.id === kpiId ? { ...k, actualValue } : k)),
+        }))
+      );
+    } catch {
+      // silently fail
+    }
+    setSaving(null);
+  };
+
+  const markGoalComplete = async (goalId: string) => {
+    setSaving(goalId);
+    try {
+      await fetch(`/api/goals/${goalId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      });
+
+      setGoalsWithKpis((prev) =>
+        prev.map((g) => (g.id === goalId ? { ...g, status: 'COMPLETED', progressPct: 100 } : g))
+      );
+    } catch {
+      // silently fail
+    }
+    setSaving(null);
+  };
+
+  const handleNotesChange = (value: string) => {
+    setNotes(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      onNotesChange(value);
+    }, 600);
+  };
+
+  if (loading) {
+    return <div className="text-[var(--text-muted)] text-sm py-4">Loading KPI progress...</div>;
+  }
+
+  if (goalsWithKpis.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
+          <BarChart3 className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-2" />
+          <p className="text-sm text-[var(--text-muted)]">No goals with KPIs found.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">
+            Add KPIs to your weekly or monthly goals to track progress here.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs text-[var(--text-secondary)] mb-1">Progress Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => handleNotesChange(e.target.value)}
+            onBlur={() => {
+              if (debounceRef.current) clearTimeout(debounceRef.current);
+              onNotesChange(notes);
+            }}
+            rows={3}
+            className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none resize-none"
+            placeholder="Any notes about your progress this week..."
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+        <BarChart3 className="h-4 w-4 text-emerald-400" />
+        <p className="text-sm">Update your KPI actuals and review goal progress.</p>
+      </div>
+
+      <div className="space-y-4">
+        {goalsWithKpis.map((goal) => (
+          <div
+            key={goal.id}
+            className="rounded-lg border border-[var(--border-color)] bg-[var(--surface)] p-4 space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Target className="h-4 w-4 text-blue-400" />
+                <span className="text-sm font-medium text-[var(--text-primary)]">{goal.title}</span>
+                <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--surface-raised)] text-[var(--text-muted)]">
+                  {goal.level}
+                </span>
+              </div>
+              {goal.status !== 'COMPLETED' && (
+                <button
+                  onClick={() => markGoalComplete(goal.id)}
+                  disabled={saving === goal.id}
+                  className="flex items-center gap-1 text-xs text-green-400 hover:text-green-300 transition-colors px-2 py-1 rounded hover:bg-green-500/10"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Mark Complete
+                </button>
+              )}
+              {goal.status === 'COMPLETED' && (
+                <span className="text-xs text-green-400 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Completed
+                </span>
+              )}
+            </div>
+
+            {/* KPIs */}
+            <div className="space-y-2 ml-6">
+              {goal.kpis.map((kpi) => (
+                <div key={kpi.id} className="flex items-center gap-3">
+                  <span className="text-xs text-[var(--text-secondary)] w-32 truncate">
+                    {kpi.name}
+                  </span>
+
+                  {kpi.type === 'NUMERIC' ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        type="number"
+                        defaultValue={kpi.actualValue ?? ''}
+                        onBlur={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val) && val !== kpi.actualValue) {
+                            updateKpiActual(kpi.id, val);
+                          }
+                        }}
+                        className="w-20 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none text-right"
+                        placeholder="Actual"
+                      />
+                      <span className="text-xs text-[var(--text-muted)]">
+                        / {kpi.targetValue ?? '?'} {kpi.unit ?? ''}
+                      </span>
+                      {kpi.targetValue && kpi.actualValue !== null && (
+                        <div className="w-16 h-1.5 bg-[var(--surface-raised)] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              (kpi.actualValue / kpi.targetValue) >= 1
+                                ? 'bg-green-500'
+                                : 'bg-indigo-500'
+                            }`}
+                            style={{ width: `${Math.min(100, ((kpi.actualValue ?? 0) / kpi.targetValue) * 100)}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className={`text-xs ${kpi.isComplete ? 'text-green-400' : 'text-[var(--text-muted)]'}`}>
+                      {kpi.isComplete ? 'Complete' : 'Incomplete'}
+                    </span>
+                  )}
+
+                  {saving === kpi.id && (
+                    <span className="text-xs text-[var(--text-muted)]">Saving...</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <label className="block text-xs text-[var(--text-secondary)] mb-1">Progress Notes</label>
+        <textarea
+          value={notes}
+          onChange={(e) => handleNotesChange(e.target.value)}
+          onBlur={() => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            onNotesChange(notes);
+          }}
+          rows={3}
+          className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none resize-none"
+          placeholder="Any notes about your progress this week..."
+        />
+      </div>
+    </div>
+  );
+}

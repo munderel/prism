@@ -81,9 +81,13 @@ export async function PATCH(
   }
 
   const body = await request.json();
+  const data: Record<string, unknown> = {};
+  if (body.name !== undefined) data.name = body.name;
+  if (body.weekStartDay !== undefined) data.weekStartDay = body.weekStartDay;
+
   const updated = await prisma.goalStack.update({
     where: { id },
-    data: { name: body.name },
+    data,
   });
 
   return Response.json(updated);

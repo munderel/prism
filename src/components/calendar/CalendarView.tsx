@@ -1,14 +1,36 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { autoSchedule, autoScheduleWithPeriods, type ProposedSlot, type CalendarEvent as ScheduleEvent, type SchedulableTask, type ScheduleSettings } from '@/lib/scheduling-engine';
-import { Sparkles, Check, X, ListTodo, Save, Loader2 } from 'lucide-react';
+import { Sparkles, Check, X, ListTodo, Save, Loader2, CheckCircle2, ExternalLink } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
+import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/ui/ToastProvider';
+import { useCalendarEvents } from '@/hooks/useCalendarEvents';
+
+interface SelectedEventPopover {
+  eventId: string;
+  title: string;
+  source: 'aims' | 'task' | 'review';
+  status: string;
+  position: { top: number; left: number };
+  // Aim-specific
+  aimInstanceId?: string;
+  aimCategoryName?: string;
+  selectedActivity?: string;
+  // Task-specific
+  taskId?: string;
+  taskType?: string;
+  priority?: string;
+  goalTitle?: string;
+  // Review-specific
+  reviewId?: string;
+}
 
 interface AimTask {
   id: string;
@@ -44,6 +66,7 @@ const SOURCE_FILTERS = [
   { key: 'meetings', label: 'Meetings', color: 'bg-emerald-500' },
   { key: 'aims', label: 'Aims', color: 'bg-teal-500' },
   { key: 'google', label: 'Google Calendar', color: 'bg-purple-500' },
+  { key: 'powerdown', label: 'Power Down', color: 'bg-violet-500' },
 ];
 
 function scheduleItem(
@@ -66,12 +89,32 @@ function scheduleItem(
 }
 
 export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings }: CalendarViewProps) {
+  const router = useRouter();
+  const toast = useToast();
   const calendarRef = useRef<any>(null);
-  const [events, setEvents] = useState<any[]>([]);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
+  const { events, refreshEvents } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
   const { resolvedTheme } = useTheme();
-  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google']));
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
   const [showGhosts, setShowGhosts] = useState(false);
+
+  // Event detail popover state
+  const [selectedEventPopover, setSelectedEventPopover] = useState<SelectedEventPopover | null>(null);
+  const [completingEvent, setCompletingEvent] = useState(false);
+
+  // Dismiss popover on outside click
+  useEffect(() => {
+    if (!selectedEventPopover) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setSelectedEventPopover(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [selectedEventPopover]);
 
   // Activity selection modal state
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -85,23 +128,12 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [savingTasks, setSavingTasks] = useState(false);
 
-  const fetchEvents = async (start: string, end: string) => {
-    const res = await fetch(`/api/calendar?start=${start}&end=${end}&source=all`);
-    if (res.ok) {
-      setEvents(await res.json());
-    }
-  };
-
   const refreshCalendar = () => {
-    if (calendarRef.current) {
-      const api = calendarRef.current.getApi();
-      const { activeStart, activeEnd } = api.view;
-      fetchEvents(activeStart.toISOString(), activeEnd.toISOString());
-    }
+    refreshEvents();
   };
 
   const handleDatesSet = (info: any) => {
-    fetchEvents(info.startStr, info.endStr);
+    setDateRange({ start: info.startStr, end: info.endStr });
   };
 
   const toggleFilter = (key: string) => {
@@ -113,27 +145,126 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     });
   };
 
+  // --- Completion handlers ---
+  const handleCompleteAim = useCallback(async (aimInstanceId: string) => {
+    setCompletingEvent(true);
+    try {
+      const res = await fetch(`/api/aims/instances/${aimInstanceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      });
+      if (res.ok) {
+        toast.success('Aim completed!');
+        setSelectedEventPopover(null);
+        refreshCalendar();
+      } else {
+        toast.error('Failed to complete aim');
+      }
+    } catch {
+      toast.error('Failed to complete aim');
+    } finally {
+      setCompletingEvent(false);
+    }
+  }, [toast]);
+
+  const handleCompleteTask = useCallback(async (taskId: string) => {
+    setCompletingEvent(true);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'DONE' }),
+      });
+      if (res.ok) {
+        toast.success('Task completed!');
+        setSelectedEventPopover(null);
+        refreshCalendar();
+      } else {
+        toast.error('Failed to complete task');
+      }
+    } catch {
+      toast.error('Failed to complete task');
+    } finally {
+      setCompletingEvent(false);
+    }
+  }, [toast]);
+
   // --- Task assignment handlers ---
   const handleEventClick = (info: any) => {
     const props = info.event.extendedProps || {};
+    const rect = info.el.getBoundingClientRect();
 
-    // If this is an aim event, open the task assignment panel
+    // If this is a review event, show popover with Open action
+    if (props.reviewId) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'review',
+        status: props.completed ? 'Completed' : 'Pending',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        reviewId: props.reviewId,
+      });
+      return;
+    }
+
+    // If this is a powerdown event, navigate to powerdown page
+    if (props.link === '/powerdown' || info.event.id?.startsWith('powerdown-')) {
+      router.push('/powerdown');
+      return;
+    }
+
+    // If this is an aim event, show popover with Complete action
     if (props.aimInstanceId) {
-      const aimData: SelectedAimInstance = {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'aims',
+        status: props.status || 'SCHEDULED',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
         aimInstanceId: props.aimInstanceId,
-        title: props.aimCategoryName || info.event.title,
-        tasks: props.tasks || [],
-      };
-      setSelectedAimInstance(aimData);
-      // Pre-select currently assigned tasks
-      const currentIds = new Set<string>((aimData.tasks || []).map((t: AimTask) => t.id));
-      setSelectedTaskIds(currentIds);
-      setShowTaskAssignment(true);
+        aimCategoryName: props.aimCategoryName,
+        selectedActivity: props.selectedActivity,
+      });
+      return;
+    }
+
+    // If this is a task event, show popover with Complete action
+    if (props.taskId || info.event.id?.startsWith('task-')) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'task',
+        status: props.status || 'TODO',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        taskId: props.taskId || info.event.id?.replace('task-', ''),
+        taskType: props.taskType,
+        priority: props.priority,
+        goalTitle: props.goalTitle,
+      });
       return;
     }
 
     // Otherwise, delegate to parent handler
     onEventClick?.(info);
+  };
+
+  const handlePopoverOpenTasks = () => {
+    if (!selectedEventPopover || selectedEventPopover.source !== 'aims') return;
+    // Open the task assignment panel for this aim
+    const aimEvent = events.find((e) => e.aimInstanceId === selectedEventPopover.aimInstanceId);
+    if (aimEvent) {
+      const aimData: SelectedAimInstance = {
+        aimInstanceId: aimEvent.aimInstanceId,
+        title: aimEvent.aimCategoryName || aimEvent.title,
+        tasks: aimEvent.tasks || [],
+      };
+      setSelectedAimInstance(aimData);
+      const currentIds = new Set<string>((aimData.tasks || []).map((t: AimTask) => t.id));
+      setSelectedTaskIds(currentIds);
+      setShowTaskAssignment(true);
+    }
+    setSelectedEventPopover(null);
   };
 
   const handleCloseTaskAssignment = () => {
@@ -244,14 +375,29 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     const newStart = info.event.start?.toISOString();
     const newEnd = info.event.end?.toISOString();
 
-    if (eventId.startsWith('aim-instance-') || eventId.startsWith('aim-new-')) {
+    if (eventId.startsWith('aim-instance-') || eventId.startsWith('aim-new-') || eventId.startsWith('aim-')) {
+      // One-time adjustment: PATCH the specific aim instance
       const aimInstanceId = info.event.extendedProps?.aimInstanceId;
       if (aimInstanceId) {
         await scheduleItem('aim', aimInstanceId, newStart, newEnd);
       }
     } else if (eventId.startsWith('review-')) {
+      // One-time adjustment: PATCH the specific review's time block
       const reviewId = info.event.extendedProps?.reviewId || eventId.replace('review-', '');
       await scheduleItem('review', reviewId, newStart, newEnd);
+    } else if (eventId.startsWith('powerdown-')) {
+      // One-time adjustment for this specific day only (not the recurring default)
+      // Extract the date from the event ID (format: powerdown-YYYY-MM-DD)
+      const dateStr = eventId.replace('powerdown-', '');
+      await fetch('/api/powerdown', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionDate: dateStr,
+          timeBlockStart: newStart,
+          timeBlockEnd: newEnd,
+        }),
+      });
     } else if (eventId.startsWith('task-')) {
       const taskId = eventId.replace('task-', '');
       await scheduleItem('task', taskId, newStart, newEnd, { dueDate: newStart, isPinned: true });
@@ -531,6 +677,183 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         activities={pendingActivities}
         aimName={pendingAimName}
       />
+
+      {/* Event Detail Popover */}
+      {selectedEventPopover && (
+        <div
+          ref={popoverRef}
+          className="fixed z-[60] w-72 rounded-xl border border-[var(--border-color)] bg-[var(--surface-base)] shadow-2xl"
+          style={{
+            top: Math.min(selectedEventPopover.position.top, window.innerHeight - 280),
+            left: Math.min(selectedEventPopover.position.left, window.innerWidth - 300),
+          }}
+        >
+          {/* Popover Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
+            <h4 className="text-sm font-semibold text-[var(--text-primary)] truncate pr-2">
+              {selectedEventPopover.title}
+            </h4>
+            <button
+              onClick={() => setSelectedEventPopover(null)}
+              className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors flex-shrink-0"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Popover Body */}
+          <div className="px-4 py-3 space-y-2.5">
+            {/* AIM popover */}
+            {selectedEventPopover.source === 'aims' && (
+              <>
+                {selectedEventPopover.aimCategoryName && (
+                  <div className="text-xs text-[var(--text-muted)]">
+                    <span className="font-medium">Aim:</span> {selectedEventPopover.aimCategoryName}
+                  </div>
+                )}
+                {selectedEventPopover.selectedActivity && (
+                  <div className="text-xs text-[var(--text-muted)]">
+                    <span className="font-medium">Activity:</span> {selectedEventPopover.selectedActivity}
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-full ${
+                    selectedEventPopover.status === 'COMPLETED' ? 'bg-emerald-400' : 'bg-teal-400'
+                  }`} />
+                  <span className="text-xs font-medium text-[var(--text-secondary)]">
+                    {selectedEventPopover.status === 'COMPLETED' ? 'Completed' : 'Scheduled'}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {/* TASK popover */}
+            {selectedEventPopover.source === 'task' && (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedEventPopover.taskType && (
+                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      selectedEventPopover.taskType === 'IMPROVE'
+                        ? 'bg-indigo-500/15 text-indigo-400'
+                        : selectedEventPopover.taskType === 'REACT'
+                          ? 'bg-yellow-500/15 text-yellow-400'
+                          : 'bg-cyan-500/15 text-cyan-400'
+                    }`}>
+                      {selectedEventPopover.taskType}
+                    </span>
+                  )}
+                  {selectedEventPopover.priority && (
+                    <span className="inline-flex items-center rounded-md bg-[var(--surface-raised)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide">
+                      {selectedEventPopover.priority}
+                    </span>
+                  )}
+                </div>
+                {selectedEventPopover.goalTitle && (
+                  <div className="text-xs text-[var(--text-muted)]">
+                    <span className="font-medium">Goal:</span> {selectedEventPopover.goalTitle}
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-full ${
+                    selectedEventPopover.status === 'DONE' ? 'bg-emerald-400'
+                      : selectedEventPopover.status === 'IN_PROGRESS' ? 'bg-blue-400'
+                        : 'bg-gray-400'
+                  }`} />
+                  <span className="text-xs font-medium text-[var(--text-secondary)]">
+                    {selectedEventPopover.status === 'DONE' ? 'Done'
+                      : selectedEventPopover.status === 'IN_PROGRESS' ? 'In Progress'
+                        : 'To Do'}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {/* REVIEW popover */}
+            {selectedEventPopover.source === 'review' && (
+              <div className="flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${
+                  selectedEventPopover.status === 'Completed' ? 'bg-emerald-400' : 'bg-yellow-400'
+                }`} />
+                <span className="text-xs font-medium text-[var(--text-secondary)]">
+                  {selectedEventPopover.status}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Popover Actions */}
+          <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2">
+            {/* Aim: Complete + Manage Tasks */}
+            {selectedEventPopover.source === 'aims' && selectedEventPopover.status !== 'COMPLETED' && (
+              <>
+                <button
+                  onClick={() => selectedEventPopover.aimInstanceId && handleCompleteAim(selectedEventPopover.aimInstanceId)}
+                  disabled={completingEvent}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                >
+                  {completingEvent ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  Complete
+                </button>
+                <button
+                  onClick={handlePopoverOpenTasks}
+                  className="flex items-center justify-center gap-1.5 rounded-lg bg-[var(--surface-raised)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
+                >
+                  <ListTodo className="h-3.5 w-3.5" />
+                  Tasks
+                </button>
+              </>
+            )}
+            {selectedEventPopover.source === 'aims' && selectedEventPopover.status === 'COMPLETED' && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Already completed
+              </div>
+            )}
+
+            {/* Task: Complete */}
+            {selectedEventPopover.source === 'task' && selectedEventPopover.status !== 'DONE' && (
+              <button
+                onClick={() => selectedEventPopover.taskId && handleCompleteTask(selectedEventPopover.taskId)}
+                disabled={completingEvent}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                {completingEvent ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                )}
+                Complete
+              </button>
+            )}
+            {selectedEventPopover.source === 'task' && selectedEventPopover.status === 'DONE' && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Already done
+              </div>
+            )}
+
+            {/* Review: Open */}
+            {selectedEventPopover.source === 'review' && (
+              <button
+                onClick={() => {
+                  if (selectedEventPopover.reviewId) {
+                    router.push(`/reviews/${selectedEventPopover.reviewId}/complete`);
+                  }
+                  setSelectedEventPopover(null);
+                }}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open Review
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Calendar */}
       <div className={`${resolvedTheme === 'dark' ? 'fc-dark-theme' : 'fc-light-theme'} glass-panel p-4`}>

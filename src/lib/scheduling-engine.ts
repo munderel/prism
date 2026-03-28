@@ -150,6 +150,17 @@ export function findSlotInRange(
   return null;
 }
 
+/**
+ * Check whether two Dates fall on the same calendar day.
+ */
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
 // ---------- Main scheduling function ----------
 
 /**
@@ -201,8 +212,16 @@ export function autoSchedule(
     // First pass: try preferred time window on each day
     if (task.preferredTimeStart && task.preferredTimeEnd) {
       for (const day of days) {
-        const prefStart = setTimeOnDate(day, task.preferredTimeStart);
+        let prefStart = setTimeOnDate(day, task.preferredTimeStart);
         const prefEnd = setTimeOnDate(day, task.preferredTimeEnd);
+
+        // On today, clamp start to current time so we don't schedule in the past
+        if (isSameDay(day, now) && now.getTime() > prefStart.getTime()) {
+          prefStart = new Date(now);
+        }
+
+        // If clamping pushed start past end, skip this day
+        if (prefStart.getTime() >= prefEnd.getTime()) continue;
 
         const slot = findSlotInRange(day, prefStart, prefEnd, durationMs, occupied);
         if (slot) {
@@ -218,8 +237,16 @@ export function autoSchedule(
     // Second pass: try any working-hours slot
     if (!scheduled) {
       for (const day of days) {
-        const whStart = setTimeOnDate(day, workingHours.start);
+        let whStart = setTimeOnDate(day, workingHours.start);
         const whEnd = setTimeOnDate(day, workingHours.end);
+
+        // On today, clamp start to current time so we don't schedule in the past
+        if (isSameDay(day, now) && now.getTime() > whStart.getTime()) {
+          whStart = new Date(now);
+        }
+
+        // If clamping pushed start past end, skip this day
+        if (whStart.getTime() >= whEnd.getTime()) continue;
 
         const slot = findSlotInRange(day, whStart, whEnd, durationMs, occupied);
         if (slot) {

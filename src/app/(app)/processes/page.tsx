@@ -16,6 +16,7 @@ import {
   Calendar,
   X,
   ExternalLink,
+  Clock,
 } from 'lucide-react';
 
 interface Step {
@@ -124,6 +125,14 @@ export default function ProcessesPage() {
   const [showImport, setShowImport] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState('');
+
+  // Schedule popup
+  const [schedulingProcess, setSchedulingProcess] = useState<ProcessData | null>(null);
+  const [schedTime, setSchedTime] = useState('09:00');
+  const [schedDayOfWeek, setSchedDayOfWeek] = useState(1); // Monday
+  const [schedDayOfMonth, setSchedDayOfMonth] = useState(1);
+  const [schedDate, setSchedDate] = useState('');
+  const [schedSaving, setSchedSaving] = useState(false);
 
 
   const fetchProcessDetail = async (processId: string) => {
@@ -315,6 +324,53 @@ export default function ProcessesPage() {
     } else {
       const data = await res.json().catch(() => ({}));
       setImportError(data.error || 'Import failed');
+    }
+  };
+
+  const openSchedulePopup = (proc: ProcessData) => {
+    setSchedulingProcess(proc);
+    setSchedTime('09:00');
+    setSchedDayOfWeek(1);
+    setSchedDayOfMonth(1);
+    setSchedDate('');
+    setSchedSaving(false);
+  };
+
+  const handleScheduleProcess = async () => {
+    if (!schedulingProcess) return;
+    setSchedSaving(true);
+
+    const payload: Record<string, unknown> = { time: schedTime };
+    const cadence = schedulingProcess.cadence;
+
+    if (cadence === 'WEEKLY' || cadence === 'BIWEEKLY') {
+      payload.dayOfWeek = schedDayOfWeek;
+    }
+    if (cadence === 'MONTHLY' || cadence === 'QUARTERLY') {
+      payload.dayOfMonth = schedDayOfMonth;
+    }
+    if (cadence === 'YEARLY' || cadence === 'ONE_TIME') {
+      payload.date = schedDate;
+    }
+
+    const res = await fetch(`/api/processes/${schedulingProcess.id}/schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    setSchedSaving(false);
+
+    if (res.ok) {
+      toast.success(`Scheduled "${schedulingProcess.title}" on the calendar`);
+      setSchedulingProcess(null);
+      mutateFunctions();
+      if (expandedProcessId === schedulingProcess.id) {
+        fetchProcessDetail(schedulingProcess.id);
+      }
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || 'Failed to schedule process');
     }
   };
 
@@ -611,6 +667,14 @@ export default function ProcessesPage() {
                         {proc.cadence}
                       </span>
                       <span className="text-xs text-[var(--text-muted)]">{proc._count.steps} step{proc._count.steps !== 1 ? 's' : ''}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openSchedulePopup(proc); }}
+                        className="flex items-center gap-1 rounded-lg border border-indigo-600/30 bg-indigo-600/10 px-2 py-1 text-xs font-medium text-indigo-400 hover:bg-indigo-600/20 transition-colors"
+                        title="Schedule on calendar"
+                      >
+                        <Clock className="h-3 w-3" />
+                        Schedule
+                      </button>
                       {isAdmin && (
                         <>
                           <button
@@ -916,6 +980,133 @@ export default function ProcessesPage() {
           </div>
         </details>
       ))}
+
+      {/* Schedule Process Popup */}
+      {schedulingProcess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSchedulingProcess(null)}>
+          <div className="w-full max-w-md rounded-xl border border-[var(--border-color)] bg-[var(--surface)] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Schedule Process</h3>
+              <button onClick={() => setSchedulingProcess(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm font-medium text-[var(--text-primary)]">{schedulingProcess.title}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[schedulingProcess.cadence] || 'bg-[var(--surface-raised)] text-[var(--text-secondary)] border-[var(--border-color)]'}`}>
+                  {schedulingProcess.cadence}
+                </span>
+                <span className="text-xs text-[var(--text-muted)]">{schedulingProcess.defaultDurationMinutes} min</span>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Day-of-week picker for WEEKLY / BIWEEKLY */}
+              {(schedulingProcess.cadence === 'WEEKLY' || schedulingProcess.cadence === 'BIWEEKLY') && (
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Day of Week</label>
+                  <div className="flex gap-1">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => setSchedDayOfWeek(i)}
+                        className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition-colors ${
+                          schedDayOfWeek === i
+                            ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Day-of-month picker for MONTHLY / QUARTERLY */}
+              {(schedulingProcess.cadence === 'MONTHLY' || schedulingProcess.cadence === 'QUARTERLY') && (
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Day of Month</label>
+                  <div className="flex flex-wrap gap-1">
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setSchedDayOfMonth(d)}
+                        className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${
+                          schedDayOfMonth === d
+                            ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Date picker for YEARLY / ONE_TIME */}
+              {(schedulingProcess.cadence === 'YEARLY' || schedulingProcess.cadence === 'ONE_TIME') && (
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Date</label>
+                  <input
+                    type="date"
+                    value={schedDate}
+                    onChange={(e) => setSchedDate(e.target.value)}
+                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {/* Time picker — always shown */}
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Time</label>
+                <input
+                  type="time"
+                  value={schedTime}
+                  onChange={(e) => setSchedTime(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Duration display */}
+              <div className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] p-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--text-secondary)]">Duration</span>
+                  <span className="text-[var(--text-primary)] font-medium">
+                    {schedulingProcess.defaultDurationMinutes < 60
+                      ? `${schedulingProcess.defaultDurationMinutes} min`
+                      : schedulingProcess.defaultDurationMinutes % 60 === 0
+                        ? `${schedulingProcess.defaultDurationMinutes / 60}h`
+                        : `${Math.floor(schedulingProcess.defaultDurationMinutes / 60)}h ${schedulingProcess.defaultDurationMinutes % 60}m`}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={handleScheduleProcess}
+                disabled={schedSaving || ((schedulingProcess.cadence === 'YEARLY' || schedulingProcess.cadence === 'ONE_TIME') && !schedDate)}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+              >
+                <Calendar className="h-4 w-4" />
+                {schedSaving ? 'Scheduling...' : 'Schedule'}
+              </button>
+              <button
+                onClick={() => setSchedulingProcess(null)}
+                className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
