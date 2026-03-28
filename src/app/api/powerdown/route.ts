@@ -60,7 +60,27 @@ export async function PATCH(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const body = await request.json();
-  const { sessionId, currentStep, checklistState, tomorrowPlan, distractions, gratitudes, ideas, clearGoals, complete } = body;
+  const { sessionId, currentStep, checklistState, tomorrowPlan, distractions, gratitudes, ideas, clearGoals, complete, timeBlockStart, timeBlockEnd, sessionDate: overrideDate } = body;
+
+  // Support creating/updating a session by date (for calendar drag one-time overrides)
+  if (!sessionId && overrideDate && (timeBlockStart !== undefined || timeBlockEnd !== undefined)) {
+    const date = new Date(overrideDate);
+    date.setHours(0, 0, 0, 0);
+    // Find or create a session for this date
+    let session = await prisma.powerdownSession.findFirst({
+      where: { userId: auth.userId, sessionDate: { gte: date, lt: new Date(date.getTime() + 86400000) } },
+    });
+    if (!session) {
+      session = await prisma.powerdownSession.create({
+        data: { userId: auth.userId, sessionDate: date },
+      });
+    }
+    const updateData: any = {};
+    if (timeBlockStart !== undefined) updateData.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
+    if (timeBlockEnd !== undefined) updateData.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
+    const updated = await prisma.powerdownSession.update({ where: { id: session.id }, data: updateData });
+    return Response.json(updated);
+  }
 
   if (!sessionId) {
     return Response.json({ error: 'sessionId is required' }, { status: 400 });
@@ -80,6 +100,8 @@ export async function PATCH(request: NextRequest) {
   if (ideas !== undefined) data.ideas = ideas;
   if (clearGoals !== undefined) data.clearGoals = clearGoals;
   if (complete) data.completedAt = new Date();
+  if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
+  if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
 
   const updated = await prisma.powerdownSession.update({ where: { id: sessionId }, data });
   return Response.json(updated);

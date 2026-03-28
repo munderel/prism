@@ -10,12 +10,33 @@ import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
+
+  const { searchParams } = new URL(request.url);
+  const includeParents = searchParams.get('includeParents') === 'true';
+
+  const parentInclude = includeParents
+    ? {
+        parent: {
+          select: {
+            id: true, title: true, level: true,
+            parent: {
+              select: {
+                id: true, title: true, level: true,
+                parent: {
+                  select: { id: true, title: true, level: true, parent: { select: { id: true, title: true, level: true } } },
+                },
+              },
+            },
+          },
+        },
+      }
+    : {};
 
   const goal = await prisma.goal.findUnique({
     where: { id },
@@ -35,6 +56,7 @@ export async function GET(
           companyGoal: { select: { id: true, title: true } },
         },
       },
+      ...parentInclude,
     },
   });
 

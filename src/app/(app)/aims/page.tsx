@@ -13,7 +13,23 @@ import {
   X,
   Pencil,
   Check,
+  CheckCircle2,
+  Loader2,
+  Trophy,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  CalendarPlus,
+  RotateCcw,
 } from 'lucide-react';
+import StreakHeatmap from '@/components/aims/StreakHeatmap';
+import { AimProgressChart } from '@/components/aims/AimProgressChart';
+import type { DerailInfo } from '@/lib/derail-detection';
+import {
+  PHASE_LABELS as PHASE_LABELS_MAP,
+  getEffectiveDuration,
+  getEffectiveFrequency,
+} from '@/lib/aim-phases';
 
 interface AimCategory {
   id: string;
@@ -43,17 +59,116 @@ interface UserAim {
   aimCategory: AimCategory;
 }
 
+interface AimInstance {
+  id: string;
+  userId: string;
+  aimCategoryId: string;
+  scheduledDate: string;
+  status: string;
+  completedAt: string | null;
+}
+
+function getTodayRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+interface DerailBatchResponse {
+  [aimCategoryId: string]: {
+    derailInfo: DerailInfo;
+    history: { date: string; completed: boolean; status: string }[];
+    expectedPerDay: number;
+  };
+}
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 export default function AimsPage() {
   const { data: categories, isLoading: catsLoading } = useSWR<AimCategory[]>('/api/aims/categories');
   const { data: userAims, isLoading: aimsLoading, mutate: mutateAims } = useSWR<UserAim[]>('/api/aims/user');
+
+  // Batch-fetch derail info for ALL active aims in one request (eliminates N+1 waterfall)
+  const { data: derailBatch } = useSWR<DerailBatchResponse>('/api/aims/derail-batch?days=14');
+
+  // Fetch today's instances to show completion status
+  const { start: todayStart, end: todayEnd } = getTodayRange();
+  const { data: todayInstances, mutate: mutateTodayInstances } = useSWR<AimInstance[]>(
+    `/api/aims/instances?start=${todayStart}&end=${todayEnd}`
+  );
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDuration, setEditDuration] = useState<number>(0);
   const [editFrequency, setEditFrequency] = useState<number>(0);
   const [newActivity, setNewActivity] = useState('');
   const [editActivities, setEditActivities] = useState<string[]>([]);
+  const [completingId, setCompletingId] = useState<string | null>(null);
 
   const isLoading = catsLoading || aimsLoading;
+
+  // Build a set of aimCategoryIds that are completed today
+  const completedTodaySet = new Set<string>();
+  const todayInstanceMap = new Map<string, AimInstance>();
+  todayInstances?.forEach((inst) => {
+    if (inst.status === 'COMPLETED') {
+      completedTodaySet.add(inst.aimCategoryId);
+    }
+    // Keep the latest instance per category
+    todayInstanceMap.set(inst.aimCategoryId, inst);
+  });
+
+  const completeToday = useCallback(
+    async (aimCategoryId: string) => {
+      setCompletingId(aimCategoryId);
+      try {
+        // Check if an instance exists for today already
+        let instance = todayInstanceMap.get(aimCategoryId);
+
+        if (!instance) {
+          // Create today's instance
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const res = await fetch('/api/aims/instances', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              aimCategoryId,
+              scheduledDate: today.toISOString(),
+            }),
+          });
+          if (!res.ok) {
+            console.error('Failed to create instance');
+            return;
+          }
+          instance = await res.json();
+        }
+
+        if (!instance) return;
+
+        // Mark it as COMPLETED
+        if (instance.status !== 'COMPLETED') {
+          const res = await fetch(`/api/aims/instances/${instance.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'COMPLETED' }),
+          });
+          if (!res.ok) {
+            console.error('Failed to complete instance');
+            return;
+          }
+        }
+
+        // Refresh data
+        await Promise.all([mutateAims(), mutateTodayInstances()]);
+      } finally {
+        setCompletingId(null);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todayInstanceMap, mutateAims, mutateTodayInstances]
+  );
 
   const userAimMap = new Map<string, UserAim>();
   userAims?.forEach((ua) => userAimMap.set(ua.aimCategoryId, ua));
@@ -92,6 +207,28 @@ export default function AimsPage() {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [userAims, mutateAims]
+  );
+
+  const resetToSeed = useCallback(
+    async (catId: string) => {
+      if (!confirm('Reset this aim to Seed phase? This will clear your streak and completion count.')) return;
+      await fetch('/api/aims/user', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          aims: [{
+            aimCategoryId: catId,
+            currentPhase: 'SEED',
+            phaseStartedAt: new Date().toISOString(),
+            completionCount: 0,
+            currentStreak: 0,
+          }],
+        }),
+      });
+      mutateAims();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mutateAims]
   );
 
   const startEditing = (cat: AimCategory) => {
@@ -190,12 +327,16 @@ export default function AimsPage() {
                 frequency={formatFrequency(cat)}
                 activities={getActivities(cat)}
                 userAim={userAimMap.get(cat.id)}
+                derailInfo={derailBatch?.[cat.id]?.derailInfo}
                 isEditing={editingId === cat.id}
                 editDuration={editDuration}
                 editFrequency={editFrequency}
                 editActivities={editActivities}
                 newActivity={newActivity}
+                completedToday={completedTodaySet.has(cat.id)}
+                completing={completingId === cat.id}
                 onToggle={() => toggleAim(cat.id)}
+                onComplete={() => completeToday(cat.id)}
                 onStartEdit={() => startEditing(cat)}
                 onSaveEdit={() => saveEditing(cat)}
                 onCancelEdit={() => setEditingId(null)}
@@ -204,6 +345,8 @@ export default function AimsPage() {
                 onNewActivityChange={setNewActivity}
                 onAddActivity={addActivity}
                 onRemoveActivity={removeActivity}
+                onResetToSeed={() => resetToSeed(cat.id)}
+                onMutateAims={mutateAims}
               />
             ))}
           </div>
@@ -224,12 +367,17 @@ export default function AimsPage() {
               duration={getDuration(cat)}
               frequency={formatFrequency(cat)}
               activities={getActivities(cat)}
+              userAim={userAimMap.get(cat.id)}
+              derailInfo={derailBatch?.[cat.id]?.derailInfo}
               isEditing={editingId === cat.id}
               editDuration={editDuration}
               editFrequency={editFrequency}
               editActivities={editActivities}
               newActivity={newActivity}
+              completedToday={completedTodaySet.has(cat.id)}
+              completing={completingId === cat.id}
               onToggle={() => toggleAim(cat.id)}
+              onComplete={() => completeToday(cat.id)}
               onStartEdit={() => startEditing(cat)}
               onSaveEdit={() => saveEditing(cat)}
               onCancelEdit={() => setEditingId(null)}
@@ -238,6 +386,8 @@ export default function AimsPage() {
               onNewActivityChange={setNewActivity}
               onAddActivity={addActivity}
               onRemoveActivity={removeActivity}
+              onResetToSeed={() => resetToSeed(cat.id)}
+              onMutateAims={mutateAims}
             />
           ))}
         </div>
@@ -253,18 +403,19 @@ const PHASE_STYLES: Record<string, { dot: string; text: string; bg: string }> = 
   FLOW:   { dot: 'bg-amber-400',  text: 'text-amber-400',  bg: 'bg-amber-400/10' },
 };
 
-const PHASE_LABELS: Record<string, string> = {
-  SEED: 'Seed',
-  SPROUT: 'Sprout',
-  GROW: 'Grow',
-  FLOW: 'Flow',
-};
+const PHASE_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(PHASE_LABELS_MAP).map(([k, v]) => [k, v.label])
+);
+const PHASE_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+  Object.entries(PHASE_LABELS_MAP).map(([k, v]) => [k, v.description])
+);
 
-const PHASE_DESCRIPTIONS: Record<string, string> = {
-  SEED: 'Building the habit',
-  SPROUT: 'Getting stronger',
-  GROW: 'Almost automatic',
-  FLOW: 'In flow',
+// C3: Phase-specific tooltip text
+const PHASE_TOOLTIPS: Record<string, string> = {
+  SEED:   'Seed -- Building the habit. Start small: 1x/week, 5 minutes.',
+  SPROUT: 'Sprout -- Getting stronger. Increasing frequency and duration.',
+  GROW:   'Grow -- Almost automatic. Approaching your full target.',
+  FLOW:   'Flow -- In flow. Performing at your target level.',
 };
 
 interface AimCardProps {
@@ -274,12 +425,16 @@ interface AimCardProps {
   frequency: string;
   activities: string[];
   userAim?: UserAim;
+  derailInfo?: DerailInfo;
   isEditing: boolean;
   editDuration: number;
   editFrequency: number;
   editActivities: string[];
   newActivity: string;
+  completedToday: boolean;
+  completing: boolean;
   onToggle: () => void;
+  onComplete: () => void;
   onStartEdit: () => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
@@ -288,6 +443,8 @@ interface AimCardProps {
   onNewActivityChange: (v: string) => void;
   onAddActivity: () => void;
   onRemoveActivity: (act: string) => void;
+  onResetToSeed: () => void;
+  onMutateAims: () => void;
 }
 
 function AimCard({
@@ -297,12 +454,16 @@ function AimCard({
   frequency,
   activities,
   userAim,
+  derailInfo,
   isEditing,
   editDuration,
   editFrequency,
   editActivities,
   newActivity,
+  completedToday,
+  completing,
   onToggle,
+  onComplete,
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
@@ -311,16 +472,39 @@ function AimCard({
   onNewActivityChange,
   onAddActivity,
   onRemoveActivity,
+  onResetToSeed,
+  onMutateAims,
 }: AimCardProps) {
+  const [chartExpanded, setChartExpanded] = useState(false);
+  const [schedulerOpen, setSchedulerOpen] = useState(false);
   const phase = (userAim?.currentPhase || 'SEED') as string;
   const phaseStyle = PHASE_STYLES[phase] || PHASE_STYLES.SEED;
   const streak = userAim?.currentStreak ?? 0;
   const completionCount = userAim?.completionCount ?? 0;
 
-  // Calculate effective duration based on phase
-  const phaseMultiplier = phase === 'SEED' ? 0.5 : phase === 'SPROUT' ? 0.75 : 1.0;
-  const effectiveDuration = Math.max(5, Math.round(duration * phaseMultiplier));
-  const isReduced = phaseMultiplier < 1.0;
+  // C1: Use phase-aware dynamic functions from aim-phases.ts
+  const aimLike = userAim
+    ? {
+        customDuration: userAim.customDuration,
+        customFrequency: userAim.customFrequency,
+        currentPhase: userAim.currentPhase,
+        phaseStartedAt: userAim.phaseStartedAt,
+        aimCategory: {
+          defaultDurationMin: category.defaultDurationMin,
+          defaultFrequency: category.defaultFrequency,
+        },
+      }
+    : null;
+
+  const effectiveDuration = aimLike ? getEffectiveDuration(aimLike) : duration;
+  const effectiveFreq = aimLike ? getEffectiveFrequency(aimLike) : category.defaultFrequency;
+  const isReduced = effectiveDuration < duration;
+
+  // Format frequency display using effective frequency
+  const effectiveFreqDisplay = category.isDaily
+    ? 'Daily'
+    : `${effectiveFreq}x / week`;
+  const baseFreqDisplay = frequency; // original (target) frequency from parent
 
   return (
     <div
@@ -330,9 +514,13 @@ function AimCard({
     >
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-[var(--text-primary)] truncate">
-            {category.name}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-[var(--text-primary)] truncate">
+              {category.name}
+            </h3>
+            {/* Derail status indicator */}
+            {active && derailInfo && <DerailStatusBadge derailInfo={derailInfo} />}
+          </div>
           {category.description && (
             <p className="text-xs text-[var(--text-muted)] mt-0.5 line-clamp-2">
               {category.description}
@@ -340,10 +528,16 @@ function AimCard({
           )}
         </div>
         <div className="flex items-center gap-1 ml-2 shrink-0">
-          {/* Phase badge */}
+          {/* C3: Phase badge with tooltip */}
           {active && (
-            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${phaseStyle.text} ${phaseStyle.bg}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${phaseStyle.dot}`} />
+            <span
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${phaseStyle.text} ${phaseStyle.bg}`}
+              title={PHASE_TOOLTIPS[phase] || ''}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${phaseStyle.dot}`}
+                title={PHASE_TOOLTIPS[phase] || ''}
+              />
               {PHASE_LABELS[phase]}
             </span>
           )}
@@ -370,27 +564,94 @@ function AimCard({
         </div>
       </div>
 
-      {/* Phase description + streak */}
+      {/* Phase description */}
       {active && (
-        <div className="flex items-center justify-between mt-2">
+        <div className="mt-2">
           <span className={`text-[10px] ${phaseStyle.text}`}>
             {PHASE_DESCRIPTIONS[phase]}
           </span>
-          <div className="flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
-            {streak > 0 && (
-              <span className="flex items-center gap-0.5">
-                <Flame className="h-3 w-3 text-orange-400" />
-                {streak}
+        </div>
+      )}
+
+      {/* Streak display - prominent and always visible */}
+      {active && (
+        <div className="mt-2 flex items-center gap-3 rounded-lg bg-[var(--surface-raised)] px-3 py-2">
+          {/* C3: Tooltip on flame/streak icon */}
+          <span title={`Current streak: ${streak} days`}>
+            <Flame
+              className={`h-5 w-5 shrink-0 ${
+                streak === 0
+                  ? 'text-gray-400'
+                  : streak < 7
+                    ? 'text-orange-400'
+                    : streak < 14
+                      ? 'text-orange-500'
+                      : 'text-red-500'
+              }`}
+            />
+          </span>
+          <div className="flex-1 min-w-0">
+            <span
+              className={`text-sm font-semibold ${
+                streak === 0
+                  ? 'text-[var(--text-muted)]'
+                  : streak < 7
+                    ? 'text-orange-400'
+                    : streak < 14
+                      ? 'text-orange-500'
+                      : 'text-red-500'
+              }`}
+              title={`Current streak: ${streak} days`}
+            >
+              {streak === 0
+                ? 'No streak'
+                : `${streak} day streak${streak >= 14 ? ' \u{1F525}\u{1F525}' : streak >= 7 ? ' \u{1F525}' : ''}`}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {(userAim?.bestStreak ?? 0) > 0 && (
+              <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]" title="Best streak">
+                <Trophy className="h-3.5 w-3.5 text-amber-400" />
+                Best: {userAim?.bestStreak}
               </span>
             )}
+            {/* C3: Tooltip on completion count */}
             {completionCount > 0 && (
-              <span>{completionCount} done</span>
+              <span
+                className="text-xs text-[var(--text-muted)] ml-1"
+                title={`Total completions: ${completionCount}`}
+              >
+                {completionCount} done
+              </span>
             )}
           </div>
         </div>
       )}
 
-      {/* Stats Row */}
+      {/* Streak heatmap */}
+      {active && !isEditing && (
+        <div className="mt-2">
+          <StreakHeatmap aimCategoryId={category.id} />
+        </div>
+      )}
+
+      {/* Progress chart toggle */}
+      {active && !isEditing && (
+        <button
+          onClick={() => setChartExpanded(!chartExpanded)}
+          className="mt-2 flex w-full items-center justify-between rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+        >
+          <span>Progress Chart</span>
+          {chartExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      {active && chartExpanded && !isEditing && (
+        <div className="mt-2">
+          <AimProgressChart aimCategoryId={category.id} days={30} />
+        </div>
+      )}
+
+      {/* Stats Row — uses effective (phase-aware) duration and frequency */}
       <div className="flex items-center gap-3 mt-2 text-xs text-[var(--text-secondary)]">
         <span className="flex items-center gap-1">
           <Clock className="h-3.5 w-3.5" />
@@ -402,7 +663,11 @@ function AimCard({
         </span>
         <span className="flex items-center gap-1">
           <Repeat className="h-3.5 w-3.5" />
-          {frequency}
+          {effectiveFreqDisplay !== baseFreqDisplay ? (
+            <><span>{effectiveFreqDisplay}</span><span className="text-[var(--text-muted)] line-through ml-1">{baseFreqDisplay}</span></>
+          ) : (
+            <>{effectiveFreqDisplay}</>
+          )}
         </span>
         {category.isGroupable && (
           <span className="flex items-center gap-1 text-teal-500 bg-teal-500/10 px-1.5 py-0.5 rounded-full">
@@ -411,6 +676,51 @@ function AimCard({
           </span>
         )}
       </div>
+
+      {/* Complete Today Button + Schedule Button */}
+      {active && !isEditing && (
+        <div className="mt-3 flex items-center gap-2">
+          {completedToday ? (
+            <div className="flex items-center gap-1.5 text-xs font-medium text-green-500">
+              <CheckCircle2 className="h-4 w-4" />
+              Completed today
+            </div>
+          ) : (
+            <button
+              onClick={onComplete}
+              disabled={completing}
+              className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {completing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              {completing ? 'Completing...' : 'Complete Today'}
+            </button>
+          )}
+          {/* C4: Schedule button */}
+          <button
+            onClick={() => setSchedulerOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+            title="Schedule recurring sessions in calendar"
+          >
+            <CalendarPlus className="h-3.5 w-3.5" />
+            Schedule
+          </button>
+        </div>
+      )}
+
+      {/* C4: Schedule Modal */}
+      {schedulerOpen && (
+        <AimSchedulerModal
+          category={category}
+          effectiveDuration={effectiveDuration}
+          effectiveFrequency={effectiveFreq}
+          onClose={() => setSchedulerOpen(false)}
+          onMutateAims={onMutateAims}
+        />
+      )}
 
       {/* Activities (non-editing) */}
       {!isEditing && activities.length > 0 && (
@@ -501,23 +811,218 @@ function AimCard({
             </div>
           )}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-between">
+            {/* C2: Reset to Seed button */}
             <button
-              onClick={onCancelEdit}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+              onClick={onResetToSeed}
+              className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-500/20 transition-colors"
+              title="Reset aim to Seed phase, clearing streak and completion count"
             >
-              Cancel
+              <RotateCcw className="h-3 w-3" />
+              Reset to Seed
             </button>
-            <button
-              onClick={onSaveEdit}
-              className="flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 transition-colors"
-            >
-              <Check className="h-3 w-3" />
-              Save
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={onCancelEdit}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onSaveEdit}
+                className="flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 transition-colors"
+              >
+                <Check className="h-3 w-3" />
+                Save
+              </button>
+            </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// ---- C4: Aim Scheduler Modal ----
+
+interface AimSchedulerModalProps {
+  category: AimCategory;
+  effectiveDuration: number;
+  effectiveFrequency: number;
+  onClose: () => void;
+  onMutateAims: () => void;
+}
+
+function AimSchedulerModal({
+  category,
+  effectiveDuration,
+  effectiveFrequency,
+  onClose,
+  onMutateAims,
+}: AimSchedulerModalProps) {
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
+  const [dayTimes, setDayTimes] = useState<Record<number, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleDay = (day: number) => {
+    const next = new Set(selectedDays);
+    if (next.has(day)) {
+      next.delete(day);
+      const nextTimes = { ...dayTimes };
+      delete nextTimes[day];
+      setDayTimes(nextTimes);
+    } else {
+      if (next.size >= effectiveFrequency) {
+        // Limit selection to effective frequency
+        return;
+      }
+      next.add(day);
+      setDayTimes({ ...dayTimes, [day]: '09:00' });
+    }
+    setSelectedDays(next);
+  };
+
+  const updateTime = (day: number, time: string) => {
+    setDayTimes({ ...dayTimes, [day]: time });
+  };
+
+  const handleSave = async () => {
+    if (selectedDays.size === 0) {
+      setError('Select at least one day.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const days = Array.from(selectedDays).map((d) => ({
+        dayOfWeek: d,
+        timeStart: dayTimes[d] || '09:00',
+      }));
+      const res = await fetch('/api/aims/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aimCategoryId: category.id, days }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Failed to schedule.');
+        return;
+      }
+      onMutateAims();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="glass-panel rounded-xl p-5 w-full max-w-sm mx-4 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+            Schedule: {category.name}
+          </h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <p className="text-xs text-[var(--text-secondary)]">
+          Pick {effectiveFrequency} day{effectiveFrequency !== 1 ? 's' : ''} per week.
+          Each session: {effectiveDuration} min.
+        </p>
+
+        {/* Day-of-week checkboxes */}
+        <div className="grid grid-cols-7 gap-1">
+          {DAY_LABELS.map((label, idx) => {
+            const isSelected = selectedDays.has(idx);
+            const canSelect = isSelected || selectedDays.size < effectiveFrequency;
+            return (
+              <button
+                key={idx}
+                onClick={() => canSelect && toggleDay(idx)}
+                className={`rounded-lg py-2 text-[10px] font-medium transition-colors ${
+                  isSelected
+                    ? 'bg-teal-600 text-white'
+                    : canSelect
+                      ? 'bg-[var(--surface-raised)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
+                      : 'bg-[var(--surface-raised)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Time pickers for selected days */}
+        {selectedDays.size > 0 && (
+          <div className="space-y-2">
+            {Array.from(selectedDays)
+              .sort()
+              .map((day) => (
+                <div key={day} className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--text-secondary)] w-10">{DAY_LABELS[day]}</span>
+                  <input
+                    type="time"
+                    value={dayTimes[day] || '09:00'}
+                    onChange={(e) => updateTime(day, e.target.value)}
+                    className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                  />
+                  <span className="text-[10px] text-[var(--text-muted)]">{effectiveDuration} min</span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {error && <p className="text-xs text-red-500">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onClose}
+            className="rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || selectedDays.size === 0}
+            className="flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CalendarPlus className="h-3 w-3" />}
+            {saving ? 'Scheduling...' : 'Schedule 4 weeks'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Derail Status Badge ----
+
+const DERAIL_STYLES: Record<string, { dot: string; text: string; bg: string; label: string }> = {
+  on_track:  { dot: 'bg-green-500', text: 'text-green-500', bg: 'bg-green-500/10', label: 'On Track' },
+  caution:   { dot: 'bg-yellow-500', text: 'text-yellow-500', bg: 'bg-yellow-500/10', label: 'Caution' },
+  derailing: { dot: 'bg-red-500', text: 'text-red-500', bg: 'bg-red-500/10', label: 'Derailing!' },
+};
+
+function DerailStatusBadge({ derailInfo }: { derailInfo: DerailInfo }) {
+  const style = DERAIL_STYLES[derailInfo.status] || DERAIL_STYLES.on_track;
+  return (
+    <span
+      className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${style.text} ${style.bg} shrink-0`}
+      title={derailInfo.message}
+    >
+      {derailInfo.status === 'derailing' && <AlertTriangle className="h-3 w-3" />}
+      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+      {style.label}
+      {derailInfo.daysUntilDerail !== null && derailInfo.status !== 'derailing' && (
+        <span className="ml-0.5 opacity-70">({derailInfo.daysUntilDerail}d)</span>
+      )}
+    </span>
   );
 }

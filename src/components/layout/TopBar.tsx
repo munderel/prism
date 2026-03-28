@@ -32,6 +32,11 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
         {session?.user && (
           <>
             <span className="text-sm text-[var(--text-secondary)]">{session.user.name}</span>
+            {session.user.isAdmin && (
+              <span className="text-[10px] font-medium bg-indigo-600/20 text-indigo-400 border border-indigo-600/30 rounded-md px-1.5 py-0.5">
+                Admin
+              </span>
+            )}
             {session.user.image && (
               <Image
                 src={session.user.image}

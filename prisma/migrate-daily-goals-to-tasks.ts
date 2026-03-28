@@ -52,7 +52,7 @@ async function main() {
             data: {
               ownerId: goal.stack.ownerId,
               goalId: goal.parentId!,
-              taskType: 'GOAL_STACK',
+              taskType: 'IMPROVE',
               title: goal.title,
               description: goal.description,
               status: taskStatus as any,

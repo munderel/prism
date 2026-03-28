@@ -13,6 +13,8 @@ export async function GET() {
       OR: [
         { ownerId: auth.userId },
         { isCompany: true },
+        { visibility: 'group' },
+        { visibility: 'company' },
       ],
     },
     include: {
@@ -35,12 +37,19 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'Name is required' }, { status: 400 });
   }
 
-  if (isCompany) {
+  const { visibility } = body;
+
+  if (isCompany || visibility === 'company' || visibility === 'group') {
     const auth = await requireAdmin();
     if ('error' in auth) return authError(auth);
 
     const stack = await prisma.goalStack.create({
-      data: { name, isCompany: true, ownerId: auth.userId },
+      data: {
+        name,
+        isCompany: isCompany || visibility === 'company',
+        visibility: visibility || (isCompany ? 'company' : 'group'),
+        ownerId: auth.userId,
+      },
     });
     return Response.json(stack, { status: 201 });
   }
@@ -49,7 +58,7 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const stack = await prisma.goalStack.create({
-    data: { name, isCompany: false, ownerId: auth.userId },
+    data: { name, isCompany: false, visibility: 'private', ownerId: auth.userId },
   });
   return Response.json(stack, { status: 201 });
 }

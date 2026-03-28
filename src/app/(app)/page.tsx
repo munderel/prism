@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { Clock, CheckCircle2, Zap, AlertTriangle, Focus } from 'lucide-react';
+import Link from 'next/link';
+import { Clock, CheckCircle2, Zap, Focus, AlertTriangle } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { DashboardGreeting } from '@/components/dashboard/DashboardGreeting';
@@ -10,6 +11,15 @@ import { PrismStatCard } from '@/components/dashboard/PrismStatCard';
 import { WinTheDayCard } from '@/components/dashboard/WinTheDayCard';
 import { WinTheDayCelebration } from '@/components/dopamine/WinTheDayCelebration';
 import { FocusView } from '@/components/dashboard/FocusView';
+import type { DerailInfo } from '@/lib/derail-detection';
+
+interface DerailBatchResponse {
+  [aimCategoryId: string]: {
+    derailInfo: DerailInfo;
+    history: { date: string; completed: boolean; status: string }[];
+    expectedPerDay: number;
+  };
+}
 
 const FOCUS_MODE_KEY = 'prism-focus-mode';
 
@@ -36,6 +46,9 @@ export default function DashboardPage() {
   const { data: tasks, mutate } = useSWR(`/api/tasks?date=${today}&includeUnscheduled=true`, { revalidateOnFocus: true });
   const list = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
+  // Batch-fetch derail info for ALL active aims in one request (eliminates N+1 waterfall)
+  const { data: derailBatch } = useSWR<DerailBatchResponse>('/api/aims/derail-batch?days=14');
+
   const winTheDayTask = useMemo(() => list.find((t: any) => t.isWinTheDay) ?? null, [list]);
 
   const prevWtdStatusRef = useRef<string | null>(null);
@@ -51,7 +64,6 @@ export default function DashboardPage() {
   const stats = useMemo(() => ({
     total: list.length,
     done: list.filter((t: any) => t.status === 'DONE').length,
-    urgent: list.filter((t: any) => t.priority === 'URGENT').length,
     inProgress: list.filter((t: any) => t.status === 'IN_PROGRESS').length,
   }), [list]);
 
@@ -86,7 +98,6 @@ export default function DashboardPage() {
     { label: 'Total Tasks', value: stats.total, icon: Clock, color: 'text-blue-400', glowColor: '#3b82f6' },
     { label: 'Completed', value: stats.done, icon: CheckCircle2, color: 'text-green-400', glowColor: '#22c55e' },
     { label: 'In Progress', value: stats.inProgress, icon: Zap, color: 'text-yellow-400', glowColor: '#eab308' },
-    { label: 'Urgent', value: stats.urgent, icon: AlertTriangle, color: 'text-red-400', glowColor: '#ef4444' },
   ];
 
   return (
@@ -105,6 +116,9 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      {/* Derailing aims alert banner */}
+      {derailBatch && <DerailAlertBanner derailBatch={derailBatch} />}
+
       {focusMode ? (
         <>
           <WinTheDayCard task={winTheDayTask} />
@@ -117,7 +131,7 @@ export default function DashboardPage() {
         <>
           <DashboardGreeting onQuickAdd={() => setEditingTask('new')} />
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-3 gap-4 mb-8">
             {statCards.map((card) => (
               <PrismStatCard key={card.label} {...card} />
             ))}
@@ -147,5 +161,39 @@ export default function DashboardPage() {
         />
       )}
     </div>
+  );
+}
+
+// ---- Derail Alert Banner ----
+
+/**
+ * Shows a banner if any active aims need attention.
+ * Receives the already-fetched batch derail data from the parent (single SWR call).
+ */
+function DerailAlertBanner({ derailBatch }: { derailBatch: DerailBatchResponse }) {
+  const needsAttention = Object.values(derailBatch)
+    .map((entry) => entry.derailInfo)
+    .filter((d) => d.status === 'caution' || d.status === 'derailing');
+
+  if (needsAttention.length === 0) return null;
+
+  return (
+    <Link
+      href="/aims"
+      className="mb-4 flex items-center gap-2 rounded-lg border border-yellow-600/30 bg-yellow-600/10 px-4 py-2.5 text-sm text-yellow-400 hover:bg-yellow-600/20 transition-colors"
+    >
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <span>
+        {needsAttention.length} aim{needsAttention.length !== 1 ? 's' : ''} need{needsAttention.length === 1 ? 's' : ''} attention
+        {(() => {
+          const derailingCount = needsAttention.filter((d) => d.status === 'derailing').length;
+          const cautionCount = needsAttention.filter((d) => d.status === 'caution').length;
+          const parts: string[] = [];
+          if (derailingCount > 0) parts.push(`${derailingCount} derailing`);
+          if (cautionCount > 0) parts.push(`${cautionCount} needs caution`);
+          return parts.length > 0 ? <span className="text-yellow-500/70"> ({parts.join(', ')})</span> : null;
+        })()}
+      </span>
+    </Link>
   );
 }

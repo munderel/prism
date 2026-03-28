@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
@@ -26,14 +26,33 @@ export function GoalEditor({
     ? getChildLevel(parentGoal.level)
     : 'HIGH_HARD';
 
+  const isRootHHG = derivedLevel === 'HIGH_HARD' && !parentGoal;
+
   const [title, setTitle] = useState(goal?.title ?? '');
   const [description, setDescription] = useState(goal?.description ?? '');
   const [status, setStatus] = useState(goal?.status ?? 'NOT_STARTED');
   const [dueDate, setDueDate] = useState(
     goal?.dueDate ? new Date(goal.dueDate).toISOString().split('T')[0] : ''
   );
+  const [startDate, setStartDate] = useState(
+    goal?.startDate ? new Date(goal.startDate).toISOString().split('T')[0] : ''
+  );
+  const [endDate, setEndDate] = useState(
+    goal?.endDate ? new Date(goal.endDate).toISOString().split('T')[0] : ''
+  );
+  const [autoGenerate, setAutoGenerate] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const hhgDurationLabel = useMemo(() => {
+    if (!startDate || !endDate) return '';
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+    if (isNaN(s.getTime()) || isNaN(e.getTime()) || e <= s) return '';
+    const years = e.getFullYear() - s.getFullYear();
+    const label = years <= 1 ? '1-Year' : `${years}-Year`;
+    return `${label} HHG (${s.getFullYear()}\u2013${e.getFullYear()})`;
+  }, [startDate, endDate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +64,10 @@ export function GoalEditor({
       if (dueDate) body.dueDate = dueDate;
 
       if (isEditing) {
+        if (goal.startDate || goal.endDate || isRootHHG) {
+          if (startDate) body.startDate = startDate;
+          if (endDate) body.endDate = endDate;
+        }
         const res = await fetch(`/api/goals/${goal.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -58,6 +81,11 @@ export function GoalEditor({
         body.stackId = stackId;
         body.level = derivedLevel;
         if (parentGoal) body.parentId = parentGoal.id;
+        if (isRootHHG) {
+          if (startDate) body.startDate = startDate;
+          if (endDate) body.endDate = endDate;
+          if (autoGenerate && startDate && endDate) body.autoGenerate = true;
+        }
 
         const res = await fetch('/api/goals', {
           method: 'POST',
@@ -153,6 +181,72 @@ export function GoalEditor({
                   <option value="COMPLETED">Completed</option>
                   <option value="ABANDONED">Abandoned</option>
                 </select>
+              </div>
+            )}
+
+            {/* HHG start/end date pickers */}
+            {isRootHHG && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-[var(--text-secondary)] mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-[var(--text-secondary)] mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                {hhgDurationLabel && (
+                  <p className="text-xs text-purple-400/80 -mt-2">{hhgDurationLabel}</p>
+                )}
+                {!isEditing && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoGenerate}
+                      onChange={(e) => setAutoGenerate(e.target.checked)}
+                      className="rounded border-white/20 bg-[var(--hover-bg)] text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-[var(--text-secondary)]">
+                      Auto-generate yearly and monthly goals
+                    </span>
+                  </label>
+                )}
+              </>
+            )}
+
+            {/* Existing start/end dates on non-HHG editing */}
+            {!isRootHHG && isEditing && (goal?.startDate || goal?.endDate) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-[var(--text-secondary)] mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-[var(--text-secondary)] mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
               </div>
             )}
 

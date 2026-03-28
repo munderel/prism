@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock } from 'lucide-react';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, Copy, RefreshCw, Link2, Check } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
@@ -34,6 +34,14 @@ export default function SettingsPage() {
   const [taskSchedulePeriod, setTaskSchedulePeriod] = useState('both');
   const [saving, setSaving] = useState(false);
 
+  // Connected Calendars
+  const [availableCalendars, setAvailableCalendars] = useState<{ id: string; summary: string; primary: boolean; backgroundColor: string }[]>([]);
+  const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
+  const [loadingCalendars, setLoadingCalendars] = useState(false);
+
+  // Powerdown Time
+  const [powerdownTime, setPowerdownTime] = useState('17:30');
+
   // Dev user creation
   const [createName, setCreateName] = useState('');
   const [createEmail, setCreateEmail] = useState('');
@@ -55,6 +63,7 @@ export default function SettingsPage() {
   useEffect(() => {
     setMounted(true);
     fetchSettings();
+    fetchCalendars();
     if (isAdmin) {
       fetchUsers();
       fetchCompanySettings();
@@ -80,6 +89,23 @@ export default function SettingsPage() {
       if (data.casualHoursStart) setCasualHoursStart(data.casualHoursStart);
       if (data.casualHoursEnd) setCasualHoursEnd(data.casualHoursEnd);
       if (data.taskSchedulePeriod) setTaskSchedulePeriod(data.taskSchedulePeriod);
+      if (Array.isArray(data.selectedCalendarIds)) setSelectedCalendarIds(data.selectedCalendarIds);
+      if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
+    }
+  };
+
+  const fetchCalendars = async () => {
+    setLoadingCalendars(true);
+    try {
+      const res = await fetch('/api/calendar/list');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableCalendars(data.calendars ?? []);
+      }
+    } catch {
+      // Google Calendar may not be connected
+    } finally {
+      setLoadingCalendars(false);
     }
   };
 
@@ -101,7 +127,7 @@ export default function SettingsPage() {
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, autoScheduleEnabled, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod }),
+      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, autoScheduleEnabled, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime }),
     });
     toast.success('Settings saved!');
     setSaving(false);
@@ -193,7 +219,14 @@ export default function SettingsPage() {
       body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
     });
     if (res.ok) {
-      toast.success('Invitation sent!');
+      const invitation = await res.json();
+      const inviteUrl = `${window.location.origin}/accept-invite/${invitation.id}`;
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+        toast.success('Invite link copied!');
+      } catch {
+        toast.success('Invitation created!');
+      }
       setInviteEmail('');
       setInviteRole('user');
       fetchInvitations();
@@ -202,6 +235,51 @@ export default function SettingsPage() {
       toast.error(data.error || 'Failed to send invitation');
     }
     setInviting(false);
+  };
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyInviteLink = async (invitationId: string) => {
+    const inviteUrl = `${window.location.origin}/accept-invite/${invitationId}`;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedId(invitationId);
+      toast.success('Invite link copied!');
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
+
+  const resendInvitation = async (invitationId: string, email: string, role: string) => {
+    // Revoke the old one first, then create a new one
+    const revokeRes = await fetch(`/api/invitations/${invitationId}`, {
+      method: 'PATCH',
+    });
+    if (!revokeRes.ok) {
+      toast.error('Failed to revoke old invitation');
+      return;
+    }
+
+    const createRes = await fetch('/api/invitations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, role }),
+    });
+    if (createRes.ok) {
+      const newInvitation = await createRes.json();
+      const inviteUrl = `${window.location.origin}/accept-invite/${newInvitation.id}`;
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+        toast.success('New invite link copied!');
+      } catch {
+        toast.success('Invitation resent!');
+      }
+      fetchInvitations();
+    } else {
+      const data = await createRes.json();
+      toast.error(data.error || 'Failed to resend invitation');
+    }
   };
 
   const revokeInvitation = async (id: string) => {
@@ -451,6 +529,70 @@ export default function SettingsPage() {
           </button>
         </section>
 
+        {/* Connected Calendars */}
+        <section className="glass-panel p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-purple-400" />
+            Connected Calendars
+          </h2>
+          <p className="text-xs text-[var(--text-muted)] mb-4">Select which Google Calendars to show in your calendar view. If none are selected, only your primary calendar is used.</p>
+          {loadingCalendars ? (
+            <p className="text-sm text-[var(--text-muted)]">Loading calendars...</p>
+          ) : availableCalendars.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)]">No Google Calendar connected. Connect Google in your account settings to sync calendars.</p>
+          ) : (
+            <div className="space-y-2">
+              {availableCalendars.map((cal) => (
+                <label key={cal.id} className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedCalendarIds.includes(cal.id)}
+                    onChange={(e) => {
+                      setSelectedCalendarIds((prev) =>
+                        e.target.checked
+                          ? [...prev, cal.id]
+                          : prev.filter((id) => id !== cal.id)
+                      );
+                    }}
+                    className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span
+                    className="h-3 w-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: cal.backgroundColor || '#9333ea' }}
+                  />
+                  <span className="text-sm text-[var(--text-secondary)]">
+                    {cal.summary}
+                    {cal.primary && <span className="text-xs text-[var(--text-muted)] ml-1">(Primary)</span>}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+          <button onClick={saveUserSettings} disabled={saving}
+            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+            Save
+          </button>
+        </section>
+
+        {/* Powerdown Time */}
+        <section className="glass-panel p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <Sunset className="h-5 w-5 text-violet-400" />
+            Powerdown Time
+          </h2>
+          <p className="text-xs text-[var(--text-muted)] mb-4">Set your daily power-down ritual time. This will appear as a recurring event on your calendar.</p>
+          <input
+            type="time"
+            value={powerdownTime}
+            onChange={(e) => setPowerdownTime(e.target.value)}
+            className={inputClasses}
+          />
+          <button onClick={saveUserSettings} disabled={saving}
+            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+            Save
+          </button>
+        </section>
+
         {/* Onboarding */}
         <section className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Onboarding Tour</h2>
@@ -608,26 +750,57 @@ export default function SettingsPage() {
                   {invitations
                     .filter((inv: any) => inv.status === 'PENDING')
                     .map((inv: any) => (
-                      <div key={inv.id} className="flex items-center justify-between rounded-lg bg-[var(--surface)] px-4 py-3">
-                        <div>
-                          <span className="text-sm text-[var(--text-primary)]">{inv.email}</span>
-                          <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
-                            inv.role === 'admin'
-                              ? 'bg-purple-600/20 text-purple-400'
-                              : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'
-                          }`}>
-                            {inv.role}
-                          </span>
-                          <span className="text-xs text-[var(--text-muted)] ml-2">
-                            {new Date(inv.createdAt).toLocaleDateString()}
-                          </span>
+                      <div key={inv.id} className="rounded-lg bg-[var(--surface)] px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center flex-wrap gap-1">
+                            <span className="text-sm text-[var(--text-primary)]">{inv.email}</span>
+                            <span className={`ml-1 text-xs px-2 py-0.5 rounded-full ${
+                              inv.role === 'admin'
+                                ? 'bg-purple-600/20 text-purple-400'
+                                : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'
+                            }`}>
+                              {inv.role}
+                            </span>
+                            {inv.isExpired && (
+                              <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-amber-600/20 text-amber-400">
+                                expired
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => copyInviteLink(inv.id)}
+                              className="rounded-lg p-1.5 text-xs font-medium bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                              title="Copy invite link"
+                            >
+                              {copiedId === inv.id ? (
+                                <Check className="h-3.5 w-3.5 text-green-400" />
+                              ) : (
+                                <Link2 className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => resendInvitation(inv.id, inv.email, inv.role)}
+                              className="rounded-lg px-2.5 py-1 text-xs font-medium bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 transition-colors"
+                              title="Revoke and resend with new link"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5 inline-block mr-1" />
+                              Resend
+                            </button>
+                            <button
+                              onClick={() => revokeInvitation(inv.id)}
+                              className="rounded-lg px-2.5 py-1 text-xs font-medium bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
+                            >
+                              Revoke
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => revokeInvitation(inv.id)}
-                          className="rounded-lg px-3 py-1 text-xs font-medium bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
-                        >
-                          Revoke
-                        </button>
+                        <div className="mt-1 text-xs text-[var(--text-muted)]">
+                          Sent {new Date(inv.createdAt).toLocaleDateString()}
+                          {!inv.isExpired && (
+                            <> &middot; Expires {new Date(new Date(inv.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString()}</>
+                          )}
+                        </div>
                       </div>
                     ))}
                 </div>
@@ -644,16 +817,27 @@ export default function SettingsPage() {
                   {invitations
                     .filter((inv: any) => inv.status !== 'PENDING')
                     .map((inv: any) => (
-                      <div key={inv.id} className="flex items-center justify-between rounded-lg bg-[var(--surface)] px-4 py-2">
-                        <div>
-                          <span className="text-sm text-[var(--text-muted)]">{inv.email}</span>
-                          <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
-                            inv.status === 'ACCEPTED'
-                              ? 'bg-green-600/20 text-green-400'
-                              : 'bg-red-600/20 text-red-400'
-                          }`}>
-                            {inv.status.toLowerCase()}
-                          </span>
+                      <div key={inv.id} className="rounded-lg bg-[var(--surface)] px-4 py-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center flex-wrap gap-1">
+                            <span className="text-sm text-[var(--text-muted)]">{inv.email}</span>
+                            <span className={`ml-1 text-xs px-2 py-0.5 rounded-full ${
+                              inv.status === 'ACCEPTED'
+                                ? 'bg-green-600/20 text-green-400'
+                                : 'bg-red-600/20 text-red-400'
+                            }`}>
+                              {inv.status.toLowerCase()}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-1 text-xs text-[var(--text-muted)]">
+                          Sent {new Date(inv.createdAt).toLocaleDateString()}
+                          {inv.status === 'ACCEPTED' && inv.acceptedAt && (
+                            <> &middot; Accepted {new Date(inv.acceptedAt).toLocaleDateString()}</>
+                          )}
+                          {inv.status === 'REVOKED' && inv.revokedAt && (
+                            <> &middot; Revoked {new Date(inv.revokedAt).toLocaleDateString()}</>
+                          )}
                         </div>
                       </div>
                     ))}

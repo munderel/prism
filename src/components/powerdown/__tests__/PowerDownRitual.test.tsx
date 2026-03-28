@@ -19,6 +19,8 @@ function setup(fetchRoutes: Record<string, any> = {}) {
       return { id: 'session-1', currentStep: 1, tomorrowPlan: [] };
     },
     '/api/tasks': [],
+    '/api/streaks': [],
+    '/api/distractions': { id: 'dist-1' },
     ...fetchRoutes,
   };
   global.fetch = createMockFetch(defaultRoutes);
@@ -45,7 +47,7 @@ describe('PowerDownRitual', () => {
     await waitFor(() => {
       expect(screen.getByText(/Step 1/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Review Completions/)).toBeInTheDocument();
+    expect(screen.getByText(/Mark Task Completion/)).toBeInTheDocument();
   });
 
   it('shows completed task count on step 1', async () => {
@@ -62,7 +64,7 @@ describe('PowerDownRitual', () => {
     });
   });
 
-  it('shows Next Step button on steps 1-5', async () => {
+  it('shows Next Step button on steps 1-8', async () => {
     setup();
     render(<PowerDownRitual onComplete={onComplete} />);
 
@@ -85,36 +87,36 @@ describe('PowerDownRitual', () => {
     await waitFor(() => {
       expect(screen.getByText(/Step 2/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Capture Loose Ends/)).toBeInTheDocument();
+    expect(screen.getByText(/Record Distractions/)).toBeInTheDocument();
   });
 
-  it('shows step 6 with Complete Power Down button', async () => {
+  it('shows step 9 with Complete Power Down button', async () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
-        return { id: 'session-1', currentStep: 6, tomorrowPlan: [] };
+        return { id: 'session-1', currentStep: 9, tomorrowPlan: [] };
       },
     });
     render(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Step 6/)).toBeInTheDocument();
+      expect(screen.getByText(/Step 9/)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: /Complete Power Down/i })).toBeInTheDocument();
   });
 
-  it('shows completion screen after completing step 6', async () => {
+  it('shows completion screen after completing step 9', async () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
-        return { id: 'session-1', currentStep: 6, tomorrowPlan: [] };
+        return { id: 'session-1', currentStep: 9, tomorrowPlan: [] };
       },
     });
     const user = userEvent.setup();
     render(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Step 6/)).toBeInTheDocument();
+      expect(screen.getByText(/Step 9/)).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole('button', { name: /Complete Power Down/i }));
@@ -129,14 +131,14 @@ describe('PowerDownRitual', () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
-        return { id: 'session-1', currentStep: 6, tomorrowPlan: [] };
+        return { id: 'session-1', currentStep: 9, tomorrowPlan: [] };
       },
     });
     const user = userEvent.setup();
     render(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Step 6/)).toBeInTheDocument();
+      expect(screen.getByText(/Step 9/)).toBeInTheDocument();
     });
     await user.click(screen.getByRole('button', { name: /Complete Power Down/i }));
 
@@ -170,11 +172,11 @@ describe('PowerDownRitual', () => {
     });
   });
 
-  it('shows incomplete tasks on step 3 with reschedule buttons', async () => {
+  it('shows incomplete tasks on step 5 with reschedule buttons', async () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
-        return { id: 'session-1', currentStep: 3, tomorrowPlan: [] };
+        return { id: 'session-1', currentStep: 5, tomorrowPlan: [] };
       },
       '/api/tasks': [
         { id: 't1', title: 'Incomplete task', status: 'TODO' },
@@ -184,9 +186,54 @@ describe('PowerDownRitual', () => {
     render(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Step 3/)).toBeInTheDocument();
+      expect(screen.getByText(/Step 5/)).toBeInTheDocument();
     });
     expect(screen.getByText('Incomplete task')).toBeInTheDocument();
-    expect(screen.getByText('1 incomplete tasks. Reschedule to tomorrow?')).toBeInTheDocument();
+    expect(screen.getByText(/1 incomplete task from today/)).toBeInTheDocument();
+  });
+
+  it('shows Top 3 Tomorrow on step 6', async () => {
+    setup({
+      '/api/powerdown': (url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') return { ok: true };
+        return { id: 'session-1', currentStep: 6, tomorrowPlan: [] };
+      },
+      '/api/tasks': [
+        { id: 't1', title: 'Tomorrow task A', status: 'TODO' },
+        { id: 't2', title: 'Tomorrow task B', status: 'TODO' },
+      ],
+    });
+    render(<PowerDownRitual onComplete={onComplete} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Step 6/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Top 3 Tomorrow/)).toBeInTheDocument();
+  });
+
+  it('shows Previous button on steps after step 1', async () => {
+    setup({
+      '/api/powerdown': (url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') return { ok: true };
+        return { id: 'session-1', currentStep: 3, tomorrowPlan: [] };
+      },
+    });
+    render(<PowerDownRitual onComplete={onComplete} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Step 3/)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /Previous/i })).toBeInTheDocument();
+  });
+
+  it('displays powerdown streak when available', async () => {
+    setup({
+      '/api/streaks': [{ streakType: 'powerdown', currentCount: 7 }],
+    });
+    render(<PowerDownRitual onComplete={onComplete} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/7-day PowerDown streak/)).toBeInTheDocument();
+    });
   });
 });

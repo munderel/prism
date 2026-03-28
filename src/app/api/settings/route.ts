@@ -29,6 +29,8 @@ export async function GET(request: NextRequest) {
       casualHoursEnd: true,
       autoScheduleEnabled: true,
       taskSchedulePeriod: true,
+      selectedCalendarIds: true,
+      powerdownTime: true,
     },
   });
 
@@ -64,7 +66,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   // User settings
-  const { mtp, timezone, hasCompletedOnboarding, hiddenFeatures, notificationPrefs, autoScheduleEnabled, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod } = body;
+  const { mtp, timezone, hasCompletedOnboarding, hiddenFeatures, notificationPrefs, autoScheduleEnabled, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime } = body;
 
   const data: any = {};
   if (mtp !== undefined) data.mtp = mtp;
@@ -77,6 +79,8 @@ export async function PATCH(request: NextRequest) {
   if (casualHoursStart !== undefined) data.casualHoursStart = casualHoursStart;
   if (casualHoursEnd !== undefined) data.casualHoursEnd = casualHoursEnd;
   if (taskSchedulePeriod !== undefined) data.taskSchedulePeriod = taskSchedulePeriod;
+  if (selectedCalendarIds !== undefined && Array.isArray(selectedCalendarIds)) data.selectedCalendarIds = selectedCalendarIds;
+  if (powerdownTime !== undefined) data.powerdownTime = powerdownTime;
 
   const user = await prisma.user.update({
     where: { id: auth.userId },

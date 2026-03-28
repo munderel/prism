@@ -64,6 +64,8 @@ model User {
   casualHoursEnd        String?   // "HH:mm" format, e.g. "22:00"
   autoScheduleEnabled   Boolean   @default(true)
   taskSchedulePeriod    String?   // "working" | "casual" | "both"
+  selectedCalendarIds   Json      @default("[]") // String[] of Google Calendar IDs to sync
+  powerdownTime         String?   // "HH:mm" format, e.g. "17:30"
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -86,8 +88,10 @@ model User {
   processExecutions    ProcessExecution[]
   meetings             Meeting[]
   ideas                Idea[]
+  assignedTasks        Task[]             @relation("TaskAssignee")
   userAims             UserAim[]
   aimInstances         AimInstance[]
+  distractionLogs      DistractionLog[]
   trainingItems        TrainingItem[]
 }
 
@@ -99,12 +103,14 @@ model CompanySettings {
 }
 
 model GoalStack {
-  id        String   @id @default(cuid())
-  ownerId   String
-  name      String
-  isCompany Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  ownerId    String
+  name       String
+  isCompany  Boolean  @default(false)
+  visibility   String   @default("private") // "private" | "group" | "company"
+  weekStartDay Int      @default(0)         // 0 = Sunday, 1 = Monday
+  createdAt    DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   owner          User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   goals          Goal[]
@@ -231,8 +237,10 @@ model Task {
   updatedAt      DateTime     @updatedAt
 
   aimInstanceId  String?
+  assigneeId     String?
 
   owner    User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  assignee User?         @relation("TaskAssignee", fields: [assigneeId], references: [id])
   goal     Goal?         @relation(fields: [goalId], references: [id])
   process  Process?      @relation("TaskProcess", fields: [processId], references: [id])
   aimInstance AimInstance? @relation(fields: [aimInstanceId], references: [id])
@@ -249,6 +257,7 @@ model Task {
   @@index([goalId])
   @@index([ownerId, dueDate])
   @@index([ownerId, status])
+  @@index([assigneeId])
 }
 
 model Streak {
@@ -301,10 +310,12 @@ model Review {
   isTeamReview        Boolean    @default(false)
   timeBlockStart      DateTime?
   timeBlockEnd        DateTime?
+  calendarEventId     String?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers ReviewAnswer[]
 
   @@index([userId, reviewType])
   @@index([scheduledDate])
@@ -334,6 +345,8 @@ model PowerdownSession {
   ideas          Json?
   clearGoals     Json?
   completedAt    DateTime?
+  timeBlockStart DateTime?
+  timeBlockEnd   DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -663,6 +676,8 @@ model UserAim {
   currentStreak        Int       @default(0)
   bestStreak           Int       @default(0)
   lastCompletedAt      DateTime?
+  derailSensitivityDays Int      @default(1)   // missed days before "derailing"
+  reminderTimeMinutes  Int?                     // minutes before end of day to remind
   createdAt            DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -753,4 +768,36 @@ model QuizAttempt {
   trainingItem TrainingItem @relation(fields: [trainingItemId], references: [id], onDelete: Cascade)
 
   @@index([trainingItemId])
+}
+
+// === REVIEW ANSWERS ===
+
+model ReviewAnswer {
+  id         String   @id @default(cuid())
+  reviewId   String
+  stepKey    String   // identifies which step this answer belongs to
+  answerType String   // "text" | "text_list" | "task_list" | "goal_list" | "priority_ranking" | "kpi_progress"
+  answerData Json     // flexible storage for the answer content
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+}
+
+// === DISTRACTION LOG ===
+
+model DistractionLog {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String
+  notes     String?  @db.Text
+  logDate   DateTime
+  source    String   @default("powerdown") // "powerdown" | "manual"
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, logDate])
 }

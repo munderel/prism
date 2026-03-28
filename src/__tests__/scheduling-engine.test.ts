@@ -109,7 +109,7 @@ describe('findSlotInRange', () => {
 // ---------- autoSchedule integration tests ----------
 
 describe('autoSchedule', () => {
-  it('schedules a single task into first available slot (6am)', () => {
+  it('schedules a single task into first available slot (clamped to now on today)', () => {
     const tasks: SchedulableTask[] = [
       {
         id: 't1',
@@ -126,7 +126,8 @@ describe('autoSchedule', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].taskId).toBe('t1');
-    expect(result[0].start.getHours()).toBe(6);
+    // TODAY is 08:00, so working hours start (06:00) is clamped to 08:00
+    expect(result[0].start.getHours()).toBe(8);
     expect(result[0].start.getMinutes()).toBe(0);
     // Duration should be 60 minutes
     const durationMin = (result[0].end.getTime() - result[0].start.getTime()) / 60000;
@@ -275,6 +276,8 @@ describe('autoSchedule', () => {
     // Scheduled within this week (today through Sunday)
     const endOfWeek = getEndOfWeek(TODAY);
     expect(result[0].end.getTime()).toBeLessThanOrEqual(endOfWeek.getTime());
+    // On today, start is clamped to now (08:00), not working hours start (06:00)
+    expect(result[0].start.getHours()).toBe(8);
   });
 
   it('returns empty array if no slot available', () => {
@@ -331,8 +334,9 @@ describe('rearrangeFlexible', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].taskId).toBe('flex1');
-    // Should be scheduled at 6:00 (first available, not conflicting with 9-10)
-    expect(result[0].start.getHours()).toBe(6);
+    // TODAY is 08:00, so today's start is clamped to 08:00 (not 06:00)
+    // The 09:00-10:00 event doesn't block 08:00, so it schedules at 08:00
+    expect(result[0].start.getHours()).toBe(8);
     const durationMin = (result[0].end.getTime() - result[0].start.getTime()) / 60000;
     expect(durationMin).toBe(45);
   });

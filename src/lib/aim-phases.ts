@@ -11,9 +11,9 @@ export type AimPhase = 'SEED' | 'SPROUT' | 'GROW' | 'FLOW';
 
 // Phase multipliers for duration and frequency
 const PHASE_MULTIPLIERS: Record<AimPhase, { durationFactor: number; frequencyFactor: number }> = {
-  SEED:   { durationFactor: 0.5,  frequencyFactor: 0.5  },
-  SPROUT: { durationFactor: 0.75, frequencyFactor: 0.75 },
-  GROW:   { durationFactor: 1.0,  frequencyFactor: 1.0  },
+  SEED:   { durationFactor: 0.25, frequencyFactor: 0.5  },
+  SPROUT: { durationFactor: 0.5,  frequencyFactor: 0.75 },
+  GROW:   { durationFactor: 0.75, frequencyFactor: 1.0  },
   FLOW:   { durationFactor: 1.0,  frequencyFactor: 1.0  },
 };
 
@@ -57,10 +57,11 @@ export function getPointsPerCompletion(phase: AimPhase): number {
   return POINTS_PER_COMPLETION[phase] || 2;
 }
 
-interface UserAimLike {
+export interface UserAimLike {
   customDuration: number | null;
   customFrequency: number | null;
   currentPhase: string;
+  phaseStartedAt: string | Date;
   aimCategory: {
     defaultDurationMin: number;
     defaultFrequency: number;
@@ -69,22 +70,47 @@ interface UserAimLike {
 
 /**
  * Get the effective duration for an aim based on its current phase.
- * During SEED/SPROUT, duration is reduced to ease habit formation.
+ *
+ * SEED: starts at 5 min, ramps +5 min each week in phase (capped at full target).
+ * SPROUT: 50% of target duration.
+ * GROW: 75% of target duration.
+ * FLOW: full target duration.
  */
 export function getEffectiveDuration(userAim: UserAimLike): number {
   const baseDuration = userAim.customDuration ?? userAim.aimCategory.defaultDurationMin;
-  const { durationFactor } = getPhaseMultipliers(userAim.currentPhase as AimPhase);
-  return Math.max(5, Math.round(baseDuration * durationFactor));
+  const phase = userAim.currentPhase as AimPhase;
+
+  if (phase === 'SEED') {
+    const weeksInPhase = Math.floor(
+      (Date.now() - new Date(userAim.phaseStartedAt).getTime()) / (7 * 24 * 60 * 60 * 1000),
+    );
+    return Math.min(baseDuration, 5 + weeksInPhase * 5); // 5, 10, 15, 20... capped at full
+  }
+  if (phase === 'SPROUT') {
+    return Math.max(5, Math.round(baseDuration * 0.5));
+  }
+  if (phase === 'GROW') {
+    return Math.max(5, Math.round(baseDuration * 0.75));
+  }
+  return baseDuration; // FLOW
 }
 
 /**
  * Get the effective frequency for an aim based on its current phase.
- * During SEED/SPROUT, frequency is reduced.
+ *
+ * SEED: always 1x/week regardless of target.
+ * SPROUT: 50% of target (min 1).
+ * GROW: 75% of target (min 1).
+ * FLOW: full target frequency.
  */
 export function getEffectiveFrequency(userAim: UserAimLike): number {
-  const baseFrequency = userAim.customFrequency ?? userAim.aimCategory.defaultFrequency;
-  const { frequencyFactor } = getPhaseMultipliers(userAim.currentPhase as AimPhase);
-  return Math.max(1, Math.ceil(baseFrequency * frequencyFactor));
+  const baseFreq = userAim.customFrequency ?? userAim.aimCategory.defaultFrequency;
+  const phase = userAim.currentPhase as AimPhase;
+
+  if (phase === 'SEED') return 1; // Always 1x/week in seed
+  if (phase === 'SPROUT') return Math.max(1, Math.ceil(baseFreq * 0.5));
+  if (phase === 'GROW') return Math.max(1, Math.ceil(baseFreq * 0.75));
+  return baseFreq; // FLOW
 }
 
 interface AimInstanceLike {

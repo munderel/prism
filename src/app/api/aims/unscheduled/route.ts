@@ -40,6 +40,7 @@ export async function GET() {
         customFrequency: ua.customFrequency,
         customDuration: ua.customDuration,
         currentPhase: ua.currentPhase,
+        phaseStartedAt: ua.phaseStartedAt,
       })),
     ...defaultCategories.map((cat) => ({
       aimCategoryId: cat.id,
@@ -47,6 +48,7 @@ export async function GET() {
       customFrequency: null as number | null,
       customDuration: null as number | null,
       currentPhase: 'SEED',
+      phaseStartedAt: new Date(),
     })),
   ];
 
@@ -76,6 +78,7 @@ export async function GET() {
       customDuration: aim.customDuration,
       customFrequency: aim.customFrequency,
       currentPhase: aim.currentPhase,
+      phaseStartedAt: aim.phaseStartedAt,
       aimCategory: {
         defaultDurationMin: aim.aimCategory.defaultDurationMin,
         defaultFrequency: aim.aimCategory.defaultFrequency,

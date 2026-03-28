@@ -18,6 +18,15 @@ export async function GET(request: NextRequest) {
 
   const availability = searchParams.get('availability');
 
+  // Fetch user settings early (needed for both availability and normal modes)
+  const userSettingsEarly = await prisma.user.findUnique({
+    where: { id: auth.userId },
+    select: { selectedCalendarIds: true, powerdownTime: true },
+  });
+  const earlyCalendarIds = Array.isArray(userSettingsEarly?.selectedCalendarIds)
+    ? (userSettingsEarly.selectedCalendarIds as string[])
+    : [];
+
   // Availability mode: return busy slots from all sources
   if (availability === 'true') {
     const busySlots: { start: string; end: string; title: string }[] = [];
@@ -43,7 +52,7 @@ export async function GET(request: NextRequest) {
         },
         include: { createdBy: { select: { name: true } } },
       }),
-      listGoogleEvents(auth.userId, start, end).catch(() => []),
+      listGoogleEvents(auth.userId, start, end, earlyCalendarIds.length > 0 ? earlyCalendarIds : undefined).catch(() => []),
     ]);
 
     for (const t of tasks) {
@@ -135,7 +144,7 @@ export async function GET(request: NextRequest) {
         })
       : Promise.resolve([]),
     (fetchAll || source === 'google')
-      ? listGoogleEvents(auth.userId, start, end).catch(() => [])
+      ? listGoogleEvents(auth.userId, start, end, earlyCalendarIds.length > 0 ? earlyCalendarIds : undefined).catch(() => [])
       : Promise.resolve([]),
     (fetchAll || source === 'aims')
       ? prisma.aimInstance.findMany({
@@ -204,7 +213,7 @@ export async function GET(request: NextRequest) {
         description: meeting.description,
         cadence: meeting.cadence,
         createdBy: meeting.createdBy.name,
-        color: '#10b981',
+        color: '#f97316',
       });
     }
   }
@@ -244,6 +253,74 @@ export async function GET(request: NextRequest) {
       backgroundColor: aim.isGroupOpen ? '#0d9488' : '#14b8a6',
       color: aim.isGroupOpen ? '#0d9488' : '#14b8a6',
     });
+  }
+
+  // Generate powerdown events if user has powerdownTime set
+  if (userSettingsEarly?.powerdownTime) {
+    const [pdH, pdM] = userSettingsEarly.powerdownTime.split(':').map(Number);
+    const rangeStart = new Date(start);
+    const rangeEnd = new Date(end);
+
+    // Fetch any per-session time overrides in the date range
+    const pdSessions = await prisma.powerdownSession.findMany({
+      where: {
+        userId: auth.userId,
+        sessionDate: { gte: rangeStart, lte: rangeEnd },
+        OR: [
+          { timeBlockStart: { not: null } },
+          { timeBlockEnd: { not: null } },
+        ],
+      },
+      select: { sessionDate: true, timeBlockStart: true, timeBlockEnd: true },
+    });
+    const pdOverrides = new Map<string, { start: Date; end: Date }>();
+    for (const s of pdSessions) {
+      const dateKey = s.sessionDate.toISOString().split('T')[0];
+      if (s.timeBlockStart && s.timeBlockEnd) {
+        pdOverrides.set(dateKey, { start: s.timeBlockStart, end: s.timeBlockEnd });
+      }
+    }
+
+    const cursor = new Date(rangeStart);
+    cursor.setHours(0, 0, 0, 0);
+    const maxDays = 366;
+    let dayCount = 0;
+
+    while (cursor <= rangeEnd && dayCount < maxDays) {
+      dayCount++;
+      const dateKey = cursor.toISOString().split('T')[0];
+      const override = pdOverrides.get(dateKey);
+
+      let pdStart: Date;
+      let pdEnd: Date;
+
+      if (override) {
+        // Use per-session one-time override
+        pdStart = override.start;
+        pdEnd = override.end;
+      } else {
+        // Use default powerdown time
+        pdStart = new Date(cursor);
+        pdStart.setHours(pdH, pdM, 0, 0);
+        pdEnd = new Date(cursor);
+        pdEnd.setHours(pdH, pdM + 30, 0, 0); // 30-minute block
+      }
+
+      if (pdStart >= rangeStart && pdStart <= rangeEnd) {
+        events.push({
+          id: `powerdown-${dateKey}`,
+          title: 'Power Down Ritual',
+          start: pdStart.toISOString(),
+          end: pdEnd.toISOString(),
+          allDay: false,
+          source: 'powerdown',
+          color: '#7c3aed',
+          link: '/powerdown',
+        });
+      }
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
   }
 
   return Response.json(events);

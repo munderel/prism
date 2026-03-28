@@ -133,25 +133,49 @@ export async function getCalendarClient(userId: string) {
 
 /**
  * List events from user's Google Calendar within a date range.
+ * If calendarIds is provided, fetches from each and merges results.
+ * Defaults to ['primary'] if not provided.
  */
 export async function listGoogleEvents(
   userId: string,
   timeMin: string,
-  timeMax: string
+  timeMax: string,
+  calendarIds?: string[]
 ) {
   const calendar = await getCalendarClient(userId);
   if (!calendar) return [];
 
+  const ids = calendarIds && calendarIds.length > 0 ? calendarIds : ['primary'];
+
   try {
-    const response = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin,
-      timeMax,
-      singleEvents: true,
-      orderBy: 'startTime',
-      maxResults: 100,
+    const results = await Promise.all(
+      ids.map(async (calendarId) => {
+        try {
+          const response = await calendar.events.list({
+            calendarId,
+            timeMin,
+            timeMax,
+            singleEvents: true,
+            orderBy: 'startTime',
+            maxResults: 100,
+          });
+          return response.data.items ?? [];
+        } catch {
+          console.warn(`[calendar] Failed to fetch events from calendar ${calendarId}`);
+          return [];
+        }
+      })
+    );
+
+    // Merge and sort by start time
+    const allEvents = results.flat();
+    allEvents.sort((a, b) => {
+      const aTime = a.start?.dateTime ?? a.start?.date ?? '';
+      const bTime = b.start?.dateTime ?? b.start?.date ?? '';
+      return aTime.localeCompare(bTime);
     });
-    return response.data.items ?? [];
+
+    return allEvents;
   } catch {
     return [];
   }

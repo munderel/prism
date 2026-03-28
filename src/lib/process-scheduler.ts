@@ -9,5 +9,6 @@ export function computeNextDueDate(cadence: ProcessCadence, from: Date = new Dat
     case 'MONTHLY': return addMonths(from, 1);
     case 'QUARTERLY': return addMonths(from, 3);
     case 'YEARLY': return addYears(from, 1);
+    default: return addDays(from, 1);
   }
 }

@@ -94,12 +94,11 @@ export const GoalCard = React.memo(function GoalCard({
       exit={{ opacity: 0, y: -10 }}
       whileHover={{ scale: 1.005, y: -1 }}
       whileTap={{ scale: 0.998 }}
-      className="group"
+      className={`group ${showStatusMenu ? 'relative z-[100]' : ''}`}
       style={{ paddingLeft: `${depth * 24}px` }}
     >
       <div
-        onClick={() => onKpiClick?.(goal)}
-        className={`flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--glass-bg)] ${styles.padding} hover:border-white/[0.1] transition-colors cursor-pointer ${styles.wrapper}`}>
+        className={`flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--glass-bg)] ${styles.padding} hover:border-white/[0.1] transition-colors ${styles.wrapper}`}>
         {/* Level badge */}
         <span
           className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium shrink-0 ${
@@ -108,8 +107,42 @@ export const GoalCard = React.memo(function GoalCard({
         >
           {LEVEL_LABELS[goal.level] ?? goal.level}
         </span>
-        {goal.level === 'HIGH_HARD' && (
+        {goal.level === 'HIGH_HARD' && goal.startDate && goal.endDate && (
+          <span className="text-xs text-purple-400/60 italic shrink-0">
+            {(() => {
+              const s = new Date(goal.startDate);
+              const e = new Date(goal.endDate);
+              const years = e.getFullYear() - s.getFullYear();
+              const label = years <= 1 ? '1-Year' : `${years}-Year`;
+              return `${label} HHG (${s.getFullYear()}\u2013${e.getFullYear()})`;
+            })()}
+          </span>
+        )}
+        {goal.level === 'HIGH_HARD' && !(goal.startDate && goal.endDate) && (
           <span className="text-xs text-purple-400/60 italic shrink-0">5-10 Year Goal</span>
+        )}
+        {goal.level === 'STRATEGIC' && goal.startDate && (
+          <span className="text-xs text-[var(--text-muted)] shrink-0">
+            {new Date(goal.startDate).getFullYear()}
+          </span>
+        )}
+        {goal.level === 'MONTHLY' && goal.startDate && goal.endDate && (
+          <span className="text-xs text-[var(--text-muted)] shrink-0">
+            {(() => {
+              const s = new Date(goal.startDate);
+              const e = new Date(goal.endDate);
+              return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} \u2013 ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+            })()}
+          </span>
+        )}
+        {goal.level === 'WEEKLY' && goal.startDate && goal.endDate && (
+          <span className="text-xs text-[var(--text-muted)] shrink-0">
+            {(() => {
+              const s = new Date(goal.startDate);
+              const e = new Date(goal.endDate);
+              return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} \u2013 ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+            })()}
+          </span>
         )}
 
         {/* Title and status */}
@@ -152,12 +185,13 @@ export const GoalCard = React.memo(function GoalCard({
               <Link className="h-3 w-3 text-prism-indigo" />
             )}
             {goal._count?.kpis > 0 && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full bg-indigo-600/20 px-2 py-0.5 text-xs text-indigo-400"
+              <button
+                onClick={(e) => { e.stopPropagation(); onKpiClick?.(goal); }}
+                className="inline-flex items-center gap-1 rounded-full bg-indigo-600/20 px-2 py-0.5 text-xs text-indigo-400 cursor-pointer hover:bg-indigo-600/30 transition-colors"
               >
                 <BarChart3 className="h-3 w-3" />
                 {goal._count.kpis} KPI{goal._count.kpis !== 1 ? 's' : ''}
-              </span>
+              </button>
             )}
           </div>
           <div className="mt-1 max-w-xs">

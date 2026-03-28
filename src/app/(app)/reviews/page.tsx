@@ -3,19 +3,41 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User, Download, PlayCircle } from 'lucide-react';
+import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User, Download, PlayCircle, Clock, Settings2 } from 'lucide-react';
 import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
 import { getNextReviewDate } from '@/lib/review-dates';
 import { useRouter } from 'next/navigation';
 
-const REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'] as const;
+const REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'YEARLY'] as const;
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+const DAY_ABBREVS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+const MONTHLY_RECURRENCE_OPTIONS = [
+  { value: 'last-friday', label: 'Last Friday' },
+  { value: 'last-monday', label: 'Last Monday' },
+  { value: '1st-monday', label: '1st Monday' },
+  { value: '1st-friday', label: '1st Friday' },
+  { value: '15th', label: '15th of month' },
+] as const;
+
+const YEARLY_RECURRENCE_OPTIONS = [
+  { value: 'last-sat-dec', label: 'Last Saturday of December' },
+  { value: 'dec-30', label: 'December 30' },
+  { value: 'dec-31', label: 'December 31' },
+  { value: 'custom', label: 'Custom date' },
+] as const;
+
+type ScheduleConfig = {
+  weekly: { dayOfWeek: number | null; time: string; duration: number };
+  monthly: { recurrenceRule: string; time: string; duration: number };
+  yearly: { recurrenceRule: string; customDate: string; time: string; duration: number };
+  powerdown: { time: string; duration: number };
+};
 
 const typeColors: Record<string, string> = {
   WEEKLY: 'text-green-400 bg-green-600/20 border-green-600/30',
   MONTHLY: 'text-blue-400 bg-blue-600/20 border-blue-600/30',
-  QUARTERLY: 'text-purple-400 bg-purple-600/20 border-purple-600/30',
   YEARLY: 'text-yellow-400 bg-yellow-600/20 border-yellow-600/30',
 };
 
@@ -40,6 +62,20 @@ export default function ReviewsPage() {
   const [cadenceStartDate, setCadenceStartDate] = useState<string>('');
   const [cadenceDayOfWeek, setCadenceDayOfWeek] = useState<string>('');
 
+  // Time block for reviews
+  const [reviewTimeStart, setReviewTimeStart] = useState<string>('');
+  const [reviewTimeEnd, setReviewTimeEnd] = useState<string>('');
+
+  // Schedule config state
+  const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
+    weekly: { dayOfWeek: null, time: '14:00', duration: 30 },
+    monthly: { recurrenceRule: 'last-friday', time: '10:00', duration: 60 },
+    yearly: { recurrenceRule: 'last-sat-dec', customDate: '', time: '10:00', duration: 60 },
+    powerdown: { time: '17:30', duration: 30 },
+  });
+  const [savingSchedule, setSavingSchedule] = useState<string | null>(null);
+  const [showScheduleSection, setShowScheduleSection] = useState(false);
+
   // Export modal state
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportType, setExportType] = useState<string>('');
@@ -54,7 +90,7 @@ export default function ReviewsPage() {
     activeTab === 'team' ? r.isTeamReview : !r.isTeamReview
   );
 
-  const createReview = async (reviewType: string, isTeamReview = false, startDate?: string, recurrenceDayOfWeek?: number) => {
+  const createReview = async (reviewType: string, isTeamReview = false, startDate?: string, recurrenceDayOfWeek?: number, timeStart?: string, timeEnd?: string) => {
     const payload: any = { reviewType, isTeamReview };
     if (startDate) payload.startDate = startDate;
     if (recurrenceDayOfWeek !== undefined) payload.recurrenceDayOfWeek = recurrenceDayOfWeek;
@@ -63,7 +99,97 @@ export default function ReviewsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (res.ok) mutateReviews();
+    if (res.ok) {
+      const review = await res.json();
+      // If time block was set, update the review with time block
+      if (timeStart && timeEnd && review.id) {
+        const scheduledDate = new Date(review.scheduledDate);
+        const [sh, sm] = timeStart.split(':').map(Number);
+        const [eh, em] = timeEnd.split(':').map(Number);
+        const blockStart = new Date(scheduledDate);
+        blockStart.setHours(sh, sm, 0, 0);
+        const blockEnd = new Date(scheduledDate);
+        blockEnd.setHours(eh, em, 0, 0);
+        await fetch(`/api/reviews/${review.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            timeBlockStart: blockStart.toISOString(),
+            timeBlockEnd: blockEnd.toISOString(),
+          }),
+        });
+      }
+      mutateReviews();
+    }
+  };
+
+  const computeTimeBlock = (date: Date, time: string, durationMin: number) => {
+    const [h, m] = time.split(':').map(Number);
+    const start = new Date(date);
+    start.setHours(h, m, 0, 0);
+    const end = new Date(start.getTime() + durationMin * 60 * 1000);
+    return { timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() };
+  };
+
+  const saveSchedule = async (type: 'weekly' | 'monthly' | 'yearly' | 'powerdown') => {
+    setSavingSchedule(type);
+    try {
+      if (type === 'powerdown') {
+        // Save powerdown time to user settings
+        await fetch('/api/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ powerdownTime: scheduleConfig.powerdown.time }),
+        });
+        setSavingSchedule(null);
+        return;
+      }
+
+      const config = scheduleConfig[type];
+      const reviewType = type.toUpperCase();
+
+      // Build scheduling payload
+      const payload: any = {
+        reviewType,
+        scheduleConfig: {
+          type,
+          ...config,
+        },
+      };
+
+      if (type === 'weekly') {
+        const weeklyConfig = scheduleConfig.weekly;
+        if (weeklyConfig.dayOfWeek !== null) {
+          payload.recurrenceDayOfWeek = weeklyConfig.dayOfWeek;
+        }
+      }
+
+      const res = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const review = await res.json();
+        // Set the time block on the created review
+        if (review.id && config.time) {
+          const scheduledDate = new Date(review.scheduledDate);
+          const { timeBlockStart, timeBlockEnd } = computeTimeBlock(scheduledDate, config.time, config.duration);
+          await fetch(`/api/reviews/${review.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeBlockStart, timeBlockEnd }),
+          });
+        }
+        mutateReviews();
+      } else {
+        const err = await res.json();
+        if (err.error) alert(err.error);
+      }
+    } finally {
+      setSavingSchedule(null);
+    }
   };
 
   const cancelReview = async (id: string) => {
@@ -303,7 +429,7 @@ export default function ReviewsPage() {
             </div>
           )}
 
-          {/* Set Up Cadences - only for My Reviews tab */}
+          {/* Review Cadences - only for My Reviews tab */}
           {activeTab === 'my' && (
             <div className="glass-panel p-4">
               <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
@@ -377,15 +503,298 @@ export default function ReviewsPage() {
             </div>
           )}
 
+          {/* Schedule Reviews - detailed recurring scheduling per type */}
+          {activeTab === 'my' && (
+            <div className="glass-panel p-4">
+              <button
+                onClick={() => setShowScheduleSection(!showScheduleSection)}
+                className="w-full flex items-center justify-between text-sm font-semibold text-[var(--text-primary)] mb-1"
+              >
+                <span className="flex items-center gap-2">
+                  <Settings2 className="h-4 w-4 text-indigo-400" />
+                  Schedule Reviews
+                </span>
+                <span className="text-xs text-[var(--text-muted)]">{showScheduleSection ? 'Hide' : 'Show'}</span>
+              </button>
+
+              {showScheduleSection && (
+                <div className="space-y-4 mt-3">
+                  {/* Weekly Review Scheduling */}
+                  <div className="rounded-lg border border-green-600/30 bg-green-950/10 p-3 space-y-3">
+                    <h4 className="text-xs font-semibold text-green-400 uppercase tracking-wide">Weekly Review</h4>
+                    <div>
+                      <label className="block text-xs text-[var(--text-muted)] mb-1.5">Day of Week</label>
+                      <div className="flex gap-1">
+                        {DAY_ABBREVS.map((day, idx) => (
+                          <button
+                            key={day}
+                            onClick={() => setScheduleConfig(prev => ({
+                              ...prev,
+                              weekly: { ...prev.weekly, dayOfWeek: prev.weekly.dayOfWeek === idx ? null : idx },
+                            }))}
+                            className={`flex-1 rounded-md px-1 py-1.5 text-[10px] font-medium transition-colors ${
+                              scheduleConfig.weekly.dayOfWeek === idx
+                                ? 'bg-green-600 text-white'
+                                : 'bg-gray-800 text-[var(--text-muted)] hover:bg-gray-700'
+                            }`}
+                          >
+                            {day}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Time</label>
+                        <input
+                          type="time"
+                          value={scheduleConfig.weekly.time}
+                          onChange={(e) => setScheduleConfig(prev => ({
+                            ...prev,
+                            weekly: { ...prev.weekly, time: e.target.value },
+                          }))}
+                          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-green-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="w-20">
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Duration</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={scheduleConfig.weekly.duration}
+                            onChange={(e) => setScheduleConfig(prev => ({
+                              ...prev,
+                              weekly: { ...prev.weekly, duration: Number(e.target.value) || 30 },
+                            }))}
+                            min={15}
+                            max={180}
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-green-500 focus:outline-none"
+                          />
+                          <span className="text-[10px] text-[var(--text-muted)]">min</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => saveSchedule('weekly')}
+                      disabled={savingSchedule === 'weekly'}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-green-600/30 bg-green-600/20 px-3 py-1.5 text-xs font-medium text-green-400 transition-colors hover:bg-green-600/30 disabled:opacity-50"
+                    >
+                      <Clock className="h-3 w-3" />
+                      {savingSchedule === 'weekly' ? 'Saving...' : 'Save & Schedule Next'}
+                    </button>
+                  </div>
+
+                  {/* Monthly Review Scheduling */}
+                  <div className="rounded-lg border border-blue-600/30 bg-blue-950/10 p-3 space-y-3">
+                    <h4 className="text-xs font-semibold text-blue-400 uppercase tracking-wide">Monthly Review</h4>
+                    <div>
+                      <label className="block text-xs text-[var(--text-muted)] mb-1">Recurrence</label>
+                      <select
+                        value={scheduleConfig.monthly.recurrenceRule}
+                        onChange={(e) => setScheduleConfig(prev => ({
+                          ...prev,
+                          monthly: { ...prev.monthly, recurrenceRule: e.target.value },
+                        }))}
+                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                      >
+                        {MONTHLY_RECURRENCE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Time</label>
+                        <input
+                          type="time"
+                          value={scheduleConfig.monthly.time}
+                          onChange={(e) => setScheduleConfig(prev => ({
+                            ...prev,
+                            monthly: { ...prev.monthly, time: e.target.value },
+                          }))}
+                          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="w-20">
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Duration</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={scheduleConfig.monthly.duration}
+                            onChange={(e) => setScheduleConfig(prev => ({
+                              ...prev,
+                              monthly: { ...prev.monthly, duration: Number(e.target.value) || 60 },
+                            }))}
+                            min={15}
+                            max={240}
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                          />
+                          <span className="text-[10px] text-[var(--text-muted)]">min</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => saveSchedule('monthly')}
+                      disabled={savingSchedule === 'monthly'}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-blue-600/30 bg-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-600/30 disabled:opacity-50"
+                    >
+                      <Clock className="h-3 w-3" />
+                      {savingSchedule === 'monthly' ? 'Saving...' : 'Save & Schedule Next'}
+                    </button>
+                  </div>
+
+                  {/* Yearly Review Scheduling */}
+                  <div className="rounded-lg border border-yellow-600/30 bg-yellow-950/10 p-3 space-y-3">
+                    <h4 className="text-xs font-semibold text-yellow-400 uppercase tracking-wide">Yearly Review</h4>
+                    <div>
+                      <label className="block text-xs text-[var(--text-muted)] mb-1">Recurrence</label>
+                      <select
+                        value={scheduleConfig.yearly.recurrenceRule}
+                        onChange={(e) => setScheduleConfig(prev => ({
+                          ...prev,
+                          yearly: { ...prev.yearly, recurrenceRule: e.target.value },
+                        }))}
+                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-yellow-500 focus:outline-none"
+                      >
+                        {YEARLY_RECURRENCE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {scheduleConfig.yearly.recurrenceRule === 'custom' && (
+                      <div>
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Custom Date</label>
+                        <input
+                          type="date"
+                          value={scheduleConfig.yearly.customDate}
+                          onChange={(e) => setScheduleConfig(prev => ({
+                            ...prev,
+                            yearly: { ...prev.yearly, customDate: e.target.value },
+                          }))}
+                          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-yellow-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Time</label>
+                        <input
+                          type="time"
+                          value={scheduleConfig.yearly.time}
+                          onChange={(e) => setScheduleConfig(prev => ({
+                            ...prev,
+                            yearly: { ...prev.yearly, time: e.target.value },
+                          }))}
+                          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-yellow-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="w-20">
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Duration</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={scheduleConfig.yearly.duration}
+                            onChange={(e) => setScheduleConfig(prev => ({
+                              ...prev,
+                              yearly: { ...prev.yearly, duration: Number(e.target.value) || 60 },
+                            }))}
+                            min={15}
+                            max={480}
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-yellow-500 focus:outline-none"
+                          />
+                          <span className="text-[10px] text-[var(--text-muted)]">min</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => saveSchedule('yearly')}
+                      disabled={savingSchedule === 'yearly'}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-yellow-600/30 bg-yellow-600/20 px-3 py-1.5 text-xs font-medium text-yellow-400 transition-colors hover:bg-yellow-600/30 disabled:opacity-50"
+                    >
+                      <Clock className="h-3 w-3" />
+                      {savingSchedule === 'yearly' ? 'Saving...' : 'Save & Schedule Next'}
+                    </button>
+                  </div>
+
+                  {/* Powerdown Scheduling */}
+                  <div className="rounded-lg border border-violet-600/30 bg-violet-950/10 p-3 space-y-3">
+                    <h4 className="text-xs font-semibold text-violet-400 uppercase tracking-wide">Power Down (Daily)</h4>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Time</label>
+                        <input
+                          type="time"
+                          value={scheduleConfig.powerdown.time}
+                          onChange={(e) => setScheduleConfig(prev => ({
+                            ...prev,
+                            powerdown: { ...prev.powerdown, time: e.target.value },
+                          }))}
+                          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-violet-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="w-20">
+                        <label className="block text-xs text-[var(--text-muted)] mb-1">Duration</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={scheduleConfig.powerdown.duration}
+                            onChange={(e) => setScheduleConfig(prev => ({
+                              ...prev,
+                              powerdown: { ...prev.powerdown, duration: Number(e.target.value) || 30 },
+                            }))}
+                            min={10}
+                            max={120}
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-white text-xs focus:border-violet-500 focus:outline-none"
+                          />
+                          <span className="text-[10px] text-[var(--text-muted)]">min</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => saveSchedule('powerdown')}
+                      disabled={savingSchedule === 'powerdown'}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-violet-600/30 bg-violet-600/20 px-3 py-1.5 text-xs font-medium text-violet-400 transition-colors hover:bg-violet-600/30 disabled:opacity-50"
+                    >
+                      <Clock className="h-3 w-3" />
+                      {savingSchedule === 'powerdown' ? 'Saving...' : 'Save Powerdown Time'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Quick create buttons - only for My Reviews tab */}
           {activeTab === 'my' && (
             <div className="glass-panel p-4">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Schedule Review</h3>
-              <div className="grid grid-cols-2 gap-2">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Quick Schedule</h3>
+              <div className="space-y-3 mb-3">
+                <div>
+                  <label className="block text-xs text-[var(--text-muted)] mb-1">Preferred Time (optional)</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      value={reviewTimeStart}
+                      onChange={(e) => setReviewTimeStart(e.target.value)}
+                      placeholder="Start"
+                      className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                    />
+                    <span className="text-xs text-[var(--text-muted)]">to</span>
+                    <input
+                      type="time"
+                      value={reviewTimeEnd}
+                      onChange={(e) => setReviewTimeEnd(e.target.value)}
+                      placeholder="End"
+                      className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
                 {REVIEW_TYPES.map((type) => (
                   <button
                     key={type}
-                    onClick={() => createReview(type)}
+                    onClick={() => createReview(type, false, undefined, undefined, reviewTimeStart || undefined, reviewTimeEnd || undefined)}
                     className={`flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:opacity-80 ${typeColors[type]}`}
                   >
                     <Plus className="h-3 w-3" />
