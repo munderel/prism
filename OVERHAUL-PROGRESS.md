@@ -24,12 +24,12 @@
 
 ## PHASE 4: Review System Enhancements
 - [x] Task 17: Overhaul Weekly Review wizard (11 steps)
-- [ ] Task 18: Overhaul Monthly Review wizard (9 steps)
-- [ ] Task 19: Overhaul Yearly Review wizard
-- [ ] Task 20: Expand Power Down ritual (9 steps)
-- [ ] Task 21: Build Calendar Split View shared component
-- [ ] Task 22: Connect Top 3 ranking to Dashboard Win the Day
-- [ ] Task 23: Monthly review shows weekly review summaries
+- [x] Task 18: Overhaul Monthly Review wizard (9 steps)
+- [x] Task 19: Overhaul Yearly Review wizard
+- [x] Task 20: Expand Power Down ritual (9 steps)
+- [x] Task 21: Build Calendar Split View shared component
+- [x] Task 22: Connect Top 3 ranking to Dashboard Win the Day
+- [x] Task 23: Monthly review shows weekly review summaries
 - [ ] Task 24: Review cadences show next due date
 
 ## PHASE 5: Dashboard & Goal Stack

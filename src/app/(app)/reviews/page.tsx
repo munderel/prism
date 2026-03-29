@@ -464,9 +464,17 @@ export default function ReviewsPage() {
                     </span>
                     {scheduledTypes.has(type) ? (
                       <div className="flex items-center gap-2">
-                        <span className="flex items-center gap-1 text-green-400">
-                          <Check className="h-3 w-3" />
-                          Scheduled
+                        <span className="text-[var(--text-muted)]">
+                          Next: {(() => {
+                            const pending = pendingReviews.find((r: any) => r.reviewType === type);
+                            if (pending) {
+                              const d = new Date(pending.scheduledDate);
+                              const diff = Math.ceil((d.getTime() - Date.now()) / 86400000);
+                              const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                              return diff <= 0 ? `Today` : diff === 1 ? `Tomorrow` : `${dateLabel} (${diff}d)`;
+                            }
+                            return getNextScheduledDate(type);
+                          })()}
                         </span>
                         <button
                           onClick={() => stopRecurring(type)}
