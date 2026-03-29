@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import {
   Target, Plus, Pencil, BarChart3,
-  ChevronRight, ChevronDown, Save,
+  ChevronRight, ChevronDown, Save, Lightbulb,
 } from 'lucide-react';
 import { getLocalDateString } from '@/lib/date-utils';
+import { GoalCreationCoach } from '../shared/GoalCreationCoach';
 
 interface Kpi {
   id: string;
@@ -40,6 +41,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [showCoach, setShowCoach] = useState(false);
   const [editDescription, setEditDescription] = useState('');
 
   // Inline creation state
@@ -436,12 +438,24 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-[var(--text-secondary)]">
-        <Target className="h-4 w-4 text-blue-400" />
-        <p className="text-sm">
-          Review existing weekly goals and create new ones. Add KPIs to track progress.
-        </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+          <Target className="h-4 w-4 text-blue-400" />
+          <p className="text-sm">
+            Review existing weekly goals and create new ones. Add KPIs to track progress.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCoach(!showCoach)}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+            showCoach ? 'bg-amber-500/15 text-amber-400' : 'text-[var(--text-muted)] hover:text-amber-400'
+          }`}
+        >
+          <Lightbulb className="h-3.5 w-3.5" />
+          Coach
+        </button>
       </div>
+      <GoalCreationCoach goalLevel="WEEKLY" isOpen={showCoach} onToggle={() => setShowCoach(!showCoach)} />
 
       {/* Existing goals */}
       {goals.length > 0 ? (
