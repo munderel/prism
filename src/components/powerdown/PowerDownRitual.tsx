@@ -842,19 +842,19 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                       className={`w-full text-left flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
                         isSelected
                           ? 'bg-indigo-600/15 border border-indigo-500/50'
-                          : 'bg-[var(--surface-raised)]/50 border border-transparent hover:bg-[var(--surface-raised)]'
-                      } ${!isSelected && tomorrowPlan.length >= 3 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                          : 'bg-[var(--surface-raised)] border border-[var(--border-color)] hover:border-indigo-500/30'
+                      } ${!isSelected && tomorrowPlan.length >= 3 ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       {isSelected ? (
                         <Star className="h-4 w-4 text-indigo-400 fill-indigo-400 flex-shrink-0" />
                       ) : (
                         <Star className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
                       )}
-                      <span className={`text-sm ${isSelected ? 'text-indigo-300 font-medium' : 'text-[var(--text-primary)]'}`}>
+                      <span className={`text-sm ${isSelected ? 'text-indigo-500 dark:text-indigo-300 font-medium' : 'text-[var(--text-primary)]'}`}>
                         {t.title}
                       </span>
                       {isSelected && (
-                        <span className="ml-auto text-xs rounded-full bg-indigo-600/30 px-2 py-0.5 text-indigo-300 font-medium">
+                        <span className="ml-auto text-xs rounded-full bg-indigo-600/20 px-2 py-0.5 text-indigo-600 dark:text-indigo-300 font-medium">
                           Most Important
                         </span>
                       )}
