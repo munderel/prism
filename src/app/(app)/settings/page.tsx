@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, Copy, RefreshCw, Link2, Check } from 'lucide-react';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, RefreshCw, Link2, Check } from 'lucide-react';
+import { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
@@ -12,6 +13,7 @@ export default function SettingsPage() {
   const isAdmin = session?.user?.isAdmin ?? false;
   const { theme, setTheme } = useTheme();
   const toast = useToast();
+  const { mutate: globalMutate } = useSWRConfig();
   const [mounted, setMounted] = useState(false);
 
   const [mtp, setMtp] = useState('');
@@ -26,7 +28,6 @@ export default function SettingsPage() {
   });
   const [users, setUsers] = useState<any[]>([]);
   const [hiddenFeatures, setHiddenFeatures] = useState<string[]>([]);
-  const [autoScheduleEnabled, setAutoScheduleEnabled] = useState(true);
   const [workingHoursStart, setWorkingHoursStart] = useState('09:00');
   const [workingHoursEnd, setWorkingHoursEnd] = useState('17:00');
   const [casualHoursStart, setCasualHoursStart] = useState('17:00');
@@ -83,7 +84,6 @@ export default function SettingsPage() {
       if (data.notificationPreference) {
         setNotifPrefs(data.notificationPreference);
       }
-      if (data.autoScheduleEnabled !== undefined) setAutoScheduleEnabled(data.autoScheduleEnabled);
       if (data.workingHoursStart) setWorkingHoursStart(data.workingHoursStart);
       if (data.workingHoursEnd) setWorkingHoursEnd(data.workingHoursEnd);
       if (data.casualHoursStart) setCasualHoursStart(data.casualHoursStart);
@@ -127,8 +127,10 @@ export default function SettingsPage() {
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, autoScheduleEnabled, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime }),
+      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime }),
     });
+    // Revalidate sidebar's settings cache so hidden features take effect immediately
+    globalMutate('/api/settings?scope=user');
     toast.success('Settings saved!');
     setSaving(false);
   };
@@ -457,19 +459,6 @@ export default function SettingsPage() {
             Scheduling
           </h2>
           <div className="space-y-5">
-            <label className="flex items-center justify-between">
-              <div>
-                <span className="text-sm text-[var(--text-secondary)]">Enable auto-scheduling</span>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">Automatically suggests time blocks for tasks and aims in the calendar</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={autoScheduleEnabled}
-                onChange={(e) => setAutoScheduleEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
-              />
-            </label>
-
             <div>
               <label className="text-sm text-[var(--text-secondary)]">Working Hours</label>
               <p className="text-xs text-[var(--text-muted)] mt-0.5 mb-2">Time range for work-related tasks and aims</p>
