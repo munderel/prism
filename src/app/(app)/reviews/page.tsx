@@ -100,9 +100,22 @@ export default function ReviewsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (res.status === 409) {
+      // Duplicate review — find the existing one and offer to continue it
+      const pendingReview = allReviews.find(
+        (r: any) => r.reviewType === reviewType && !r.completedAt && r.isTeamReview === isTeamReview
+      );
+      if (pendingReview) {
+        if (confirm(`You already have a pending ${reviewType.toLowerCase()} review. Would you like to continue it?`)) {
+          router.push(`/reviews/${pendingReview.id}/complete`);
+        }
+      } else {
+        alert('A review of this type already exists for this period.');
+      }
+      return;
+    }
     if (res.ok) {
       const review = await res.json();
-      // If time block was set, update the review with time block
       if (timeStart && timeEnd && review.id) {
         const scheduledDate = new Date(review.scheduledDate);
         const [sh, sm] = timeStart.split(':').map(Number);
@@ -171,6 +184,12 @@ export default function ReviewsPage() {
         body: JSON.stringify(payload),
       });
 
+      if (res.status === 409) {
+        // A pending review already exists — just refresh the list
+        mutateReviews();
+        setSavingSchedule(null);
+        return;
+      }
       if (res.ok) {
         const review = await res.json();
         // Set the time block on the created review
