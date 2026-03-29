@@ -98,7 +98,9 @@ export function CommandPalette() {
 
   // Arrow key navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'Escape') {
+      setOpen(false);
+    } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSelected((s) => Math.min(s + 1, results.length - 1));
     } else if (e.key === 'ArrowUp') {
