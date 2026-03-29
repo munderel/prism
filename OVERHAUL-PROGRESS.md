@@ -11,9 +11,9 @@
 - [x] Task 8: Fix review wizard URL step parameter off-by-one
 
 ## PHASE 2: Visibility/Contrast Bugs
-- [ ] Task 9: Fix Power Down page extremely low contrast text
-- [ ] Task 10: Fix Leaderboard faded text for non-first-place users
-- [ ] Task 11: Fix Training page stale loading state
+- [x] Task 9: Fix Power Down page extremely low contrast text
+- [x] Task 10: Fix Leaderboard faded text for non-first-place users
+- [x] Task 11: Fix Training page stale loading state
 
 ## PHASE 3: Data Integrity & Navigation
 - [ ] Task 12: Fix Reports showing duplicate weekly entries
