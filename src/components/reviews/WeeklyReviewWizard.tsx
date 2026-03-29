@@ -240,6 +240,14 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         break;
       case 'mit':
         await persistAnswer('mit', 'priority_ranking', { taskIds: mitTaskIds });
+        // Flag selected tasks as Win the Day so dashboard shows them
+        for (const taskId of mitTaskIds) {
+          await fetch(`/api/tasks/${taskId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ isWinTheDay: true }),
+          });
+        }
         break;
       case 'work_blocks':
         await persistAnswer('work_blocks', 'work_blocks', { blocks: workBlocks });
