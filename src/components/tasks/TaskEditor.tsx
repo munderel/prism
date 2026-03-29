@@ -74,6 +74,10 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (title.trim().length < 3) {
+      setError('Task title must be at least 3 characters');
+      return;
+    }
     setSaving(true);
     setError('');
 
