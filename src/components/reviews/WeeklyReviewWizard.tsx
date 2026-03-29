@@ -5,6 +5,7 @@ import { m, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
+import { useToast } from '@/components/ui/ToastProvider';
 import {
   ChevronRight, ChevronLeft, PartyPopper,
   Target, ListTodo, AlertTriangle, Star, Calendar,
@@ -69,6 +70,7 @@ interface WeeklyReviewWizardProps {
 
 export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizardProps) {
   const router = useRouter();
+  const toast = useToast();
   const _scope = isTeamReview ? 'company' : 'personal';
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -82,6 +84,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const [mitTaskIds, setMitTaskIds] = useState<string[]>([]);
   const [workBlocks, setWorkBlocks] = useState<WorkBlock[]>([]);
   const [maintenanceDecisions, setMaintenanceDecisions] = useState<Record<string, any>>({});
+  const [maintenanceTaskCount, setMaintenanceTaskCount] = useState(0);
   const [kpiNotes, setKpiNotes] = useState('');
   const [taskBlockAssignments, setTaskBlockAssignments] = useState<Record<string, string>>({});
   const [finalNotes, setFinalNotes] = useState('');
@@ -253,11 +256,42 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     }
   }, [currentStep, successes, difficulties, mitTaskIds, workBlocks, maintenanceDecisions, kpiNotes, taskBlockAssignments, finalNotes, persistAnswer]);
 
+  // Validate current step before advancing
+  const validateCurrentStep = (): string | null => {
+    const stepKey = STEPS[currentStep].key;
+    switch (stepKey) {
+      case 'successes_difficulties':
+        if (successes.length === 0 && difficulties.length === 0) {
+          return 'Please add at least one success or difficulty before continuing.';
+        }
+        break;
+      case 'mit':
+        if (mitTaskIds.length < 3) {
+          return `Please select your top 3 most important tasks (${mitTaskIds.length}/3 selected).`;
+        }
+        break;
+      case 'maintenance':
+        if (maintenanceTaskCount > 0) {
+          const decidedCount = Object.keys(maintenanceDecisions).length;
+          if (decidedCount < maintenanceTaskCount) {
+            return `Please choose Keep, Automate, or Eliminate for all maintenance tasks (${decidedCount}/${maintenanceTaskCount} decided).`;
+          }
+        }
+        break;
+    }
+    return null;
+  };
+
   const advanceStep = async () => {
+    const validationError = validateCurrentStep();
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+
     await persistCurrentStep();
 
     if (currentStep === TOTAL_STEPS - 1) {
-      // Complete the review
       try {
         await fetch(`/api/reviews/${reviewId}`, {
           method: 'PATCH',
@@ -266,7 +300,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         });
         setCompleted(true);
       } catch {
-        // silently fail
+        toast.error('Failed to complete review. Please try again.');
       }
       return;
     }
@@ -515,6 +549,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 reviewId={reviewId}
                 initialDecisions={maintenanceDecisions}
                 onDecisionsChange={setMaintenanceDecisions}
+                onTaskCountChange={setMaintenanceTaskCount}
                 isTeamReview={isTeamReview}
               />
             )}

@@ -24,9 +24,11 @@ interface StepMaintenanceReviewProps {
   reviewId: string;
   initialDecisions?: DecisionMap;
   onDecisionsChange: (decisions: DecisionMap) => void;
+  onTaskCountChange?: (count: number) => void;
+  isTeamReview?: boolean;
 }
 
-export function StepMaintenanceReview({ reviewId, initialDecisions, onDecisionsChange }: StepMaintenanceReviewProps) {
+export function StepMaintenanceReview({ reviewId: _reviewId, initialDecisions, onDecisionsChange, onTaskCountChange, isTeamReview }: StepMaintenanceReviewProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [decisions, setDecisions] = useState<DecisionMap>(initialDecisions ?? {});
@@ -43,13 +45,15 @@ export function StepMaintenanceReview({ reviewId, initialDecisions, onDecisionsC
 
   const fetchMaintenanceTasks = async () => {
     try {
-      const res = await fetch('/api/tasks?taskType=MAINTENANCE&status=TODO');
+      const scopeParam = isTeamReview ? '&scope=company' : '';
+      const res = await fetch(`/api/tasks?taskType=MAINTENANCE&status=TODO${scopeParam}`);
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
+        onTaskCountChange?.(data.length);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to fetch maintenance tasks:', err);
     }
     setLoading(false);
   };
@@ -60,44 +64,26 @@ export function StepMaintenanceReview({ reviewId, initialDecisions, onDecisionsC
       [taskId]: { decision, reason: decisions[taskId]?.reason },
     };
     setDecisions(updated);
-    if (decision !== 'eliminate') {
-      onDecisionsChange(updated);
-    }
+    onDecisionsChange(updated);
   };
 
   const handleAutomate = async (task: Task) => {
     setProcessing(task.id);
     try {
-      // Create an automation task
+      // Automation tasks have no goal, so use REACT type directly
       await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          taskType: 'IMPROVE',
+          taskType: 'REACT',
           title: `Automate: ${task.title}`,
           description: `Create automation for the maintenance task: "${task.title}"`,
           priority: 'MEDIUM',
           estimatedMinutes: 120,
-          // No goalId since this is a meta-task - use REACT type instead
         }),
       });
-    } catch {
-      // If IMPROVE needs goalId, try REACT instead
-      try {
-        await fetch('/api/tasks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            taskType: 'REACT',
-            title: `Automate: ${task.title}`,
-            description: `Create automation for the maintenance task: "${task.title}"`,
-            priority: 'MEDIUM',
-            estimatedMinutes: 120,
-          }),
-        });
-      } catch {
-        // silently fail
-      }
+    } catch (err) {
+      console.error('Failed to create automation task:', err);
     }
 
     const updated = {
@@ -133,8 +119,8 @@ export function StepMaintenanceReview({ reviewId, initialDecisions, onDecisionsC
       }
 
       setTasks((prev) => prev.filter((t) => t.id !== task.id));
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to eliminate task:', err);
     }
 
     const updated = {

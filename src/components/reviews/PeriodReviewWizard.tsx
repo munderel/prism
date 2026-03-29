@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react
 import { m, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { ChevronRight, ChevronLeft, PartyPopper, Target, Plus, Star } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
 
 import type { Goal, Kpi, ReviewAnswer, StepConfig, HhgGroup } from './shared/review-types';
 import { DifficultiesStep } from './shared/DifficultiesStep';
@@ -63,7 +64,7 @@ function filterByPeriod(goals: Goal[], goalLevel: string): Goal[] {
  */
 function buildHierarchy(allGoals: Goal[], relevantGoals: Goal[], goalLevel: string): HhgGroup[] {
   const goalMap = new Map<string, Goal>(allGoals.map((g) => [g.id, g]));
-  const relevantIds = new Set(relevantGoals.map((g) => g.id));
+  const _relevantIds = new Set(relevantGoals.map((g) => g.id));
 
   // Walk each relevant goal up to its HHG ancestor
   const hhgMap = new Map<string, HhgGroup>();
@@ -245,6 +246,7 @@ function GoalHierarchyDisplay({
 
 export interface PeriodReviewConfig {
   reviewId: string;
+  isTeamReview?: boolean;
   /** Goal level this review operates on (MONTHLY, STRATEGIC, HIGH_HARD) */
   goalLevel: string;
   /** Parent level above goalLevel (STRATEGIC, HIGH_HARD, null) */
@@ -535,17 +537,19 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
     notesRows,
     kpiEmptyMessage,
     onTrackEmptyMessage,
-    parentGoalBannerLabel = 'Connected Parent Goal',
-    parentGoalBannerColor = 'indigo',
+    parentGoalBannerLabel: _parentGoalBannerLabel = 'Connected Parent Goal',
+    parentGoalBannerColor: _parentGoalBannerColor = 'indigo',
     emptyGoalsMessage = 'No goals found.',
     planNextPeriodDescription = `Refine ${childGoalLabel} goals for the upcoming ${config.periodLabel}.`,
     planNextPeriodPlaceholder = `New ${childGoalLabel} goal...`,
     renderCurrentGoals,
     getKpiGoals,
     findNextPeriodParent,
+    isTeamReview,
   } = config;
 
   const router = useRouter();
+  const toast = useToast();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [completed, setCompleted] = useState(false);
@@ -596,14 +600,20 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
       const stacksRes = await fetch('/api/stacks');
       if (!stacksRes.ok) return;
       const stacks = await stacksRes.json();
-      const personalStack = stacks.find((s: any) => !s.isCompany);
-      if (!personalStack) return;
-      setStackId(personalStack.id);
+      const targetStack = isTeamReview
+        ? stacks.find((s: any) => s.isCompany)
+        : stacks.find((s: any) => !s.isCompany);
+      if (!targetStack) return;
+      setStackId(targetStack.id);
 
       // Fetch all goals
-      const goalsRes = await fetch(`/api/goals?stackId=${personalStack.id}`);
+      const goalsUrl = isTeamReview
+        ? '/api/goals?isCompany=true'
+        : `/api/goals?stackId=${targetStack.id}`;
+      const goalsRes = await fetch(goalsUrl);
       if (!goalsRes.ok) return;
-      const fetchedGoals: Goal[] = await goalsRes.json();
+      const fetchedGoalsRaw = await goalsRes.json();
+      const fetchedGoals: Goal[] = Array.isArray(fetchedGoalsRaw) ? fetchedGoalsRaw : [];
       setAllGoals(fetchedGoals);
 
       // Primary goals at this level, filtered to current + next period (F2, G1)
@@ -631,7 +641,7 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
         const kpiRes = await fetch(`/api/goals/${goal.id}/kpis`);
         if (kpiRes.ok) {
           const kpiData = await kpiRes.json();
-          allKpis.push(...(kpiData.kpis ?? []));
+          allKpis.push(...(kpiData.kpis ?? kpiData ?? []));
         }
       }
       setKpis(allKpis);
@@ -679,18 +689,29 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
   /* ---- Navigation ---- */
   const advanceStep = async () => {
     const step = steps[currentStep];
+
+    // Validate steps that require user input
+    if (step.key === 'difficulties' && !difficulties.trim()) {
+      toast.error('Please add your reflections on successes and difficulties before continuing.');
+      return;
+    }
+
     if (step.key === 'difficulties') {
       await persistAnswer('difficulties', 'text', { text: difficulties });
     } else if (step.key === 'on-track') {
       await persistAnswer('on-track', 'goal_list', { assessments });
     } else if (step.key === 'notes-completion') {
       await persistAnswer('notes-completion', 'text', { text: notes });
-      await fetch(`/api/reviews/${reviewId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes, complete: true }),
-      });
-      setCompleted(true);
+      try {
+        await fetch(`/api/reviews/${reviewId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes, complete: true }),
+        });
+        setCompleted(true);
+      } catch {
+        toast.error('Failed to complete review. Please try again.');
+      }
       return;
     }
     setCurrentStep((s) => Math.min(s + 1, steps.length - 1));
@@ -837,6 +858,59 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
 
           {/* Step content */}
           <div className="glass-panel p-6">
+            {step.key === 'big-picture' && (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Start with the bigger picture. Your High Hard Goal and yearly vision keep you motivated and aligned.
+                </p>
+                {hierarchy.length > 0 ? (
+                  hierarchy.map((group) => (
+                    <div key={group.hhg.id} className="space-y-3">
+                      {group.hhg.id !== '__ungrouped__' && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                          <p className="text-xs text-amber-400 uppercase tracking-wide font-medium mb-1">High Hard Goal</p>
+                          <p className="text-sm font-semibold text-[var(--text-primary)]">{group.hhg.title}</p>
+                          {group.hhg.description && (
+                            <p className="text-xs text-[var(--text-muted)] mt-1">{group.hhg.description}</p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2">
+                            <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-raised)]">
+                              <div className="h-full rounded-full bg-amber-500" style={{ width: `${group.hhg.progressPct}%` }} />
+                            </div>
+                            <span className="text-xs text-[var(--text-muted)]">{Math.round(group.hhg.progressPct)}%</span>
+                          </div>
+                        </div>
+                      )}
+                      {group.yearlyGoals.map((yg) => (
+                        <div key={yg.yearly.id} className="ml-4 rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
+                          <p className="text-xs text-indigo-400 uppercase tracking-wide font-medium mb-0.5">Yearly Goal</p>
+                          <p className="text-sm font-medium text-[var(--text-primary)]">{yg.yearly.title}</p>
+                          <div className="flex items-center gap-3 mt-2">
+                            <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-raised)]">
+                              <div className="h-full rounded-full bg-indigo-500" style={{ width: `${yg.yearly.progressPct}%` }} />
+                            </div>
+                            <span className="text-xs text-[var(--text-muted)]">{Math.round(yg.yearly.progressPct)}%</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                ) : parentGoal ? (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                    <p className="text-xs text-amber-400 uppercase tracking-wide font-medium mb-1">Connected Goal</p>
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">{parentGoal.title}</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-raised)]">
+                        <div className="h-full rounded-full bg-amber-500" style={{ width: `${parentGoal.progressPct}%` }} />
+                      </div>
+                      <span className="text-xs text-[var(--text-muted)]">{Math.round(parentGoal.progressPct)}%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] italic">No high-level goals found. Create a goal stack first.</p>
+                )}
+              </div>
+            )}
             {step.key === 'current-goals' && (
               renderCurrentGoals
                 ? renderCurrentGoals(primaryGoals, parentGoal, hierarchy)
@@ -853,6 +927,46 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
                 onChange={setDifficulties}
                 placeholder={difficultiesPlaceholder}
                 rows={difficultiesRows}
+              />
+            )}
+            {step.key === 'successes-difficulties' && (
+              <DifficultiesStep
+                value={difficulties}
+                onChange={setDifficulties}
+                placeholder="Capture your successes and wins, then reflect on difficulties and blockers..."
+                rows={difficultiesRows}
+              />
+            )}
+            {step.key === 'hhg-assessment' && (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Is your High Hard Goal still the right one? Review it and adjust if needed.
+                </p>
+                {hierarchy.length > 0 && hierarchy[0]?.hhg && hierarchy[0].hhg.id !== '__ungrouped__' ? (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                    <p className="text-xs text-amber-400 uppercase tracking-wide font-medium mb-1">High Hard Goal</p>
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">{hierarchy[0].hhg.title}</p>
+                    {hierarchy[0].hhg.description && (
+                      <p className="text-xs text-[var(--text-muted)] mt-1">{hierarchy[0].hhg.description}</p>
+                    )}
+                    <div className="flex items-center gap-3 mt-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-raised)]">
+                        <div className="h-full rounded-full bg-amber-500" style={{ width: `${hierarchy[0].hhg.progressPct}%` }} />
+                      </div>
+                      <span className="text-xs text-[var(--text-muted)]">{Math.round(hierarchy[0].hhg.progressPct)}%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] italic">No High Hard Goal found.</p>
+                )}
+              </div>
+            )}
+            {(step.key === 'review-weekly' || step.key === 'review-monthly') && (
+              <DefaultCurrentGoalsStep
+                goals={primaryGoals}
+                hierarchy={hierarchy}
+                goalLevel={goalLevel}
+                emptyMessage={`No ${childGoalLabel} goals found for review.`}
               />
             )}
             {step.key === 'kpi-progress' && (
