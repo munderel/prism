@@ -1,14 +1,14 @@
 # Prism App Overhaul — Progress Tracker
 
 ## PHASE 1: Critical Bugs
-- [ ] Task 1: Fix date off-by-one bug
-- [ ] Task 2: Fix dashboard initial load showing no user data
-- [ ] Task 3: Fix non-admin users not seeing assigned tasks
-- [ ] Task 4: Add validation messages to review wizard steps
-- [ ] Task 5: Prevent duplicate review creation
-- [ ] Task 6: Fix Goal Stack Guide modal "Got it" button
-- [ ] Task 7: Fix sidebar showing Training despite unchecked in settings
-- [ ] Task 8: Fix review wizard URL step parameter off-by-one
+- [x] Task 1: Fix date off-by-one bug
+- [x] Task 2: Fix dashboard initial load showing no user data
+- [x] Task 3: Fix non-admin users not seeing assigned tasks
+- [x] Task 4: Add validation messages to review wizard steps
+- [x] Task 5: Prevent duplicate review creation
+- [x] Task 6: Fix Goal Stack Guide modal "Got it" button
+- [x] Task 7: Fix sidebar showing Training despite unchecked in settings
+- [x] Task 8: Fix review wizard URL step parameter off-by-one
 
 ## PHASE 2: Visibility/Contrast Bugs
 - [ ] Task 9: Fix Power Down page extremely low contrast text
