@@ -373,6 +373,27 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Progress visualization */}
+          {!isLoading && list.length > 0 && (() => {
+            const done = list.filter((t: any) => t.status === 'DONE').length;
+            const total = list.length;
+            const pct = Math.round((done / total) * 100);
+            const msg = done === 0 ? 'Ready to start!' : done === total ? 'All tasks complete!' : `${done}/${total} tasks done — keep going!`;
+            return (
+              <div className="glass-panel p-3 mb-4 flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-[var(--text-secondary)]">{msg}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-[var(--surface-raised)] overflow-hidden">
+                    <div className="h-full rounded-full bg-green-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Timeline */}
           <DashboardTimeline blocks={timelineBlocks as any} className="mb-6" />
 
