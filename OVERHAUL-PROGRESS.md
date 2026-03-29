@@ -30,7 +30,7 @@
 - [x] Task 21: Build Calendar Split View shared component
 - [x] Task 22: Connect Top 3 ranking to Dashboard Win the Day
 - [x] Task 23: Monthly review shows weekly review summaries
-- [ ] Task 24: Review cadences show next due date
+- [x] Task 24: Review cadences show next due date
 
 ## PHASE 5: Dashboard & Goal Stack
 - [ ] Task 25: Dashboard layout overhaul
