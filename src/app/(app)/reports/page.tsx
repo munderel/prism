@@ -155,7 +155,20 @@ function ReviewsTab({ from, to }: { from: string; to: string }) {
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const reviews = data ?? [];
+  // Deduplicate reviews: keep only the most recent per type+date combination
+  const reviews = useMemo(() => {
+    const raw = data ?? [];
+    const seen = new Map<string, Review>();
+    for (const r of raw) {
+      const dateStr = r.scheduledDate?.split('T')[0] ?? '';
+      const key = `${r.reviewType}-${dateStr}`;
+      const existing = seen.get(key);
+      if (!existing || (r.completedAt && !existing.completedAt)) {
+        seen.set(key, r);
+      }
+    }
+    return Array.from(seen.values());
+  }, [data]);
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message="Failed to load reviews." />;
