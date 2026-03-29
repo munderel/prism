@@ -16,11 +16,11 @@
 - [x] Task 11: Fix Training page stale loading state
 
 ## PHASE 3: Data Integrity & Navigation
-- [ ] Task 12: Fix Reports showing duplicate weekly entries
-- [ ] Task 13: Make completed reviews viewable (Review History)
-- [ ] Task 14: Add minimum task name validation
-- [ ] Task 15: Fix route inconsistencies
-- [ ] Task 16: Fix Calendar vs Dashboard week start inconsistency
+- [x] Task 12: Fix Reports showing duplicate weekly entries
+- [x] Task 13: Make completed reviews viewable (Review History)
+- [x] Task 14: Add minimum task name validation
+- [x] Task 15: Fix route inconsistencies
+- [x] Task 16: Fix Calendar vs Dashboard week start inconsistency
 
 ## PHASE 4: Review System Enhancements
 - [ ] Task 17: Overhaul Weekly Review wizard (11 steps)
