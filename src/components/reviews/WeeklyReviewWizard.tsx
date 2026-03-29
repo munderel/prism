@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -70,9 +70,13 @@ interface WeeklyReviewWizardProps {
 
 export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizardProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const _scope = isTeamReview ? 'company' : 'personal';
-  const [currentStep, setCurrentStep] = useState(0);
+  // URL step param is 1-based for user-friendliness; internal state is 0-based
+  const urlStep = searchParams.get('step');
+  const initialStep = urlStep ? Math.max(0, Math.min(parseInt(urlStep, 10) - 1, TOTAL_STEPS - 1)) : 0;
+  const [currentStep, setCurrentStep] = useState(initialStep);
   const [loading, setLoading] = useState(true);
   const [completed, setCompleted] = useState(false);
   const [review, setReview] = useState<any>(null);
@@ -187,17 +191,19 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
 
         setAnswers(answersMap);
 
-        // Resume from first unanswered step
-        const answeredKeys = new Set(answersData.map((a) => a.stepKey));
-        let resumeStep = 0;
-        for (let i = 0; i < STEPS.length; i++) {
-          if (!answeredKeys.has(STEPS[i].key)) {
-            resumeStep = i;
-            break;
+        // Resume from first unanswered step (unless URL step was specified)
+        if (!urlStep) {
+          const answeredKeys = new Set(answersData.map((a) => a.stepKey));
+          let resumeStep = 0;
+          for (let i = 0; i < STEPS.length; i++) {
+            if (!answeredKeys.has(STEPS[i].key)) {
+              resumeStep = i;
+              break;
+            }
+            resumeStep = i + 1;
           }
-          resumeStep = i + 1;
+          setCurrentStep(Math.min(resumeStep, TOTAL_STEPS - 1));
         }
-        setCurrentStep(Math.min(resumeStep, TOTAL_STEPS - 1));
       }
     } catch (err) {
       console.error('Failed during review operation:', err);
