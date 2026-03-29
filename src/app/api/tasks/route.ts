@@ -20,70 +20,71 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status');
   const taskType = searchParams.get('taskType');
 
-  const where: any = {};
   const scope = searchParams.get('scope');
+  const includeUnscheduled = searchParams.get('includeUnscheduled') === 'true';
 
-  // Scope filter: company scope shows all tasks linked to company goals + all react/maintenance
+  // Build access filter (who can see what)
+  const accessFilter: any = {};
   if (scope === 'company') {
-    // Find company stack IDs
     const companyStacks = await prisma.goalStack.findMany({
       where: { isCompany: true },
       select: { id: true },
     });
-    const companyStackIds = companyStacks.map((s) => s.id);
-
-    // Find goals in company stacks
     const companyGoals = await prisma.goal.findMany({
-      where: { stackId: { in: companyStackIds }, deletedAt: null },
+      where: { stackId: { in: companyStacks.map((s) => s.id) }, deletedAt: null },
       select: { id: true },
     });
-    const companyGoalIds = companyGoals.map((g) => g.id);
-
-    where.OR = [
-      { goalId: { in: companyGoalIds } },
+    accessFilter.OR = [
+      { goalId: { in: companyGoals.map((g) => g.id) } },
       { taskType: { in: ['REACT', 'MAINTENANCE'] } },
     ];
-  } else {
-    // Personal scope: non-admins only see their own tasks
-    if (!auth.session.user.isAdmin) {
-      where.ownerId = auth.userId;
-    }
+  } else if (!auth.session.user.isAdmin) {
+    // Non-admins see tasks they own OR are assigned to
+    accessFilter.OR = [
+      { ownerId: auth.userId },
+      { assigneeId: auth.userId },
+    ];
   }
 
-  const includeUnscheduled = searchParams.get('includeUnscheduled') === 'true';
-
+  // Build date filter
+  const dateFilter: any = {};
   if (startDate && endDate) {
-    // Date range mode: fetch tasks across multiple days
-    // Parse YYYY-MM-DD strings as local dates (not UTC)
     const rangeStart = parseLocalDate(startDate);
     const rangeEnd = parseLocalDate(endDate);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
     if (includeUnscheduled) {
-      where.OR = [
+      dateFilter.OR = [
         { dueDate: { gte: rangeStart, lt: rangeEnd } },
         { dueDate: null },
       ];
     } else {
-      where.dueDate = { gte: rangeStart, lt: rangeEnd };
+      dateFilter.dueDate = { gte: rangeStart, lt: rangeEnd };
     }
   } else if (date) {
-    // Parse YYYY-MM-DD as local date
     const start = parseLocalDate(date);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     if (includeUnscheduled) {
-      where.OR = [
+      dateFilter.OR = [
         { dueDate: { gte: start, lt: end } },
         { dueDate: null },
       ];
     } else {
-      where.dueDate = { gte: start, lt: end };
+      dateFilter.dueDate = { gte: start, lt: end };
     }
   }
 
-  if (goalId) where.goalId = goalId;
-  if (status) where.status = status;
-  if (taskType) where.taskType = taskType;
+  // Build additional filters
+  const extraFilter: any = {};
+  if (goalId) extraFilter.goalId = goalId;
+  if (status) extraFilter.status = status;
+  if (taskType) extraFilter.taskType = taskType;
+
+  // Combine all filters with AND so OR clauses don't overwrite each other
+  const conditions = [accessFilter, dateFilter, extraFilter].filter(
+    (f) => Object.keys(f).length > 0
+  );
+  const where: any = conditions.length > 1 ? { AND: conditions } : conditions[0] || {};
 
   const tasks = await prisma.task.findMany({
     where,

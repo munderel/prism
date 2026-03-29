@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { pickDefined } from '@/lib/api-helpers';
+import { pickDefined, notFoundResponse, hasAccess, forbiddenResponse, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
@@ -22,20 +22,17 @@ export async function GET(
       comments: {
         orderBy: { createdAt: 'asc' },
         include: {
-          author: { select: { id: true, name: true, image: true } },
+          author: { select: USER_SUMMARY_SELECT },
           mentions: { include: { user: { select: { id: true, name: true } } } },
         },
       },
     },
   });
 
-  if (!task) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
-
-  if (task.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!task) return notFoundResponse('Task');
+  // Allow access if user owns the task OR is assigned to it
+  const canAccess = hasAccess(task.ownerId, auth.userId, auth.session.user.isAdmin) || task.assigneeId === auth.userId;
+  if (!canAccess) return forbiddenResponse();
 
   return Response.json(task);
 }
@@ -49,13 +46,9 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const task = await prisma.task.findUnique({ where: { id } });
-  if (!task) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
-
-  if (task.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!task) return notFoundResponse('Task');
+  const canAccess = hasAccess(task.ownerId, auth.userId, auth.session.user.isAdmin) || task.assigneeId === auth.userId;
+  if (!canAccess) return forbiddenResponse();
 
   const body = await request.json();
   const { status, dueDate, timeBlockStart, timeBlockEnd, isWinTheDay } = body;
@@ -176,13 +169,9 @@ export async function DELETE(
   if ('error' in auth) return authError(auth);
 
   const task = await prisma.task.findUnique({ where: { id } });
-  if (!task) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
-
-  if (task.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!task) return notFoundResponse('Task');
+  // Only owners and admins can delete (not just assignees)
+  if (!hasAccess(task.ownerId, auth.userId, auth.session.user.isAdmin)) return forbiddenResponse();
 
   // Delete linked Google Calendar event before removing the task
   if (task.calendarEventId) {
