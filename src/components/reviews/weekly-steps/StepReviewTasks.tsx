@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { CheckCircle2, Circle, CalendarClock, ListTodo, MessageSquare } from 'lucide-react';
+import { getLocalDateString } from '@/lib/date-utils';
 
 interface Task {
   id: string;
@@ -17,7 +18,7 @@ interface StepReviewTasksProps {
   reviewId: string;
 }
 
-export function StepReviewTasks({ reviewId }: StepReviewTasksProps) {
+export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [rescheduleTaskId, setRescheduleTaskId] = useState<string | null>(null);
@@ -39,14 +40,14 @@ export function StepReviewTasks({ reviewId }: StepReviewTasksProps) {
       startDate.setDate(startDate.getDate() - 7);
 
       const res = await fetch(
-        `/api/tasks?startDate=${startDate.toISOString().split('T')[0]}&endDate=${endDate.toISOString().split('T')[0]}`
+        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}`
       );
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed during task review operation:', err);
     }
     setLoading(false);
   };
@@ -101,8 +102,8 @@ export function StepReviewTasks({ reviewId }: StepReviewTasksProps) {
       setRescheduleTaskId(null);
       setRescheduleDate('');
       setRescheduleReason('');
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed during task review operation:', err);
     }
     setSaving(null);
   };

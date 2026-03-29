@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Pencil, Trash2, Users, Clock } from 'lucide-react';
+import { getLocalDateString } from '@/lib/date-utils';
 
 interface Meeting {
   id: string;
@@ -132,7 +133,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
     setDescription(meeting.description || '');
     setCadence(meeting.cadence);
     setDayOfWeek(meeting.dayOfWeek);
-    setOccurDate(meeting.occurDate ? new Date(meeting.occurDate).toISOString().split('T')[0] : '');
+    setOccurDate(meeting.occurDate ? getLocalDateString(new Date(meeting.occurDate)) : '');
     setTimeStart(meeting.timeStart);
     setTimeEnd(meeting.timeEnd);
     setEditingId(meeting.id);

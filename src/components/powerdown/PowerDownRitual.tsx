@@ -4,27 +4,29 @@ import { useState, useEffect, useCallback, ReactNode } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import {
-  CheckCircle2, ChevronRight, ChevronLeft, Moon, PartyPopper, AlertCircle,
-  Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame,
+  CheckCircle2, ChevronRight, ChevronLeft, PartyPopper, AlertCircle,
+  Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock,
 } from 'lucide-react';
-import type { UnscheduledItem } from '@/components/calendar/InlineCalendar';
-
-// FullCalendar-based inline calendar — dynamic import (no SSR)
-const InlineCalendar = dynamic(
-  () => import('@/components/calendar/InlineCalendar').then((m) => m.InlineCalendar),
+import { getLocalDateString, getTomorrowDateString } from '@/lib/date-utils';
+const CalendarSplitView = dynamic(
+  () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
   { ssr: false, loading: () => <div className="text-[var(--text-muted)] py-4 text-center">Loading calendar...</div> }
 );
 
+// Power Down steps — reordered per Prism overhaul spec (2026-03-28)
+// 1. Review Today → 2. Weekly Goals & Tasks → 3. Select Top 3 →
+// 4. Calendar Split (tomorrow) → 5. Clear Goals → 6. Goal Clarity Summary →
+// 7. Capture Ideas (auto-save) → 8. Distractions → 9. Gratitudes
 const STEPS = [
-  { num: 1, title: 'Mark Task Completion', description: 'Review what you accomplished today.' },
-  { num: 2, title: 'Record Distractions', description: 'What pulled you off track today? Log it so you can guard against it.' },
-  { num: 3, title: 'Daily Gratitude', description: 'Spend 5 minutes reflecting on what you\'re grateful for.' },
-  { num: 4, title: 'Capture Ideas', description: 'Dump any ideas floating in your head so they don\'t keep you up.' },
-  { num: 5, title: 'Reschedule Incomplete', description: 'Move incomplete tasks to a new date or edit them.' },
-  { num: 6, title: 'Top 3 Tomorrow', description: 'Pick your 3 most important tasks for tomorrow.' },
-  { num: 7, title: "Tomorrow's Calendar", description: 'Review your calendar for tomorrow.' },
-  { num: 8, title: 'Clear Goals', description: 'Set clear, specific outcomes for tomorrow\'s tasks.' },
-  { num: 9, title: 'Power Down Complete', description: 'Clear your mind. You\'re done for the day.' },
+  { num: 1, title: 'Review Today', description: 'Review today\'s completions and wins.' },
+  { num: 2, title: 'Weekly Goals & Tasks', description: 'See your weekly goals with tasks. Update, create, and review incomplete tasks.' },
+  { num: 3, title: 'Select Top 3 for Tomorrow', description: 'Pick your top 3 most important tasks for tomorrow, ranked 1st, 2nd, 3rd.' },
+  { num: 4, title: "Tomorrow's Calendar", description: 'Drag tasks into tomorrow\'s time blocks. Fully editable — move, resize, or cancel blocks.' },
+  { num: 5, title: 'Clear Goals', description: 'Create a clear goal checklist for each task scheduled tomorrow, starting with your top 3.' },
+  { num: 6, title: 'Goal Clarity Summary', description: 'Final checklist of tomorrow\'s tasks with clear goals. Review and edit.' },
+  { num: 7, title: 'Capture Ideas', description: 'Dump any ideas — they\'ll be auto-saved to your Ideas list.' },
+  { num: 8, title: 'Record Distractions', description: 'What pulled you off track today? Log it so you can guard against it.' },
+  { num: 9, title: 'Daily Gratitude', description: 'Spend a few minutes reflecting on what you\'re grateful for.' },
 ];
 
 interface DistractionEntry {
@@ -118,9 +120,20 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [clearGoals, setClearGoals] = useState<any[]>([]);
   const [calendarReviewed, setCalendarReviewed] = useState(false);
 
-  // Inline calendar state (step 7)
-  const [userSettings, setUserSettings] = useState<{ workingHoursStart: string; workingHoursEnd: string } | null>(null);
-  const [unscheduledTomorrowItems, setUnscheduledTomorrowItems] = useState<UnscheduledItem[]>([]);
+  // AIM instances for Review Today step
+  const [aimInstances, setAimInstances] = useState<any[]>([]);
+
+  // Weekly goals for Weekly Goals & Tasks step
+  const [weeklyGoals, setWeeklyGoals] = useState<any[]>([]);
+  const [weeklyGoalsLoading, setWeeklyGoalsLoading] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState<Record<string, string>>({});
+
+  // Calendar modal state
+  const [calendarModalOpen, setCalendarModalOpen] = useState(false);
+
+  // Inline calendar state (now using CalendarSplitView)
+  const [_userSettings, setUserSettings] = useState<{ workingHoursStart: string; workingHoursEnd: string } | null>(null);
+  const [_unscheduledTomorrowItems, setUnscheduledTomorrowItems] = useState<any[]>([]);
 
   // Reschedule step state
   const [rescheduleDates, setRescheduleDates] = useState<Record<string, string>>({});
@@ -149,6 +162,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchPowerdownStreak();
     fetchUserSettings();
     fetchUnscheduledTomorrow();
+    fetchAimInstances();
+    fetchWeeklyGoals();
   }, []);
 
   const initSession = async () => {
@@ -178,13 +193,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   };
 
   const fetchTodayTasks = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     const res = await fetch(`/api/tasks?date=${today}`);
     if (res.ok) setTodayTasks(await res.json());
   };
 
   const fetchTomorrowTasks = async () => {
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const tomorrow = getTomorrowDateString();
     const res = await fetch(`/api/tasks?date=${tomorrow}`);
     if (res.ok) setTomorrowTasks(await res.json());
   };
@@ -219,7 +234,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const fetchUnscheduledTomorrow = useCallback(async () => {
     try {
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      const tomorrow = getTomorrowDateString();
       const res = await fetch(`/api/tasks?date=${tomorrow}&status=TODO`);
       if (res.ok) {
         const tasks = await res.json();
@@ -239,7 +254,77 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     }
   }, []);
 
-  const handleItemScheduled = useCallback(async (itemId: string, start: Date, end: Date, type: string) => {
+  const fetchAimInstances = useCallback(async () => {
+    try {
+      const today = getLocalDateString();
+      const res = await fetch(`/api/aims/instances?date=${today}`);
+      if (res.ok) setAimInstances(await res.json());
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  const fetchWeeklyGoals = useCallback(async () => {
+    setWeeklyGoalsLoading(true);
+    try {
+      const res = await fetch('/api/goals?level=WEEKLY&status=IN_PROGRESS');
+      if (res.ok) {
+        const goalsRaw = await res.json();
+        const goals = Array.isArray(goalsRaw) ? goalsRaw : [];
+        // Fetch child tasks for each goal
+        const goalsWithTasks = await Promise.all(
+          goals.map(async (g: any) => {
+            try {
+              const taskRes = await fetch(`/api/tasks?goalId=${g.id}`);
+              const tasks = taskRes.ok ? await taskRes.json() : [];
+              return { ...g, tasks };
+            } catch {
+              return { ...g, tasks: [] };
+            }
+          }),
+        );
+        setWeeklyGoals(goalsWithTasks);
+      }
+    } catch {
+      // Non-critical
+    } finally {
+      setWeeklyGoalsLoading(false);
+    }
+  }, []);
+
+  const toggleAimInstance = async (instance: any) => {
+    const newCompleted = !instance.completed;
+    try {
+      await fetch(`/api/aims/instances/${instance.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: newCompleted }),
+      });
+      fetchAimInstances();
+    } catch {
+      // Non-critical
+    }
+  };
+
+  const createTaskForGoal = async (goalId: string) => {
+    const title = (newTaskTitle[goalId] ?? '').trim();
+    if (!title) return;
+    try {
+      const tomorrow = getTomorrowDateString();
+      await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, goalId, dueDate: tomorrow, status: 'TODO' }),
+      });
+      setNewTaskTitle((prev) => ({ ...prev, [goalId]: '' }));
+      fetchWeeklyGoals();
+      fetchTomorrowTasks();
+    } catch {
+      // Non-critical
+    }
+  };
+
+  const _handleItemScheduled = useCallback(async (itemId: string, _start: Date, _end: Date, _type: string) => {
     // Remove the scheduled item from the unscheduled list
     setUnscheduledTomorrowItems((prev) => prev.filter((item) => item.id !== itemId));
     // Mark calendar as reviewed since user interacted with it
@@ -270,9 +355,9 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     if (!session) return;
     const next = currentStep + 1;
 
-    // On step 2 completion, persist distractions to DistractionLog API
-    if (currentStep === 2 && distractions.length > 0) {
-      const today = new Date().toISOString().split('T')[0];
+    // On step 8 completion, persist distractions to DistractionLog API
+    if (currentStep === 8 && distractions.length > 0) {
+      const today = getLocalDateString();
       for (const d of distractions) {
         try {
           await fetch('/api/distractions', {
@@ -303,6 +388,24 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         });
       } catch {
         // Streak update is non-critical
+      }
+      // Auto-save captured ideas to /api/ideas
+      if (ideas && ideas.length > 0) {
+        for (const idea of ideas) {
+          if (idea.trim()) {
+            await fetch('/api/ideas', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: idea.trim(),
+                description: idea.trim(),
+                confidenceScore: 0,
+                easeScore: 0,
+                impactScore: 0,
+              }),
+            }).catch((err) => console.error('Failed to save idea:', err));
+          }
+        }
       }
       setCompleted(true);
       return;
@@ -491,239 +594,234 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
           {/* Step content */}
           <div className="glass-panel p-6">
-            {/* Step 1: Mark Task Completion */}
+            {/* Step 1: Review Today — task completion + AIM instances */}
             {currentStep === 1 && (
-              <div className="space-y-2">
-                <p className="text-sm text-[var(--text-secondary)] mb-3">
-                  {completedTasks.length} of {todayTasks.length} tasks completed today.
-                </p>
-                {todayTasks.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => toggleTaskCompletion(t)}
-                    className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
-                  >
-                    {t.status === 'DONE' ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-400 flex-shrink-0" />
-                    ) : (
-                      <Circle className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
-                    )}
-                    <span
-                      className={
-                        t.status === 'DONE'
-                          ? 'text-[var(--text-muted)] line-through'
-                          : 'text-[var(--text-primary)] font-medium'
-                      }
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm text-[var(--text-secondary)] mb-3">
+                    {completedTasks.length} of {todayTasks.length} tasks completed today.
+                  </p>
+                  {todayTasks.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => toggleTaskCompletion(t)}
+                      className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
                     >
-                      {t.title}
-                    </span>
-                  </button>
-                ))}
-                {todayTasks.length === 0 && (
-                  <p className="text-sm text-[var(--text-muted)]">No tasks scheduled for today.</p>
+                      {t.status === 'DONE' ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-400 flex-shrink-0" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
+                      )}
+                      <span
+                        className={
+                          t.status === 'DONE'
+                            ? 'text-[var(--text-muted)] line-through'
+                            : 'text-[var(--text-primary)] font-medium'
+                        }
+                      >
+                        {t.title}
+                      </span>
+                    </button>
+                  ))}
+                  {todayTasks.length === 0 && (
+                    <p className="text-sm text-[var(--text-muted)]">No tasks scheduled for today.</p>
+                  )}
+                </div>
+
+                {/* AIM Instances */}
+                {aimInstances.length > 0 && (
+                  <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="h-4 w-4 text-purple-400" />
+                      <p className="text-sm text-[var(--text-secondary)] font-medium">Today&apos;s AIMs</p>
+                    </div>
+                    {aimInstances.map((aim) => (
+                      <button
+                        key={aim.id}
+                        onClick={() => toggleAimInstance(aim)}
+                        className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
+                      >
+                        {aim.completed ? (
+                          <CheckCircle2 className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                        ) : (
+                          <Circle className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
+                        )}
+                        <span
+                          className={
+                            aim.completed
+                              ? 'text-[var(--text-muted)] line-through'
+                              : 'text-[var(--text-primary)]'
+                          }
+                        >
+                          {aim.title ?? aim.aim?.title ?? 'AIM'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
 
-            {/* Step 2: Record Distractions */}
+            {/* Step 2: Weekly Goals & Tasks */}
             {currentStep === 2 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-5 w-5 text-orange-400" />
-                  <p className="text-sm text-[var(--text-secondary)]">What distracted you today?</p>
-                </div>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={distractionContent}
-                    onChange={(e) => setDistractionContent(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && distractionContent.trim()) addDistraction();
-                    }}
-                    placeholder="e.g. Slack notifications, impromptu meeting..."
-                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={distractionNotes}
-                    onChange={(e) => setDistractionNotes(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && distractionContent.trim()) addDistraction();
-                    }}
-                    placeholder="Notes (optional) — how to prevent this next time?"
-                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-muted)] focus:border-indigo-500 focus:outline-none"
-                  />
-                  <button
-                    onClick={addDistraction}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
-                  >
-                    Add Distraction
-                  </button>
-                </div>
-                {distractions.map((d, i) => (
-                  <div key={i} className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--text-primary)]">{d.content}</span>
+              <div className="space-y-4">
+                {weeklyGoalsLoading && (
+                  <p className="text-sm text-[var(--text-muted)]">Loading weekly goals...</p>
+                )}
+                {!weeklyGoalsLoading && weeklyGoals.length === 0 && (
+                  <p className="text-sm text-[var(--text-muted)]">No active weekly goals. You can skip this step.</p>
+                )}
+                {weeklyGoals.map((goal) => (
+                  <div key={goal.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-4 py-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Target className="h-4 w-4 text-indigo-400 flex-shrink-0" />
+                      <span className="text-sm text-[var(--text-primary)] font-medium">{goal.title}</span>
+                    </div>
+                    {goal.description && (
+                      <p className="text-xs text-[var(--text-muted)] ml-6">{goal.description}</p>
+                    )}
+
+                    {/* Child tasks */}
+                    {goal.tasks && goal.tasks.length > 0 && (
+                      <div className="ml-6 space-y-1">
+                        {goal.tasks.map((t: any) => (
+                          <div key={t.id} className="flex items-center gap-2 text-sm rounded-lg px-2 py-1">
+                            {t.status === 'DONE' ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-green-400 flex-shrink-0" />
+                            ) : (
+                              <Circle className="h-3.5 w-3.5 text-[var(--text-muted)] flex-shrink-0" />
+                            )}
+                            <span
+                              className={
+                                t.status === 'DONE'
+                                  ? 'text-[var(--text-muted)] line-through text-xs'
+                                  : 'text-[var(--text-primary)] text-xs'
+                              }
+                            >
+                              {t.title}
+                            </span>
+                            {t.dueDate && (
+                              <span className="text-[10px] text-[var(--text-muted)] ml-auto">{t.dueDate}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Inline task creation */}
+                    <div className="flex gap-2 ml-6">
+                      <input
+                        type="text"
+                        value={newTaskTitle[goal.id] ?? ''}
+                        onChange={(e) => setNewTaskTitle((prev) => ({ ...prev, [goal.id]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') createTaskForGoal(goal.id);
+                        }}
+                        placeholder="Add a task for this goal..."
+                        className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                      />
                       <button
-                        onClick={() => removeDistraction(i)}
-                        className="text-[var(--text-muted)] hover:text-red-400"
+                        onClick={() => createTaskForGoal(goal.id)}
+                        className="text-xs rounded bg-indigo-600 px-2 py-1 text-white hover:bg-indigo-500"
                       >
-                        <X className="h-4 w-4" />
+                        Add
                       </button>
                     </div>
-                    {d.notes && (
-                      <p className="text-xs text-[var(--text-muted)] mt-1">{d.notes}</p>
-                    )}
                   </div>
                 ))}
-                {distractions.length === 0 && (
-                  <p className="text-xs text-[var(--text-muted)]">No distractions recorded yet. Skip if it was a focused day!</p>
-                )}
-              </div>
-            )}
 
-            {/* Step 3: Daily Gratitude */}
-            {currentStep === 3 && (
-              <ListCaptureStep
-                items={gratitudes}
-                setItems={setGratitudes}
-                icon={<Heart className="h-5 w-5 text-pink-400" />}
-                prompt="What are you grateful for today?"
-                placeholder="I'm grateful for..."
-                color="pink"
-              >
-                <div className="text-center mb-4">
-                  <span className="text-3xl font-mono text-[var(--text-primary)]">{timerDisplay}</span>
-                  <div className="mt-2">
-                    <button
-                      onClick={() => setTimerRunning(!timerRunning)}
-                      className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                        timerRunning
-                          ? 'bg-red-600 text-white hover:bg-red-500'
-                          : 'bg-green-600 text-white hover:bg-green-500'
-                      }`}
-                    >
-                      {timerRunning ? 'Pause' : timerSeconds === 300 ? 'Start 5-min Timer' : 'Resume'}
-                    </button>
-                    {timerSeconds < 300 && !timerRunning && (
-                      <button
-                        onClick={() => setTimerSeconds(300)}
-                        className="ml-2 rounded-lg bg-[var(--surface)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-raised)]"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </ListCaptureStep>
-            )}
-
-            {/* Step 4: Capture Ideas */}
-            {currentStep === 4 && (
-              <ListCaptureStep
-                items={ideas}
-                setItems={setIdeas}
-                icon={<Lightbulb className="h-5 w-5 text-yellow-400" />}
-                prompt="Any ideas bouncing around? Get them out of your head."
-                placeholder="Idea, thought, or shower insight..."
-                emptyText="No ideas? That's fine -- skip ahead."
-                color="yellow"
-              />
-            )}
-
-            {/* Step 5: Reschedule Incomplete */}
-            {currentStep === 5 && (
-              <div className="space-y-2">
-                <p className="text-sm text-[var(--text-secondary)] mb-3">
-                  {incompleteTasks.length} incomplete task{incompleteTasks.length !== 1 ? 's' : ''} from today.
-                </p>
-                {incompleteTasks.map((t) => (
-                  <div key={t.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-2 space-y-2">
-                    {editingTask === t.id ? (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          placeholder="Task title"
-                          className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={editDescription}
-                          onChange={(e) => setEditDescription(e.target.value)}
-                          placeholder="Description (optional)"
-                          className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => saveTaskEdit(t.id)}
-                            className="text-xs rounded bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingTask(null)}
-                            className="text-xs rounded bg-[var(--surface)] px-3 py-1 text-[var(--text-secondary)] hover:bg-[var(--surface-raised)]"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-[var(--text-primary)]">{t.title}</span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                setEditingTask(t.id);
-                                setEditTitle(t.title);
-                                setEditDescription(t.description ?? '');
-                              }}
-                              className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center gap-1"
-                            >
-                              <Pencil className="h-3 w-3" /> Edit
-                            </button>
-                            <button
-                              onClick={() => setShowDatePicker((prev) => ({ ...prev, [t.id]: !prev[t.id] }))}
-                              className="text-xs text-indigo-400 hover:text-indigo-300"
-                            >
-                              Reschedule
-                            </button>
-                          </div>
-                        </div>
-                        {showDatePicker[t.id] && (
-                          <div className="flex items-center gap-2 ml-4">
+                {/* Incomplete tasks from today */}
+                {incompleteTasks.length > 0 && (
+                  <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                      Incomplete from today ({incompleteTasks.length})
+                    </p>
+                    {incompleteTasks.map((t) => (
+                      <div key={t.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-2 space-y-2">
+                        {editingTask === t.id ? (
+                          <div className="space-y-2">
                             <input
-                              type="date"
-                              value={rescheduleDates[t.id] ?? new Date(Date.now() + 86400000).toISOString().split('T')[0]}
-                              onChange={(e) => setRescheduleDates((prev) => ({ ...prev, [t.id]: e.target.value }))}
-                              className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              placeholder="Task title"
+                              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
                             />
-                            <button
-                              onClick={() => {
-                                const date = rescheduleDates[t.id] ?? new Date(Date.now() + 86400000).toISOString().split('T')[0];
-                                rescheduleTask(t.id, date);
-                              }}
-                              className="text-xs rounded bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500"
-                            >
-                              Confirm
-                            </button>
+                            <input
+                              type="text"
+                              value={editDescription}
+                              onChange={(e) => setEditDescription(e.target.value)}
+                              placeholder="Description (optional)"
+                              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => saveTaskEdit(t.id)}
+                                className="text-xs rounded bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingTask(null)}
+                                className="text-xs rounded bg-[var(--surface)] px-3 py-1 text-[var(--text-secondary)] hover:bg-[var(--surface-raised)]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-[var(--text-primary)]">{t.title}</span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingTask(t.id);
+                                    setEditTitle(t.title);
+                                    setEditDescription(t.description ?? '');
+                                  }}
+                                  className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center gap-1"
+                                >
+                                  <Pencil className="h-3 w-3" /> Edit
+                                </button>
+                                <button
+                                  onClick={() => setShowDatePicker((prev) => ({ ...prev, [t.id]: !prev[t.id] }))}
+                                  className="text-xs text-indigo-400 hover:text-indigo-300"
+                                >
+                                  Reschedule
+                                </button>
+                              </div>
+                            </div>
+                            {showDatePicker[t.id] && (
+                              <div className="flex items-center gap-2 ml-4">
+                                <input
+                                  type="date"
+                                  value={rescheduleDates[t.id] ?? getTomorrowDateString()}
+                                  onChange={(e) => setRescheduleDates((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                                  className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                                />
+                                <button
+                                  onClick={() => {
+                                    const date = rescheduleDates[t.id] ?? getTomorrowDateString();
+                                    rescheduleTask(t.id, date);
+                                  }}
+                                  className="text-xs rounded bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500"
+                                >
+                                  Confirm
+                                </button>
+                              </div>
+                            )}
+                          </>
                         )}
-                      </>
-                    )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-                {incompleteTasks.length === 0 && (
-                  <p className="text-sm text-green-400">All tasks completed! Nothing to reschedule.</p>
                 )}
               </div>
             )}
 
-            {/* Step 6: Top 3 Tomorrow */}
-            {currentStep === 6 && (
+            {/* Step 3: Select Top 3 for Tomorrow */}
+            {currentStep === 3 && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Star className="h-5 w-5 text-indigo-400" />
@@ -766,26 +864,56 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 7: Tomorrow's Calendar — embedded inline */}
-            {currentStep === 7 && (
+            {/* Step 4: Tomorrow's Calendar — full-screen modal overlay */}
+            {currentStep === 4 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Calendar className="h-5 w-5 text-indigo-400" />
                   <p className="text-sm text-[var(--text-primary)] font-medium">{tomorrowDate}</p>
                 </div>
                 <p className="text-sm text-[var(--text-secondary)]">
-                  Review and schedule tasks for tomorrow. Drag unscheduled tasks into time slots.
+                  Review and schedule tasks for tomorrow. Open the full calendar to drag tasks into time slots.
                 </p>
 
-                <InlineCalendar
-                  date={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
-                  viewType="timeGridDay"
-                  workingHoursStart={userSettings?.workingHoursStart ?? '09:00'}
-                  workingHoursEnd={userSettings?.workingHoursEnd ?? '21:00'}
-                  unscheduledItems={unscheduledTomorrowItems}
-                  onItemScheduled={handleItemScheduled}
-                  readOnly={false}
-                />
+                <button
+                  onClick={() => setCalendarModalOpen(true)}
+                  className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Calendar className="h-4 w-4" />
+                  Open Calendar View
+                </button>
+
+                {/* Full-screen calendar modal */}
+                {calendarModalOpen && (
+                  <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center">
+                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+                      <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)]">Tomorrow&apos;s Calendar</h3>
+                        <button
+                          onClick={() => {
+                            setCalendarModalOpen(false);
+                            setCalendarReviewed(true);
+                          }}
+                          className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+                        >
+                          Done
+                        </button>
+                      </div>
+                      <div className="flex-1 min-h-0 p-2">
+                        <CalendarSplitView
+                          viewMode="day"
+                          dateRange={{
+                            start: new Date(Date.now() + 86400000).toISOString(),
+                            end: new Date(Date.now() + 2 * 86400000).toISOString(),
+                          }}
+                          unscheduledItems={[]}
+                          onSchedule={() => {}}
+                          onUnschedule={() => {}}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <label className="flex items-center gap-2 mt-4 cursor-pointer">
                   <input
@@ -799,8 +927,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 8: Clear Goals */}
-            {currentStep === 8 && (
+            {/* Step 5: Clear Goals */}
+            {currentStep === 5 && (
               <div className="space-y-4">
                 <p className="text-sm text-[var(--text-secondary)] mb-3">
                   For each task, add specific outcomes you&apos;ll achieve. e.g., &quot;Complete first draft of proposal sections 1-3&quot;
@@ -860,14 +988,155 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 9: Power Down Complete */}
-            {currentStep === 9 && (
-              <div className="text-center space-y-3">
-                <Moon className="h-12 w-12 text-indigo-400 mx-auto" />
-                <p className="text-sm text-[var(--text-secondary)]">
-                  Clear your mind. Tomorrow is planned. You&apos;re done for the day.
+            {/* Step 6: Goal Clarity Summary — read-only preview */}
+            {currentStep === 6 && (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--text-secondary)] mb-3">
+                  Here&apos;s your plan for tomorrow. Review that each task has a clear goal.
                 </p>
+                {tomorrowTasks.length === 0 && (
+                  <p className="text-sm text-[var(--text-muted)]">No tasks scheduled for tomorrow.</p>
+                )}
+                {tomorrowTasks.map((t) => {
+                  const isTop3 = tomorrowPlan.includes(t.id);
+                  const checklist = goalChecklists[t.id] ?? clearGoals.find((cg) => cg.taskId === t.id)?.steps ?? [];
+                  return (
+                    <div key={t.id} className={`rounded-lg px-4 py-3 space-y-1 ${isTop3 ? 'bg-indigo-600/10 border border-indigo-500/30' : 'bg-[var(--surface-raised)]/50'}`}>
+                      <div className="flex items-center gap-2">
+                        {isTop3 && <Star className="h-3.5 w-3.5 text-indigo-400 fill-indigo-400 flex-shrink-0" />}
+                        <span className="text-sm text-[var(--text-primary)] font-medium">{t.title}</span>
+                      </div>
+                      {t.timeBlockStart && (
+                        <div className="flex items-center gap-1 ml-5 text-xs text-[var(--text-muted)]">
+                          <Clock className="h-3 w-3" />
+                          <span>
+                            {new Date(t.timeBlockStart).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                            {t.timeBlockEnd && ` - ${new Date(t.timeBlockEnd).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+                          </span>
+                        </div>
+                      )}
+                      {checklist.length > 0 ? (
+                        <div className="ml-5 space-y-0.5">
+                          {checklist.map((step: string, i: number) => (
+                            <div key={i} className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+                              <span className="text-green-400">{i + 1}.</span>
+                              <span>{typeof step === 'string' ? step : (step as any).title || (step as any).step}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-orange-400/80 ml-5">No clear goals set for this task.</p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+            )}
+
+            {/* Step 7: Capture Ideas */}
+            {currentStep === 7 && (
+              <ListCaptureStep
+                items={ideas}
+                setItems={setIdeas}
+                icon={<Lightbulb className="h-5 w-5 text-yellow-400" />}
+                prompt="Any ideas bouncing around? Get them out of your head."
+                placeholder="Idea, thought, or shower insight..."
+                emptyText="No ideas? That's fine -- skip ahead."
+                color="yellow"
+              />
+            )}
+
+            {/* Step 8: Record Distractions */}
+            {currentStep === 8 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="h-5 w-5 text-orange-400" />
+                  <p className="text-sm text-[var(--text-secondary)]">What distracted you today?</p>
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={distractionContent}
+                    onChange={(e) => setDistractionContent(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && distractionContent.trim()) addDistraction();
+                    }}
+                    placeholder="e.g. Slack notifications, impromptu meeting..."
+                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={distractionNotes}
+                    onChange={(e) => setDistractionNotes(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && distractionContent.trim()) addDistraction();
+                    }}
+                    placeholder="Notes (optional) — how to prevent this next time?"
+                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-muted)] focus:border-indigo-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={addDistraction}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
+                  >
+                    Add Distraction
+                  </button>
+                </div>
+                {distractions.map((d, i) => (
+                  <div key={i} className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[var(--text-primary)]">{d.content}</span>
+                      <button
+                        onClick={() => removeDistraction(i)}
+                        className="text-[var(--text-muted)] hover:text-red-400"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {d.notes && (
+                      <p className="text-xs text-[var(--text-muted)] mt-1">{d.notes}</p>
+                    )}
+                  </div>
+                ))}
+                {distractions.length === 0 && (
+                  <p className="text-xs text-[var(--text-muted)]">No distractions recorded yet. Skip if it was a focused day!</p>
+                )}
+              </div>
+            )}
+
+            {/* Step 9: Daily Gratitude */}
+            {currentStep === 9 && (
+              <ListCaptureStep
+                items={gratitudes}
+                setItems={setGratitudes}
+                icon={<Heart className="h-5 w-5 text-pink-400" />}
+                prompt="What are you grateful for today?"
+                placeholder="I'm grateful for..."
+                color="pink"
+              >
+                <div className="text-center mb-4">
+                  <span className="text-3xl font-mono text-[var(--text-primary)]">{timerDisplay}</span>
+                  <div className="mt-2">
+                    <button
+                      onClick={() => setTimerRunning(!timerRunning)}
+                      className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                        timerRunning
+                          ? 'bg-red-600 text-white hover:bg-red-500'
+                          : 'bg-green-600 text-white hover:bg-green-500'
+                      }`}
+                    >
+                      {timerRunning ? 'Pause' : timerSeconds === 300 ? 'Start 5-min Timer' : 'Resume'}
+                    </button>
+                    {timerSeconds < 300 && !timerRunning && (
+                      <button
+                        onClick={() => setTimerSeconds(300)}
+                        className="ml-2 rounded-lg bg-[var(--surface)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-raised)]"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </ListCaptureStep>
             )}
           </div>
 

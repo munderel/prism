@@ -1,37 +1,49 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import useSWR from 'swr';
 import {
   ChevronRight, ChevronLeft, PartyPopper,
   Target, ListTodo, AlertTriangle, Star, Calendar,
-  Wrench, Brain, BarChart3, FileText, CalendarClock,
+  Wrench, BarChart3, FileText, CalendarClock,
 } from 'lucide-react';
 
+import { getLocalDateString } from '@/lib/date-utils';
 import { StepCurrentGoals } from './weekly-steps/StepCurrentGoals';
 import { StepReviewTasks } from './weekly-steps/StepReviewTasks';
-import { StepDifficulties } from './weekly-steps/StepDifficulties';
 import { StepTop3Tasks } from './weekly-steps/StepTop3Tasks';
-import { StepCalendarPlanning } from './weekly-steps/StepCalendarPlanning';
+import { SuccessesAndDifficultiesStep } from './shared/SuccessesAndDifficultiesStep';
 import { StepMaintenanceReview } from './weekly-steps/StepMaintenanceReview';
 import { StepKpiProgress } from './weekly-steps/StepKpiProgress';
 import { StepNotesCompletion } from './weekly-steps/StepNotesCompletion';
 import { StepWeeklyGoals } from './weekly-steps/StepWeeklyGoals';
-import { StepScheduleTasks } from './weekly-steps/StepScheduleTasks';
+import { InlineTaskCreator } from './weekly-steps/InlineTaskCreator';
 
-// Step definitions — reordered per E1-E7 spec
+const CalendarSplitView = dynamic(
+  () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
+  { ssr: false, loading: () => <div className="text-[var(--text-muted)] py-8 text-center">Loading calendar...</div> }
+);
+
+// Step definitions — reordered per Prism overhaul spec (2026-03-28)
+// 1. Current Goals → 2. Review Tasks (successes captured) → 3. KPI Progress →
+// 4. Successes & Difficulties → 5. Create/Adjust Weekly Goals →
+// 6. Create/Modify Tasks → 7. Rank Top 3 → 8. Calendar: Work Blocks →
+// 9. Calendar: Tasks into Blocks → 10. Maintenance → 11. Notes
 const STEPS = [
-  { key: 'current_goals',     title: 'Current Goals',                  icon: Target,         description: 'Review your current weekly and monthly goals grouped by hierarchy.' },
-  { key: 'review_tasks',      title: 'Review Previous Tasks',          icon: ListTodo,       description: 'Check off completed tasks and reschedule incomplete ones.' },
-  { key: 'difficulties',      title: 'Difficulties',                   icon: AlertTriangle,  description: 'Reflect on blockers and friction from the past week.' },
-  { key: 'mit',               title: 'Select Your #1 Most Important Task', icon: Star,       description: 'Choose the single most important task for this week.' },
-  { key: 'work_blocks',       title: 'Plan Your Work Blocks',          icon: Calendar,       description: 'Create deep work, normal, and AIM blocks for the week.' },
-  { key: 'weekly_goals',      title: 'Review & Create Weekly Goals',   icon: Target,         description: 'Review existing weekly goals, create new ones, and add KPIs.' },
-  { key: 'maintenance',       title: 'Maintenance Review',             icon: Wrench,         description: 'Keep, automate, or eliminate maintenance tasks.' },
-  { key: 'kpi_progress',      title: 'KPI Progress',                   icon: BarChart3,      description: 'Update KPI actuals and review goal progress.' },
-  { key: 'schedule_tasks',    title: 'Schedule Tasks into Blocks',     icon: CalendarClock,  description: 'Assign remaining tasks to work blocks.' },
-  { key: 'notes_completion',  title: 'Notes & Completion',             icon: FileText,       description: 'Add final notes and complete the review.' },
+  { key: 'current_goals',     title: 'Current Goals',                       icon: Target,         description: 'Review your current weekly and monthly goals grouped by hierarchy.' },
+  { key: 'review_tasks',      title: 'Review Previous Tasks',               icon: ListTodo,       description: 'Check off completed tasks. Incomplete tasks carry forward. Capture successes.' },
+  { key: 'kpi_progress',      title: 'KPI Progress',                        icon: BarChart3,      description: 'Update weekly KPI actuals and review goal progress.' },
+  { key: 'successes_difficulties', title: 'Successes & Difficulties',       icon: AlertTriangle,  description: 'Capture wins and reflect on blockers from the past week.' },
+  { key: 'weekly_goals',      title: 'Create & Adjust Weekly Goals',        icon: Target,         description: 'Create weekly goals from monthly, with goal creation coach.' },
+  { key: 'create_tasks',      title: 'Create & Modify Tasks',               icon: ListTodo,       description: 'Add tasks linked to goals. Default assign self or select team member.' },
+  { key: 'mit',               title: 'Rank Top 3 Most Important Tasks',     icon: Star,           description: 'Select #1, then #2, then #3 most important tasks for this week.' },
+  { key: 'work_blocks',       title: 'Calendar: Create Work Blocks',        icon: Calendar,       description: 'Create Deep Work, Normal Work, and AIM blocks on your calendar.' },
+  { key: 'schedule_tasks',    title: 'Calendar: Tasks into Blocks',         icon: CalendarClock,  description: 'Drag tasks and AIMs into your work blocks.' },
+  { key: 'maintenance',       title: 'Maintenance Review',                  icon: Wrench,         description: 'Keep, automate, or eliminate maintenance tasks.' },
+  { key: 'notes_completion',  title: 'Notes & Completion',                  icon: FileText,       description: 'Add final notes and complete the review.' },
 ] as const;
 
 const TOTAL_STEPS = STEPS.length;
@@ -52,17 +64,21 @@ interface ReviewAnswerData {
 
 interface WeeklyReviewWizardProps {
   reviewId: string;
+  isTeamReview?: boolean;
 }
 
-export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
+export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizardProps) {
   const router = useRouter();
+  const _scope = isTeamReview ? 'company' : 'personal';
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [completed, setCompleted] = useState(false);
   const [review, setReview] = useState<any>(null);
+  const [calendarModalOpen, setCalendarModalOpen] = useState(false);
 
   // Step-specific state
-  const [difficulties, setDifficulties] = useState('');
+  const [successes, setSuccesses] = useState<string[]>([]);
+  const [difficulties, setDifficulties] = useState<string[]>([]);
   const [mitTaskIds, setMitTaskIds] = useState<string[]>([]);
   const [workBlocks, setWorkBlocks] = useState<WorkBlock[]>([]);
   const [maintenanceDecisions, setMaintenanceDecisions] = useState<Record<string, any>>({});
@@ -71,7 +87,36 @@ export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
   const [finalNotes, setFinalNotes] = useState('');
 
   // Answers map for hydration
-  const [answers, setAnswers] = useState<Record<string, ReviewAnswerData>>({});
+  const [_answers, setAnswers] = useState<Record<string, ReviewAnswerData>>({});
+
+  // Fetch unscheduled tasks and AIM instances for schedule_tasks step
+  const { data: weekTasks } = useSWR('/api/tasks?includeUnscheduled=true');
+  const weekStart = getLocalDateString();
+  const weekEnd7 = new Date();
+  weekEnd7.setDate(weekEnd7.getDate() + 7);
+  const weekEndDate = getLocalDateString(weekEnd7);
+  const { data: weekAims } = useSWR(`/api/aims/instances?start=${weekStart}T00:00:00&end=${weekEndDate}T23:59:59`);
+
+  const unscheduledForCalendar = useMemo(() => {
+    const items: any[] = [];
+    // Tasks without time blocks
+    if (Array.isArray(weekTasks)) {
+      for (const t of weekTasks) {
+        if (!t.timeBlockStart && t.status !== 'DONE' && t.status !== 'DROPPED') {
+          items.push({ id: t.id, itemType: 'task', title: t.title, duration: t.estimatedMinutes || 60, taskType: t.taskType, priority: t.priority });
+        }
+      }
+    }
+    // AIM instances without time blocks
+    if (Array.isArray(weekAims)) {
+      for (const a of weekAims) {
+        if (!a.timeBlockStart && a.status !== 'COMPLETED') {
+          items.push({ id: a.id, itemType: 'aim', title: a.aimCategory?.name || 'AIM', duration: 60, aimCategoryId: a.aimCategoryId });
+        }
+      }
+    }
+    return items;
+  }, [weekTasks, weekAims]);
 
   useEffect(() => {
     fetchReviewAndAnswers();
@@ -104,8 +149,15 @@ export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
 
           // Hydrate step state from saved answers
           switch (ans.stepKey) {
+            case 'successes_difficulties':
+              setSuccesses((ans.answerData as any)?.successes ?? []);
+              setDifficulties((ans.answerData as any)?.difficulties ?? []);
+              break;
             case 'difficulties':
-              setDifficulties((ans.answerData as any)?.text ?? '');
+              // Legacy support
+              setDifficulties(typeof (ans.answerData as any)?.text === 'string'
+                ? [(ans.answerData as any).text]
+                : (ans.answerData as any)?.difficulties ?? []);
               break;
             // Support both legacy 'top3' key and new 'mit' key
             case 'top3':
@@ -132,20 +184,20 @@ export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
 
         setAnswers(answersMap);
 
-        // Resume from last answered step + 1
+        // Resume from first unanswered step
         const answeredKeys = new Set(answersData.map((a) => a.stepKey));
         let resumeStep = 0;
         for (let i = 0; i < STEPS.length; i++) {
-          if (answeredKeys.has(STEPS[i].key)) {
-            resumeStep = i + 1;
-          } else {
+          if (!answeredKeys.has(STEPS[i].key)) {
+            resumeStep = i;
             break;
           }
+          resumeStep = i + 1;
         }
         setCurrentStep(Math.min(resumeStep, TOTAL_STEPS - 1));
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed during review operation:', err);
     }
     setLoading(false);
   };
@@ -157,8 +209,8 @@ export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stepKey, answerType, answerData }),
       });
-    } catch {
-      // silently fail - will retry on next persist
+    } catch (err) {
+      console.error('Failed to persist review answer:', err);
     }
   }, [reviewId]);
 
@@ -171,8 +223,11 @@ export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
       case 'review_tasks':
         await persistAnswer('review_tasks', 'task_list', { reviewed: true });
         break;
-      case 'difficulties':
-        await persistAnswer('difficulties', 'text', { text: difficulties });
+      case 'successes_difficulties':
+        await persistAnswer('successes_difficulties', 'text_list', { successes, difficulties });
+        break;
+      case 'create_tasks':
+        await persistAnswer('create_tasks', 'viewed', { viewed: true });
         break;
       case 'mit':
         await persistAnswer('mit', 'priority_ranking', { taskIds: mitTaskIds });
@@ -196,7 +251,7 @@ export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
         await persistAnswer('notes_completion', 'text', { notes: finalNotes });
         break;
     }
-  }, [currentStep, difficulties, mitTaskIds, workBlocks, maintenanceDecisions, kpiNotes, taskBlockAssignments, finalNotes, persistAnswer]);
+  }, [currentStep, successes, difficulties, mitTaskIds, workBlocks, maintenanceDecisions, kpiNotes, taskBlockAssignments, finalNotes, persistAnswer]);
 
   const advanceStep = async () => {
     await persistCurrentStep();
@@ -219,10 +274,10 @@ export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
     setCurrentStep(currentStep + 1);
   };
 
-  const goBack = () => {
+  const goBack = async () => {
     if (currentStep > 0) {
       // Persist before going back too
-      persistCurrentStep();
+      await persistCurrentStep();
       setCurrentStep(currentStep - 1);
     }
   };
@@ -327,56 +382,140 @@ export function WeeklyReviewWizard({ reviewId }: WeeklyReviewWizardProps) {
           {/* Step content */}
           <div className="glass-panel p-6">
             {step.key === 'current_goals' && (
-              <StepCurrentGoals reviewId={reviewId} />
+              <StepCurrentGoals reviewId={reviewId} isTeamReview={isTeamReview} />
             )}
             {step.key === 'review_tasks' && (
               <StepReviewTasks reviewId={reviewId} />
-            )}
-            {step.key === 'difficulties' && (
-              <StepDifficulties
-                reviewId={reviewId}
-                initialText={difficulties}
-                onAnswerChange={setDifficulties}
-              />
-            )}
-            {step.key === 'mit' && (
-              <StepTop3Tasks
-                reviewId={reviewId}
-                selectedTaskIds={mitTaskIds}
-                onSelectionChange={setMitTaskIds}
-              />
-            )}
-            {step.key === 'work_blocks' && (
-              <StepCalendarPlanning
-                reviewId={reviewId}
-                initialBlocks={workBlocks}
-                onBlocksChange={setWorkBlocks}
-              />
-            )}
-            {step.key === 'weekly_goals' && (
-              <StepWeeklyGoals reviewId={reviewId} />
-            )}
-            {step.key === 'maintenance' && (
-              <StepMaintenanceReview
-                reviewId={reviewId}
-                initialDecisions={maintenanceDecisions}
-                onDecisionsChange={setMaintenanceDecisions}
-              />
             )}
             {step.key === 'kpi_progress' && (
               <StepKpiProgress
                 reviewId={reviewId}
                 initialNotes={kpiNotes}
                 onNotesChange={setKpiNotes}
+                isTeamReview={isTeamReview}
               />
             )}
-            {step.key === 'schedule_tasks' && (
-              <StepScheduleTasks
+            {step.key === 'successes_difficulties' && (
+              <SuccessesAndDifficultiesStep
                 reviewId={reviewId}
-                mitTaskId={mitTaskIds.length > 0 ? mitTaskIds[0] : null}
-                workBlocks={workBlocks}
-                initialAssignments={taskBlockAssignments}
-                onAssignmentsChange={setTaskBlockAssignments}
+                initialSuccesses={successes}
+                initialDifficulties={difficulties}
+                onSave={(s, d) => { setSuccesses(s); setDifficulties(d); }}
+              />
+            )}
+            {step.key === 'weekly_goals' && (
+              <StepWeeklyGoals reviewId={reviewId} isTeamReview={isTeamReview} />
+            )}
+            {step.key === 'create_tasks' && (
+              <InlineTaskCreator isTeamReview={isTeamReview} />
+            )}
+            {step.key === 'mit' && (
+              <StepTop3Tasks
+                reviewId={reviewId}
+                selectedTaskIds={mitTaskIds}
+                onSelectionChange={setMitTaskIds}
+                isTeamReview={isTeamReview}
+              />
+            )}
+            {step.key === 'work_blocks' && (
+              isTeamReview ? (
+                <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
+                  <p className="text-sm text-[var(--text-muted)]">Calendar scheduling is done individually.</p>
+                </div>
+              ) : (
+              <>
+                <div className="text-center py-4">
+                  <p className="text-sm text-[var(--text-secondary)] mb-4">
+                    Create Deep Work, Normal Work, and AIM blocks on your weekly calendar.
+                  </p>
+                  <button
+                    onClick={() => setCalendarModalOpen(true)}
+                    className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+                  >
+                    Open Calendar
+                  </button>
+                </div>
+                {calendarModalOpen && (
+                  <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+                      <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
+                        <button
+                          onClick={() => setCalendarModalOpen(false)}
+                          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+                        >
+                          Done
+                        </button>
+                      </div>
+                      <div className="flex-1 min-h-0 p-2">
+                        <CalendarSplitView
+                          viewMode="week"
+                          dateRange={{ start: new Date().toISOString(), end: new Date(Date.now() + 7 * 86400000).toISOString() }}
+                          unscheduledItems={[
+                            { id: 'block-deep-work', itemType: 'task' as const, title: 'Deep Work Block', duration: 120, taskType: 'IMPROVE' },
+                            { id: 'block-normal-work', itemType: 'task' as const, title: 'Normal Work Block', duration: 60, taskType: 'REACT' },
+                          ]}
+                          onSchedule={() => {}}
+                          onUnschedule={() => {}}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+              )
+            )}
+            {step.key === 'schedule_tasks' && (
+              isTeamReview ? (
+                <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
+                  <p className="text-sm text-[var(--text-muted)]">Calendar scheduling is done individually.</p>
+                </div>
+              ) : (
+              <>
+                <div className="text-center py-4">
+                  <p className="text-sm text-[var(--text-secondary)] mb-4">
+                    Drag your tasks and AIMs into the work blocks you created.
+                  </p>
+                  <button
+                    onClick={() => setCalendarModalOpen(true)}
+                    className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+                  >
+                    Open Calendar
+                  </button>
+                </div>
+                {calendarModalOpen && (
+                  <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+                      <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
+                        <button
+                          onClick={() => setCalendarModalOpen(false)}
+                          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+                        >
+                          Done
+                        </button>
+                      </div>
+                      <div className="flex-1 min-h-0 p-2">
+                        <CalendarSplitView
+                          viewMode="week"
+                          dateRange={{ start: new Date().toISOString(), end: new Date(Date.now() + 7 * 86400000).toISOString() }}
+                          unscheduledItems={unscheduledForCalendar}
+                          onSchedule={() => {}}
+                          onUnschedule={() => {}}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+              )
+            )}
+            {step.key === 'maintenance' && (
+              <StepMaintenanceReview
+                reviewId={reviewId}
+                initialDecisions={maintenanceDecisions}
+                onDecisionsChange={setMaintenanceDecisions}
+                isTeamReview={isTeamReview}
               />
             )}
             {step.key === 'notes_completion' && (

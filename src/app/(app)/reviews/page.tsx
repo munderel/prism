@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User, Download, PlayCircle, Clock, Settings2 } from 'lucide-react';
 import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
 import { getNextReviewDate } from '@/lib/review-dates';
+import { getLocalDateString } from '@/lib/date-utils';
 import { useRouter } from 'next/navigation';
 
 const REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'YEARLY'] as const;
@@ -42,7 +43,7 @@ const typeColors: Record<string, string> = {
 };
 
 const getNextScheduledDate = (type: string): string =>
-  getNextReviewDate(type).toISOString().split('T')[0];
+  getLocalDateString(getNextReviewDate(type));
 
 type TabValue = 'my' | 'team';
 
@@ -274,7 +275,7 @@ export default function ReviewsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `reviews-export-${new Date().toISOString().split('T')[0]}.${exportFormat}`;
+      a.download = `reviews-export-${getLocalDateString()}.${exportFormat}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
