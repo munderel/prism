@@ -568,6 +568,7 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
   // Goal editing (goal-adjustment step)
   const [editingGoals, setEditingGoals] = useState<Record<string, { title: string; description: string; status: string }>>({});
   const [newGoalTitle, setNewGoalTitle] = useState('');
+  const [completedWeeklyReviews, setCompletedWeeklyReviews] = useState<any[]>([]);
 
   // Plan next period (child goals)
   const [childGoals, setChildGoals] = useState<Goal[]>([]);
@@ -595,6 +596,20 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
       if (!reviewRes.ok) return;
       const reviewData = await reviewRes.json();
       setReview(reviewData);
+
+      // For monthly reviews, fetch completed weekly reviews this month
+      if (goalLevel === 'MONTHLY') {
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+        const weeklyRes = await fetch(`/api/reviews?reviewType=WEEKLY&from=${monthStart}&to=${monthEnd}`);
+        if (weeklyRes.ok) {
+          const weeklyData = await weeklyRes.json();
+          setCompletedWeeklyReviews(
+            (Array.isArray(weeklyData) ? weeklyData : []).filter((r: any) => r.completedAt)
+          );
+        }
+      }
 
       // Fetch stacks
       const stacksRes = await fetch('/api/stacks');
@@ -908,6 +923,36 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
                   </div>
                 ) : (
                   <p className="text-sm text-[var(--text-muted)] italic">No high-level goals found. Create a goal stack first.</p>
+                )}
+
+                {/* Weekly review summaries for monthly reviews */}
+                {goalLevel === 'MONTHLY' && completedWeeklyReviews.length > 0 && (
+                  <div className="mt-6 space-y-3">
+                    <h3 className="text-sm font-semibold text-[var(--text-secondary)]">Weekly Review Summaries This Month</h3>
+                    {completedWeeklyReviews.map((wr: any) => (
+                      <div key={wr.id} className="rounded-lg border border-[var(--border-color)] px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-indigo-400">
+                            {new Date(wr.scheduledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                          <span className="text-xs text-green-400">Completed</span>
+                        </div>
+                        {wr.answers?.filter((a: any) => a.stepKey === 'successes_difficulties').map((a: any) => {
+                          const data = typeof a.answerData === 'string' ? JSON.parse(a.answerData) : a.answerData;
+                          return (
+                            <div key={a.id} className="text-xs text-[var(--text-muted)] space-y-1">
+                              {data?.successes?.length > 0 && (
+                                <p><span className="text-green-400">Wins:</span> {data.successes.join(', ')}</p>
+                              )}
+                              {data?.difficulties?.length > 0 && (
+                                <p><span className="text-red-400">Challenges:</span> {data.difficulties.join(', ')}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
