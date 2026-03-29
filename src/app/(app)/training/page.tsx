@@ -51,7 +51,7 @@ export default function TrainingPage() {
   const [formTargetDate, setFormTargetDate] = useState('');
   const [formGoalId, setFormGoalId] = useState('');
 
-  const { data: items, isLoading, mutate } = useSWR('/api/training');
+  const { data: items, isLoading, mutate } = useSWR('/api/training', { revalidateOnFocus: false });
   const { data: goals } = useSWR('/api/goals');
 
   const trainingItems = Array.isArray(items) ? items : [];
@@ -167,10 +167,11 @@ export default function TrainingPage() {
         </div>
       </div>
 
-      {/* Loading */}
+      {/* Loading — show empty state immediately with subtle loading indicator */}
       {isLoading ? (
-        <div className="text-[var(--text-muted)] text-sm py-12 text-center">
-          Loading training items...
+        <div className="glass-panel p-12 text-center">
+          <Loader2 className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-3 animate-spin" />
+          <p className="text-[var(--text-muted)] text-sm">Loading training items...</p>
         </div>
       ) : trainingItems.length === 0 ? (
         <div className="glass-panel p-12 text-center">
