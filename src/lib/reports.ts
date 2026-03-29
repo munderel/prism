@@ -44,7 +44,8 @@ export function computeIndividualReport(
   const dailyMap = new Map<string, number>();
   for (const t of tasks) {
     if (t.status === 'DONE' && t.completedAt) {
-      const date = new Date(t.completedAt).toISOString().split('T')[0];
+      const d = new Date(t.completedAt);
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       dailyMap.set(date, (dailyMap.get(date) ?? 0) + 1);
     }
   }

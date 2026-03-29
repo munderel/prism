@@ -70,22 +70,22 @@ export function GoalStackGuide({ isOpen, onClose }: GoalStackGuideProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={handleClose}>
-      <div className="relative mx-4 w-full max-w-lg rounded-xl bg-white shadow-2xl dark:bg-gray-900" onClick={(e) => e.stopPropagation()}>
+      <div className="relative mx-4 w-full max-w-lg rounded-xl bg-[var(--surface)] shadow-2xl border border-[var(--border-color)]" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <div className="flex items-center justify-between border-b border-[var(--border-color)] px-6 py-4">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
             Goal Stack Guide
           </h2>
           <button
             onClick={handleClose}
-            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700">
+        <div className="flex border-b border-[var(--border-color)]">
           {tabs.map((tab, idx) => {
             const TabIcon = tab.icon;
             const isActive = idx === activeTab;
@@ -95,8 +95,8 @@ export function GoalStackGuide({ isOpen, onClose }: GoalStackGuideProps) {
                 onClick={() => setActiveTab(idx)}
                 className={`flex flex-1 flex-col items-center gap-1 px-2 py-3 text-xs font-medium transition-colors ${
                   isActive
-                    ? 'border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'border-b-2 border-indigo-500 text-indigo-400'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 <TabIcon className="h-4 w-4" />
@@ -111,24 +111,24 @@ export function GoalStackGuide({ isOpen, onClose }: GoalStackGuideProps) {
         <div className="px-6 py-5">
           <div className="mb-3 flex items-center gap-2">
             <Icon className="h-5 w-5 text-indigo-500" />
-            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">
               {current.label}
             </h3>
           </div>
-          <p className="mb-2 text-sm font-medium text-gray-600 dark:text-gray-400">
+          <p className="mb-2 text-sm font-medium text-[var(--text-secondary)]">
             {current.summary}
           </p>
-          <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+          <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
             {current.content}
           </p>
-          <p className="mt-4 text-xs text-gray-400 dark:text-gray-500">
+          <p className="mt-4 text-xs text-[var(--text-muted)]">
             Based on principles from the Flow Research Collective
           </p>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-gray-200 px-6 py-4 dark:border-gray-700">
-          <label className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+        <div className="flex items-center justify-between border-t border-[var(--border-color)] px-6 py-4">
+          <label className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
             <input
               type="checkbox"
               checked={dontShowAgain}

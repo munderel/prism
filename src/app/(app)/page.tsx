@@ -74,7 +74,7 @@ export default function DashboardPage() {
       start: getLocalDateString(sunday),
       end: getLocalDateString(saturday),
     };
-  }, []);
+  }, [today]);
 
   const taskKey = viewMode === 'weekly'
     ? `/api/tasks?startDate=${weekRange.start}&endDate=${weekRange.end}`

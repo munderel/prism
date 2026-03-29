@@ -57,6 +57,9 @@ export async function PATCH(
     'title', 'description', 'priority', 'deliverable', 'estimatedMinutes',
     'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay',
   ]);
+  if (data.title !== undefined && typeof data.title === 'string' && data.title.trim().length < 3) {
+    return Response.json({ error: 'Task title must be at least 3 characters' }, { status: 400 });
+  }
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
   if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
   if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;

@@ -37,6 +37,9 @@ export function getTomorrowDateString(): string {
  */
 export function parseLocalDate(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) {
+    return new Date(); // Fallback to now for malformed input
+  }
   return new Date(y, m - 1, d);
 }
 

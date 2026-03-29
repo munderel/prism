@@ -106,6 +106,9 @@ interface PowerDownRitualProps {
 export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const { resolvedTheme, setTheme } = useTheme();
   const previousThemeRef = useRef<string | undefined>();
+  // Capture today/tomorrow once at mount to avoid cross-midnight drift
+  const [sessionToday] = useState(() => getLocalDateString());
+  const [sessionTomorrow] = useState(() => getTomorrowDateString());
   const [session, setSession] = useState<any>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -210,13 +213,12 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   };
 
   const fetchTodayTasks = async () => {
-    const today = getLocalDateString();
-    const res = await fetch(`/api/tasks?date=${today}`);
+    const res = await fetch(`/api/tasks?date=${sessionToday}`);
     if (res.ok) setTodayTasks(await res.json());
   };
 
   const fetchTomorrowTasks = async () => {
-    const tomorrow = getTomorrowDateString();
+    const tomorrow = sessionTomorrow;
     const res = await fetch(`/api/tasks?date=${tomorrow}`);
     if (res.ok) setTomorrowTasks(await res.json());
   };
@@ -251,7 +253,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const fetchUnscheduledTomorrow = useCallback(async () => {
     try {
-      const tomorrow = getTomorrowDateString();
+      const tomorrow = sessionTomorrow;
       const res = await fetch(`/api/tasks?date=${tomorrow}&status=TODO`);
       if (res.ok) {
         const tasks = await res.json();
@@ -273,8 +275,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const fetchAimInstances = useCallback(async () => {
     try {
-      const today = getLocalDateString();
-      const res = await fetch(`/api/aims/instances?date=${today}`);
+      const res = await fetch(`/api/aims/instances?date=${sessionToday}`);
       if (res.ok) setAimInstances(await res.json());
     } catch {
       // Non-critical
@@ -327,7 +328,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     const title = (newTaskTitle[goalId] ?? '').trim();
     if (!title) return;
     try {
-      const tomorrow = getTomorrowDateString();
+      const tomorrow = sessionTomorrow;
       await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -374,7 +375,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
     // On step 8 completion, persist distractions to DistractionLog API
     if (currentStep === 8 && distractions.length > 0) {
-      const today = getLocalDateString();
       for (const d of distractions) {
         try {
           await fetch('/api/distractions', {
@@ -383,7 +383,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
             body: JSON.stringify({
               content: d.content,
               notes: d.notes || null,
-              logDate: today,
+              logDate: sessionToday,
               source: 'powerdown',
             }),
           });
@@ -813,13 +813,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                               <div className="flex items-center gap-2 ml-4">
                                 <input
                                   type="date"
-                                  value={rescheduleDates[t.id] ?? getTomorrowDateString()}
+                                  value={rescheduleDates[t.id] ?? sessionTomorrow}
                                   onChange={(e) => setRescheduleDates((prev) => ({ ...prev, [t.id]: e.target.value }))}
                                   className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
                                 />
                                 <button
                                   onClick={() => {
-                                    const date = rescheduleDates[t.id] ?? getTomorrowDateString();
+                                    const date = rescheduleDates[t.id] ?? sessionTomorrow;
                                     rescheduleTask(t.id, date);
                                   }}
                                   className="text-xs rounded bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500"

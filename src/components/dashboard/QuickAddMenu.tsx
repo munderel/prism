@@ -62,7 +62,7 @@ export function QuickAddMenu({ className }: QuickAddMenuProps) {
               key={item.path}
               onClick={() => handleNavigate(item.path)}
               className="flex w-full items-center gap-3 px-3 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
-              style={{ borderLeft: `3px solid ${item.color}` }}
+              style={{ borderLeft: `3px solid ${item.color.color}` }}
             >
               <span className="text-base">{item.emoji}</span>
               <div className="flex-1 text-left">
