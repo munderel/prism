@@ -115,6 +115,10 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'taskType and title are required' }, { status: 400 });
   }
 
+  if (typeof title === 'string' && title.trim().length < 3) {
+    return Response.json({ error: 'Task title must be at least 3 characters' }, { status: 400 });
+  }
+
   if (!estimatedMinutes || estimatedMinutes <= 0) {
     return Response.json({ error: 'estimatedMinutes required and must be > 0' }, { status: 400 });
   }
