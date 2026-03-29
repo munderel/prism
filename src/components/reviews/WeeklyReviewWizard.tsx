@@ -490,13 +490,22 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                       <div className="flex-1 min-h-0 p-2">
                         <CalendarSplitView
                           viewMode="week"
-                          dateRange={{ start: new Date().toISOString(), end: new Date(Date.now() + 7 * 86400000).toISOString() }}
-                          unscheduledItems={[
-                            { id: 'block-deep-work', itemType: 'task' as const, title: 'Deep Work Block', duration: 120, taskType: 'IMPROVE' },
-                            { id: 'block-normal-work', itemType: 'task' as const, title: 'Normal Work Block', duration: 60, taskType: 'REACT' },
-                          ]}
-                          onSchedule={() => {}}
-                          onUnschedule={() => {}}
+                          dateRange={{ start: `${weekStart}T00:00:00`, end: `${weekEndDate}T23:59:59` }}
+                          unscheduledItems={unscheduledForCalendar}
+                          onSchedule={async (itemId, _itemType, start, end) => {
+                            await fetch(`/api/tasks/${itemId}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
+                            });
+                          }}
+                          onUnschedule={async (itemId) => {
+                            await fetch(`/api/tasks/${itemId}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
+                            });
+                          }}
                         />
                       </div>
                     </div>
@@ -538,10 +547,24 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                       <div className="flex-1 min-h-0 p-2">
                         <CalendarSplitView
                           viewMode="week"
-                          dateRange={{ start: new Date().toISOString(), end: new Date(Date.now() + 7 * 86400000).toISOString() }}
+                          dateRange={{ start: `${weekStart}T00:00:00`, end: `${weekEndDate}T23:59:59` }}
                           unscheduledItems={unscheduledForCalendar}
-                          onSchedule={() => {}}
-                          onUnschedule={() => {}}
+                          onSchedule={async (itemId, itemType, start, end) => {
+                            const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
+                            await fetch(endpoint, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
+                            });
+                          }}
+                          onUnschedule={async (itemId, itemType) => {
+                            const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
+                            await fetch(endpoint, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
+                            });
+                          }}
                         />
                       </div>
                     </div>
