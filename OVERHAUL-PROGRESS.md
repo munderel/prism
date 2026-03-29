@@ -23,7 +23,7 @@
 - [x] Task 16: Fix Calendar vs Dashboard week start inconsistency
 
 ## PHASE 4: Review System Enhancements
-- [ ] Task 17: Overhaul Weekly Review wizard (11 steps)
+- [x] Task 17: Overhaul Weekly Review wizard (11 steps)
 - [ ] Task 18: Overhaul Monthly Review wizard (9 steps)
 - [ ] Task 19: Overhaul Yearly Review wizard
 - [ ] Task 20: Expand Power Down ritual (9 steps)
