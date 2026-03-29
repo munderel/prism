@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
+import { getLocalDateString } from '@/lib/date-utils';
 
 interface TaskEditorProps {
   task?: any; // If editing
@@ -21,7 +22,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [priority, setPriority] = useState(task?.priority ?? 'MEDIUM');
   const [status, setStatus] = useState(task?.status ?? 'TODO');
   const [dueDate, setDueDate] = useState(
-    task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ''
+    task?.dueDate ? getLocalDateString(new Date(task.dueDate)) : ''
   );
   const [goalId, setGoalId] = useState(task?.goalId ?? prefilledGoalId ?? '');
   const [recurrenceFreq, setRecurrenceFreq] = useState('DAILY');

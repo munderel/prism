@@ -7,6 +7,9 @@ import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { AgendaView } from '@/components/tasks/AgendaView';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { TaskComments } from '@/components/tasks/TaskComments';
+import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
+import { PRISM_COLORS } from '@/lib/prism-colors';
+import { getLocalDateString } from '@/lib/date-utils';
 
 type ViewMode = 'day' | 'week' | 'month' | 'agenda';
 
@@ -33,9 +36,8 @@ function getLastOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0);
 }
 
-function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
+// Use getLocalDateString directly from date-utils
+const toDateStr = getLocalDateString;
 
 function formatDateLabel(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -54,12 +56,29 @@ function formatWeekLabel(d: Date): string {
 }
 
 export default function TasksPage() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
   const [date, setDate] = useState(today);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+
+  // Fetch AIM instances for the current date range
+  const aimRangeKey = useMemo(() => {
+    const d = new Date(date + 'T00:00:00');
+    if (viewMode === 'day') {
+      return `/api/aims/instances?start=${date}T00:00:00&end=${date}T23:59:59`;
+    }
+    if (viewMode === 'week') {
+      return `/api/aims/instances?start=${toDateStr(getMonday(d))}T00:00:00&end=${toDateStr(getSunday(d))}T23:59:59`;
+    }
+    if (viewMode === 'month') {
+      return `/api/aims/instances?start=${toDateStr(getFirstOfMonth(d))}T00:00:00&end=${toDateStr(getLastOfMonth(d))}T23:59:59`;
+    }
+    return `/api/aims/instances?start=${date}T00:00:00&end=${date}T23:59:59`;
+  }, [date, viewMode]);
+  const { data: aimInstancesData, mutate: mutateAims } = useSWR(aimRangeKey);
+  const aimInstances = useMemo(() => (Array.isArray(aimInstancesData) ? aimInstancesData : []), [aimInstancesData]);
 
   // Compute date range for current view
   const currentDate = new Date(date + 'T00:00:00');
@@ -121,7 +140,7 @@ export default function TasksPage() {
     const undated: any[] = [];
     for (const task of rangeTasks) {
       if (task.dueDate) {
-        const key = new Date(task.dueDate).toISOString().split('T')[0];
+        const key = getLocalDateString(new Date(task.dueDate));
         if (!groups[key]) groups[key] = [];
         groups[key].push(task);
       } else {
@@ -182,13 +201,16 @@ export default function TasksPage() {
           <ListTodo className="h-6 w-6 text-prism-indigo" />
           Tasks
         </h1>
-        <button
-          onClick={() => { setEditingTask(null); setShowEditor(true); }}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          New Task
-        </button>
+        <div className="flex items-center gap-2">
+          <QuickAddMenu />
+          <button
+            onClick={() => { setEditingTask(null); setShowEditor(true); }}
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            New Task
+          </button>
+        </div>
       </div>
 
       {/* View mode tabs */}
@@ -333,6 +355,50 @@ export default function TasksPage() {
           )}
         </div>
       </div>
+
+      {/* AIMs Section */}
+      {aimInstances.length > 0 && (
+        <div className="mt-6">
+          <h2 className={`text-sm font-semibold mb-3 flex items-center gap-1.5 ${PRISM_COLORS.AIM.textClass}`}>
+            <span>{PRISM_COLORS.AIM.emoji}</span> AIMs
+            <span className="text-xs text-[var(--text-muted)] font-normal">({aimInstances.length})</span>
+          </h2>
+          <div className="space-y-2">
+            {aimInstances.map((aim: any) => (
+              <div
+                key={aim.id}
+                className="glass-panel p-3 flex items-center gap-3"
+              >
+                <input
+                  type="checkbox"
+                  checked={aim.status === 'COMPLETED'}
+                  onChange={async () => {
+                    await fetch(`/api/aims/instances/${aim.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ status: aim.status === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED' }),
+                    });
+                    mutateAims();
+                  }}
+                  className="h-5 w-5 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-teal-600 focus:ring-teal-500"
+                />
+                <div className="flex-1">
+                  <span className={`text-sm font-medium ${aim.status === 'COMPLETED' ? 'text-gray-500 line-through' : 'text-[var(--text-primary)]'}`}>
+                    {aim.aimCategory?.name ?? 'AIM'}
+                    {aim.selectedActivity && ` — ${aim.selectedActivity}`}
+                  </span>
+                </div>
+                {aim.timeBlockStart && aim.timeBlockEnd && (
+                  <span className={`text-xs rounded px-2 py-0.5 ${PRISM_COLORS.AIM.bgClass} ${PRISM_COLORS.AIM.textClass}`}>
+                    {new Date(aim.timeBlockStart).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
+                    {new Date(aim.timeBlockEnd).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Editor modal */}
       {showEditor && (

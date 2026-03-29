@@ -4,11 +4,10 @@ import { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import { AlertTriangle, Check } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
+import { getLocalDateString } from '@/lib/date-utils';
 
 // ── helpers ──────────────────────────────────────────────────────────
-function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
+const toDateStr = getLocalDateString;
 
 function addDays(d: Date, n: number): Date {
   const r = new Date(d);
@@ -93,7 +92,7 @@ export function AgendaView({ onEdit, onDelete, onClick, onStatusChange }: Agenda
   const grouped = useMemo(() => {
     const groups: Record<string, any[]> = {};
     for (const task of allTasks) {
-      const key = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : todayStr;
+      const key = task.dueDate ? getLocalDateString(new Date(task.dueDate)) : todayStr;
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
     }

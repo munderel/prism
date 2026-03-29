@@ -5,6 +5,8 @@ import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
+import { GoalCreationCoach } from '@/components/reviews/shared/GoalCreationCoach';
+import { getLocalDateString } from '@/lib/date-utils';
 
 interface GoalEditorProps {
   stackId: string;
@@ -32,17 +34,18 @@ export function GoalEditor({
   const [description, setDescription] = useState(goal?.description ?? '');
   const [status, setStatus] = useState(goal?.status ?? 'NOT_STARTED');
   const [dueDate, setDueDate] = useState(
-    goal?.dueDate ? new Date(goal.dueDate).toISOString().split('T')[0] : ''
+    goal?.dueDate ? getLocalDateString(new Date(goal.dueDate)) : ''
   );
   const [startDate, setStartDate] = useState(
-    goal?.startDate ? new Date(goal.startDate).toISOString().split('T')[0] : ''
+    goal?.startDate ? getLocalDateString(new Date(goal.startDate)) : ''
   );
   const [endDate, setEndDate] = useState(
-    goal?.endDate ? new Date(goal.endDate).toISOString().split('T')[0] : ''
+    goal?.endDate ? getLocalDateString(new Date(goal.endDate)) : ''
   );
   const [autoGenerate, setAutoGenerate] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [showCoach, setShowCoach] = useState(false);
 
   const hhgDurationLabel = useMemo(() => {
     if (!startDate || !endDate) return '';
@@ -259,6 +262,12 @@ export function GoalEditor({
                 className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
               />
             </div>
+
+            <GoalCreationCoach
+              goalLevel={derivedLevel as 'HIGH_HARD' | 'STRATEGIC' | 'MONTHLY' | 'WEEKLY'}
+              isOpen={showCoach}
+              onToggle={() => setShowCoach(!showCoach)}
+            />
 
             <div className="flex justify-end gap-3 pt-2">
               <button

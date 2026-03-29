@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CalendarClock, ListTodo, Brain, Target, ChevronRight } from 'lucide-react';
+import { CalendarClock, ListTodo, Brain, Target } from 'lucide-react';
+import { getLocalDateString } from '@/lib/date-utils';
 
 interface Task {
   id: string;
@@ -27,7 +28,7 @@ interface StepScheduleTasksProps {
 }
 
 export function StepScheduleTasks({
-  reviewId,
+  reviewId: _reviewId,
   mitTaskId,
   workBlocks,
   initialAssignments,
@@ -55,7 +56,7 @@ export function StepScheduleTasks({
       endDate.setDate(endDate.getDate() + 7);
 
       const res = await fetch(
-        `/api/tasks?startDate=${startDate.toISOString().split('T')[0]}&endDate=${endDate.toISOString().split('T')[0]}&status=TODO`
+        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO`
       );
       if (res.ok) {
         const data: Task[] = await res.json();
@@ -65,8 +66,8 @@ export function StepScheduleTasks({
         );
         setTasks(filtered);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to fetch tasks for scheduling:', err);
     }
     setLoading(false);
   };
@@ -163,7 +164,7 @@ export function StepScheduleTasks({
       <div className="space-y-2">
         {tasks.map((task) => {
           const assignedBlockId = assignments[task.id];
-          const assignedBlock = workBlocks.find((b) => b.id === assignedBlockId);
+          const _assignedBlock = workBlocks.find((b) => b.id === assignedBlockId);
 
           return (
             <div

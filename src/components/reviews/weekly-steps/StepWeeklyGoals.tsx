@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Target, Plus, Pencil, Trash2, BarChart3,
-  ChevronRight, ChevronDown, Save, X,
+  Target, Plus, Pencil, BarChart3,
+  ChevronRight, ChevronDown, Save,
 } from 'lucide-react';
+import { getLocalDateString } from '@/lib/date-utils';
 
 interface Kpi {
   id: string;
@@ -30,9 +31,10 @@ interface WeeklyGoal {
 interface StepWeeklyGoalsProps {
   reviewId: string;
   onGoalsUpdated?: () => void;
+  isTeamReview?: boolean;
 }
 
-export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsProps) {
+export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamReview }: StepWeeklyGoalsProps) {
   const [goals, setGoals] = useState<WeeklyGoal[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
@@ -56,6 +58,7 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
   const [saving, setSaving] = useState<string | null>(null);
   const [stackId, setStackId] = useState<string | null>(null);
   const [monthlyParentId, setMonthlyParentId] = useState<string | null>(null);
+  const [creatingPlaceholder, setCreatingPlaceholder] = useState(false);
 
   useEffect(() => {
     fetchWeeklyGoals();
@@ -63,11 +66,62 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
 
   const fetchWeeklyGoals = async () => {
     try {
+      const now = new Date();
+
+      if (isTeamReview) {
+        // Fetch company weekly goals directly
+        const goalsRes = await fetch('/api/goals?isCompany=true&level=WEEKLY');
+        if (!goalsRes.ok) { setLoading(false); return; }
+        const goalsRaw = await goalsRes.json();
+        const allGoals = Array.isArray(goalsRaw) ? goalsRaw : [];
+
+        // Current week boundaries
+        const weekStart = new Date(now);
+        const dayOfWeek = weekStart.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        weekStart.setDate(weekStart.getDate() + mondayOffset);
+        weekStart.setHours(0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
+        const nextWeekStart = new Date(weekEnd);
+        nextWeekStart.setDate(nextWeekStart.getDate() + 1);
+        nextWeekStart.setHours(0, 0, 0, 0);
+        const nextWeekEnd = new Date(nextWeekStart);
+        nextWeekEnd.setDate(nextWeekEnd.getDate() + 6);
+        nextWeekEnd.setHours(23, 59, 59, 999);
+
+        const result: WeeklyGoal[] = [];
+        for (const g of allGoals) {
+          if (!g.startDate || !g.endDate) continue;
+          const gs = new Date(g.startDate);
+          const ge = new Date(g.endDate);
+          const isCurrentWeek = gs <= weekEnd && ge >= weekStart;
+          const isNextWeek = gs <= nextWeekEnd && ge >= nextWeekStart;
+          if (!isCurrentWeek && !isNextWeek) continue;
+
+          let kpis: Kpi[] = [];
+          try {
+            const kpisRes = await fetch(`/api/goals/${g.id}/kpis`);
+            if (kpisRes.ok) { const kpiData = await kpisRes.json(); kpis = kpiData.kpis ?? kpiData; }
+          } catch { /* ignore */ }
+
+          let parentTitle = '';
+          try {
+            const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
+            if (detailRes.ok) { const detail = await detailRes.json(); if (detail.parent) parentTitle = detail.parent.title; }
+          } catch { /* ignore */ }
+
+          result.push({ id: g.id, title: g.title, description: g.description ?? null, status: g.status, level: g.level, startDate: g.startDate, endDate: g.endDate, parentTitle, kpis });
+        }
+        setGoals(result);
+        setLoading(false);
+        return;
+      }
+
       const stacksRes = await fetch('/api/stacks');
       if (!stacksRes.ok) { setLoading(false); return; }
       const stacks = await stacksRes.json();
-
-      const now = new Date();
       // Current week boundaries
       const weekStart = new Date(now);
       const dayOfWeek = weekStart.getDay();
@@ -95,7 +149,8 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
 
         const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
         if (!goalsRes.ok) continue;
-        const allGoals = await goalsRes.json();
+        const allGoalsRaw = await goalsRes.json();
+        const allGoals = Array.isArray(allGoalsRaw) ? allGoalsRaw : [];
 
         for (const g of allGoals) {
           // Find monthly goals for the current month to use as parent for new weekly goals
@@ -157,8 +212,8 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
       }
 
       setGoals(result);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed during weekly goals operation:', err);
     }
     setLoading(false);
   };
@@ -193,8 +248,8 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
       );
       setEditingGoalId(null);
       onGoalsUpdated?.();
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed during weekly goals operation:', err);
     }
     setSaving(null);
   };
@@ -222,8 +277,8 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
       weekEnd.setDate(weekEnd.getDate() + 6);
       weekEnd.setHours(23, 59, 59, 999);
 
-      body.startDate = weekStart.toISOString().split('T')[0];
-      body.endDate = weekEnd.toISOString().split('T')[0];
+      body.startDate = getLocalDateString(weekStart);
+      body.endDate = getLocalDateString(weekEnd);
 
       const res = await fetch('/api/goals', {
         method: 'POST',
@@ -251,10 +306,89 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
         setShowCreateForm(false);
         onGoalsUpdated?.();
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed during weekly goals operation:', err);
     }
     setCreating(false);
+  };
+
+  const createPlaceholderWeek = async () => {
+    if (!stackId) return;
+    setCreatingPlaceholder(true);
+    try {
+      // Find the latest weekly goal end date to determine the next missing week
+      let latestEndDate: Date | null = null;
+      for (const g of goals) {
+        if (g.endDate) {
+          const d = new Date(g.endDate);
+          if (!latestEndDate || d > latestEndDate) {
+            latestEndDate = d;
+          }
+        }
+      }
+
+      let nextWeekStart: Date;
+      if (latestEndDate) {
+        // Start the day after the latest end date
+        nextWeekStart = new Date(latestEndDate);
+        nextWeekStart.setDate(nextWeekStart.getDate() + 1);
+        nextWeekStart.setHours(0, 0, 0, 0);
+      } else {
+        // No existing goals -- use the current week's Monday
+        const now = new Date();
+        nextWeekStart = new Date(now);
+        const dayOfWeek = nextWeekStart.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        nextWeekStart.setDate(nextWeekStart.getDate() + mondayOffset);
+        nextWeekStart.setHours(0, 0, 0, 0);
+      }
+
+      const nextWeekEnd = new Date(nextWeekStart);
+      nextWeekEnd.setDate(nextWeekEnd.getDate() + 6);
+      nextWeekEnd.setHours(23, 59, 59, 999);
+
+      // Calculate week number within the month
+      const weekOfMonth = Math.ceil(nextWeekStart.getDate() / 7);
+      const monthName = nextWeekStart.toLocaleString('default', { month: 'long' });
+      const year = nextWeekStart.getFullYear();
+      const title = `Week ${weekOfMonth} of ${monthName} ${year}`;
+
+      const body: Record<string, any> = {
+        stackId,
+        level: 'WEEKLY',
+        title,
+        startDate: getLocalDateString(nextWeekStart),
+        endDate: getLocalDateString(nextWeekEnd),
+      };
+      if (monthlyParentId) body.parentId = monthlyParentId;
+
+      const res = await fetch('/api/goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setGoals((prev) => [
+          ...prev,
+          {
+            id: created.id,
+            title: created.title,
+            description: created.description,
+            status: created.status ?? 'NOT_STARTED',
+            level: 'WEEKLY',
+            startDate: created.startDate,
+            endDate: created.endDate,
+            parentTitle: '',
+            kpis: [],
+          },
+        ]);
+        onGoalsUpdated?.();
+      }
+    } catch (err) {
+      console.error('Failed during weekly goals operation:', err);
+    }
+    setCreatingPlaceholder(false);
   };
 
   const addKpi = async (goalId: string) => {
@@ -290,8 +424,8 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
         setNewKpiUnit('');
         setNewKpiType('NUMERIC');
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed during weekly goals operation:', err);
     }
     setSaving(null);
   };
@@ -511,6 +645,18 @@ export function StepWeeklyGoals({ reviewId, onGoalsUpdated }: StepWeeklyGoalsPro
           <p className="text-sm text-[var(--text-muted)]">No weekly goals found for the upcoming week.</p>
           <p className="text-xs text-[var(--text-muted)] mt-1">Create one below to get started.</p>
         </div>
+      )}
+
+      {/* Add missing week placeholder */}
+      {stackId && (
+        <button
+          onClick={createPlaceholderWeek}
+          disabled={creatingPlaceholder}
+          className="flex items-center justify-center gap-2 w-full rounded-lg border border-dashed border-[var(--border-color)] px-4 py-2 text-xs text-[var(--text-muted)] hover:border-indigo-500/30 hover:text-indigo-400 transition-colors disabled:opacity-50"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {creatingPlaceholder ? 'Creating...' : '+ Add missing week'}
+        </button>
       )}
 
       {/* Create new goal form */}

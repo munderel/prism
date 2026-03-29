@@ -4,6 +4,7 @@ import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
 import { cacheHeaders } from '@/lib/api-helpers';
 
 import { parseRRule } from '@/lib/recurrence';
+import { parseLocalDate } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 
@@ -20,18 +21,42 @@ export async function GET(request: NextRequest) {
   const taskType = searchParams.get('taskType');
 
   const where: any = {};
+  const scope = searchParams.get('scope');
 
-  // Owner filter: non-admins only see their own tasks
-  if (!auth.session.user.isAdmin) {
-    where.ownerId = auth.userId;
+  // Scope filter: company scope shows all tasks linked to company goals + all react/maintenance
+  if (scope === 'company') {
+    // Find company stack IDs
+    const companyStacks = await prisma.goalStack.findMany({
+      where: { isCompany: true },
+      select: { id: true },
+    });
+    const companyStackIds = companyStacks.map((s) => s.id);
+
+    // Find goals in company stacks
+    const companyGoals = await prisma.goal.findMany({
+      where: { stackId: { in: companyStackIds }, deletedAt: null },
+      select: { id: true },
+    });
+    const companyGoalIds = companyGoals.map((g) => g.id);
+
+    where.OR = [
+      { goalId: { in: companyGoalIds } },
+      { taskType: { in: ['REACT', 'MAINTENANCE'] } },
+    ];
+  } else {
+    // Personal scope: non-admins only see their own tasks
+    if (!auth.session.user.isAdmin) {
+      where.ownerId = auth.userId;
+    }
   }
 
   const includeUnscheduled = searchParams.get('includeUnscheduled') === 'true';
 
   if (startDate && endDate) {
     // Date range mode: fetch tasks across multiple days
-    const rangeStart = new Date(startDate);
-    const rangeEnd = new Date(endDate);
+    // Parse YYYY-MM-DD strings as local dates (not UTC)
+    const rangeStart = parseLocalDate(startDate);
+    const rangeEnd = parseLocalDate(endDate);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
     if (includeUnscheduled) {
       where.OR = [
@@ -42,8 +67,9 @@ export async function GET(request: NextRequest) {
       where.dueDate = { gte: rangeStart, lt: rangeEnd };
     }
   } else if (date) {
-    const start = new Date(date);
-    const end = new Date(date);
+    // Parse YYYY-MM-DD as local date
+    const start = parseLocalDate(date);
+    const end = new Date(start);
     end.setDate(end.getDate() + 1);
     if (includeUnscheduled) {
       where.OR = [
