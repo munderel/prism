@@ -41,14 +41,14 @@
 - [x] Task 30: Goal Stack label and UI fixes
 
 ## PHASE 6: AIM System & Tasks
-- [ ] Task 31: AIM simplified default view
-- [ ] Task 32: Custom AIMs
-- [ ] Task 33: AIM workout sub-types
-- [ ] Task 34: AIM grouping social feature
-- [ ] Task 35: AIM growth stage explanations
-- [ ] Task 36: Task type routing via Quick Add
-- [ ] Task 37: Clear Goals (checklists) system
-- [ ] Task 38: Task type naming clarity
+- [x] Task 31: AIM simplified default view
+- [x] Task 32: Custom AIMs
+- [x] Task 33: AIM workout sub-types
+- [x] Task 34: AIM grouping social feature
+- [x] Task 35: AIM growth stage explanations
+- [x] Task 36: Task type routing via Quick Add
+- [x] Task 37: Clear Goals (checklists) system
+- [x] Task 38: Task type naming clarity
 
 ## PHASE 7: UX Polish & New Features
 - [ ] Task 39: Onboarding flow for new users

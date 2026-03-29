@@ -6,6 +6,8 @@ import { LazyMotion, domAnimation, m } from 'framer-motion';
 import { SWRProvider } from '@/app/(app)/swr-provider';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { FloatingIdeaButton } from './FloatingIdeaButton';
+import { CommandPalette } from '../CommandPalette';
 
 const SIDEBAR_COLLAPSED_KEY = 'prism-sidebar-collapsed';
 
@@ -51,6 +53,8 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
               </m.div>
             </main>
           </div>
+          <FloatingIdeaButton />
+          <CommandPalette />
         </LazyMotion>
       </SWRProvider>
     </SessionProvider>
