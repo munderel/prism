@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, ReactNode } from 'react';
+import { useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
+import { useTheme } from 'next-themes';
 import {
   CheckCircle2, ChevronRight, ChevronLeft, PartyPopper, AlertCircle,
   Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock,
@@ -103,6 +104,8 @@ interface PowerDownRitualProps {
 }
 
 export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
+  const { resolvedTheme, setTheme } = useTheme();
+  const previousThemeRef = useRef<string | undefined>();
   const [session, setSession] = useState<any>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -154,6 +157,20 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     const id = setInterval(() => setTimerSeconds((s) => s - 1), 1000);
     return () => clearInterval(id);
   }, [timerRunning, timerSeconds]);
+
+  // Auto-switch to dark mode during Power Down (evening ritual)
+  useEffect(() => {
+    if (resolvedTheme !== 'dark') {
+      previousThemeRef.current = resolvedTheme;
+      setTheme('dark');
+    }
+    return () => {
+      // Restore previous theme when leaving Power Down
+      if (previousThemeRef.current && previousThemeRef.current !== 'dark') {
+        setTheme(previousThemeRef.current);
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     initSession();
