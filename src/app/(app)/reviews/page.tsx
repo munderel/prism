@@ -880,15 +880,20 @@ export default function ReviewsPage() {
             </h3>
             <div className="space-y-1">
               {completedReviews.slice(0, 10).map((r: any) => (
-                <div key={r.id} className="flex items-center justify-between text-xs text-[var(--text-muted)] py-1">
+                <button
+                  key={r.id}
+                  onClick={() => router.push(`/reviews/${r.id}/complete?step=1`)}
+                  className="w-full flex items-center justify-between text-xs text-[var(--text-secondary)] py-1.5 px-2 rounded hover:bg-[var(--hover-bg)] transition-colors"
+                >
                   <div className="flex items-center gap-1.5">
+                    <Check className="h-3 w-3 text-green-500" />
                     <span>{r.reviewType}</span>
                     {r.isTeamReview && (
                       <Users className="h-3 w-3 text-indigo-400/50" />
                     )}
                   </div>
-                  <span>{new Date(r.completedAt).toLocaleDateString()}</span>
-                </div>
+                  <span className="text-[var(--text-muted)]">{new Date(r.completedAt).toLocaleDateString()}</span>
+                </button>
               ))}
             </div>
           </div>
