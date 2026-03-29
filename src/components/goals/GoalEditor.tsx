@@ -54,7 +54,7 @@ export function GoalEditor({
     if (isNaN(s.getTime()) || isNaN(e.getTime()) || e <= s) return '';
     const years = e.getFullYear() - s.getFullYear();
     const label = years <= 1 ? '1-Year' : `${years}-Year`;
-    return `${label} HHG (${s.getFullYear()}\u2013${e.getFullYear()})`;
+    return `${label} High Hard Goal (${s.getFullYear()}\u2013${e.getFullYear()})`;
   }, [startDate, endDate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
