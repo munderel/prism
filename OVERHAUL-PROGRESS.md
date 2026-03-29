@@ -51,15 +51,15 @@
 - [x] Task 38: Task type naming clarity
 
 ## PHASE 7: UX Polish & New Features
-- [ ] Task 39: Onboarding flow for new users
-- [ ] Task 40: Add Idea floating action button
-- [ ] Task 41: Calendar drag-and-drop visual feedback
-- [ ] Task 42: Keyboard shortcuts
-- [ ] Task 43: Reviews page tab consistency
-- [ ] Task 44: Today's Wins section
-- [ ] Task 45: Global search (Cmd+K command palette)
-- [ ] Task 46: Settings auto-save
-- [ ] Task 47: Reactive tasks list view
+- [x] Task 39: Onboarding flow for new users
+- [x] Task 40: Add Idea floating action button
+- [x] Task 41: Calendar drag-and-drop visual feedback
+- [x] Task 42: Keyboard shortcuts
+- [x] Task 43: Reviews page tab consistency
+- [x] Task 44: Today's Wins section
+- [x] Task 45: Global search (Cmd+K command palette)
+- [x] Task 46: Settings auto-save
+- [x] Task 47: Reactive tasks list view
 
 ## PHASE 8: Process KPI System
 - [ ] Task 48: Process KPI tracking on Processes page

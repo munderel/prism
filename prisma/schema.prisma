@@ -62,7 +62,11 @@ model User {
   workingHoursEnd       String?   // "HH:mm" format, e.g. "17:00"
   casualHoursStart      String?   // "HH:mm" format, e.g. "17:00"
   casualHoursEnd        String?   // "HH:mm" format, e.g. "22:00"
-  autoScheduleEnabled   Boolean   @default(true)
+  // Auth fields
+  passwordHash          String?   @db.Text
+  totpSecret            String?   @db.Text
+  is2FAEnabled          Boolean   @default(false)
+  isLockedOut           Boolean   @default(false)
   taskSchedulePeriod    String?   // "working" | "casual" | "both"
   selectedCalendarIds   Json      @default("[]") // String[] of Google Calendar IDs to sync
   powerdownTime         String?   // "HH:mm" format, e.g. "17:30"
@@ -93,6 +97,9 @@ model User {
   aimInstances         AimInstance[]
   distractionLogs      DistractionLog[]
   trainingItems        TrainingItem[]
+  feedback             Feedback[]
+  goalAssignments      GoalAssignee[]
+  processKpiEntries    ProcessKpiEntry[]
 }
 
 model CompanySettings {
@@ -164,7 +171,9 @@ model Goal {
   individualGoalLinks GoalLink[] @relation("IndividualGoal")
   publicWins         PublicWin[]
   kpis               Kpi[]
+  processKpis        ProcessKpi[]
   trainingItems      TrainingItem[]
+  assignees          GoalAssignee[]
 
   @@index([stackId])
   @@index([parentId])
@@ -191,6 +200,7 @@ enum TaskType {
   IMPROVE    @map("GOAL_STACK")
   REACT
   MAINTENANCE
+  REVIEW
 }
 
 enum TaskStatus {
@@ -250,6 +260,7 @@ model Task {
   attachments TaskAttachment[]
   idea     Idea?
   trainingTask TrainingTask?
+  clearGoals   ClearGoal[]
 
   @@index([ownerId])
   @@index([dueDate])
@@ -293,7 +304,6 @@ model PublicWin {
 enum ReviewType {
   WEEKLY
   MONTHLY
-  QUARTERLY
   YEARLY
 }
 
@@ -482,6 +492,7 @@ model Process {
   executions   ProcessExecution[]
   ideas        Idea[]
   tasks        Task[]           @relation("TaskProcess")
+  kpis         ProcessKpi[]
 
   @@index([functionId])
   @@index([assigneeId])
@@ -800,4 +811,117 @@ model DistractionLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, logDate])
+}
+
+// === CLEAR GOALS ===
+
+model ClearGoal {
+  id                  String    @id @default(cuid())
+  taskId              String
+  text                String
+  isComplete          Boolean   @default(false)
+  sortOrder           Int       @default(0)
+  createdInPowerdownId String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+// === GOAL ASSIGNEES ===
+
+model GoalAssignee {
+  id        String   @id @default(cuid())
+  goalId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([goalId, userId])
+  @@index([userId])
+}
+
+// === FEEDBACK ===
+
+model Feedback {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// === COMPANY AUTH SETTINGS ===
+
+model CompanyAuthSettings {
+  id                String   @id @default(cuid())
+  enforce2FA        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// === PROCESS KPI SYSTEM ===
+
+model ProcessKpi {
+  id          String   @id @default(cuid())
+  processId   String
+  name        String
+  unit        String?
+  targetValue Float?
+  goalId      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  process    Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  goal       Goal?    @relation(fields: [goalId], references: [id])
+  entries    ProcessKpiEntry[]
+  goals      ProcessKpiGoal[]
+
+  @@index([processId])
+  @@index([goalId])
+}
+
+model ProcessKpiEntry {
+  id        String   @id @default(cuid())
+  kpiId     String
+  userId    String
+  value     Float
+  date      DateTime
+  notes     String?
+  createdAt DateTime @default(now())
+
+  kpi  ProcessKpi @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id])
+
+  @@index([kpiId, date])
+  @@index([userId])
+}
+
+enum KpiTimeLevel {
+  WEEKLY
+  MONTHLY
+  YEARLY
+  FIVE_YEAR
+  HHG
+}
+
+model ProcessKpiGoal {
+  id          String       @id @default(cuid())
+  kpiId       String
+  timeLevel   KpiTimeLevel
+  targetValue Float
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  kpi ProcessKpi @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  @@unique([kpiId, timeLevel])
+  @@index([kpiId])
 }
