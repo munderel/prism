@@ -13,19 +13,18 @@ import { getLocalDateString } from '@/lib/date-utils';
 
 type ViewMode = 'day' | 'week' | 'month' | 'agenda';
 
-function getMonday(d: Date): Date {
+// Week starts on Sunday (consistent across app)
+function getWeekStart(d: Date): Date {
   const date = new Date(d);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diff);
+  date.setDate(date.getDate() - date.getDay());
   return date;
 }
 
-function getSunday(d: Date): Date {
-  const monday = getMonday(d);
-  const sunday = new Date(monday);
-  sunday.setDate(sunday.getDate() + 6);
-  return sunday;
+function getWeekEnd(d: Date): Date {
+  const start = getWeekStart(d);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return end;
 }
 
 function getFirstOfMonth(d: Date): Date {
@@ -49,8 +48,8 @@ function formatMonthLabel(d: Date): string {
 }
 
 function formatWeekLabel(d: Date): string {
-  const mon = getMonday(d);
-  const sun = getSunday(d);
+  const mon = getWeekStart(d);
+  const sun = getWeekEnd(d);
   const fmt = (dt: Date) => dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return `${fmt(mon)} – ${fmt(sun)}`;
 }
@@ -70,7 +69,7 @@ export default function TasksPage() {
       return `/api/aims/instances?start=${date}T00:00:00&end=${date}T23:59:59`;
     }
     if (viewMode === 'week') {
-      return `/api/aims/instances?start=${toDateStr(getMonday(d))}T00:00:00&end=${toDateStr(getSunday(d))}T23:59:59`;
+      return `/api/aims/instances?start=${toDateStr(getWeekStart(d))}T00:00:00&end=${toDateStr(getWeekEnd(d))}T23:59:59`;
     }
     if (viewMode === 'month') {
       return `/api/aims/instances?start=${toDateStr(getFirstOfMonth(d))}T00:00:00&end=${toDateStr(getLastOfMonth(d))}T23:59:59`;
@@ -86,7 +85,7 @@ export default function TasksPage() {
   const getRange = useCallback((): { start: string; end: string } | null => {
     const d = new Date(date + 'T00:00:00');
     if (viewMode === 'week') {
-      return { start: toDateStr(getMonday(d)), end: toDateStr(getSunday(d)) };
+      return { start: toDateStr(getWeekStart(d)), end: toDateStr(getWeekEnd(d)) };
     }
     if (viewMode === 'month') {
       return { start: toDateStr(getFirstOfMonth(d)), end: toDateStr(getLastOfMonth(d)) };
