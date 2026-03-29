@@ -5,8 +5,10 @@ import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { m } from 'framer-motion';
-import { Building2, User, Users, Target, Filter, CalendarClock, Trash2, Calendar } from 'lucide-react';
+import { Building2, User, Users, Target, Filter, CalendarClock, Trash2, Calendar, HelpCircle, Zap } from 'lucide-react';
+import { getLocalDateString } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
+import { GoalStackGuide } from '@/components/goals/GoalStackGuide';
 
 const GoalStackTree = dynamic(
   () => import('@/components/goals/GoalStackTree').then((mod) => ({ default: mod.GoalStackTree })),
@@ -25,6 +27,13 @@ export default function GoalsPage() {
   const [newStackVisibility, setNewStackVisibility] = useState<'private' | 'group' | 'company'>('private');
   const [showInProgress, setShowInProgress] = useState(false);
   const [showDueToday, setShowDueToday] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [viewTab, setViewTab] = useState<'stack' | 'daily'>('stack');
+
+  // Fetch today's tasks for Daily Actions view
+  const today = getLocalDateString();
+  const { data: todayTasks } = useSWR(viewTab === 'daily' ? `/api/tasks?date=${today}&includeUnscheduled=true` : null);
+  const dailyTasks = useMemo(() => (Array.isArray(todayTasks) ? todayTasks : []), [todayTasks]);
 
   const isAdmin = session?.user?.isAdmin ?? false;
 
@@ -34,6 +43,14 @@ export default function GoalsPage() {
       setSelectedStackId(stacks[0].id);
     }
   }, [stacks, selectedStackId]);
+
+  // Show guide on first visit if not dismissed
+  useEffect(() => {
+    const dismissed = localStorage.getItem('prism-goal-stack-guide-dismissed');
+    if (!dismissed) {
+      setShowGuide(true);
+    }
+  }, []);
 
   const selectedStack = stacks.find((s) => s.id === selectedStackId);
 
@@ -113,6 +130,13 @@ export default function GoalsPage() {
         <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
           <Target className="h-6 w-6 text-prism-indigo" />
           Goal Stack
+          <button
+            onClick={() => setShowGuide(true)}
+            className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
+            title="Goal Stack Guide"
+          >
+            <HelpCircle className="h-5 w-5" />
+          </button>
         </h1>
         {selectedStack && (
           <YamlImportExport
@@ -125,6 +149,55 @@ export default function GoalsPage() {
         )}
       </div>
 
+      {/* View toggle: Stack vs Daily Actions */}
+      <div className="mb-4 flex items-center gap-2">
+        <button
+          onClick={() => setViewTab('stack')}
+          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+            viewTab === 'stack' ? 'bg-indigo-600/20 text-indigo-400' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          Goal Stack
+        </button>
+        <button
+          onClick={() => setViewTab('daily')}
+          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
+            viewTab === 'daily' ? 'bg-indigo-600/20 text-indigo-400' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          <Zap className="h-3 w-3" /> Daily Actions
+        </button>
+      </div>
+
+      {viewTab === 'daily' ? (
+        <div className="space-y-3">
+          <p className="text-sm text-[var(--text-muted)] mb-4">Today&apos;s tasks traced back to their parent goals.</p>
+          {dailyTasks.length === 0 ? (
+            <div className="glass-panel p-8 text-center">
+              <p className="text-[var(--text-muted)]">No tasks for today. Plan your day in Power Down or Reviews.</p>
+            </div>
+          ) : (
+            dailyTasks.map((task: any) => (
+              <div key={task.id} className="glass-panel p-3">
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-medium ${task.status === 'DONE' ? 'text-gray-500 line-through' : 'text-[var(--text-primary)]'}`}>
+                    {task.title}
+                  </span>
+                  {task.isWinTheDay && <span className="text-xs text-amber-400">★</span>}
+                </div>
+                {task.goal && (
+                  <div className="mt-1 text-xs text-[var(--text-muted)] flex items-center gap-1.5">
+                    <span className="text-indigo-400">↑</span>
+                    <span>{task.goal.title}</span>
+                    {task.goal.stack?.name && <span className="text-[var(--text-muted)]">· {task.goal.stack.name}</span>}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+      <>
       {/* Stack tabs */}
       <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2">
         {stacks.map((stack) => (
@@ -290,6 +363,11 @@ export default function GoalsPage() {
           </button>
         </div>
       )}
+
+      </>
+      )}
+
+      {showGuide && <GoalStackGuide isOpen={showGuide} onClose={() => setShowGuide(false)} />}
     </div>
   );
 }
