@@ -62,12 +62,12 @@
 - [x] Task 47: Reactive tasks list view
 
 ## PHASE 8: Process KPI System
-- [ ] Task 48: Process KPI tracking on Processes page
-- [ ] Task 49: Company KPI Dashboard (default view)
-- [ ] Task 50: Individual KPI view
-- [ ] Task 51: KPI projections and forecast lines
-- [ ] Task 52: Chart and table view toggle
-- [ ] Task 53: Process KPI integration with existing features
+- [x] Task 48: Process KPI tracking on Processes page
+- [x] Task 49: Company KPI Dashboard (default view)
+- [x] Task 50: Individual KPI view
+- [x] Task 51: KPI projections and forecast lines
+- [x] Task 52: Chart and table view toggle
+- [x] Task 53: Process KPI integration with existing features
 
 ## PHASE 9: Performance & Export
 - [ ] Task 54: Performance optimization

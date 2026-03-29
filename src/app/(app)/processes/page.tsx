@@ -472,14 +472,42 @@ export default function ProcessesPage() {
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty state with starter templates */}
       {functions.length === 0 && (
-        <div className="text-center py-16">
+        <div className="text-center py-12">
           <ListChecks className="h-12 w-12 text-[var(--border-color)] mx-auto mb-4" />
           <p className="text-[var(--text-muted)] mb-2">No business functions yet.</p>
-          <p className="text-[var(--text-muted)] text-sm">
-            {isAdmin ? 'Create a function to start defining your SOPs and processes.' : 'Ask an admin to set up business functions and processes.'}
+          <p className="text-[var(--text-muted)] text-sm mb-6">
+            {isAdmin ? 'Start with a template or create from scratch.' : 'Ask an admin to set up business functions and processes.'}
           </p>
+          {isAdmin && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl mx-auto">
+              {[
+                { name: 'Marketing', desc: 'Ad campaigns, content creation, social media' },
+                { name: 'Sales', desc: 'Lead follow-up, proposals, client onboarding' },
+                { name: 'Operations', desc: 'Weekly planning, reporting, team meetings' },
+                { name: 'Product', desc: 'Feature development, bug triage, releases' },
+                { name: 'Finance', desc: 'Invoicing, budgeting, expense tracking' },
+                { name: 'HR', desc: 'Hiring, onboarding, performance reviews' },
+              ].map((tpl) => (
+                <button
+                  key={tpl.name}
+                  onClick={async () => {
+                    await fetch('/api/processes', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ name: tpl.name, description: tpl.desc }),
+                    });
+                    mutateFunctions();
+                  }}
+                  className="glass-panel p-4 text-left hover:border-indigo-500/30 transition-colors"
+                >
+                  <p className="text-sm font-medium text-[var(--text-primary)]">{tpl.name}</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-1">{tpl.desc}</p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
