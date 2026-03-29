@@ -29,7 +29,7 @@ interface DerailBatchResponse {
 const FOCUS_MODE_KEY = 'prism-focus-mode';
 
 export default function DashboardPage() {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const [today, setToday] = useState(() => getLocalDateString());
   const [editingTask, setEditingTask] = useState<any | 'new' | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export default function DashboardPage() {
   const taskKey = viewMode === 'weekly'
     ? `/api/tasks?startDate=${weekRange.start}&endDate=${weekRange.end}`
     : `/api/tasks?date=${today}&includeUnscheduled=true`;
-  const { data: tasks, mutate } = useSWR(taskKey, { revalidateOnFocus: true });
+  const { data: tasks, mutate, isLoading: tasksLoading } = useSWR(taskKey, { revalidateOnFocus: true });
   const list = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
   // Group tasks by day for weekly view
@@ -222,7 +222,8 @@ export default function DashboardPage() {
     mutate();
   }, [mutate]);
 
-  const userName = session?.user?.name?.split(' ')[0] || 'there';
+  const isLoading = sessionStatus === 'loading' || tasksLoading;
+  const userName = session?.user?.name?.split(' ')[0] || (sessionStatus === 'loading' ? '...' : 'there');
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const scheduledCount = timelineBlocks.length;
@@ -357,7 +358,7 @@ export default function DashboardPage() {
             <div>
               <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
               <p className="text-sm text-[var(--text-muted)]">
-                {scheduledCount} item{scheduledCount !== 1 ? 's' : ''} scheduled today · {weeklyScheduledHours}h scheduled
+                {isLoading ? 'Loading...' : `${scheduledCount} item${scheduledCount !== 1 ? 's' : ''} scheduled today · ${weeklyScheduledHours}h scheduled`}
               </p>
             </div>
             <div className="flex items-center gap-2">
