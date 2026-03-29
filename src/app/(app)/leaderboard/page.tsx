@@ -35,7 +35,7 @@ export default function LeaderboardPage() {
               className="flex items-center gap-4 glass-panel px-5 py-4"
             >
               <span className={`text-2xl font-bold ${
-                i === 0 ? 'text-yellow-400' : i === 1 ? 'text-[var(--text-secondary)]' : i === 2 ? 'text-orange-400' : 'text-[var(--text-muted)]'
+                i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-orange-400' : 'text-[var(--text-secondary)]'
               }`}>
                 #{i + 1}
               </span>
