@@ -36,9 +36,9 @@
 - [x] Task 25: Dashboard layout overhaul
 - [x] Task 26: Add clear "What should I do now?" signal
 - [x] Task 27: Add progress visualization to dashboard
-- [ ] Task 28: Goal Stack daily actions view
-- [ ] Task 29: Goal creation sidebar coach
-- [ ] Task 30: Goal Stack label and UI fixes
+- [x] Task 28: Goal Stack daily actions view
+- [x] Task 29: Goal creation sidebar coach
+- [x] Task 30: Goal Stack label and UI fixes
 
 ## PHASE 6: AIM System & Tasks
 - [ ] Task 31: AIM simplified default view

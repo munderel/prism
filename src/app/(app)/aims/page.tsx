@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import StreakHeatmap from '@/components/aims/StreakHeatmap';
 import { AimProgressChart } from '@/components/aims/AimProgressChart';
+import { AimCard as AimCardSimplified } from '@/components/aims/AimCard';
+import { WorkoutSubTypes } from '@/components/aims/WorkoutSubTypes';
 import type { DerailInfo } from '@/lib/derail-detection';
 import {
   PHASE_LABELS as PHASE_LABELS_MAP,
@@ -99,6 +101,7 @@ export default function AimsPage() {
     `/api/aims/instances?start=${todayStart}&end=${todayEnd}`
   );
 
+  const [viewMode, setViewMode] = useState<'simplified' | 'full'>('simplified');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDuration, setEditDuration] = useState<number>(0);
   const [editFrequency, setEditFrequency] = useState<number>(0);
@@ -277,6 +280,19 @@ export default function AimsPage() {
     setEditActivities(editActivities.filter((a) => a !== act));
   };
 
+  const handleWorkoutSubTypesChange = async (catId: string, subTypes: { id: string; name: string; frequencyPerWeek: number }[]) => {
+    const customActivities = subTypes.map((s) => s.name);
+    setEditActivities(customActivities);
+    await fetch('/api/aims/user', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        aims: [{ aimCategoryId: catId, customActivities }],
+      }),
+    });
+    mutateAims();
+  };
+
   const dailyCategories = categories?.filter((c) => c.isDaily) ?? [];
   const weeklyCategories = categories?.filter((c) => !c.isDaily) ?? [];
 
@@ -301,97 +317,204 @@ export default function AimsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold font-display text-[var(--text-primary)] flex items-center gap-2">
-          <Flame className="h-6 w-6 text-teal-500" />
-          Aims
-        </h1>
-        <p className="mt-1 text-sm text-[var(--text-secondary)]">
-          Daily and weekly rituals that fuel peak performance. Toggle on/off and customize duration and frequency.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold font-display text-[var(--text-primary)] flex items-center gap-2">
+            <Flame className="h-6 w-6 text-teal-500" />
+            Aims
+          </h1>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+            Daily and weekly rituals that fuel peak performance.
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setViewMode('simplified')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'simplified' ? 'bg-teal-600/20 text-teal-400 border border-teal-600/30' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            Simplified
+          </button>
+          <button
+            onClick={() => setViewMode('full')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'full' ? 'bg-teal-600/20 text-teal-400 border border-teal-600/30' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            Full View
+          </button>
+        </div>
       </div>
 
-      {/* Daily Aims Section */}
-      {dailyCategories.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">
-            Daily Aims
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {dailyCategories.map((cat) => (
-              <AimCard
-                key={cat.id}
-                category={cat}
-                active={isActive(cat.id)}
-                duration={getDuration(cat)}
-                frequency={formatFrequency(cat)}
-                activities={getActivities(cat)}
-                userAim={userAimMap.get(cat.id)}
-                derailInfo={derailBatch?.[cat.id]?.derailInfo}
-                isEditing={editingId === cat.id}
-                editDuration={editDuration}
-                editFrequency={editFrequency}
-                editActivities={editActivities}
-                newActivity={newActivity}
-                completedToday={completedTodaySet.has(cat.id)}
-                completing={completingId === cat.id}
-                onToggle={() => toggleAim(cat.id)}
-                onComplete={() => completeToday(cat.id)}
-                onStartEdit={() => startEditing(cat)}
-                onSaveEdit={() => saveEditing(cat)}
-                onCancelEdit={() => setEditingId(null)}
-                onEditDurationChange={setEditDuration}
-                onEditFrequencyChange={setEditFrequency}
-                onNewActivityChange={setNewActivity}
-                onAddActivity={addActivity}
-                onRemoveActivity={removeActivity}
-                onResetToSeed={() => resetToSeed(cat.id)}
-                onMutateAims={mutateAims}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+      {viewMode === 'simplified' ? (
+        <>
+          {/* Simplified: AimCardSimplified per active aim */}
+          {dailyCategories.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Daily Aims</h2>
+              <div className="space-y-2">
+                {dailyCategories.filter((cat) => isActive(cat.id)).map((cat) => {
+                  const ua = userAimMap.get(cat.id);
+                  if (!ua) return null;
+                  const inst = todayInstanceMap.get(cat.id);
+                  return (
+                    <AimCardSimplified
+                      key={cat.id}
+                      aim={{
+                        id: ua.id,
+                        aimCategory: { name: cat.name, description: cat.description ?? undefined },
+                        isActive: ua.isActive,
+                        currentPhase: ua.currentPhase,
+                        currentStreak: ua.currentStreak,
+                        bestStreak: ua.bestStreak,
+                        customDuration: ua.customDuration ?? undefined,
+                        customFrequency: ua.customFrequency ?? undefined,
+                      }}
+                      todayInstance={inst ? {
+                        id: inst.id,
+                        status: inst.status,
+                      } : undefined}
+                      onComplete={async (instanceId) => {
+                        await fetch(`/api/aims/instances/${instanceId}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ status: 'COMPLETED' }),
+                        });
+                        await Promise.all([mutateAims(), mutateTodayInstances()]);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          )}
+          {weeklyCategories.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Weekly Aims</h2>
+              <div className="space-y-2">
+                {weeklyCategories.filter((cat) => isActive(cat.id)).map((cat) => {
+                  const ua = userAimMap.get(cat.id);
+                  if (!ua) return null;
+                  const inst = todayInstanceMap.get(cat.id);
+                  return (
+                    <AimCardSimplified
+                      key={cat.id}
+                      aim={{
+                        id: ua.id,
+                        aimCategory: { name: cat.name, description: cat.description ?? undefined },
+                        isActive: ua.isActive,
+                        currentPhase: ua.currentPhase,
+                        currentStreak: ua.currentStreak,
+                        bestStreak: ua.bestStreak,
+                        customDuration: ua.customDuration ?? undefined,
+                        customFrequency: ua.customFrequency ?? undefined,
+                      }}
+                      todayInstance={inst ? {
+                        id: inst.id,
+                        status: inst.status,
+                      } : undefined}
+                      onComplete={async (instanceId) => {
+                        await fetch(`/api/aims/instances/${instanceId}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ status: 'COMPLETED' }),
+                        });
+                        await Promise.all([mutateAims(), mutateTodayInstances()]);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Full View: existing detailed cards */}
+          {dailyCategories.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">
+                Daily Aims
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {dailyCategories.map((cat) => (
+                  <AimCard
+                    key={cat.id}
+                    category={cat}
+                    active={isActive(cat.id)}
+                    duration={getDuration(cat)}
+                    frequency={formatFrequency(cat)}
+                    activities={getActivities(cat)}
+                    userAim={userAimMap.get(cat.id)}
+                    derailInfo={derailBatch?.[cat.id]?.derailInfo}
+                    isEditing={editingId === cat.id}
+                    editDuration={editDuration}
+                    editFrequency={editFrequency}
+                    editActivities={editActivities}
+                    newActivity={newActivity}
+                    completedToday={completedTodaySet.has(cat.id)}
+                    completing={completingId === cat.id}
+                    onToggle={() => toggleAim(cat.id)}
+                    onComplete={() => completeToday(cat.id)}
+                    onStartEdit={() => startEditing(cat)}
+                    onSaveEdit={() => saveEditing(cat)}
+                    onCancelEdit={() => setEditingId(null)}
+                    onEditDurationChange={setEditDuration}
+                    onEditFrequencyChange={setEditFrequency}
+                    onNewActivityChange={setNewActivity}
+                    onAddActivity={addActivity}
+                    onRemoveActivity={removeActivity}
+                    onResetToSeed={() => resetToSeed(cat.id)}
+                    onMutateAims={mutateAims}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
 
-      {/* Weekly Aims Section */}
-      <section>
-        <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">
-          Weekly Aims
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {weeklyCategories.map((cat) => (
-            <AimCard
-              key={cat.id}
-              category={cat}
-              active={isActive(cat.id)}
-              duration={getDuration(cat)}
-              frequency={formatFrequency(cat)}
-              activities={getActivities(cat)}
-              userAim={userAimMap.get(cat.id)}
-              derailInfo={derailBatch?.[cat.id]?.derailInfo}
-              isEditing={editingId === cat.id}
-              editDuration={editDuration}
-              editFrequency={editFrequency}
-              editActivities={editActivities}
-              newActivity={newActivity}
-              completedToday={completedTodaySet.has(cat.id)}
-              completing={completingId === cat.id}
-              onToggle={() => toggleAim(cat.id)}
-              onComplete={() => completeToday(cat.id)}
-              onStartEdit={() => startEditing(cat)}
-              onSaveEdit={() => saveEditing(cat)}
-              onCancelEdit={() => setEditingId(null)}
-              onEditDurationChange={setEditDuration}
-              onEditFrequencyChange={setEditFrequency}
-              onNewActivityChange={setNewActivity}
-              onAddActivity={addActivity}
-              onRemoveActivity={removeActivity}
-              onResetToSeed={() => resetToSeed(cat.id)}
-              onMutateAims={mutateAims}
-            />
-          ))}
-        </div>
-      </section>
+          {/* Weekly Aims Section */}
+          <section>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">
+              Weekly Aims
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {weeklyCategories.map((cat) => (
+                <AimCard
+                  key={cat.id}
+                  category={cat}
+                  active={isActive(cat.id)}
+                  duration={getDuration(cat)}
+                  frequency={formatFrequency(cat)}
+                  activities={getActivities(cat)}
+                  userAim={userAimMap.get(cat.id)}
+                  derailInfo={derailBatch?.[cat.id]?.derailInfo}
+                  isEditing={editingId === cat.id}
+                  editDuration={editDuration}
+                  editFrequency={editFrequency}
+                  editActivities={editActivities}
+                  newActivity={newActivity}
+                  completedToday={completedTodaySet.has(cat.id)}
+                  completing={completingId === cat.id}
+                  onToggle={() => toggleAim(cat.id)}
+                  onComplete={() => completeToday(cat.id)}
+                  onStartEdit={() => startEditing(cat)}
+                  onSaveEdit={() => saveEditing(cat)}
+                  onCancelEdit={() => setEditingId(null)}
+                  onEditDurationChange={setEditDuration}
+                  onEditFrequencyChange={setEditFrequency}
+                  onNewActivityChange={setNewActivity}
+                  onAddActivity={addActivity}
+                  onRemoveActivity={removeActivity}
+                  onResetToSeed={() => resetToSeed(cat.id)}
+                  onMutateAims={mutateAims}
+                  onWorkoutSubTypesChange={(subTypes) => handleWorkoutSubTypesChange(cat.id, subTypes)}
+                />
+              ))}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
@@ -445,6 +568,7 @@ interface AimCardProps {
   onRemoveActivity: (act: string) => void;
   onResetToSeed: () => void;
   onMutateAims: () => void;
+  onWorkoutSubTypesChange?: (subTypes: { id: string; name: string; frequencyPerWeek: number }[]) => void;
 }
 
 function AimCard({
@@ -473,10 +597,10 @@ function AimCard({
   onAddActivity,
   onRemoveActivity,
   onResetToSeed,
-  onMutateAims,
+  onMutateAims: _onMutateAims,
+  onWorkoutSubTypesChange,
 }: AimCardProps) {
   const [chartExpanded, setChartExpanded] = useState(false);
-  const [schedulerOpen, setSchedulerOpen] = useState(false);
   const phase = (userAim?.currentPhase || 'SEED') as string;
   const phaseStyle = PHASE_STYLES[phase] || PHASE_STYLES.SEED;
   const streak = userAim?.currentStreak ?? 0;
@@ -670,7 +794,10 @@ function AimCard({
           )}
         </span>
         {category.isGroupable && (
-          <span className="flex items-center gap-1 text-teal-500 bg-teal-500/10 px-1.5 py-0.5 rounded-full">
+          <span
+            className="flex items-center gap-1 text-teal-500 bg-teal-500/10 px-1.5 py-0.5 rounded-full cursor-help"
+            title="Team members can see and join this AIM session. Toggle in settings below."
+          >
             <Users className="h-3 w-3" />
             Groupable
           </span>
@@ -699,28 +826,9 @@ function AimCard({
               {completing ? 'Completing...' : 'Complete Today'}
             </button>
           )}
-          {/* C4: Schedule button */}
-          <button
-            onClick={() => setSchedulerOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
-            title="Schedule recurring sessions in calendar"
-          >
-            <CalendarPlus className="h-3.5 w-3.5" />
-            Schedule
-          </button>
         </div>
       )}
 
-      {/* C4: Schedule Modal */}
-      {schedulerOpen && (
-        <AimSchedulerModal
-          category={category}
-          effectiveDuration={effectiveDuration}
-          effectiveFrequency={effectiveFreq}
-          onClose={() => setSchedulerOpen(false)}
-          onMutateAims={onMutateAims}
-        />
-      )}
 
       {/* Activities (non-editing) */}
       {!isEditing && activities.length > 0 && (
@@ -811,6 +919,21 @@ function AimCard({
             </div>
           )}
 
+          {/* WorkoutSubTypes for exercise-related categories */}
+          {/exercise|workout|fitness|gym|physical/i.test(category.name) && (
+            <WorkoutSubTypes
+              subTypes={(editActivities || []).map((a: string, i: number) => ({
+                id: String(i),
+                name: typeof a === 'string' ? a : (a as any).name || a,
+                frequencyPerWeek: (a as any).frequencyPerWeek || 1,
+              }))}
+              onChange={(newTypes) => {
+                onWorkoutSubTypesChange?.(newTypes);
+              }}
+              editable
+            />
+          )}
+
           <div className="flex justify-between">
             {/* C2: Reset to Seed button */}
             <button
@@ -853,6 +976,7 @@ interface AimSchedulerModalProps {
   onMutateAims: () => void;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AimSchedulerModal({
   category,
   effectiveDuration,
