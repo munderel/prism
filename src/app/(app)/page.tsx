@@ -62,17 +62,17 @@ export default function DashboardPage() {
   const [showWinCelebration, setShowWinCelebration] = useState(false);
 
   // Calculate week range for weekly view
+  // Week starts on Sunday (consistent with Calendar page)
   const weekRange = useMemo(() => {
     const d = new Date();
-    const day = d.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const monday = new Date(d);
-    monday.setDate(d.getDate() + diff);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
+    const day = d.getDay(); // 0=Sunday
+    const sunday = new Date(d);
+    sunday.setDate(d.getDate() - day);
+    const saturday = new Date(sunday);
+    saturday.setDate(sunday.getDate() + 6);
     return {
-      start: getLocalDateString(monday),
-      end: getLocalDateString(sunday),
+      start: getLocalDateString(sunday),
+      end: getLocalDateString(saturday),
     };
   }, []);
 
