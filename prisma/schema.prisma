@@ -59,6 +59,12 @@ model User {
   weeklyReviewDayOfWeek Int?      // 0=Sun,1=Mon,...6=Sat
   weeklyReviewTime      String?   // "HH:mm" format, e.g. "10:00"
   weeklyReviewDuration  Int?      // minutes, defaults to 60
+  monthlyReviewRecurrenceRule String? // "last-friday", "1st-monday", "15th", etc.
+  monthlyReviewTime            String? // "HH:mm" format
+  monthlyReviewDuration        Int?    // minutes
+  yearlyReviewRecurrenceRule   String? // "dec-30", "last-sat-dec", "custom:MM-DD"
+  yearlyReviewTime             String? // "HH:mm" format
+  yearlyReviewDuration         Int?    // minutes
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -89,6 +95,7 @@ model User {
   goalAssignments      GoalAssignee[]
   processKpiEntries    ProcessKpiEntry[]
   recurringTeamReviews RecurringTeamReview[] @relation("TeamReviewCreator")
+  teamReviewMemberships RecurringTeamReviewMember[]
 }
 
 model CompanySettings {
@@ -359,17 +366,31 @@ model PowerdownSession {
 // === RECURRING TEAM REVIEWS ===
 
 model RecurringTeamReview {
-  id          String     @id @default(cuid())
-  reviewType  ReviewType
-  dayOfWeek   Int        // 0=Sun, 1=Mon, ..., 6=Sat
-  time        String     // "HH:mm"
-  duration    Int        @default(60)
-  isActive    Boolean    @default(true)
-  createdById String
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id              String     @id @default(cuid())
+  reviewType      ReviewType
+  dayOfWeek       Int?       // 0=Sun, 1=Mon, ..., 6=Sat (required for WEEKLY)
+  recurrenceRule  String?    // for monthly/yearly rules (e.g. "last-friday", "dec-30")
+  time            String     // "HH:mm"
+  duration        Int        @default(60)
+  isActive        Boolean    @default(true)
+  createdById     String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
-  createdBy User @relation("TeamReviewCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy User                      @relation("TeamReviewCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members   RecurringTeamReviewMember[]
+}
+
+model RecurringTeamReviewMember {
+  id                    String @id @default(cuid())
+  recurringTeamReviewId String
+  userId                String
+
+  recurringTeamReview RecurringTeamReview @relation(fields: [recurringTeamReviewId], references: [id], onDelete: Cascade)
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([recurringTeamReviewId, userId])
+  @@index([userId])
 }
 
 // === COLLABORATION ===
@@ -487,6 +508,9 @@ model Process {
   cadence       ProcessCadence
   cadenceRule   String?
   defaultDurationMinutes Int    @default(60)
+  scheduledTime       String?
+  scheduledDayOfWeek  Int?
+  scheduledDayOfMonth Int?
   sortOrder     Int             @default(0)
   lastRunAt     DateTime?
   nextDueAt     DateTime?
@@ -529,13 +553,15 @@ model ProcessExecution {
   scheduledDate DateTime
   completedAt   DateTime?
   taskId        String?   @unique
+  timeBlockStart DateTime?
+  timeBlockEnd   DateTime?
   createdAt     DateTime  @default(now())
 
   process       Process   @relation(fields: [processId], references: [id], onDelete: Cascade)
   executedBy    User?     @relation(fields: [executedById], references: [id])
   task          Task?     @relation(fields: [taskId], references: [id])
 
-  @@index([processId])
+  @@index([processId, scheduledDate])
   @@index([scheduledDate])
 }
 

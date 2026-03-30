@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { notFoundResponse, safeParseJson } from '@/lib/api-helpers';
-import { getNextReviewDate } from '@/lib/review-dates';
+
 
 export async function GET(
   _request: NextRequest,
@@ -74,40 +74,6 @@ export async function PATCH(
 
   if (complete) {
     data.completedAt = new Date();
-
-    // Only auto-schedule next review if user hasn't disabled reviews
-    const prefs = await prisma.notificationPreference.findUnique({
-      where: { userId: auth.userId },
-    });
-
-    if (!prefs || prefs.reviewNags) {
-      const nextDate = getNextReviewDate(review.reviewType);
-
-      // Propagate time block pattern to the next review instance
-      let nextTimeBlockStart: Date | undefined;
-      let nextTimeBlockEnd: Date | undefined;
-      if (review.timeBlockStart && review.timeBlockEnd) {
-        const prevStart = new Date(review.timeBlockStart);
-        const prevEnd = new Date(review.timeBlockEnd);
-        const durationMs = prevEnd.getTime() - prevStart.getTime();
-        nextTimeBlockStart = new Date(nextDate);
-        nextTimeBlockStart.setHours(prevStart.getHours(), prevStart.getMinutes(), 0, 0);
-        nextTimeBlockEnd = new Date(nextTimeBlockStart.getTime() + durationMs);
-      }
-
-      await prisma.review.create({
-        data: {
-          userId: auth.userId,
-          reviewType: review.reviewType,
-          scheduledDate: nextDate,
-          isTeamReview: review.isTeamReview,
-          startDate: review.startDate,
-          recurrenceDayOfWeek: review.recurrenceDayOfWeek,
-          ...(nextTimeBlockStart ? { timeBlockStart: nextTimeBlockStart } : {}),
-          ...(nextTimeBlockEnd ? { timeBlockEnd: nextTimeBlockEnd } : {}),
-        },
-      });
-    }
   }
 
   const updated = await prisma.review.update({ where: { id }, data });

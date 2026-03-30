@@ -7,7 +7,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { type ProposedSlot } from '@/lib/scheduling-engine';
-import { Check, X, ListTodo, Save, Loader2, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Check, X, ListTodo, Save, Loader2, CheckCircle2 } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -16,7 +16,7 @@ import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 interface SelectedEventPopover {
   eventId: string;
   title: string;
-  source: 'aims' | 'task' | 'review';
+  source: 'aims' | 'task';
   status: string;
   position: { top: number; left: number };
   // Aim-specific
@@ -28,8 +28,6 @@ interface SelectedEventPopover {
   taskType?: string;
   priority?: string;
   goalTitle?: string;
-  // Review-specific
-  reviewId?: string;
 }
 
 interface AimTask {
@@ -66,6 +64,7 @@ const SOURCE_FILTERS = [
   { key: 'aims', label: 'Aims', color: 'bg-teal-500' },
   { key: 'google', label: 'Google Calendar', color: 'bg-purple-500' },
   { key: 'powerdown', label: 'Power Down', color: 'bg-violet-500' },
+  { key: 'processes', label: 'Processes', color: 'bg-cyan-500' },
 ];
 
 function scheduleItem(
@@ -77,7 +76,6 @@ function scheduleItem(
 ): Promise<Response> {
   const endpoints: Record<string, string> = {
     aim: `/api/aims/instances/${itemId}`,
-    review: `/api/reviews/${itemId}`,
     task: `/api/tasks/${itemId}`,
   };
   return fetch(endpoints[itemType] || endpoints.task, {
@@ -95,7 +93,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const { events, refreshEvents } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
   const { resolvedTheme } = useTheme();
-  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown']));
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown', 'processes']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
   const [showGhosts, setShowGhosts] = useState(false);
 
@@ -194,28 +192,22 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     const props = info.event.extendedProps || {};
     const rect = info.el.getBoundingClientRect();
 
-    // If this is a review event, show popover with Open action
-    if (props.reviewId) {
-      setSelectedEventPopover({
-        eventId: info.event.id,
-        title: info.event.title,
-        source: 'review',
-        status: props.completed ? 'Completed' : 'Pending',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
-        reviewId: props.reviewId,
-      });
-      return;
-    }
-
     // If this is a powerdown event, navigate to powerdown page
     if (props.link === '/powerdown' || info.event.id?.startsWith('powerdown-')) {
       router.push('/powerdown');
       return;
     }
 
-    // If this is a virtual weekly or team review event, navigate to reviews page
-    if (info.event.id?.startsWith('weekly-review-') || info.event.id?.startsWith('team-review-')) {
-      router.push('/reviews');
+    // If this is a virtual review event (weekly/monthly/yearly/team), use the link which contains action params
+    if (info.event.id?.startsWith('weekly-review-') || info.event.id?.startsWith('monthly-review-') || info.event.id?.startsWith('yearly-review-') || info.event.id?.startsWith('team-review-')) {
+      const link = props.link || '/reviews';
+      router.push(link);
+      return;
+    }
+
+    // If this is a process event, navigate to processes page
+    if (info.event.id?.startsWith('process-')) {
+      router.push('/processes');
       return;
     }
 
@@ -356,14 +348,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
       refreshCalendar();
       onExternalDrop?.(info.event.id, start, end, 'aim');
-    } else if (itemType === 'review') {
-      const reviewId = props.reviewId;
-      if (reviewId) {
-        await scheduleItem('review', reviewId, startISO, endISO);
-      }
-
-      refreshCalendar();
-      onExternalDrop?.(info.event.id, start, end, 'review');
     } else {
       const taskId = props.taskId || info.event.id?.replace('task-', '');
       if (!taskId) return;
@@ -386,10 +370,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       if (aimInstanceId) {
         await scheduleItem('aim', aimInstanceId, newStart, newEnd);
       }
-    } else if (eventId.startsWith('review-')) {
-      // One-time adjustment: PATCH the specific review's time block
-      const reviewId = info.event.extendedProps?.reviewId || eventId.replace('review-', '');
-      await scheduleItem('review', reviewId, newStart, newEnd);
     } else if (eventId.startsWith('powerdown-')) {
       // One-time adjustment for this specific day only (not the recurring default)
       // Extract the date from the event ID (format: powerdown-YYYY-MM-DD)
@@ -399,6 +379,20 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionDate: dateStr,
+          timeBlockStart: newStart,
+          timeBlockEnd: newEnd,
+        }),
+      });
+    } else if (eventId.startsWith('process-')) {
+      // Per-execution override: extract processId and date from "process-{cuid}-YYYY-MM-DD"
+      const parts = eventId.split('-');
+      const dateStr = parts.slice(-3).join('-');
+      const processId = parts.slice(1, -3).join('-');
+      await fetch(`/api/processes/${processId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduledDate: dateStr,
           timeBlockStart: newStart,
           timeBlockEnd: newEnd,
         }),
@@ -438,11 +432,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               timeBlockEnd: endISO,
             }),
           });
-        }
-      } else if (itemType === 'review') {
-        const reviewId = item?.reviewId;
-        if (reviewId) {
-          return scheduleItem('review', reviewId, startISO, endISO);
         }
       } else {
         const taskId = item?.taskId || ghost.taskId.replace('task-', '');
@@ -532,7 +521,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
   // Get TODO tasks available for assignment (from unscheduledTasks prop)
   const availableTodoTasks = (unscheduledTasks || []).filter(
-    (t: any) => t.itemType !== 'aim' && t.itemType !== 'review' && (t.status === 'TODO' || t.status === 'IN_PROGRESS')
+    (t: any) => t.itemType !== 'aim' && (t.status === 'TODO' || t.status === 'IN_PROGRESS')
   );
 
   const filteredEvents = events.filter((e: any) => activeFilters.has(e.source));
@@ -543,7 +532,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     const ghostColors: Record<string, { bg: string; border: string }> = {
       task: { bg: 'rgba(99, 102, 241, 0.3)', border: '#6366f1' },
       aim: { bg: 'rgba(20, 184, 166, 0.3)', border: '#14b8a6' },
-      review: { bg: 'rgba(245, 158, 11, 0.3)', border: '#f59e0b' },
     };
     const { bg, border } = ghostColors[itemType] || ghostColors.task;
 
@@ -556,7 +544,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       borderColor: border,
       classNames: ['ghost-event'],
       editable: true,
-      source: itemType === 'task' ? 'tasks' : itemType === 'aim' ? 'aims' : 'reviews',
+      source: itemType === 'task' ? 'tasks' : 'aims',
     };
   }) : [];
 
@@ -705,17 +693,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </>
             )}
 
-            {/* REVIEW popover */}
-            {selectedEventPopover.source === 'review' && (
-              <div className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${
-                  selectedEventPopover.status === 'Completed' ? 'bg-emerald-400' : 'bg-yellow-400'
-                }`} />
-                <span className="text-xs font-medium text-[var(--text-secondary)]">
-                  {selectedEventPopover.status}
-                </span>
-              </div>
-            )}
           </div>
 
           {/* Popover Actions */}
@@ -773,21 +750,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </div>
             )}
 
-            {/* Review: Open */}
-            {selectedEventPopover.source === 'review' && (
-              <button
-                onClick={() => {
-                  if (selectedEventPopover.reviewId) {
-                    router.push(`/reviews/${selectedEventPopover.reviewId}/complete`);
-                  }
-                  setSelectedEventPopover(null);
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 transition-colors"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open Review
-              </button>
-            )}
           </div>
         </div>
       )}

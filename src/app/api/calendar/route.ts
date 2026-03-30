@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   // Fetch user settings early (needed for both availability and normal modes)
   const userSettingsEarly = await prisma.user.findUnique({
     where: { id: auth.userId },
-    select: { selectedCalendarIds: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true },
+    select: { selectedCalendarIds: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
   });
   const earlyCalendarIds = Array.isArray(userSettingsEarly?.selectedCalendarIds)
     ? (userSettingsEarly.selectedCalendarIds as string[])
@@ -355,7 +355,7 @@ export async function GET(request: NextRequest) {
             allDay: false,
             source: 'reviews',
             color: '#2563eb',
-            link: '/reviews',
+            link: `/reviews?action=start&type=WEEKLY&date=${dateKey}`,
           });
         }
       }
@@ -363,10 +363,146 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Generate team review events (visible to all users)
+  // Helper: check if a date matches a monthly recurrence rule
+  function matchesMonthlyRule(d: Date, rule: string): boolean {
+    const day = d.getDay();
+    const date = d.getDate();
+    const month = d.getMonth();
+    const lastDay = new Date(d.getFullYear(), month + 1, 0).getDate();
+
+    switch (rule) {
+      case 'last-friday': {
+        // Walk backward from last day of month to find last Friday
+        const lastDate = new Date(d.getFullYear(), month + 1, 0);
+        const diff = (lastDate.getDay() - 5 + 7) % 7;
+        return date === lastDay - diff;
+      }
+      case 'last-monday': {
+        const lastDate = new Date(d.getFullYear(), month + 1, 0);
+        const diff = (lastDate.getDay() - 1 + 7) % 7;
+        return date === lastDay - diff;
+      }
+      case '1st-monday': return date <= 7 && day === 1;
+      case '1st-friday': return date <= 7 && day === 5;
+      case '15th': return date === 15;
+      default: return false;
+    }
+  }
+
+  // Helper: check if a date matches a yearly recurrence rule
+  function matchesYearlyRule(d: Date, rule: string): boolean {
+    const month = d.getMonth();
+    const date = d.getDate();
+
+    switch (rule) {
+      case 'dec-30': return month === 11 && date === 30;
+      case 'dec-31': return month === 11 && date === 31;
+      case 'last-sat-dec': {
+        if (month !== 11) return false;
+        const lastDate = new Date(d.getFullYear(), 12, 0);
+        const lastDay = lastDate.getDate();
+        const diff = (lastDate.getDay() - 6 + 7) % 7;
+        return date === lastDay - diff;
+      }
+      default: {
+        // custom:MM-DD format
+        if (rule.startsWith('custom:')) {
+          const parts = rule.slice(7).split('-');
+          const ruleMonth = parseInt(parts[0]) - 1;
+          const ruleDay = parseInt(parts[1]);
+          return month === ruleMonth && date === ruleDay;
+        }
+        return false;
+      }
+    }
+  }
+
+  // Generate individual monthly review events
+  if ((fetchAll || source === 'reviews') && reviewsEnabled &&
+      userSettingsEarly?.monthlyReviewRecurrenceRule &&
+      userSettingsEarly?.monthlyReviewTime) {
+    const [mH, mM] = userSettingsEarly.monthlyReviewTime.split(':').map(Number);
+    const duration = userSettingsEarly.monthlyReviewDuration ?? 60;
+    const rangeStart = new Date(start);
+    const rangeEnd = new Date(end);
+    const cursor = new Date(rangeStart);
+    cursor.setHours(0, 0, 0, 0);
+    const maxDays = 366;
+    let dayCount = 0;
+
+    while (cursor <= rangeEnd && dayCount < maxDays) {
+      dayCount++;
+      if (matchesMonthlyRule(cursor, userSettingsEarly.monthlyReviewRecurrenceRule)) {
+        const evStart = new Date(cursor);
+        evStart.setHours(mH, mM, 0, 0);
+        const evEnd = new Date(evStart);
+        evEnd.setMinutes(evEnd.getMinutes() + duration);
+        const dateKey = cursor.toISOString().split('T')[0];
+
+        if (evStart >= rangeStart && evStart <= rangeEnd) {
+          events.push({
+            id: `monthly-review-${dateKey}`,
+            title: 'Monthly Review',
+            start: evStart.toISOString(),
+            end: evEnd.toISOString(),
+            allDay: false,
+            source: 'reviews',
+            color: '#7c3aed',
+            link: `/reviews?action=start&type=MONTHLY&date=${dateKey}`,
+          });
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  // Generate individual yearly review events
+  if ((fetchAll || source === 'reviews') && reviewsEnabled &&
+      userSettingsEarly?.yearlyReviewRecurrenceRule &&
+      userSettingsEarly?.yearlyReviewTime) {
+    const [yH, yM] = userSettingsEarly.yearlyReviewTime.split(':').map(Number);
+    const duration = userSettingsEarly.yearlyReviewDuration ?? 60;
+    const rangeStart = new Date(start);
+    const rangeEnd = new Date(end);
+    const cursor = new Date(rangeStart);
+    cursor.setHours(0, 0, 0, 0);
+    const maxDays = 366;
+    let dayCount = 0;
+
+    while (cursor <= rangeEnd && dayCount < maxDays) {
+      dayCount++;
+      if (matchesYearlyRule(cursor, userSettingsEarly.yearlyReviewRecurrenceRule)) {
+        const evStart = new Date(cursor);
+        evStart.setHours(yH, yM, 0, 0);
+        const evEnd = new Date(evStart);
+        evEnd.setMinutes(evEnd.getMinutes() + duration);
+        const dateKey = cursor.toISOString().split('T')[0];
+
+        if (evStart >= rangeStart && evStart <= rangeEnd) {
+          events.push({
+            id: `yearly-review-${dateKey}`,
+            title: 'Yearly Review',
+            start: evStart.toISOString(),
+            end: evEnd.toISOString(),
+            allDay: false,
+            source: 'reviews',
+            color: '#d97706',
+            link: `/reviews?action=start&type=YEARLY&date=${dateKey}`,
+          });
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  // Generate team review events (only for members of each team review)
   if (fetchAll || source === 'reviews') {
     const teamReviews = await prisma.recurringTeamReview.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        members: { some: { userId: auth.userId } },
+      },
+      include: { members: { select: { userId: true } } },
     });
 
     for (const tr of teamReviews) {
@@ -380,7 +516,17 @@ export async function GET(request: NextRequest) {
 
       while (cursor <= rangeEnd && dayCount < maxDays) {
         dayCount++;
-        if (cursor.getDay() === tr.dayOfWeek) {
+        let matches = false;
+
+        if (tr.reviewType === 'WEEKLY' && tr.dayOfWeek != null) {
+          matches = cursor.getDay() === tr.dayOfWeek;
+        } else if (tr.reviewType === 'MONTHLY' && tr.recurrenceRule) {
+          matches = matchesMonthlyRule(cursor, tr.recurrenceRule);
+        } else if (tr.reviewType === 'YEARLY' && tr.recurrenceRule) {
+          matches = matchesYearlyRule(cursor, tr.recurrenceRule);
+        }
+
+        if (matches) {
           const evStart = new Date(cursor);
           evStart.setHours(trH, trM, 0, 0);
           const evEnd = new Date(evStart);
@@ -390,7 +536,7 @@ export async function GET(request: NextRequest) {
           if (evStart >= rangeStart && evStart <= rangeEnd) {
             events.push({
               id: `team-review-${tr.id}-${dateKey}`,
-              title: 'TEAM REVIEW',
+              title: `TEAM ${tr.reviewType} REVIEW`,
               start: evStart.toISOString(),
               end: evEnd.toISOString(),
               allDay: false,
@@ -400,6 +546,139 @@ export async function GET(request: NextRequest) {
             });
           }
         }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+  }
+
+  // Generate recurring process events (like powerdown, based on cadence + scheduledTime)
+  const calendarProcesses = await prisma.process.findMany({
+    where: {
+      scheduledTime: { not: null },
+      OR: [
+        { assigneeId: auth.userId },
+        { delegateId: auth.userId },
+      ],
+    },
+    select: {
+      id: true,
+      title: true,
+      cadence: true,
+      scheduledTime: true,
+      scheduledDayOfWeek: true,
+      scheduledDayOfMonth: true,
+      defaultDurationMinutes: true,
+    },
+  });
+
+  if (calendarProcesses.length > 0) {
+    const processIds = calendarProcesses.map(p => p.id);
+    const processExecutions = await prisma.processExecution.findMany({
+      where: {
+        processId: { in: processIds },
+        scheduledDate: { gte: new Date(start), lte: new Date(end) },
+        OR: [
+          { timeBlockStart: { not: null } },
+          { timeBlockEnd: { not: null } },
+        ],
+      },
+      select: { processId: true, scheduledDate: true, timeBlockStart: true, timeBlockEnd: true },
+    });
+
+    const procOverrides = new Map<string, { start: Date; end: Date }>();
+    for (const ex of processExecutions) {
+      if (ex.timeBlockStart && ex.timeBlockEnd) {
+        const dateKey = ex.scheduledDate.toISOString().split('T')[0];
+        procOverrides.set(`${ex.processId}-${dateKey}`, { start: ex.timeBlockStart, end: ex.timeBlockEnd });
+      }
+    }
+
+    const rangeStart = new Date(start);
+    const rangeEnd = new Date(end);
+
+    for (const proc of calendarProcesses) {
+      if (proc.cadence === 'ONE_TIME') continue;
+      const [procH, procM] = proc.scheduledTime!.split(':').map(Number);
+      const duration = proc.defaultDurationMinutes;
+      const cursor = new Date(rangeStart);
+      cursor.setHours(0, 0, 0, 0);
+      const maxDays = 366;
+      let dayCount = 0;
+
+      while (cursor <= rangeEnd && dayCount < maxDays) {
+        dayCount++;
+        const dow = cursor.getDay();
+        let matches = false;
+
+        switch (proc.cadence) {
+          case 'DAILY':
+            matches = dow >= 1 && dow <= 5;
+            break;
+          case 'WEEKLY':
+            matches = proc.scheduledDayOfWeek != null ? dow === proc.scheduledDayOfWeek : dow === 1;
+            break;
+          case 'BIWEEKLY': {
+            const targetDow = proc.scheduledDayOfWeek ?? 1;
+            if (dow === targetDow) {
+              const weekNum = Math.floor(cursor.getTime() / (7 * 24 * 60 * 60 * 1000));
+              matches = weekNum % 2 === 0;
+            }
+            break;
+          }
+          case 'MONTHLY':
+            if (proc.scheduledDayOfMonth != null) {
+              matches = cursor.getDate() === proc.scheduledDayOfMonth;
+            } else {
+              matches = cursor.getDate() === 1;
+            }
+            break;
+          case 'QUARTERLY':
+            if ([0, 3, 6, 9].includes(cursor.getMonth())) {
+              if (proc.scheduledDayOfMonth != null) {
+                matches = cursor.getDate() === proc.scheduledDayOfMonth;
+              } else {
+                matches = cursor.getDate() === 1;
+              }
+            }
+            break;
+          case 'YEARLY':
+            matches = cursor.getMonth() === 0 && cursor.getDate() === 1;
+            break;
+        }
+
+        if (matches) {
+          const dateKey = cursor.toISOString().split('T')[0];
+          const overrideKey = `${proc.id}-${dateKey}`;
+          const override = procOverrides.get(overrideKey);
+
+          let evStart: Date;
+          let evEnd: Date;
+
+          if (override) {
+            evStart = override.start;
+            evEnd = override.end;
+          } else {
+            evStart = new Date(cursor);
+            evStart.setHours(procH, procM, 0, 0);
+            evEnd = new Date(evStart);
+            evEnd.setMinutes(evEnd.getMinutes() + duration);
+          }
+
+          if (evStart >= rangeStart && evStart <= rangeEnd) {
+            events.push({
+              id: `process-${proc.id}-${dateKey}`,
+              title: proc.title,
+              start: evStart.toISOString(),
+              end: evEnd.toISOString(),
+              allDay: false,
+              source: 'processes',
+              processId: proc.id,
+              color: '#06b6d4',
+              link: '/processes',
+            });
+          }
+        }
+
         cursor.setDate(cursor.getDate() + 1);
       }
     }

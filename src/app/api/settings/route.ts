@@ -35,6 +35,12 @@ export async function GET(request: NextRequest) {
       weeklyReviewDayOfWeek: true,
       weeklyReviewTime: true,
       weeklyReviewDuration: true,
+      monthlyReviewRecurrenceRule: true,
+      monthlyReviewTime: true,
+      monthlyReviewDuration: true,
+      yearlyReviewRecurrenceRule: true,
+      yearlyReviewTime: true,
+      yearlyReviewDuration: true,
       isPublicOnLeaderboard: true,
     },
   });
@@ -73,7 +79,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   // User settings
-  const { mtp, timezone, hasCompletedOnboarding, hiddenFeatures, notificationPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, isPublicOnLeaderboard } = body;
+  const { mtp, timezone, hasCompletedOnboarding, hiddenFeatures, notificationPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, isPublicOnLeaderboard } = body;
 
   const data: Prisma.UserUpdateInput = {};
   if (mtp !== undefined) data.mtp = mtp;
@@ -97,6 +103,12 @@ export async function PATCH(request: NextRequest) {
   if (weeklyReviewDayOfWeek !== undefined) data.weeklyReviewDayOfWeek = weeklyReviewDayOfWeek;
   if (weeklyReviewTime !== undefined) data.weeklyReviewTime = weeklyReviewTime;
   if (weeklyReviewDuration !== undefined) data.weeklyReviewDuration = weeklyReviewDuration;
+  if (monthlyReviewRecurrenceRule !== undefined) data.monthlyReviewRecurrenceRule = monthlyReviewRecurrenceRule;
+  if (monthlyReviewTime !== undefined) data.monthlyReviewTime = monthlyReviewTime;
+  if (monthlyReviewDuration !== undefined) data.monthlyReviewDuration = monthlyReviewDuration;
+  if (yearlyReviewRecurrenceRule !== undefined) data.yearlyReviewRecurrenceRule = yearlyReviewRecurrenceRule;
+  if (yearlyReviewTime !== undefined) data.yearlyReviewTime = yearlyReviewTime;
+  if (yearlyReviewDuration !== undefined) data.yearlyReviewDuration = yearlyReviewDuration;
   if (isPublicOnLeaderboard !== undefined) data.isPublicOnLeaderboard = isPublicOnLeaderboard;
 
   const user = await prisma.user.update({

@@ -15,7 +15,6 @@ import { WinTheDayCelebration } from '@/components/dopamine/WinTheDayCelebration
 import { FocusView } from '@/components/dashboard/FocusView';
 import { DashboardTimeline } from '@/components/dashboard/DashboardTimeline';
 import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
-import { WeeklyHourTarget } from '@/components/calendar/WeeklyHourTarget';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import type { DerailInfo } from '@/lib/derail-detection';
 
@@ -205,17 +204,6 @@ export default function DashboardPage() {
 
     return blocks;
   }, [list, aimList]);
-
-  // Calculate weekly scheduled hours
-  const weeklyScheduledHours = useMemo(() => {
-    let totalMinutes = 0;
-    for (const block of timelineBlocks) {
-      const start = new Date(block.start);
-      const end = new Date(block.end);
-      totalMinutes += (end.getTime() - start.getTime()) / 60000;
-    }
-    return Math.round((totalMinutes / 60) * 10) / 10;
-  }, [timelineBlocks]);
 
   // Win the Day: top 3 ranked tasks from power-down
   const winTheDayTasks = useMemo(() => {
@@ -497,7 +485,7 @@ export default function DashboardPage() {
               <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
               <p className="text-sm text-[var(--text-secondary)]">{formatDisplayDate(today, { weekday: true })}</p>
               <p className="text-sm text-[var(--text-muted)]">
-                {isLoading ? 'Loading...' : `${scheduledCount} item${scheduledCount !== 1 ? 's' : ''} scheduled today · ${weeklyScheduledHours}h scheduled`}
+                {isLoading ? 'Loading...' : `${scheduledCount} item${scheduledCount !== 1 ? 's' : ''} scheduled today`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -514,11 +502,6 @@ export default function DashboardPage() {
 
           {/* Timeline */}
           <DashboardTimeline blocks={timelineBlocks} className="mb-6" onBlockMove={handleBlockMove} />
-
-          {/* Weekly hour target */}
-          <div className="mb-6">
-            <WeeklyHourTarget scheduledHours={weeklyScheduledHours} />
-          </div>
 
           {/* Win the Day */}
           <WinTheDayCard tasks={winTheDayTasks} />

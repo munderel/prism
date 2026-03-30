@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR from 'swr';
 import dynamic from 'next/dynamic';
-import { CalendarDays, Video, GripVertical, Clock, Users, Flame, ClipboardList } from 'lucide-react';
+import { CalendarDays, Video, GripVertical, Clock, Users, Flame } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { Draggable } from '@fullcalendar/interaction';
 import { MeetingsManager } from '@/components/calendar/MeetingsManager';
@@ -39,20 +39,9 @@ interface UnscheduledAim {
   activities: string[] | null;
 }
 
-interface UnscheduledReview {
-  id: string;
-  type: 'review';
-  title: string;
-  reviewId: string;
-  reviewType: string;
-  duration: number;
-  scheduledDate: string;
-  source: 'reviews';
-}
-
 type UnscheduledItem = {
   id: string;
-  itemType: 'task' | 'aim' | 'review';
+  itemType: 'task' | 'aim';
   title: string;
   duration: number; // minutes
   // Task-specific
@@ -65,10 +54,6 @@ type UnscheduledItem = {
   aimCategoryId?: string;
   aimInstanceId?: string;
   activities?: string[] | null;
-  // Review-specific
-  reviewId?: string;
-  reviewType?: string;
-  scheduledDate?: string;
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -109,12 +94,6 @@ const ITEM_TYPE_CONFIG: Record<string, ItemTypeConfig> = {
     label: 'Aim',
     labelColor: 'text-teal-400',
   },
-  review: {
-    borderClass: 'border-l-amber-500',
-    icon: <ClipboardList className="h-3 w-3 text-amber-400" />,
-    label: '',        // filled dynamically from reviewType
-    labelColor: 'text-amber-400',
-  },
 };
 
 function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
@@ -140,9 +119,6 @@ function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
     if (item.aimCategoryId) dataAttrs['data-aim-category-id'] = item.aimCategoryId;
     dataAttrs['data-aim-instance-id'] = item.aimInstanceId || '';
     dataAttrs['data-activities'] = item.activities ? JSON.stringify(item.activities) : '';
-  }
-  if (item.itemType === 'review' && item.reviewId) {
-    dataAttrs['data-review-id'] = item.reviewId;
   }
 
   // -- metadata row --
@@ -173,13 +149,11 @@ function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
       );
     }
 
-    // aim or review
-    const label =
-      item.itemType === 'review' ? item.reviewType || 'Review' : cfg.label;
+    // aim
     return (
       <div className="flex items-center gap-2 mt-1">
         {cfg.icon}
-        <span className={`text-xs ${cfg.labelColor}`}>{label}</span>
+        <span className={`text-xs ${cfg.labelColor}`}>{cfg.label}</span>
         <span className="text-xs text-[var(--text-muted)]">{item.duration}min</span>
       </div>
     );
@@ -210,7 +184,6 @@ export default function CalendarPage() {
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?status=TODO');
   const { data: aimsData, isLoading: loadingAims, mutate: mutateAims } = useSWR<UnscheduledAim[]>('/api/aims/unscheduled');
-  const { data: reviewsData, isLoading: loadingReviews, mutate: mutateReviews } = useSWR<UnscheduledReview[]>('/api/reviews/unscheduled');
   const { data: settingsData } = useSWR('/api/settings?scope=user');
 
   const scheduleSettings = useMemo(() => {
@@ -265,23 +238,8 @@ export default function CalendarPage() {
       }
     }
 
-    // Reviews
-    if (Array.isArray(reviewsData)) {
-      for (const review of reviewsData) {
-        items.push({
-          id: review.id,
-          itemType: 'review',
-          title: review.title,
-          duration: review.duration,
-          reviewId: review.reviewId,
-          reviewType: review.reviewType,
-          scheduledDate: review.scheduledDate,
-        });
-      }
-    }
-
     return items;
-  }, [unscheduledTasks, aimsData, reviewsData]);
+  }, [unscheduledTasks, aimsData]);
 
   const [showMeetings, setShowMeetings] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -310,7 +268,6 @@ export default function CalendarPage() {
         const colors: Record<string, { bg: string; border: string }> = {
           task: { bg: '#6366f1', border: '#4f46e5' },
           aim: { bg: '#14b8a6', border: '#0d9488' },
-          review: { bg: '#f59e0b', border: '#d97706' },
         };
 
         const { bg, border } = colors[itemType] || colors.task;
@@ -325,8 +282,7 @@ export default function CalendarPage() {
             aimCategoryId: eventEl.getAttribute('data-aim-category-id') || undefined,
             aimInstanceId: eventEl.getAttribute('data-aim-instance-id') || undefined,
             activities: eventEl.getAttribute('data-activities') || undefined,
-            reviewId: eventEl.getAttribute('data-review-id') || undefined,
-            source: itemType === 'task' ? 'tasks' : itemType === 'aim' ? 'aims' : 'reviews',
+            source: itemType === 'task' ? 'tasks' : 'aims',
           },
           backgroundColor: bg,
           borderColor: border,
@@ -355,8 +311,6 @@ export default function CalendarPage() {
   const handleExternalDrop = (itemId: string, _start: Date, _end: Date, itemType?: string) => {
     if (itemType === 'aim') {
       mutateAims();
-    } else if (itemType === 'review') {
-      mutateReviews();
     } else {
       // Default: task
       const taskId = itemId.replace('task-', '');
@@ -367,7 +321,7 @@ export default function CalendarPage() {
     }
   };
 
-  const isLoading = loadingTasks || loadingAims || loadingReviews;
+  const isLoading = loadingTasks || loadingAims;
 
   const renderItem = (item: UnscheduledItem) => (
     <UnscheduledItemCard key={item.id} item={item} />

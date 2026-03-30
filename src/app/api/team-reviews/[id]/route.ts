@@ -19,7 +19,7 @@ export async function PATCH(
   if (body.reviewType !== undefined && !['WEEKLY', 'MONTHLY', 'YEARLY'].includes(body.reviewType)) {
     return Response.json({ error: 'Invalid reviewType' }, { status: 400 });
   }
-  if (body.dayOfWeek !== undefined && (body.dayOfWeek < 0 || body.dayOfWeek > 6)) {
+  if (body.dayOfWeek !== undefined && body.dayOfWeek !== null && (body.dayOfWeek < 0 || body.dayOfWeek > 6)) {
     return Response.json({ error: 'dayOfWeek must be 0-6' }, { status: 400 });
   }
   if (body.time !== undefined && !/^\d{2}:\d{2}$/.test(body.time)) {
@@ -32,15 +32,30 @@ export async function PATCH(
   const data: any = {};
   if (body.reviewType !== undefined) data.reviewType = body.reviewType;
   if (body.dayOfWeek !== undefined) data.dayOfWeek = body.dayOfWeek;
+  if (body.recurrenceRule !== undefined) data.recurrenceRule = body.recurrenceRule;
   if (body.time !== undefined) data.time = body.time;
   if (body.duration !== undefined) data.duration = body.duration;
   if (body.isActive !== undefined) data.isActive = body.isActive;
+
+  // Update members if provided
+  if (Array.isArray(body.memberIds)) {
+    // Delete existing members and recreate
+    await prisma.recurringTeamReviewMember.deleteMany({
+      where: { recurringTeamReviewId: id },
+    });
+    data.members = {
+      create: body.memberIds.map((userId: string) => ({ userId })),
+    };
+  }
 
   const record = await prisma.recurringTeamReview.update({
     where: { id },
     data,
     include: {
       createdBy: { select: { id: true, name: true, email: true } },
+      members: {
+        include: { user: { select: { id: true, name: true, email: true } } },
+      },
     },
   });
 

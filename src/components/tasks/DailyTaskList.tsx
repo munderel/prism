@@ -5,6 +5,8 @@ import useSWR from 'swr';
 import { m, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { TaskCard } from './TaskCard';
+import { TaskCompletionKpiModal } from './TaskCompletionKpiModal';
+import { useKpiCompletionPrompt } from '@/hooks/useKpiCompletionPrompt';
 
 const SECTIONS = [
   { key: 'IMPROVE', label: 'Improve', color: 'text-indigo-400' },
@@ -31,6 +33,8 @@ interface DailyTask {
   preferredTimeStart: string | null;
   preferredTimeEnd: string | null;
   recurrenceRule: string | null;
+  processId: string | null;
+  processExecution?: { process?: { title?: string } } | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -52,6 +56,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   const data = prefetchedTasks ?? swrData;
   const tasks = Array.isArray(data) ? data : [];
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const { kpiPromptState, checkAndPrompt, dismiss } = useKpiCompletionPrompt();
 
   const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -88,8 +93,12 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
     (task: DailyTask) => {
       const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
       patchTask(task.id, { status: newStatus }, (t) => ({ ...t, status: newStatus }));
+      if (newStatus === 'DONE') {
+
+        checkAndPrompt(task);
+      }
     },
-    [patchTask]
+    [patchTask, checkAndPrompt]
   );
 
   const handleWinTheDayToggle = useCallback(
@@ -127,8 +136,13 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   const handleStatusChange = useCallback(
     (taskId: string, newStatus: string) => {
       patchTask(taskId, { status: newStatus }, (t) => ({ ...t, status: newStatus }));
+      if (newStatus === 'DONE') {
+        const task = tasks.find((t) => t.id === taskId);
+
+        if (task) checkAndPrompt(task);
+      }
     },
-    [patchTask]
+    [patchTask, tasks, checkAndPrompt]
   );
 
   const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => ({
@@ -143,6 +157,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   }
 
   return (
+    <>
     <div className="space-y-4">
       {grouped.map(({ key, label, color, tasks: sectionTasks }) => (
         <div key={key}>
@@ -189,5 +204,13 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
         </div>
       ))}
     </div>
+    {kpiPromptState && (
+      <TaskCompletionKpiModal
+        processId={kpiPromptState.processId}
+        processTitle={kpiPromptState.processTitle}
+        onClose={dismiss}
+      />
+    )}
+    </>
   );
 }

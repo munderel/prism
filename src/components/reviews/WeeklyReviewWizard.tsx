@@ -121,6 +121,27 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     `/api/aims/instances?start=${upcomingWeekStartStr}T00:00:00&end=${upcomingWeekEndStr}T23:59:59`
   );
 
+  // Fetch user aims for AIM block duration (calendar work blocks)
+  const { data: userAimsData } = useSWR('/api/aims/user');
+  const aimBlockDuration = useMemo(() => {
+    if (!Array.isArray(userAimsData)) return 60;
+    const activeAims = userAimsData.filter((ua: any) => ua.isActive && ua.aimCategory);
+    if (activeAims.length === 0) return 60;
+    // Use minimum effective duration across active aims
+    const durations = activeAims.map((ua: any) => {
+      const baseDuration = ua.customDuration ?? ua.aimCategory.defaultDurationMin ?? 60;
+      const phase = ua.currentPhase ?? 'FLOW';
+      if (phase === 'SEED') {
+        const weeksInPhase = Math.floor((Date.now() - new Date(ua.phaseStartedAt).getTime()) / (7 * 24 * 60 * 60 * 1000));
+        return Math.min(baseDuration, 5 + weeksInPhase * 5);
+      }
+      if (phase === 'SPROUT') return Math.max(5, Math.round(baseDuration * 0.5));
+      if (phase === 'GROW') return Math.max(5, Math.round(baseDuration * 0.75));
+      return baseDuration;
+    });
+    return Math.min(...durations);
+  }, [userAimsData]);
+
   // Fetch upcoming week goals to build goalId filter set for Step 9
   const { data: upcomingGoalsData } = useSWR('/api/goals?level=WEEKLY');
   const upcomingWeekGoalIds = useMemo(() => {
@@ -137,9 +158,23 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     );
   }, [upcomingGoalsData, upcomingWeekStart, upcomingWeekEnd]);
 
+  // Fetch personal stack goals for broader task filtering (Step 9)
+  const { data: stacksData } = useSWR('/api/stacks');
+  const personalStackId = useMemo(() => {
+    if (!Array.isArray(stacksData)) return null;
+    return stacksData.find((s: any) => !s.isCompany)?.id ?? null;
+  }, [stacksData]);
+  const { data: personalGoalsData } = useSWR(
+    personalStackId ? `/api/goals?stackId=${personalStackId}` : null
+  );
+  const personalGoalIds = useMemo(() => {
+    if (!Array.isArray(personalGoalsData)) return new Set<string>();
+    return new Set(personalGoalsData.map((g: any) => g.id));
+  }, [personalGoalsData]);
+
   const unscheduledForCalendar = useMemo(() => {
     const items: any[] = [];
-    // Tasks filtered for Step 9: upcoming week goals, maintenance, react, personal
+    // Tasks filtered for Step 9: upcoming week goals, maintenance, react, personal goal stack
     if (Array.isArray(weekTasks)) {
       for (const t of weekTasks) {
         if (t.status === 'DONE' || t.status === 'DROPPED') continue;
@@ -150,7 +185,8 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         const include =
           upcomingWeekGoalIds.has(t.goalId) ||               // linked to upcoming week goal
           (t.taskType === 'MAINTENANCE' && dueDateInWeek) || // maintenance due this week
-          t.taskType === 'REACT';                            // all open react tasks
+          t.taskType === 'REACT' ||                          // all open react tasks
+          (t.goalId && personalGoalIds.has(t.goalId));       // part of personal goal stack
         if (include) {
           items.push({ id: t.id, itemType: 'task', title: t.title, duration: t.estimatedMinutes || 60, taskType: t.taskType, priority: t.priority });
         }
@@ -165,7 +201,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       }
     }
     return items;
-  }, [weekTasks, weekAims, upcomingWeekGoalIds, upcomingWeekStart, upcomingWeekEnd]);
+  }, [weekTasks, weekAims, upcomingWeekGoalIds, personalGoalIds, upcomingWeekStart, upcomingWeekEnd]);
 
   useEffect(() => {
     fetchReviewAndAnswers();
@@ -543,9 +579,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                   </button>
                 </div>
                 {calendarModalOpen && (
-                  <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
-                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-                      <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
+                  <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-2 px-2 pb-2">
+                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-16px)] flex flex-col overflow-hidden shadow-2xl">
+                      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
                         <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
                         <button
                           onClick={() => setCalendarModalOpen(false)}
@@ -554,12 +590,13 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                           Done
                         </button>
                       </div>
-                      <div className="flex-1 min-h-0 p-2">
+                      <div className="flex-1 min-h-0 overflow-hidden p-2">
                         <CalendarSplitView
                           mode="work_blocks"
                           viewMode="week"
                           dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${upcomingWeekEndStr}T23:59:59` }}
                           unscheduledItems={unscheduledForCalendar}
+                          aimBlockDuration={aimBlockDuration}
                           onCreateWorkBlock={handleCreateWorkBlock}
                           onSchedule={async (itemId, itemType, start, end) => {
                             const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
@@ -604,9 +641,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                   </button>
                 </div>
                 {calendarModalOpen && (
-                  <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
-                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-                      <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
+                  <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-2 px-2 pb-2">
+                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-16px)] flex flex-col overflow-hidden shadow-2xl">
+                      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
                         <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
                         <button
                           onClick={() => setCalendarModalOpen(false)}
@@ -615,7 +652,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                           Done
                         </button>
                       </div>
-                      <div className="flex-1 min-h-0 p-2">
+                      <div className="flex-1 min-h-0 overflow-hidden p-2">
                         <CalendarSplitView
                           mode="schedule_tasks"
                           viewMode="week"

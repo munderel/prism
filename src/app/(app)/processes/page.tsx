@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import useSWR from 'swr';
+import { AssigneeFilter } from '@/components/shared/AssigneeFilter';
 import { useSession } from 'next-auth/react';
+import { ProcessKpiSection } from '@/components/processes/ProcessKpiSection';
 import { useToast } from '@/components/ui/ToastProvider';
 import {
   ListChecks,
@@ -33,6 +35,9 @@ interface ProcessData {
   description: string | null;
   cadence: string;
   defaultDurationMinutes: number;
+  scheduledTime: string | null;
+  scheduledDayOfWeek: number | null;
+  scheduledDayOfMonth: number | null;
   nextDueAt: string | null;
   assigneeId: string | null;
   delegateId: string | null;
@@ -75,6 +80,21 @@ export default function ProcessesPage() {
   const { data: usersData } = useSWR(isAdmin ? '/api/admin' : null);
   const users = Array.isArray(usersData) ? usersData as UserOption[] : [];
 
+  // Assignee filter
+  const [assigneeFilter, setAssigneeFilter] = useState('');
+
+  const filteredFunctions = useMemo(() => {
+    if (!assigneeFilter) return functions;
+    return functions
+      .map((fn: BusinessFunction) => ({
+        ...fn,
+        processes: fn.processes.filter(
+          (p: ProcessData) => p.assigneeId === assigneeFilter || p.delegateId === assigneeFilter
+        ),
+      }))
+      .filter((fn: BusinessFunction) => fn.processes.length > 0);
+  }, [functions, assigneeFilter]);
+
   // Add function form
   const [showAddFunction, setShowAddFunction] = useState(false);
   const [newFnName, setNewFnName] = useState('');
@@ -92,6 +112,9 @@ export default function ProcessesPage() {
   const [newProcCadence, setNewProcCadence] = useState('WEEKLY');
   const [newProcAssignee, setNewProcAssignee] = useState('');
   const [newProcDuration, setNewProcDuration] = useState(60);
+  const [newProcScheduledTime, setNewProcScheduledTime] = useState('');
+  const [newProcDayOfWeek, setNewProcDayOfWeek] = useState(1);
+  const [newProcDayOfMonth, setNewProcDayOfMonth] = useState(1);
 
   // Expanded process
   const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null);
@@ -116,6 +139,9 @@ export default function ProcessesPage() {
   const [editProcCadence, setEditProcCadence] = useState('');
   const [editProcAssignee, setEditProcAssignee] = useState('');
   const [editProcDuration, setEditProcDuration] = useState(60);
+  const [editProcScheduledTime, setEditProcScheduledTime] = useState('');
+  const [editProcDayOfWeek, setEditProcDayOfWeek] = useState(1);
+  const [editProcDayOfMonth, setEditProcDayOfMonth] = useState(1);
 
   // Delegation
   const [delegateUserId, setDelegateUserId] = useState('');
@@ -199,6 +225,9 @@ export default function ProcessesPage() {
         cadence: newProcCadence,
         assigneeId: newProcAssignee || null,
         defaultDurationMinutes: newProcDuration,
+        scheduledTime: newProcScheduledTime || null,
+        scheduledDayOfWeek: ['WEEKLY', 'BIWEEKLY'].includes(newProcCadence) ? newProcDayOfWeek : null,
+        scheduledDayOfMonth: ['MONTHLY', 'QUARTERLY'].includes(newProcCadence) ? newProcDayOfMonth : null,
       }),
     });
     if (res.ok) {
@@ -207,6 +236,9 @@ export default function ProcessesPage() {
       setNewProcCadence('WEEKLY');
       setNewProcAssignee('');
       setNewProcDuration(60);
+      setNewProcScheduledTime('');
+      setNewProcDayOfWeek(1);
+      setNewProcDayOfMonth(1);
       setAddingProcessFnId(null);
       mutateFunctions();
     } else {
@@ -225,6 +257,9 @@ export default function ProcessesPage() {
         cadence: editProcCadence,
         assigneeId: editProcAssignee || null,
         defaultDurationMinutes: editProcDuration,
+        scheduledTime: editProcScheduledTime || null,
+        scheduledDayOfWeek: ['WEEKLY', 'BIWEEKLY'].includes(editProcCadence) ? editProcDayOfWeek : null,
+        scheduledDayOfMonth: ['MONTHLY', 'QUARTERLY'].includes(editProcCadence) ? editProcDayOfMonth : null,
       }),
     });
     if (res.ok) {
@@ -362,6 +397,16 @@ export default function ProcessesPage() {
     setSchedSaving(false);
 
     if (res.ok) {
+      // Also persist the scheduled time on the process for recurring calendar display
+      await fetch(`/api/processes/${schedulingProcess.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduledTime: schedTime,
+          scheduledDayOfWeek: (cadence === 'WEEKLY' || cadence === 'BIWEEKLY') ? schedDayOfWeek : null,
+          scheduledDayOfMonth: (cadence === 'MONTHLY' || cadence === 'QUARTERLY') ? schedDayOfMonth : null,
+        }),
+      });
       toast.success(`Scheduled "${schedulingProcess.title}" on the calendar`);
       setSchedulingProcess(null);
       mutateFunctions();
@@ -390,24 +435,27 @@ export default function ProcessesPage() {
           <ListChecks className="h-6 w-6 text-prism-indigo" />
           Processes
         </h1>
-        {isAdmin && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowImport(!showImport)}
-              className="flex items-center gap-2 rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <Upload className="h-4 w-4" />
-              Import JSON
-            </button>
-            <button
-              onClick={() => setShowAddFunction(true)}
-              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Add Function
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <AssigneeFilter value={assigneeFilter} onChange={setAssigneeFilter} />
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => setShowImport(!showImport)}
+                className="flex items-center gap-2 rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Upload className="h-4 w-4" />
+                Import JSON
+              </button>
+              <button
+                onClick={() => setShowAddFunction(true)}
+                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Add Function
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Import JSON panel */}
@@ -512,7 +560,7 @@ export default function ProcessesPage() {
       )}
 
       {/* Functions list */}
-      {functions.map((fn) => (
+      {filteredFunctions.map((fn) => (
         <details key={fn.id} className="mb-4 glass-panel overflow-hidden" open>
           <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-[var(--surface)] transition-colors list-none">
             <div className="flex items-center gap-3">
@@ -641,11 +689,48 @@ export default function ProcessesPage() {
                       ))}
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Calendar Schedule (optional)</label>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="time"
+                        value={newProcScheduledTime}
+                        onChange={(e) => setNewProcScheduledTime(e.target.value)}
+                        className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                        placeholder="Time"
+                      />
+                      {['WEEKLY', 'BIWEEKLY'].includes(newProcCadence) && (
+                        <select
+                          value={newProcDayOfWeek}
+                          onChange={(e) => setNewProcDayOfWeek(Number(e.target.value))}
+                          className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                        >
+                          {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => (
+                            <option key={i} value={i}>{d}</option>
+                          ))}
+                        </select>
+                      )}
+                      {['MONTHLY', 'QUARTERLY'].includes(newProcCadence) && (
+                        <select
+                          value={newProcDayOfMonth}
+                          onChange={(e) => setNewProcDayOfMonth(Number(e.target.value))}
+                          className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                        >
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={d}>Day {d}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    {newProcScheduledTime && (
+                      <p className="text-xs text-cyan-400 mt-1">Will appear on calendar at {newProcScheduledTime}</p>
+                    )}
+                  </div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => handleAddProcess(fn.id)} disabled={!newProcTitle.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
                       Create
                     </button>
-                    <button onClick={() => { setAddingProcessFnId(null); setNewProcTitle(''); setNewProcDesc(''); setNewProcDuration(60); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+                    <button onClick={() => { setAddingProcessFnId(null); setNewProcTitle(''); setNewProcDesc(''); setNewProcDuration(60); setNewProcScheduledTime(''); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                       Cancel
                     </button>
                   </div>
@@ -694,6 +779,12 @@ export default function ProcessesPage() {
                       <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[proc.cadence] || 'bg-[var(--surface-raised)] text-[var(--text-secondary)] border-[var(--border-color)]'}`}>
                         {proc.cadence}
                       </span>
+                      {proc.scheduledTime && (
+                        <span className="flex items-center gap-1 text-xs text-cyan-400" title={`On calendar at ${proc.scheduledTime}`}>
+                          <Calendar className="h-3 w-3" />
+                          {proc.scheduledTime}
+                        </span>
+                      )}
                       <span className="text-xs text-[var(--text-muted)]">{proc._count.steps} step{proc._count.steps !== 1 ? 's' : ''}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); openSchedulePopup(proc); }}
@@ -714,6 +805,9 @@ export default function ProcessesPage() {
                               setEditProcCadence(proc.cadence);
                               setEditProcAssignee(proc.assigneeId || '');
                               setEditProcDuration(proc.defaultDurationMinutes ?? 60);
+                              setEditProcScheduledTime(proc.scheduledTime || '');
+                              setEditProcDayOfWeek(proc.scheduledDayOfWeek ?? 1);
+                              setEditProcDayOfMonth(proc.scheduledDayOfMonth ?? 1);
                             }}
                             className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
                           >
@@ -790,6 +884,43 @@ export default function ProcessesPage() {
                               </button>
                             ))}
                           </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[var(--text-secondary)] mb-1">Calendar Schedule</label>
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              type="time"
+                              value={editProcScheduledTime}
+                              onChange={(e) => setEditProcScheduledTime(e.target.value)}
+                              className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                              placeholder="Time"
+                            />
+                            {['WEEKLY', 'BIWEEKLY'].includes(editProcCadence) && (
+                              <select
+                                value={editProcDayOfWeek}
+                                onChange={(e) => setEditProcDayOfWeek(Number(e.target.value))}
+                                className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                              >
+                                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => (
+                                  <option key={i} value={i}>{d}</option>
+                                ))}
+                              </select>
+                            )}
+                            {['MONTHLY', 'QUARTERLY'].includes(editProcCadence) && (
+                              <select
+                                value={editProcDayOfMonth}
+                                onChange={(e) => setEditProcDayOfMonth(Number(e.target.value))}
+                                className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                              >
+                                {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                                  <option key={d} value={d}>Day {d}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                          {editProcScheduledTime && (
+                            <p className="text-xs text-cyan-400 mt-1">Will appear on calendar at {editProcScheduledTime}</p>
+                          )}
                         </div>
                         <div className="flex gap-2 pt-1">
                           <button onClick={() => handleEditProcess(proc.id)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors">
@@ -982,6 +1113,9 @@ export default function ProcessesPage() {
                           </div>
                         </div>
                       )}
+
+                      {/* KPI section */}
+                      <ProcessKpiSection processId={proc.id} isAdmin={isAdmin} />
 
                       {/* Recent executions */}
                       {expandedProcessData.executions?.length > 0 && (

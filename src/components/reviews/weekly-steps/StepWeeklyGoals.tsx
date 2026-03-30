@@ -28,6 +28,7 @@ interface WeeklyGoal {
   parentTitle?: string;
   parentId?: string;
   kpis: Kpi[];
+  weekCategory?: 'last' | 'upcoming';
 }
 
 interface StepWeeklyGoalsProps {
@@ -106,6 +107,8 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
           const isUpcomingWeek = gs <= upcomingWeekEnd && ge >= upcomingWeekStart;
           if (!isLastWeek && !isUpcomingWeek) continue;
 
+          const weekCategory: 'last' | 'upcoming' = isUpcomingWeek ? 'upcoming' : 'last';
+
           let kpis: Kpi[] = [];
           try {
             const kpisRes = await fetch(`/api/goals/${g.id}/kpis`);
@@ -122,7 +125,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
             }
           } catch { /* ignore */ }
 
-          result.push({ id: g.id, title: g.title, description: g.description ?? null, status: g.status, level: g.level, startDate: g.startDate, endDate: g.endDate, parentTitle, parentId, kpis });
+          result.push({ id: g.id, title: g.title, description: g.description ?? null, status: g.status, level: g.level, startDate: g.startDate, endDate: g.endDate, parentTitle, parentId, kpis, weekCategory });
         }
         setGoals(result);
         setLoading(false);
@@ -183,6 +186,8 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
           const isUpcomingWeek = gs <= upcomingWeekEnd && ge >= upcomingWeekStart;
           if (!isLastWeek && !isUpcomingWeek) continue;
 
+          const weekCategory: 'last' | 'upcoming' = isUpcomingWeek ? 'upcoming' : 'last';
+
           // Fetch KPIs
           let kpis: Kpi[] = [];
           try {
@@ -219,6 +224,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
             parentTitle,
             parentId,
             kpis,
+            weekCategory,
           });
         }
       }
@@ -460,6 +466,231 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
     setSaving(null);
   };
 
+  const renderGoalCard = (goal: WeeklyGoal) => {
+    const isExpanded = expandedGoals.has(goal.id);
+    const isEditing = editingGoalId === goal.id;
+
+    return (
+      <div
+        key={goal.id}
+        className="rounded-lg border border-[var(--border-color)] bg-[var(--surface)] overflow-hidden"
+      >
+        {/* Monthly goal banner */}
+        {goal.parentTitle && !isEditing && (
+          <div className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500/5 border-b border-indigo-500/10">
+            <Target className="h-3 w-3 text-indigo-400 flex-shrink-0" />
+            <span className="text-xs text-indigo-400 font-medium">Monthly Goal:</span>
+            {goal.parentId ? (
+              <a
+                href="/goals"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-indigo-300 hover:text-indigo-200 underline underline-offset-2 transition-colors truncate"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {goal.parentTitle}
+              </a>
+            ) : (
+              <span className="text-xs text-[var(--text-muted)] truncate">{goal.parentTitle}</span>
+            )}
+          </div>
+        )}
+
+        {/* Goal header */}
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={() => toggleExpand(goal.id)} className="flex-shrink-0">
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
+            )}
+          </button>
+
+          <Target className="h-4 w-4 text-blue-400 flex-shrink-0" />
+
+          <div className="flex-1 min-w-0">
+            {isEditing ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                />
+                <input
+                  type="text"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Description (optional)"
+                  className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                />
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => saveEdit(goal.id)}
+                    disabled={saving === goal.id}
+                    className="text-xs bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    <Save className="h-3 w-3 inline mr-1" />
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditingGoalId(null)}
+                    className="text-xs text-[var(--text-muted)] px-2 py-1 hover:text-[var(--text-secondary)]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                {goal.title}
+              </p>
+            )}
+          </div>
+
+          {!isEditing && (
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {editingStatusGoalId === goal.id ? (
+                <select
+                  autoFocus
+                  value={goal.status}
+                  onChange={(e) => saveStatus(goal.id, e.target.value)}
+                  onBlur={() => setEditingStatusGoalId(null)}
+                  className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                >
+                  {['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED'].map((s) => (
+                    <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                  ))}
+                </select>
+              ) : (
+                <button
+                  onClick={() => setEditingStatusGoalId(goal.id)}
+                  title="Click to change status"
+                  className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity cursor-pointer ${
+                    goal.status === 'COMPLETED'   ? 'bg-green-500/20 text-green-400' :
+                    goal.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
+                    goal.status === 'ABANDONED'   ? 'bg-red-500/20 text-red-400' :
+                    'bg-[var(--surface-raised)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  {goal.status.replace(/_/g, ' ')}
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                </button>
+              )}
+              <button
+                onClick={() => startEditing(goal)}
+                className="p-1 text-[var(--text-muted)] hover:text-indigo-400 transition-colors"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Expanded KPI section */}
+        {isExpanded && (
+          <div className="border-t border-[var(--border-color)] px-4 py-3 bg-[var(--surface-raised)]/30 space-y-3">
+            {goal.description && (
+              <p className="text-xs text-[var(--text-muted)] italic">{goal.description}</p>
+            )}
+
+            {goal.kpis.length > 0 ? (
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide flex items-center gap-1">
+                  <BarChart3 className="h-3 w-3" />
+                  KPIs
+                </h4>
+                {goal.kpis.map((kpi) => (
+                  <div
+                    key={kpi.id}
+                    className="flex items-center gap-2 text-xs rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2"
+                  >
+                    <span className="text-[var(--text-primary)] flex-1">{kpi.name}</span>
+                    <span className="text-[var(--text-muted)]">
+                      {kpi.type === 'NUMERIC'
+                        ? `Target: ${kpi.targetValue ?? '?'}${kpi.unit ? ` ${kpi.unit}` : ''}`
+                        : 'Yes/No'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--text-muted)]">No KPIs yet.</p>
+            )}
+
+            {addingKpiForGoal === goal.id ? (
+              <div className="space-y-2 rounded border border-[var(--border-color)] bg-[var(--surface)] p-3">
+                <input
+                  type="text"
+                  value={newKpiName}
+                  onChange={(e) => setNewKpiName(e.target.value)}
+                  placeholder="KPI name"
+                  className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                />
+                <div className="flex gap-2">
+                  <select
+                    value={newKpiType}
+                    onChange={(e) => setNewKpiType(e.target.value as 'NUMERIC' | 'BOOLEAN')}
+                    className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="NUMERIC">Numeric</option>
+                    <option value="BOOLEAN">Yes/No</option>
+                  </select>
+                  {newKpiType === 'NUMERIC' && (
+                    <>
+                      <input
+                        type="number"
+                        value={newKpiTarget}
+                        onChange={(e) => setNewKpiTarget(e.target.value)}
+                        placeholder="Target"
+                        className="w-20 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        value={newKpiUnit}
+                        onChange={(e) => setNewKpiUnit(e.target.value)}
+                        placeholder="Unit"
+                        className="w-16 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                      />
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => addKpi(goal.id)}
+                    disabled={!newKpiName.trim() || saving === goal.id}
+                    className="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-500 disabled:opacity-50"
+                  >
+                    Add KPI
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAddingKpiForGoal(null);
+                      setNewKpiName('');
+                      setNewKpiTarget('');
+                      setNewKpiUnit('');
+                    }}
+                    className="text-xs text-[var(--text-muted)] px-2 py-1 hover:text-[var(--text-secondary)]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddingKpiForGoal(goal.id)}
+                className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Add KPI
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="text-[var(--text-muted)] text-sm py-4">Loading weekly goals...</div>;
   }
@@ -485,233 +716,29 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       </div>
       <GoalCreationCoach goalLevel="WEEKLY" isOpen={showCoach} onToggle={() => setShowCoach(!showCoach)} />
 
-      {/* Existing goals */}
+      {/* Existing goals — split by week */}
       {goals.length > 0 ? (
-        <div className="space-y-3">
-          {goals.map((goal) => {
-            const isExpanded = expandedGoals.has(goal.id);
-            const isEditing = editingGoalId === goal.id;
-
-            return (
-              <div
-                key={goal.id}
-                className="rounded-lg border border-[var(--border-color)] bg-[var(--surface)] overflow-hidden"
-              >
-                {/* Goal header */}
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <button onClick={() => toggleExpand(goal.id)} className="flex-shrink-0">
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
-                    )}
-                  </button>
-
-                  <Target className="h-4 w-4 text-blue-400 flex-shrink-0" />
-
-                  <div className="flex-1 min-w-0">
-                    {isEditing ? (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={editDescription}
-                          onChange={(e) => setEditDescription(e.target.value)}
-                          placeholder="Description (optional)"
-                          className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                        />
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => saveEdit(goal.id)}
-                            disabled={saving === goal.id}
-                            className="text-xs bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-500 disabled:opacity-50"
-                          >
-                            <Save className="h-3 w-3 inline mr-1" />
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingGoalId(null)}
-                            className="text-xs text-[var(--text-muted)] px-2 py-1 hover:text-[var(--text-secondary)]"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                          {goal.title}
-                        </p>
-                        {goal.parentTitle && (
-                          <span className="text-xs text-[var(--text-muted)] mt-0.5">
-                            under{' '}
-                            {goal.parentId ? (
-                              <a
-                                href="/goals"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {goal.parentTitle}
-                              </a>
-                            ) : (
-                              goal.parentTitle
-                            )}
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </div>
-
-                  {!isEditing && (
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {editingStatusGoalId === goal.id ? (
-                        <select
-                          autoFocus
-                          value={goal.status}
-                          onChange={(e) => saveStatus(goal.id, e.target.value)}
-                          onBlur={() => setEditingStatusGoalId(null)}
-                          className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                        >
-                          {['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED'].map((s) => (
-                            <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <button
-                          onClick={() => setEditingStatusGoalId(goal.id)}
-                          title="Click to change status"
-                          className={`text-xs px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity cursor-pointer ${
-                            goal.status === 'COMPLETED'   ? 'bg-green-500/20 text-green-400' :
-                            goal.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
-                            goal.status === 'ABANDONED'   ? 'bg-red-500/20 text-red-400' :
-                            'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-                          }`}
-                        >
-                          {goal.status.replace(/_/g, ' ')}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => startEditing(goal)}
-                        className="p-1 text-[var(--text-muted)] hover:text-indigo-400 transition-colors"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Expanded KPI section */}
-                {isExpanded && (
-                  <div className="border-t border-[var(--border-color)] px-4 py-3 bg-[var(--surface-raised)]/30 space-y-3">
-                    {goal.description && (
-                      <p className="text-xs text-[var(--text-muted)] italic">{goal.description}</p>
-                    )}
-
-                    {/* KPIs */}
-                    {goal.kpis.length > 0 ? (
-                      <div className="space-y-2">
-                        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide flex items-center gap-1">
-                          <BarChart3 className="h-3 w-3" />
-                          KPIs
-                        </h4>
-                        {goal.kpis.map((kpi) => (
-                          <div
-                            key={kpi.id}
-                            className="flex items-center gap-2 text-xs rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2"
-                          >
-                            <span className="text-[var(--text-primary)] flex-1">{kpi.name}</span>
-                            <span className="text-[var(--text-muted)]">
-                              {kpi.type === 'NUMERIC'
-                                ? `Target: ${kpi.targetValue ?? '?'}${kpi.unit ? ` ${kpi.unit}` : ''}`
-                                : 'Yes/No'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-[var(--text-muted)]">No KPIs yet.</p>
-                    )}
-
-                    {/* Add KPI form */}
-                    {addingKpiForGoal === goal.id ? (
-                      <div className="space-y-2 rounded border border-[var(--border-color)] bg-[var(--surface)] p-3">
-                        <input
-                          type="text"
-                          value={newKpiName}
-                          onChange={(e) => setNewKpiName(e.target.value)}
-                          placeholder="KPI name"
-                          className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                        />
-                        <div className="flex gap-2">
-                          <select
-                            value={newKpiType}
-                            onChange={(e) => setNewKpiType(e.target.value as 'NUMERIC' | 'BOOLEAN')}
-                            className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                          >
-                            <option value="NUMERIC">Numeric</option>
-                            <option value="BOOLEAN">Yes/No</option>
-                          </select>
-                          {newKpiType === 'NUMERIC' && (
-                            <>
-                              <input
-                                type="number"
-                                value={newKpiTarget}
-                                onChange={(e) => setNewKpiTarget(e.target.value)}
-                                placeholder="Target"
-                                className="w-20 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                              />
-                              <input
-                                type="text"
-                                value={newKpiUnit}
-                                onChange={(e) => setNewKpiUnit(e.target.value)}
-                                placeholder="Unit"
-                                className="w-16 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                              />
-                            </>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => addKpi(goal.id)}
-                            disabled={!newKpiName.trim() || saving === goal.id}
-                            className="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-500 disabled:opacity-50"
-                          >
-                            Add KPI
-                          </button>
-                          <button
-                            onClick={() => {
-                              setAddingKpiForGoal(null);
-                              setNewKpiName('');
-                              setNewKpiTarget('');
-                              setNewKpiUnit('');
-                            }}
-                            className="text-xs text-[var(--text-muted)] px-2 py-1 hover:text-[var(--text-secondary)]"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setAddingKpiForGoal(goal.id)}
-                        className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Add KPI
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div className="space-y-5">
+          {/* Upcoming Week Section */}
+          {goals.filter((g) => g.weekCategory === 'upcoming').length > 0 && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
+                Upcoming Week&apos;s Goals
+              </h4>
+              {goals.filter((g) => g.weekCategory === 'upcoming').map((goal) => renderGoalCard(goal))}
+            </div>
+          )}
+          {/* Last Week Section */}
+          {goals.filter((g) => g.weekCategory === 'last').length > 0 && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">
+                Last Week&apos;s Goals
+              </h4>
+              {goals.filter((g) => g.weekCategory === 'last').map((goal) => renderGoalCard(goal))}
+            </div>
+          )}
+          {/* Goals without category (fallback) */}
+          {goals.filter((g) => !g.weekCategory).map((goal) => renderGoalCard(goal))}
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-6 text-center">

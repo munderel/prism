@@ -66,13 +66,10 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
 
     return arr.filter((g: any) => {
       if (g.level !== 'WEEKLY') return false;
-      if (g.status === 'IN_PROGRESS') return true;
-      if (g.startDate && g.endDate) {
-        const gs = new Date(g.startDate);
-        const ge = new Date(g.endDate);
-        return gs <= upcomingEnd && ge >= thisMonday;
-      }
-      return false;
+      if (!g.startDate || !g.endDate) return false;
+      const gs = new Date(g.startDate);
+      const ge = new Date(g.endDate);
+      return gs <= upcomingEnd && ge >= thisMonday;
     }) as WeeklyGoal[];
   }, [goalsData]);
 
