@@ -3,27 +3,27 @@ import { renderWithProviders } from '@/test/utils';
 import { GoalProgressBar } from '../GoalProgressBar';
 
 describe('GoalProgressBar', () => {
-  it('renders with bg-red-500 for progress=10', () => {
+  it('renders gradient bar for progress=10', () => {
     const { container } = renderWithProviders(<GoalProgressBar progress={10} />);
-    const bar = container.querySelector('.bg-red-500');
+    const bar = container.querySelector('.bg-gradient-to-r');
     expect(bar).toBeInTheDocument();
   });
 
-  it('renders with bg-yellow-500 for progress=40', () => {
+  it('renders gradient bar for progress=40', () => {
     const { container } = renderWithProviders(<GoalProgressBar progress={40} />);
-    const bar = container.querySelector('.bg-yellow-500');
+    const bar = container.querySelector('.bg-gradient-to-r');
     expect(bar).toBeInTheDocument();
   });
 
-  it('renders with bg-blue-500 for progress=60', () => {
+  it('renders gradient bar for progress=60', () => {
     const { container } = renderWithProviders(<GoalProgressBar progress={60} />);
-    const bar = container.querySelector('.bg-blue-500');
+    const bar = container.querySelector('.bg-gradient-to-r');
     expect(bar).toBeInTheDocument();
   });
 
-  it('renders with bg-green-500 for progress=90', () => {
+  it('renders gradient bar for progress=90', () => {
     const { container } = renderWithProviders(<GoalProgressBar progress={90} />);
-    const bar = container.querySelector('.bg-green-500');
+    const bar = container.querySelector('.bg-gradient-to-r');
     expect(bar).toBeInTheDocument();
   });
 

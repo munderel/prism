@@ -72,7 +72,10 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
   const pathname = usePathname();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { data: settings } = useSWR('/api/settings?scope=user');
+  const { data: settings } = useSWR('/api/settings?scope=user', {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000,
+  });
   const hiddenFeatures: string[] = useMemo(() => {
     if (settings && Array.isArray(settings.hiddenFeatures)) return settings.hiddenFeatures;
     return [];

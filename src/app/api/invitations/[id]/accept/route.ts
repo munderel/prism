@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 
@@ -10,13 +11,25 @@ const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
  * Links the authenticated user to the invitation and applies the invited role.
  */
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
+
+  // Read token from query string or request body
+  const url = new URL(request.url);
+  const queryToken = url.searchParams.get('token');
+  let bodyToken: string | undefined;
+  try {
+    const body = await request.json();
+    bodyToken = body.token;
+  } catch {
+    // No body is fine if token is in query string
+  }
+  const token = bodyToken || queryToken;
 
   const invitation = await prisma.invitation.findUnique({
     where: { id },
@@ -40,6 +53,24 @@ export async function POST(
 
   if (isExpired) {
     return Response.json({ error: 'This invitation has expired' }, { status: 400 });
+  }
+
+  // Verify invitation token (for invitations that have one) — timing-safe comparison
+  if (invitation.token) {
+    if (!token) {
+      return Response.json(
+        { error: 'Invalid invitation token. Please use the link from your invitation email.' },
+        { status: 403 }
+      );
+    }
+    const expected = Buffer.from(invitation.token, 'utf-8');
+    const provided = Buffer.from(token, 'utf-8');
+    if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
+      return Response.json(
+        { error: 'Invalid invitation token. Please use the link from your invitation email.' },
+        { status: 403 }
+      );
+    }
   }
 
   // Verify the authenticated user's email matches the invitation
@@ -80,5 +111,5 @@ export async function POST(
     }
   });
 
-  return Response.json({ success: true, message: 'Invitation accepted' });
+  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }

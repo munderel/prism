@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import { cascadeProgressUp } from '@/lib/progress';
 
 export async function POST(
@@ -11,7 +12,9 @@ export async function POST(
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { individualGoalId, weight } = body;
 
   if (!individualGoalId) {

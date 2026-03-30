@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -10,7 +11,9 @@ export async function POST(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { title, description, cadence, assigneeId, defaultDurationMinutes } = body;
 
   if (!title || typeof title !== 'string') {
@@ -35,7 +38,7 @@ export async function POST(
     },
   });
 
-  return Response.json(process, { status: 201 });
+  return Response.json(process, { status: 201, headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function PATCH(
@@ -46,7 +49,9 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { name, description } = body;
 
   const fn = await prisma.businessFunction.update({
@@ -57,7 +62,7 @@ export async function PATCH(
     },
   });
 
-  return Response.json(fn);
+  return Response.json(fn, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(
@@ -71,5 +76,5 @@ export async function DELETE(
 
   await prisma.businessFunction.delete({ where: { id } });
 
-  return Response.json({ success: true });
+  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }

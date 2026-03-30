@@ -9,7 +9,7 @@ interface StepNotesCompletionProps {
   onNotesChange: (notes: string) => void;
 }
 
-export function StepNotesCompletion({ reviewId, initialNotes, onNotesChange }: StepNotesCompletionProps) {
+export function StepNotesCompletion({ reviewId: _reviewId, initialNotes, onNotesChange }: StepNotesCompletionProps) {
   const [notes, setNotes] = useState(initialNotes ?? '');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 

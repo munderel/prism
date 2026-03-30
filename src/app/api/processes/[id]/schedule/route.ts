@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import { computeNextDueDate } from '@/lib/process-scheduler';
 import {
   setHours,
@@ -35,7 +36,9 @@ export async function POST(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { time, dayOfWeek, dayOfMonth, date: dateStr } = body;
 
   // Validate time format

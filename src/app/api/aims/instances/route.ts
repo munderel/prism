@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -45,7 +46,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { aimCategoryId, scheduledDate, timeBlockStart, timeBlockEnd, isGroupOpen, selectedActivity } = body;
 
   if (!aimCategoryId) {

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import {
   getPointsPerCompletion,
   evaluatePhaseGraduation,
@@ -26,7 +27,9 @@ export async function PATCH(
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { status, timeBlockStart, timeBlockEnd, isGroupOpen, activityNote, selectedActivity, taskIds } = body;
 
   // Handle task assignment (Deep Work as task container)

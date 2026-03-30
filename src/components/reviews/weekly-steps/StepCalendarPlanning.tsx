@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Calendar, Brain, ListTodo, Target, Plus, Trash2, Clock } from 'lucide-react';
+import { Brain, ListTodo, Target, Plus, Trash2, Clock } from 'lucide-react';
 
 type BlockType = 'deep_work' | 'normal' | 'aim';
 
@@ -60,7 +60,7 @@ interface StepCalendarPlanningProps {
   onBlocksChange: (blocks: WorkBlock[]) => void;
 }
 
-export function StepCalendarPlanning({ reviewId, initialBlocks, onBlocksChange }: StepCalendarPlanningProps) {
+export function StepCalendarPlanning({ reviewId: _reviewId, initialBlocks, onBlocksChange }: StepCalendarPlanningProps) {
   const [blocks, setBlocks] = useState<WorkBlock[]>(initialBlocks ?? []);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newBlockType, setNewBlockType] = useState<BlockType>('deep_work');

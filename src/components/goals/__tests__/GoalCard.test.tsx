@@ -24,10 +24,10 @@ describe('GoalCard', () => {
     expect(screen.getByText('Yearly')).toBeInTheDocument();
   });
 
-  it('renders HHG badge for HIGH_HARD level', () => {
+  it('renders High Hard Goal badge for HIGH_HARD level', () => {
     const goal = createGoal({ level: 'HIGH_HARD' });
     renderWithProviders(<GoalCard goal={goal} {...defaultProps()} />);
-    expect(screen.getByText('HHG')).toBeInTheDocument();
+    expect(screen.getByText('High Hard Goal')).toBeInTheDocument();
   });
 
   it('shows "5-10 Year Goal" italic text for HIGH_HARD', () => {
@@ -44,14 +44,14 @@ describe('GoalCard', () => {
     expect(screen.queryByText('5-10 Year Goal')).not.toBeInTheDocument();
   });
 
-  it('shows add-child button for WEEKLY level', () => {
-    const goal = createGoal({ level: 'WEEKLY' });
+  it('shows add-child button for MONTHLY level', () => {
+    const goal = createGoal({ level: 'MONTHLY' });
     renderWithProviders(<GoalCard goal={goal} {...defaultProps()} />);
     expect(screen.getByTitle('Add child goal')).toBeInTheDocument();
   });
 
-  it('hides add-child button for DAILY level', () => {
-    const goal = createGoal({ level: 'DAILY' });
+  it('hides add-child button for WEEKLY level', () => {
+    const goal = createGoal({ level: 'WEEKLY' });
     renderWithProviders(<GoalCard goal={goal} {...defaultProps()} />);
     expect(screen.queryByTitle('Add child goal')).not.toBeInTheDocument();
   });
@@ -77,7 +77,7 @@ describe('GoalCard', () => {
   it('add-child button calls onAddChild with goal', async () => {
     const user = userEvent.setup();
     const props = defaultProps();
-    const goal = createGoal({ level: 'WEEKLY' });
+    const goal = createGoal({ level: 'MONTHLY' });
     renderWithProviders(<GoalCard goal={goal} {...props} />);
     await user.click(screen.getByTitle('Add child goal'));
     expect(props.onAddChild).toHaveBeenCalledWith(goal);

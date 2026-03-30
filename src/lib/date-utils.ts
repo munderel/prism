@@ -61,3 +61,24 @@ export function toLocalDateKey(dateOrString: Date | string): string {
   }
   return getLocalDateString(dateOrString);
 }
+
+/**
+ * Formats a date for human-readable display.
+ * Returns "Mar 29, 2026" by default, or "Sunday, March 29, 2026" with weekday option.
+ * Returns '—' for null/undefined/invalid input.
+ */
+export function formatDisplayDate(
+  dateOrString: Date | string | null | undefined,
+  options?: { weekday?: boolean },
+): string {
+  if (!dateOrString) return '\u2014';
+  const d = typeof dateOrString === 'string' ? new Date(dateOrString.includes('T') ? dateOrString : `${dateOrString}T00:00:00`) : dateOrString;
+  if (isNaN(d.getTime())) return '\u2014';
+  const fmt: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: options?.weekday ? 'long' : 'short',
+    day: 'numeric',
+  };
+  if (options?.weekday) fmt.weekday = 'long';
+  return d.toLocaleDateString('en-US', fmt);
+}

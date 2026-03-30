@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(_request: NextRequest) {
   const auth = await requireAuth();
@@ -59,7 +60,9 @@ export async function PATCH(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { sessionId, currentStep, checklistState, tomorrowPlan, distractions, gratitudes, ideas, clearGoals, complete, timeBlockStart, timeBlockEnd, sessionDate: overrideDate } = body;
 
   // Support creating/updating a session by date (for calendar drag one-time overrides)

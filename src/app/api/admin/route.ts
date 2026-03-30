@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(_request: NextRequest) {
   const auth = await requireAdmin();
@@ -25,7 +26,9 @@ export async function PATCH(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { userId, isAdmin } = body;
 
   if (!userId) {
@@ -43,14 +46,16 @@ export async function PATCH(request: NextRequest) {
     select: { id: true, name: true, isAdmin: true },
   });
 
-  return Response.json(updated);
+  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { userId } = body;
 
   if (!userId) {
@@ -63,5 +68,5 @@ export async function DELETE(request: NextRequest) {
 
   await prisma.user.delete({ where: { id: userId } });
 
-  return Response.json({ success: true });
+  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }

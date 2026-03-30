@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -25,7 +25,9 @@ export async function POST(
   const kpi = await prisma.processKpi.findUnique({ where: { id: kpiId } });
   if (!kpi || kpi.processId !== processId) return notFoundResponse('KPI');
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { value, date, notes } = body;
 
   if (value === undefined || value === null) {

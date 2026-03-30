@@ -16,7 +16,7 @@ interface StepDeepWorkBlocksProps {
 }
 
 export function StepDeepWorkBlocks({
-  reviewId,
+  reviewId: _reviewId,
   top3TaskIds,
   initialChecked,
   onCheckedChange,
@@ -51,8 +51,8 @@ export function StepDeepWorkBlocks({
         }
       }
       setTasks(fetched);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to fetch top tasks:', err);
     }
     setLoading(false);
   };

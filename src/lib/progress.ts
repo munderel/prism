@@ -42,50 +42,55 @@ const MAX_CASCADE_DEPTH = 20;
 
 /**
  * Recompute a goal's progress from current DB state and persist it.
- * Then cascade upward to parent if one exists.
+ * Then cascade upward through all ancestors in a loop (avoids recursive N+1 queries).
  */
-export async function cascadeProgressUp(goalId: string, depth = 0): Promise<void> {
-  if (depth > MAX_CASCADE_DEPTH) return;
+export async function cascadeProgressUp(goalId: string): Promise<void> {
+  let currentId: string | null = goalId;
 
-  const goal = await prisma.goal.findUnique({
-    where: { id: goalId },
-    include: {
-      children: { where: { deletedAt: null } },
-      tasks: true,
-      companyGoalLinks: {
-        include: { individualGoal: true },
+  for (let depth = 0; currentId && depth < MAX_CASCADE_DEPTH; depth++) {
+    const goal = await prisma.goal.findUnique({
+      where: { id: currentId },
+      select: {
+        id: true,
+        parentId: true,
+        status: true,
+        deletedAt: true,
+        children: { where: { deletedAt: null }, select: { progressPct: true } },
+        tasks: { select: { status: true } },
+        companyGoalLinks: {
+          include: { individualGoal: { select: { progressPct: true } } },
+        },
       },
-    },
-  });
+    });
 
-  if (!goal || goal.deletedAt) return;
+    if (!goal || goal.deletedAt) return;
 
-  let progress: number;
+    let progress: number;
 
-  if (goal.children.length > 0) {
-    progress = computeParentProgress(goal.children);
-  } else if (goal.companyGoalLinks.length > 0) {
-    progress = computeLinkedProgress(goal.companyGoalLinks);
-  } else if (goal.tasks.length > 0) {
-    progress = computeLeafProgress(goal.tasks);
-  } else {
-    progress = 0;
-  }
+    // Priority: children > companyGoalLinks > tasks.
+    if (goal.children.length > 0) {
+      progress = computeParentProgress(goal.children);
+    } else if (goal.companyGoalLinks.length > 0) {
+      progress = computeLinkedProgress(goal.companyGoalLinks);
+    } else if (goal.tasks.length > 0) {
+      progress = computeLeafProgress(goal.tasks);
+    } else {
+      progress = 0;
+    }
 
-  // Auto-update status based on progress (never override manual COMPLETED or ABANDONED)
-  const autoStatus: Record<string, string> = {};
-  if (progress === 100 && (goal.status === 'NOT_STARTED' || goal.status === 'IN_PROGRESS')) {
-    autoStatus.status = 'COMPLETED';
-  } else if (progress > 0 && goal.status === 'NOT_STARTED') {
-    autoStatus.status = 'IN_PROGRESS';
-  }
+    // Auto-update status based on progress (never override manual COMPLETED or ABANDONED)
+    const autoStatus: Record<string, string> = {};
+    if (progress === 100 && (goal.status === 'NOT_STARTED' || goal.status === 'IN_PROGRESS')) {
+      autoStatus.status = 'COMPLETED';
+    } else if (progress > 0 && goal.status === 'NOT_STARTED') {
+      autoStatus.status = 'IN_PROGRESS';
+    }
 
-  await prisma.goal.update({
-    where: { id: goalId },
-    data: { progressPct: progress, ...autoStatus },
-  });
+    await prisma.goal.update({
+      where: { id: currentId },
+      data: { progressPct: progress, ...autoStatus },
+    });
 
-  if (goal.parentId) {
-    await cascadeProgressUp(goal.parentId, depth + 1);
+    currentId = goal.parentId as string | null;
   }
 }

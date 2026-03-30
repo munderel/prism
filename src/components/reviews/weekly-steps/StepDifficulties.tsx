@@ -9,7 +9,7 @@ interface StepDifficultiesProps {
   onAnswerChange: (text: string) => void;
 }
 
-export function StepDifficulties({ reviewId, initialText, onAnswerChange }: StepDifficultiesProps) {
+export function StepDifficulties({ reviewId: _reviewId, initialText, onAnswerChange }: StepDifficultiesProps) {
   const [text, setText] = useState(initialText ?? '');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 

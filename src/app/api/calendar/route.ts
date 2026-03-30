@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import { listGoogleEvents, createGoogleEvent } from '@/lib/calendar';
 
 export async function GET(request: NextRequest) {
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
   // Fetch user settings early (needed for both availability and normal modes)
   const userSettingsEarly = await prisma.user.findUnique({
     where: { id: auth.userId },
-    select: { selectedCalendarIds: true, powerdownTime: true },
+    select: { selectedCalendarIds: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true },
   });
   const earlyCalendarIds = Array.isArray(userSettingsEarly?.selectedCalendarIds)
     ? (userSettingsEarly.selectedCalendarIds as string[])
@@ -323,6 +324,87 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Generate individual weekly review events
+  if ((fetchAll || source === 'reviews') && reviewsEnabled &&
+      userSettingsEarly?.weeklyReviewDayOfWeek != null &&
+      userSettingsEarly?.weeklyReviewTime) {
+    const [rwH, rwM] = userSettingsEarly.weeklyReviewTime.split(':').map(Number);
+    const duration = userSettingsEarly.weeklyReviewDuration ?? 60;
+    const rangeStart = new Date(start);
+    const rangeEnd = new Date(end);
+    const cursor = new Date(rangeStart);
+    cursor.setHours(0, 0, 0, 0);
+    const maxDays = 366;
+    let dayCount = 0;
+
+    while (cursor <= rangeEnd && dayCount < maxDays) {
+      dayCount++;
+      if (cursor.getDay() === userSettingsEarly.weeklyReviewDayOfWeek) {
+        const evStart = new Date(cursor);
+        evStart.setHours(rwH, rwM, 0, 0);
+        const evEnd = new Date(evStart);
+        evEnd.setMinutes(evEnd.getMinutes() + duration);
+        const dateKey = cursor.toISOString().split('T')[0];
+
+        if (evStart >= rangeStart && evStart <= rangeEnd) {
+          events.push({
+            id: `weekly-review-${dateKey}`,
+            title: 'Weekly Review',
+            start: evStart.toISOString(),
+            end: evEnd.toISOString(),
+            allDay: false,
+            source: 'reviews',
+            color: '#2563eb',
+            link: '/reviews',
+          });
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  // Generate team review events (visible to all users)
+  if (fetchAll || source === 'reviews') {
+    const teamReviews = await prisma.recurringTeamReview.findMany({
+      where: { isActive: true },
+    });
+
+    for (const tr of teamReviews) {
+      const [trH, trM] = tr.time.split(':').map(Number);
+      const rangeStart = new Date(start);
+      const rangeEnd = new Date(end);
+      const cursor = new Date(rangeStart);
+      cursor.setHours(0, 0, 0, 0);
+      const maxDays = 366;
+      let dayCount = 0;
+
+      while (cursor <= rangeEnd && dayCount < maxDays) {
+        dayCount++;
+        if (cursor.getDay() === tr.dayOfWeek) {
+          const evStart = new Date(cursor);
+          evStart.setHours(trH, trM, 0, 0);
+          const evEnd = new Date(evStart);
+          evEnd.setMinutes(evEnd.getMinutes() + tr.duration);
+          const dateKey = cursor.toISOString().split('T')[0];
+
+          if (evStart >= rangeStart && evStart <= rangeEnd) {
+            events.push({
+              id: `team-review-${tr.id}-${dateKey}`,
+              title: 'TEAM REVIEW',
+              start: evStart.toISOString(),
+              end: evEnd.toISOString(),
+              allDay: false,
+              source: 'reviews',
+              color: '#ea580c',
+              link: '/reviews',
+            });
+          }
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+  }
+
   return Response.json(events);
 }
 
@@ -330,7 +412,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { summary, description, start, end, addMeetLink } = body;
 
   if (!summary || !start || !end) {

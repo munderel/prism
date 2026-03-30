@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -20,7 +21,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { title, description, cadence, dayOfWeek, occurDate, timeStart, timeEnd, attendeeIds } = body;
 
   if (!title || !cadence || !timeStart || !timeEnd) {

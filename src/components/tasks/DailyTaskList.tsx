@@ -10,14 +10,39 @@ const SECTIONS = [
   { key: 'IMPROVE', label: 'Improve', color: 'text-indigo-400' },
   { key: 'REACT', label: 'React', color: 'text-yellow-400' },
   { key: 'MAINTENANCE', label: 'Maintenance', color: 'text-cyan-400' },
+  { key: 'REVIEW', label: 'Review', color: 'text-amber-400' },
 ] as const;
+
+/** Task shape returned by the /api/tasks endpoint */
+interface DailyTask {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  taskType: string;
+  dueDate: string | null;
+  goalId: string | null;
+  isWinTheDay: boolean;
+  isPinned: boolean;
+  estimatedMinutes: number;
+  assigneeId: string | null;
+  deliverable: string | null;
+  preferredTimeStart: string | null;
+  preferredTimeEnd: string | null;
+  recurrenceRule: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown; // allow additional API fields without breaking
+}
 
 interface DailyTaskListProps {
   date: string; // YYYY-MM-DD
-  prefetchedTasks?: any[];
-  onEdit: (task: any) => void;
+  prefetchedTasks?: DailyTask[];
+  onEdit: (task: DailyTask) => void;
   onDelete: (taskId: string) => void;
-  onClick?: (task: any) => void;
+  onClick?: (task: DailyTask) => void;
   onStatusChange?: () => void;
 }
 
@@ -34,21 +59,21 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
 
   // Shared optimistic mutation: patch a task and update local state
   const patchTask = useCallback(
-    (taskId: string, patch: Record<string, any>, optimisticUpdate: (t: any) => any) => {
+    (taskId: string, patch: Record<string, unknown>, optimisticUpdate: (t: DailyTask) => DailyTask) => {
       mutate(
-        async (currentData: any) => {
+        async (currentData: DailyTask[] | undefined) => {
           await fetch(`/api/tasks/${taskId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(patch),
           });
-          return (Array.isArray(currentData) ? currentData : []).map((t: any) =>
+          return (Array.isArray(currentData) ? currentData : []).map((t: DailyTask) =>
             t.id === taskId ? optimisticUpdate(t) : t
           );
         },
         {
-          optimisticData: (currentData: any) =>
-            (Array.isArray(currentData) ? currentData : []).map((t: any) =>
+          optimisticData: (currentData: DailyTask[] | undefined) =>
+            (Array.isArray(currentData) ? currentData : []).map((t: DailyTask) =>
               t.id === taskId ? optimisticUpdate(t) : t
             ),
           rollbackOnError: true,
@@ -60,7 +85,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   );
 
   const handleToggle = useCallback(
-    (task: any) => {
+    (task: DailyTask) => {
       const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
       patchTask(task.id, { status: newStatus }, (t) => ({ ...t, status: newStatus }));
     },
@@ -68,25 +93,25 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   );
 
   const handleWinTheDayToggle = useCallback(
-    (task: any) => {
+    (task: DailyTask) => {
       const newValue = !task.isWinTheDay;
       // WTD toggle needs to unflag other tasks too
       mutate(
-        async (currentData: any) => {
+        async (currentData: DailyTask[] | undefined) => {
           await fetch(`/api/tasks/${task.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ isWinTheDay: newValue }),
           });
-          return (Array.isArray(currentData) ? currentData : []).map((t: any) => {
+          return (Array.isArray(currentData) ? currentData : []).map((t: DailyTask) => {
             if (t.id === task.id) return { ...t, isWinTheDay: newValue };
             if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
             return t;
           });
         },
         {
-          optimisticData: (currentData: any) =>
-            (Array.isArray(currentData) ? currentData : []).map((t: any) => {
+          optimisticData: (currentData: DailyTask[] | undefined) =>
+            (Array.isArray(currentData) ? currentData : []).map((t: DailyTask) => {
               if (t.id === task.id) return { ...t, isWinTheDay: newValue };
               if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
               return t;
@@ -110,7 +135,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
     key,
     label,
     color,
-    tasks: tasks.filter((t: any) => t.taskType === key),
+    tasks: tasks.filter((t: DailyTask) => t.taskType === key),
   })), [tasks]);
 
   if (isLoading) {

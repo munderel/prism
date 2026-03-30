@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIceScore } from '@/lib/scoring';
-import { parsePagination } from '@/lib/api-helpers';
+import { parsePagination, validateIceScores, USER_SUMMARY_SELECT, safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       skip,
       take: limit,
       include: {
-        author: { select: { id: true, name: true, image: true } },
+        author: { select: USER_SUMMARY_SELECT },
         process: { select: { id: true, title: true } },
         _count: { select: { attachments: true } },
       },
@@ -65,7 +65,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { title, description, processId, confidenceScore, easeScore, impactScore } = body;
 
   if (!title?.trim()) {
@@ -76,11 +78,9 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'description is required' }, { status: 400 });
   }
 
-  // Validate scores are integers 1-5
-  for (const [name, value] of Object.entries({ confidenceScore, easeScore, impactScore })) {
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 5) {
-      return Response.json({ error: `${name} must be an integer between 1 and 5` }, { status: 400 });
-    }
+  const scoreError = validateIceScores({ confidenceScore, easeScore, impactScore });
+  if (scoreError) {
+    return Response.json({ error: scoreError }, { status: 400 });
   }
 
   // Validate processId if provided
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
       iceScore,
     },
     include: {
-      author: { select: { id: true, name: true, image: true } },
+      author: { select: USER_SUMMARY_SELECT },
       process: { select: { id: true, title: true } },
     },
   });

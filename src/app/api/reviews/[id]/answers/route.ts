@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -44,7 +45,9 @@ export async function POST(
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { stepKey, answerType, answerData } = body;
 
   if (!stepKey || !answerType) {

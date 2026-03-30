@@ -7,11 +7,11 @@ import { StreakCounter } from '../StreakCounter';
 vi.mock('framer-motion', () => ({
   m: {
     div: ({ children, ...props }: any) => {
-      const { animate, transition, whileHover, whileTap, initial, exit, ...rest } = props;
+      const { animate: _a, transition: _t, whileHover: _wh, whileTap: _wt, initial: _i, exit: _e, ...rest } = props;
       return <div {...rest}>{children}</div>;
     },
     span: ({ children, ...props }: any) => {
-      const { animate, transition, whileHover, whileTap, initial, exit, ...rest } = props;
+      const { animate: _a, transition: _t, whileHover: _wh, whileTap: _wt, initial: _i, exit: _e, ...rest } = props;
       return <span {...rest}>{children}</span>;
     },
   },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import { ClipboardCheck, Plus, Calendar, CalendarClock, Check, X, StopCircle, Users, User, Download, PlayCircle, Clock, Settings2 } from 'lucide-react';
@@ -8,6 +8,33 @@ import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
 import { getNextReviewDate } from '@/lib/review-dates';
 import { getLocalDateString } from '@/lib/date-utils';
 import { useRouter } from 'next/navigation';
+
+interface ReviewData {
+  id: string;
+  reviewType: string;
+  scheduledDate: string;
+  completedAt: string | null;
+  isTeamReview: boolean;
+  userId: string;
+  timeBlockStart: string | null;
+  timeBlockEnd: string | null;
+  answers: unknown[];
+}
+
+interface CreateReviewPayload {
+  reviewType: string;
+  isTeamReview?: boolean;
+  startDate?: string;
+  recurrenceDayOfWeek?: number;
+  scheduleConfig?: {
+    type: string;
+    dayOfWeek?: number | null;
+    recurrenceRule?: string;
+    customDate?: string;
+    time?: string;
+    duration?: number;
+  };
+}
 
 const REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'YEARLY'] as const;
 
@@ -51,8 +78,8 @@ export default function ReviewsPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
-  const { data: reviewsData, isLoading: loading, mutate: mutateReviews } = useSWR('/api/reviews');
-  const allReviews = Array.isArray(reviewsData) ? reviewsData : [];
+  const { data: reviewsData, isLoading: loading, mutate: mutateReviews } = useSWR<ReviewData[]>('/api/reviews');
+  const allReviews: ReviewData[] = Array.isArray(reviewsData) ? reviewsData : [];
   const [selectedReview, setSelectedReview] = useState<string | null>(null);
   const [settingUpCadences, setSettingUpCadences] = useState(false);
   const [activeTab, setActiveTab] = useState<TabValue>('team');
@@ -87,12 +114,12 @@ export default function ReviewsPage() {
   const [exporting, setExporting] = useState(false);
 
   // Filter reviews by tab
-  const reviews = allReviews.filter((r: any) =>
+  const reviews = allReviews.filter((r: ReviewData) =>
     activeTab === 'team' ? r.isTeamReview : !r.isTeamReview
   );
 
   const createReview = async (reviewType: string, isTeamReview = false, startDate?: string, recurrenceDayOfWeek?: number, timeStart?: string, timeEnd?: string) => {
-    const payload: any = { reviewType, isTeamReview };
+    const payload: CreateReviewPayload = { reviewType, isTeamReview };
     if (startDate) payload.startDate = startDate;
     if (recurrenceDayOfWeek !== undefined) payload.recurrenceDayOfWeek = recurrenceDayOfWeek;
     const res = await fetch('/api/reviews', {
@@ -103,7 +130,7 @@ export default function ReviewsPage() {
     if (res.status === 409) {
       // Duplicate review — find the existing one and offer to continue it
       const pendingReview = allReviews.find(
-        (r: any) => r.reviewType === reviewType && !r.completedAt && r.isTeamReview === isTeamReview
+        (r: ReviewData) => r.reviewType === reviewType && !r.completedAt && r.isTeamReview === isTeamReview
       );
       if (pendingReview) {
         if (confirm(`You already have a pending ${reviewType.toLowerCase()} review. Would you like to continue it?`)) {
@@ -163,7 +190,7 @@ export default function ReviewsPage() {
       const reviewType = type.toUpperCase();
 
       // Build scheduling payload
-      const payload: any = {
+      const payload: CreateReviewPayload = {
         reviewType,
         scheduleConfig: {
           type,
@@ -230,7 +257,7 @@ export default function ReviewsPage() {
     });
     if (res.ok) {
       if (selectedReview) {
-        const sel = reviews.find((r: any) => r.id === selectedReview);
+        const sel = reviews.find((r: ReviewData) => r.id === selectedReview);
         if (sel && sel.reviewType === reviewType && !sel.completedAt) {
           setSelectedReview(null);
         }
@@ -245,17 +272,32 @@ export default function ReviewsPage() {
   };
 
   const now = new Date();
-  const pendingReviews = reviews.filter((r: any) => !r.completedAt);
-  const upcomingReviews = pendingReviews.filter((r: any) => new Date(r.scheduledDate) > now);
-  const completedReviews = reviews.filter((r: any) => r.completedAt);
+
+  // Deduplicate reviews: keep one per reviewType + scheduledDate + scope combo
+  const { pendingReviews, upcomingReviews, completedReviews } = useMemo(() => {
+    const seen = new Map<string, ReviewData>();
+    for (const r of reviews) {
+      const dateStr = r.scheduledDate?.split('T')[0] ?? '';
+      const key = `${r.reviewType}-${dateStr}-${r.isTeamReview ? 'team' : 'my'}`;
+      const existing = seen.get(key);
+      if (!existing || (r.completedAt && !existing.completedAt)) {
+        seen.set(key, r);
+      }
+    }
+    const deduped = Array.from(seen.values());
+    const pending = deduped.filter((r: ReviewData) => !r.completedAt);
+    const upcoming = pending.filter((r: ReviewData) => new Date(r.scheduledDate) > now);
+    const completed = deduped.filter((r: ReviewData) => r.completedAt);
+    return { pendingReviews: pending, upcomingReviews: upcoming, completedReviews: completed };
+  }, [reviews]);
 
   // Determine which cadences already have a pending/upcoming review (only for My Reviews tab)
-  const scheduledTypes = new Set(pendingReviews.map((r: any) => r.reviewType));
+  const scheduledTypes = new Set(pendingReviews.map((r: ReviewData) => r.reviewType));
 
   const setupCadences = async () => {
     setSettingUpCadences(true);
     const typesToCreate = REVIEW_TYPES.filter((t) => !scheduledTypes.has(t));
-    const payload: any = {};
+    const payload: Partial<CreateReviewPayload> = {};
     if (cadenceStartDate) payload.startDate = cadenceStartDate;
     if (cadenceDayOfWeek !== '') payload.recurrenceDayOfWeek = Number(cadenceDayOfWeek);
     await Promise.all(
@@ -414,7 +456,7 @@ export default function ReviewsPage() {
                 Upcoming Reviews
               </h3>
               <div className="space-y-2">
-                {upcomingReviews.map((r: any) => (
+                {upcomingReviews.map((r: ReviewData) => (
                   <div key={r.id} className="flex items-center gap-1">
                     <button
                       onClick={() => setSelectedReview(r.id)}

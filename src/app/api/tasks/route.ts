@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
 import { cacheHeaders } from '@/lib/api-helpers';
-
+import { parseBody, createTaskSchema } from '@/lib/schemas';
 import { parseRRule } from '@/lib/recurrence';
 import { parseLocalDate } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
@@ -108,20 +108,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
-  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay } = body;
-
-  if (!taskType || !title) {
-    return Response.json({ error: 'taskType and title are required' }, { status: 400 });
-  }
-
-  if (typeof title === 'string' && title.trim().length < 3) {
-    return Response.json({ error: 'Task title must be at least 3 characters' }, { status: 400 });
-  }
-
-  if (!estimatedMinutes || estimatedMinutes <= 0) {
-    return Response.json({ error: 'estimatedMinutes required and must be > 0' }, { status: 400 });
-  }
+  const parsed = await parseBody(request, createTaskSchema);
+  if ('error' in parsed) return parsed.error;
+  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay } = parsed.data;
 
   // IMPROVE tasks require a goalId
   if (taskType === 'IMPROVE') {
@@ -148,8 +137,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // For REACT tasks, allow admins to set ownerId (the person responsible)
-  const effectiveOwnerId = (taskType === 'REACT' && ownerId && auth.session.user.isAdmin)
+  // For certain task types, allow admins to set ownerId (the person responsible)
+  const effectiveOwnerId = (ownerId && auth.session.user.isAdmin)
     ? ownerId
     : auth.userId;
 
@@ -180,7 +169,7 @@ export async function POST(request: NextRequest) {
       timeBlockStart: timeBlockStart ? new Date(timeBlockStart) : null,
       timeBlockEnd: timeBlockEnd ? new Date(timeBlockEnd) : null,
       deliverable: deliverable ?? null,
-      estimatedMinutes,
+      estimatedMinutes: estimatedMinutes ?? undefined,
       preferredTimeStart: preferredTimeStart ?? null,
       preferredTimeEnd: preferredTimeEnd ?? null,
       isWinTheDay: isWinTheDay ?? false,
@@ -199,5 +188,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return Response.json(task, { status: 201 });
+  return Response.json(task, { status: 201, headers: { 'Cache-Control': 'no-store' } });
 }

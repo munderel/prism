@@ -22,16 +22,17 @@ describe('DailyTaskList', () => {
     expect(screen.getByText('Loading tasks...')).toBeInTheDocument();
   });
 
-  it('renders three sections with correct labels', async () => {
+  it('renders four sections with correct labels', async () => {
     renderWithProviders(
       <DailyTaskList date={date} onEdit={onEdit} onDelete={onDelete} />,
       { swrData: { '/api/tasks': [] } },
     );
     await waitFor(() => {
-      expect(screen.getByText('Goal Stack')).toBeInTheDocument();
+      expect(screen.getByText('Improve')).toBeInTheDocument();
     });
     expect(screen.getByText('React')).toBeInTheDocument();
     expect(screen.getByText('Maintenance')).toBeInTheDocument();
+    expect(screen.getByText('Review')).toBeInTheDocument();
   });
 
   it('shows task counts per section', async () => {
@@ -48,7 +49,7 @@ describe('DailyTaskList', () => {
       expect(screen.getByText('(2)')).toBeInTheDocument();
     });
     expect(screen.getByText('(1)')).toBeInTheDocument();
-    expect(screen.getByText('(0)')).toBeInTheDocument();
+    expect(screen.getAllByText('(0)').length).toBe(2);
   });
 
   it('renders task titles in their sections', async () => {
@@ -72,7 +73,7 @@ describe('DailyTaskList', () => {
       { swrData: { '/api/tasks': [] } },
     );
     await waitFor(() => {
-      expect(screen.getAllByText('No tasks').length).toBe(3);
+      expect(screen.getAllByText('No tasks').length).toBe(4);
     });
   });
 
@@ -90,8 +91,8 @@ describe('DailyTaskList', () => {
       expect(screen.getByText('Visible Task')).toBeInTheDocument();
     });
 
-    // Click the "Goal Stack" section header button to collapse
-    await user.click(screen.getByText('Goal Stack'));
+    // Click the "Improve" section header button to collapse
+    await user.click(screen.getByText('Improve'));
 
     await waitFor(() => {
       expect(screen.queryByText('Visible Task')).not.toBeInTheDocument();

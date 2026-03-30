@@ -28,6 +28,35 @@ import { KpiSidebar } from './KpiSidebar';
 import { TaskCardInline } from './TaskCardInline';
 import { TaskEditor } from '../tasks/TaskEditor';
 
+/** Lightweight Goal shape matching the API response used in this tree */
+interface GoalTreeItem {
+  id: string;
+  title: string;
+  description: string | null;
+  level: string;
+  status: string;
+  progressPct: number;
+  parentId: string | null;
+  dueDate: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  stackId: string;
+  sortOrder: number;
+  tasks?: TaskTreeItem[];
+  children?: GoalTreeItem[];
+}
+
+/** Lightweight Task shape matching the API response used in this tree */
+interface TaskTreeItem {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  goalId: string | null;
+  isWinTheDay?: boolean;
+}
+
 interface GoalStackTreeProps {
   stackId: string;
   isCompanyStack: boolean;
@@ -38,13 +67,13 @@ interface GoalStackTreeProps {
 
 interface FlatItem {
   type: 'goal' | 'task';
-  goal?: any;
-  task?: any;
+  goal?: GoalTreeItem;
+  task?: TaskTreeItem;
   depth: number;
   id: string;
 }
 
-function flattenTree(goals: any[], depth = 0): FlatItem[] {
+function flattenTree(goals: GoalTreeItem[], depth = 0): FlatItem[] {
   const result: FlatItem[] = [];
   for (const goal of goals) {
     // Skip DAILY goals (they've been migrated to tasks)
@@ -66,7 +95,7 @@ function flattenTree(goals: any[], depth = 0): FlatItem[] {
   return result;
 }
 
-function SortableGoalCard({
+const SortableGoalCard = React.memo(function SortableGoalCard({
   item,
   onEdit,
   onDelete,
@@ -78,12 +107,12 @@ function SortableGoalCard({
   isAdmin: _isAdmin,
 }: {
   item: FlatItem;
-  onEdit: (goal: any) => void;
+  onEdit: (goal: GoalTreeItem) => void;
   onDelete: (goalId: string) => void;
-  onAddChild: (goal: any) => void;
+  onAddChild: (goal: GoalTreeItem) => void;
   onAddTask: (goalId: string) => void;
   onStatusChange: (goalId: string, status: string) => void;
-  onKpiClick: (goal: any) => void;
+  onKpiClick: (goal: GoalTreeItem) => void;
   isCompanyStack: boolean;
   isAdmin: boolean;
 }) {
@@ -132,7 +161,7 @@ function SortableGoalCard({
       />
     </div>
   );
-}
+});
 
 export function GoalStackTree({
   stackId,
@@ -146,15 +175,15 @@ export function GoalStackTree({
   const flatItems = useMemo(() => {
     const data = Array.isArray(goalsData) ? goalsData : [];
     // Build tree from flat list
-    const map = new Map<string, any>();
+    const map = new Map<string, GoalTreeItem>();
     for (const g of data) {
       map.set(g.id, { ...g, children: [] });
     }
-    const roots: any[] = [];
+    const roots: GoalTreeItem[] = [];
     for (const g of data) {
       const node = map.get(g.id)!;
       if (g.parentId && map.has(g.parentId)) {
-        map.get(g.parentId)!.children.push(node);
+        map.get(g.parentId)!.children!.push(node);
       } else if (!g.parentId) {
         roots.push(node);
       }
@@ -197,15 +226,15 @@ export function GoalStackTree({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<{
     open: boolean;
-    parentGoal?: any;
-    goal?: any;
+    parentGoal?: GoalTreeItem;
+    goal?: GoalTreeItem;
   }>({ open: false });
   const [taskEditorState, setTaskEditorState] = useState<{
     open: boolean;
     goalId?: string;
-    task?: any;
+    task?: TaskTreeItem;
   }>({ open: false });
-  const [selectedGoalForKpi, setSelectedGoalForKpi] = useState<any>(null);
+  const [selectedGoalForKpi, setSelectedGoalForKpi] = useState<GoalTreeItem | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -245,14 +274,14 @@ export function GoalStackTree({
   const handleDelete = useCallback(async (goalId: string) => {
     if (!confirm('Delete this goal and all its children?')) return;
     await fetch(`/api/goals/${goalId}`, { method: 'DELETE' });
-    mutateGoals();
-  }, [mutateGoals]);
+    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+  }, [mutateGoals, stackId]);
 
-  const handleEdit = useCallback((goal: any) => {
+  const handleEdit = useCallback((goal: GoalTreeItem) => {
     setEditorState({ open: true, goal });
   }, []);
 
-  const handleAddChild = useCallback((parentGoal: any) => {
+  const handleAddChild = useCallback((parentGoal: GoalTreeItem) => {
     setEditorState({ open: true, parentGoal });
   }, []);
 
@@ -260,25 +289,25 @@ export function GoalStackTree({
     setTaskEditorState({ open: true, goalId });
   }, []);
 
-  const handleTaskToggle = useCallback(async (task: any) => {
+  const handleTaskToggle = useCallback(async (task: TaskTreeItem) => {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
     await fetch(`/api/tasks/${task.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
     });
-    mutateGoals();
-  }, [mutateGoals]);
+    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+  }, [mutateGoals, stackId]);
 
-  const handleTaskEdit = useCallback((task: any) => {
+  const handleTaskEdit = useCallback((task: TaskTreeItem) => {
     setTaskEditorState({ open: true, task });
   }, []);
 
   const handleTaskDelete = useCallback(async (taskId: string) => {
     if (!confirm('Delete this task?')) return;
     await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
-    mutateGoals();
-  }, [mutateGoals]);
+    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+  }, [mutateGoals, stackId]);
 
   const handleStatusChange = useCallback(async (goalId: string, status: string) => {
     await fetch(`/api/goals/${goalId}`, {
@@ -286,11 +315,11 @@ export function GoalStackTree({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
-    mutateGoals();
-  }, [mutateGoals]);
+    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+  }, [mutateGoals, stackId]);
 
-  const handleKpiClick = useCallback((goal: any) => {
-    setSelectedGoalForKpi((prev: any) => prev?.id === goal.id ? null : goal);
+  const handleKpiClick = useCallback((goal: GoalTreeItem) => {
+    setSelectedGoalForKpi((prev: GoalTreeItem | null) => prev?.id === goal.id ? null : goal);
   }, []);
 
   const handleAddRoot = useCallback(() => {

@@ -4,7 +4,6 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 const REVIEW_DURATION_MIN: Record<string, number> = {
   WEEKLY: 30,
   MONTHLY: 60,
-  QUARTERLY: 120,
   YEARLY: 180,
 };
 

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { cascadeKpiUpdate, recalculateMonthlyNumericKpi, recalculateBinaryKpi } from '@/lib/kpi-progress';
-import { pickDefined } from '@/lib/api-helpers';
+import { pickDefined, notFoundResponse, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
 
 export async function PUT(
   request: NextRequest,
@@ -17,16 +17,16 @@ export async function PUT(
     include: { goal: { include: { stack: true } } },
   });
 
-  if (!kpi) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!kpi) return notFoundResponse('KPI');
 
   const stack = kpi.goal.stack;
   if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { name, isComplete, actualValue } = body;
 
   const data: Record<string, any> = pickDefined(body, ['name', 'unit', 'targetValue', 'actualValue', 'sortOrder']);
@@ -73,13 +73,11 @@ export async function DELETE(
     include: { goal: { include: { stack: true } } },
   });
 
-  if (!kpi) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!kpi) return notFoundResponse('KPI');
 
   const stack = kpi.goal.stack;
   if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
   const linkedKpiId = kpi.linkedKpiId;

@@ -12,6 +12,8 @@ import {
   GOAL_STATUS_COLORS,
   GOAL_STATUSES,
   GOAL_STATUS_BG_COLORS,
+  formatEnumLabel,
+  formatGoalDateRange,
 } from '@/lib/goal-constants';
 
 // Level-specific card styling
@@ -107,43 +109,12 @@ export const GoalCard = React.memo(function GoalCard({
         >
           {LEVEL_LABELS[goal.level] ?? goal.level}
         </span>
-        {goal.level === 'HIGH_HARD' && goal.startDate && goal.endDate && (
-          <span className="text-xs text-purple-400/60 italic shrink-0">
-            {(() => {
-              const s = new Date(goal.startDate);
-              const e = new Date(goal.endDate);
-              const years = e.getFullYear() - s.getFullYear();
-              const label = years <= 1 ? '1-Year' : `${years}-Year`;
-              return `${label} HHG (${s.getFullYear()}\u2013${e.getFullYear()})`;
-            })()}
-          </span>
-        )}
-        {goal.level === 'HIGH_HARD' && !(goal.startDate && goal.endDate) && (
-          <span className="text-xs text-purple-400/60 italic shrink-0">5-10 Year Goal</span>
-        )}
-        {goal.level === 'STRATEGIC' && goal.startDate && (
-          <span className="text-xs text-[var(--text-muted)] shrink-0">
-            {new Date(goal.startDate).getFullYear()}
-          </span>
-        )}
-        {goal.level === 'MONTHLY' && goal.startDate && goal.endDate && (
-          <span className="text-xs text-[var(--text-muted)] shrink-0">
-            {(() => {
-              const s = new Date(goal.startDate);
-              const e = new Date(goal.endDate);
-              return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} \u2013 ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-            })()}
-          </span>
-        )}
-        {goal.level === 'WEEKLY' && goal.startDate && goal.endDate && (
-          <span className="text-xs text-[var(--text-muted)] shrink-0">
-            {(() => {
-              const s = new Date(goal.startDate);
-              const e = new Date(goal.endDate);
-              return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} \u2013 ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-            })()}
-          </span>
-        )}
+        {(() => {
+          const dateLabel = formatGoalDateRange(goal.level, goal.startDate, goal.endDate);
+          if (!dateLabel) return null;
+          const colorClass = goal.level === 'HIGH_HARD' ? 'text-purple-400/60 italic' : 'text-[var(--text-muted)]';
+          return <span className={`text-xs ${colorClass} shrink-0`}>{dateLabel}</span>;
+        })()}
 
         {/* Title and status */}
         <div className="flex-1 min-w-0">
@@ -156,7 +127,7 @@ export const GoalCard = React.memo(function GoalCard({
                 onClick={(e) => { e.stopPropagation(); setShowStatusMenu(!showStatusMenu); }}
                 className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-[var(--hover-bg)] ${GOAL_STATUS_COLORS[goal.status] ?? ''}`}
               >
-                {goal.status.replace(/_/g, ' ')}
+                {formatEnumLabel(goal.status)}
                 <ChevronDown className="h-3 w-3" />
               </button>
               {showStatusMenu && (
@@ -175,7 +146,7 @@ export const GoalCard = React.memo(function GoalCard({
                         s === goal.status ? 'font-bold' : ''
                       }`}
                     >
-                      {s.replace(/_/g, ' ')}
+                      {formatEnumLabel(s)}
                     </button>
                   ))}
                 </div>
@@ -184,30 +155,26 @@ export const GoalCard = React.memo(function GoalCard({
             {goal.companyGoalLinks?.length > 0 && (
               <Link className="h-3 w-3 text-prism-indigo" />
             )}
-            {goal._count?.kpis > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onKpiClick?.(goal); }}
-                className="inline-flex items-center gap-1 rounded-full bg-indigo-600/20 px-2 py-0.5 text-xs text-indigo-400 cursor-pointer hover:bg-indigo-600/30 transition-colors"
-              >
-                <BarChart3 className="h-3 w-3" />
-                {goal._count.kpis} KPI{goal._count.kpis !== 1 ? 's' : ''}
-              </button>
-            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onKpiClick?.(goal); }}
+              className="inline-flex items-center gap-1 rounded-full bg-indigo-600/20 px-2 py-0.5 text-xs text-indigo-400 cursor-pointer hover:bg-indigo-600/30 transition-colors"
+              title={goal._count?.kpis > 0 ? 'View KPIs' : 'Add KPIs'}
+            >
+              <BarChart3 className="h-3 w-3" />
+              {goal._count?.kpis > 0
+                ? `${goal._count.kpis} KPI${goal._count.kpis !== 1 ? 's' : ''}`
+                : 'KPIs'}
+            </button>
           </div>
           <div className="mt-1 max-w-xs">
             <GoalProgressBar progress={goal.progressPct} size="sm" />
           </div>
         </div>
 
-        {/* Due date + urgency */}
-        {(goal.dueDate || goal.endDate) && (
+        {/* Urgency badge based on end date */}
+        {goal.endDate && (
           <div className="flex items-center gap-2 shrink-0">
-            <TimeUrgencyBadge startDate={goal.startDate} endDate={goal.endDate} dueDate={goal.dueDate} />
-            {goal.dueDate && (
-              <span className="text-xs text-[var(--text-muted)]">
-                {new Date(goal.dueDate).toLocaleDateString()}
-              </span>
-            )}
+            <TimeUrgencyBadge startDate={goal.startDate} endDate={goal.endDate} dueDate={goal.endDate} />
           </div>
         )}
 

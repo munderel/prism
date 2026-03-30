@@ -96,34 +96,76 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   // Answers map for hydration
   const [_answers, setAnswers] = useState<Record<string, ReviewAnswerData>>({});
 
-  // Fetch unscheduled tasks and AIM instances for schedule_tasks step
+  // Upcoming week boundaries (Mon-Sun)
+  const upcomingWeekStart = useMemo(() => {
+    const now = new Date();
+    const dow = now.getDay();
+    const off = dow === 0 ? -6 : 1 - dow;
+    const d = new Date(now);
+    d.setDate(now.getDate() + off);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const upcomingWeekEnd = useMemo(() => {
+    const d = new Date(upcomingWeekStart);
+    d.setDate(upcomingWeekStart.getDate() + 6);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  }, [upcomingWeekStart]);
+  const upcomingWeekStartStr = getLocalDateString(upcomingWeekStart);
+  const upcomingWeekEndStr = getLocalDateString(upcomingWeekEnd);
+
+  // Fetch unscheduled tasks and AIM instances for calendar steps
   const { data: weekTasks } = useSWR('/api/tasks?includeUnscheduled=true');
-  const weekStart = getLocalDateString();
-  const weekEnd7 = new Date();
-  weekEnd7.setDate(weekEnd7.getDate() + 7);
-  const weekEndDate = getLocalDateString(weekEnd7);
-  const { data: weekAims } = useSWR(`/api/aims/instances?start=${weekStart}T00:00:00&end=${weekEndDate}T23:59:59`);
+  const { data: weekAims } = useSWR(
+    `/api/aims/instances?start=${upcomingWeekStartStr}T00:00:00&end=${upcomingWeekEndStr}T23:59:59`
+  );
+
+  // Fetch upcoming week goals to build goalId filter set for Step 9
+  const { data: upcomingGoalsData } = useSWR('/api/goals?level=WEEKLY');
+  const upcomingWeekGoalIds = useMemo(() => {
+    if (!Array.isArray(upcomingGoalsData)) return new Set<string>();
+    return new Set(
+      upcomingGoalsData
+        .filter((g: any) => {
+          if (!g.startDate || !g.endDate) return false;
+          const gs = new Date(g.startDate);
+          const ge = new Date(g.endDate);
+          return gs <= upcomingWeekEnd && ge >= upcomingWeekStart;
+        })
+        .map((g: any) => g.id)
+    );
+  }, [upcomingGoalsData, upcomingWeekStart, upcomingWeekEnd]);
 
   const unscheduledForCalendar = useMemo(() => {
     const items: any[] = [];
-    // Tasks without time blocks
+    // Tasks filtered for Step 9: upcoming week goals, maintenance, react, personal
     if (Array.isArray(weekTasks)) {
       for (const t of weekTasks) {
-        if (!t.timeBlockStart && t.status !== 'DONE' && t.status !== 'DROPPED') {
+        if (t.status === 'DONE' || t.status === 'DROPPED') continue;
+        if (t.timeBlockStart) continue;
+        const dueDateInWeek = t.dueDate &&
+          new Date(t.dueDate) >= upcomingWeekStart &&
+          new Date(t.dueDate) <= upcomingWeekEnd;
+        const include =
+          upcomingWeekGoalIds.has(t.goalId) ||               // linked to upcoming week goal
+          (t.taskType === 'MAINTENANCE' && dueDateInWeek) || // maintenance due this week
+          t.taskType === 'REACT';                            // all open react tasks
+        if (include) {
           items.push({ id: t.id, itemType: 'task', title: t.title, duration: t.estimatedMinutes || 60, taskType: t.taskType, priority: t.priority });
         }
       }
     }
-    // AIM instances without time blocks
+    // AIM instances without time blocks (duration from AIM category)
     if (Array.isArray(weekAims)) {
       for (const a of weekAims) {
         if (!a.timeBlockStart && a.status !== 'COMPLETED') {
-          items.push({ id: a.id, itemType: 'aim', title: a.aimCategory?.name || 'AIM', duration: 60, aimCategoryId: a.aimCategoryId });
+          items.push({ id: a.id, itemType: 'aim', title: a.aimCategory?.name || 'AIM', duration: a.aimCategory?.defaultDurationMin || 60, aimCategoryId: a.aimCategoryId });
         }
       }
     }
     return items;
-  }, [weekTasks, weekAims]);
+  }, [weekTasks, weekAims, upcomingWeekGoalIds, upcomingWeekStart, upcomingWeekEnd]);
 
   useEffect(() => {
     fetchReviewAndAnswers();
@@ -210,6 +252,23 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     }
     setLoading(false);
   };
+
+  const handleCreateWorkBlock = useCallback(async (start: Date, end: Date) => {
+    try {
+      const res = await fetch('/api/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: 'Work Block',
+          start: start.toISOString(),
+          end: end.toISOString(),
+        }),
+      });
+      if (!res.ok) toast.error('Failed to create work block. Is Google Calendar connected?');
+    } catch {
+      toast.error('Failed to create work block.');
+    }
+  }, [toast]);
 
   const persistAnswer = useCallback(async (stepKey: string, answerType: string, answerData: any) => {
     try {
@@ -484,7 +543,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                   </button>
                 </div>
                 {calendarModalOpen && (
-                  <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+                  <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
                     <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden shadow-2xl">
                       <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
                         <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
@@ -497,18 +556,22 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                       </div>
                       <div className="flex-1 min-h-0 p-2">
                         <CalendarSplitView
+                          mode="work_blocks"
                           viewMode="week"
-                          dateRange={{ start: `${weekStart}T00:00:00`, end: `${weekEndDate}T23:59:59` }}
+                          dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${upcomingWeekEndStr}T23:59:59` }}
                           unscheduledItems={unscheduledForCalendar}
-                          onSchedule={async (itemId, _itemType, start, end) => {
-                            await fetch(`/api/tasks/${itemId}`, {
+                          onCreateWorkBlock={handleCreateWorkBlock}
+                          onSchedule={async (itemId, itemType, start, end) => {
+                            const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
+                            await fetch(endpoint, {
                               method: 'PATCH',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
                             });
                           }}
-                          onUnschedule={async (itemId) => {
-                            await fetch(`/api/tasks/${itemId}`, {
+                          onUnschedule={async (itemId, itemType) => {
+                            const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
+                            await fetch(endpoint, {
                               method: 'PATCH',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
@@ -541,7 +604,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                   </button>
                 </div>
                 {calendarModalOpen && (
-                  <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+                  <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
                     <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden shadow-2xl">
                       <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
                         <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
@@ -554,8 +617,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                       </div>
                       <div className="flex-1 min-h-0 p-2">
                         <CalendarSplitView
+                          mode="schedule_tasks"
                           viewMode="week"
-                          dateRange={{ start: `${weekStart}T00:00:00`, end: `${weekEndDate}T23:59:59` }}
+                          dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${upcomingWeekEndStr}T23:59:59` }}
                           unscheduledItems={unscheduledForCalendar}
                           onSchedule={async (itemId, itemType, start, end) => {
                             const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;

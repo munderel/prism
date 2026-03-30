@@ -77,14 +77,14 @@ describe('ReviewChecklist', () => {
     expect(screen.getByText('Set new targets')).toBeInTheDocument();
   });
 
-  it('complete button is disabled when not all items checked', async () => {
+  it('complete button is disabled when not all items completed', async () => {
     setup();
     renderWithProviders(<ReviewChecklist reviewId="review-1" onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/0\/3 items checked/)).toBeInTheDocument();
+      expect(screen.getByText(/0\/3 items completed/)).toBeInTheDocument();
     });
-    expect(screen.getByRole('button', { name: /items checked/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /items completed/ })).toBeDisabled();
   });
 
   it('toggles checklist item on click and sends PATCH', async () => {
@@ -99,7 +99,7 @@ describe('ReviewChecklist', () => {
     await user.click(screen.getByText('Review goals'));
 
     await waitFor(() => {
-      expect(screen.getByText(/1\/3 items checked/)).toBeInTheDocument();
+      expect(screen.getByText(/1\/3 items completed/)).toBeInTheDocument();
     });
     // Verify PATCH was called
     expect(global.fetch).toHaveBeenCalledWith(
@@ -108,7 +108,7 @@ describe('ReviewChecklist', () => {
     );
   });
 
-  it('enables complete button and calls onComplete when all items checked', async () => {
+  it('enables complete button and calls onComplete when all items completed', async () => {
     const review = makeReview({
       checklistState: {
         'Review goals': true,

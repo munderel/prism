@@ -13,7 +13,7 @@ import {
   CheckSquare,
 } from 'lucide-react';
 import { fetcher } from '@/lib/fetcher';
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, formatDisplayDate } from '@/lib/date-utils';
 
 type Tab = 'reviews' | 'tasks' | 'aims' | 'goals';
 
@@ -297,7 +297,7 @@ function TasksTab({ from, to }: { from: string; to: string }) {
       t.taskType,
       STATUS_LABELS[t.status] ?? t.status,
       PRIORITY_LABELS[t.priority] ?? t.priority,
-      t.completedAt ?? '',
+      t.status === 'DONE' && t.completedAt ? formatDisplayDate(t.completedAt) : '',
     ]);
     downloadFile('tasks.csv', buildCSV(headers, rows), 'text/csv');
   };
@@ -384,7 +384,7 @@ function TasksTab({ from, to }: { from: string; to: string }) {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm text-[var(--text-secondary)]">
-                  {task.completedAt ?? '—'}
+                  {task.status === 'DONE' ? formatDisplayDate(task.completedAt) : '—'}
                 </td>
               </tr>
             ))}

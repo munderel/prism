@@ -6,8 +6,8 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { autoSchedule, autoScheduleWithPeriods, type ProposedSlot, type CalendarEvent as ScheduleEvent, type SchedulableTask, type ScheduleSettings } from '@/lib/scheduling-engine';
-import { Sparkles, Check, X, ListTodo, Save, Loader2, CheckCircle2, ExternalLink } from 'lucide-react';
+import { type ProposedSlot } from '@/lib/scheduling-engine';
+import { Check, X, ListTodo, Save, Loader2, CheckCircle2, ExternalLink } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -51,7 +51,6 @@ interface CalendarViewProps {
   unscheduledTasks?: any[];
   onBatchScheduleConfirm?: (slots: Array<{ id: string; timeBlockStart: string; timeBlockEnd: string; isAutoScheduled: boolean; isPinned: boolean; itemType?: string }>) => void;
   scheduleSettings?: {
-    autoScheduleEnabled: boolean;
     workingHoursStart: string;
     workingHoursEnd: string;
     casualHoursStart: string;
@@ -88,7 +87,7 @@ function scheduleItem(
   });
 }
 
-export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings }: CalendarViewProps) {
+export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings: _scheduleSettings }: CalendarViewProps) {
   const router = useRouter();
   const toast = useToast();
   const calendarRef = useRef<any>(null);
@@ -214,6 +213,12 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       return;
     }
 
+    // If this is a virtual weekly or team review event, navigate to reviews page
+    if (info.event.id?.startsWith('weekly-review-') || info.event.id?.startsWith('team-review-')) {
+      router.push('/reviews');
+      return;
+    }
+
     // If this is an aim event, show popover with Complete action
     if (props.aimInstanceId) {
       setSelectedEventPopover({
@@ -252,7 +257,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const handlePopoverOpenTasks = () => {
     if (!selectedEventPopover || selectedEventPopover.source !== 'aims') return;
     // Open the task assignment panel for this aim
-    const aimEvent = events.find((e) => e.aimInstanceId === selectedEventPopover.aimInstanceId);
+    const aimEvent = events.find((e: any) => e.aimInstanceId === selectedEventPopover.aimInstanceId);
     if (aimEvent) {
       const aimData: SelectedAimInstance = {
         aimInstanceId: aimEvent.aimInstanceId,
@@ -408,67 +413,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     refreshCalendar();
   };
 
-  const handleAutoSchedule = () => {
-    if (!unscheduledTasks || unscheduledTasks.length === 0) return;
-
-    // Convert all unscheduled items to SchedulableTask format
-    const priorityMap: Record<string, SchedulableTask['priority']> = {
-      aim: 'MEDIUM',
-      review: 'HIGH',
-    };
-
-    const schedulableTasks: SchedulableTask[] = unscheduledTasks.map((t) => {
-      // Determine scheduling period based on item type
-      let schedulingPeriod: 'working' | 'casual' | 'both' | undefined;
-      if (scheduleSettings) {
-        if (t.itemType === 'aim') {
-          // Use the aim's own schedule period if present, otherwise default to 'both'
-          schedulingPeriod = t.schedulePeriod ?? 'both';
-        } else if (t.itemType === 'review') {
-          schedulingPeriod = 'working';
-        } else {
-          // Tasks use the global taskSchedulePeriod from settings
-          schedulingPeriod = (scheduleSettings.taskSchedulePeriod as 'working' | 'casual' | 'both') ?? 'both';
-        }
-      }
-
-      return {
-        id: t.id,
-        title: t.title,
-        estimatedMinutes: t.duration ?? t.estimatedMinutes ?? 60,
-        priority: t.priority ?? priorityMap[t.itemType] ?? 'MEDIUM',
-        dueDate: t.dueDate ? new Date(t.dueDate) : t.scheduledDate ? new Date(t.scheduledDate) : null,
-        preferredTimeStart: t.preferredTimeStart ?? null,
-        preferredTimeEnd: t.preferredTimeEnd ?? null,
-        schedulingPeriod,
-      };
-    });
-
-    const existingCalEvents: ScheduleEvent[] = events.map((e) => ({
-      start: new Date(e.start),
-      end: new Date(e.end),
-    }));
-
-    let proposed: ProposedSlot[];
-
-    if (scheduleSettings) {
-      // Use period-aware scheduling with user settings
-      const settings: ScheduleSettings = {
-        workingHours: { start: scheduleSettings.workingHoursStart, end: scheduleSettings.workingHoursEnd },
-        casualHours: { start: scheduleSettings.casualHoursStart, end: scheduleSettings.casualHoursEnd },
-      };
-      proposed = autoScheduleWithPeriods(schedulableTasks, existingCalEvents, settings);
-    } else {
-      // Fallback to original behavior
-      proposed = autoSchedule(schedulableTasks, existingCalEvents, {
-        start: '06:00',
-        end: '22:00',
-      });
-    }
-
-    setGhostEvents(proposed);
-    setShowGhosts(true);
-  };
+  // Auto-schedule feature removed — users schedule manually via drag-and-drop
 
   const handleConfirmGhosts = async () => {
     // Schedule all ghost events in parallel
@@ -590,7 +535,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     (t: any) => t.itemType !== 'aim' && t.itemType !== 'review' && (t.status === 'TODO' || t.status === 'IN_PROGRESS')
   );
 
-  const filteredEvents = events.filter((e) => activeFilters.has(e.source));
+  const filteredEvents = events.filter((e: any) => activeFilters.has(e.source));
 
   const ghostCalendarEvents = showGhosts ? ghostEvents.map(g => {
     const item = unscheduledTasks?.find(t => t.id === g.taskId);
@@ -639,15 +584,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
       {/* Auto-schedule button / Confirm-Dismiss buttons */}
       <div className="flex items-center gap-2 mb-4">
-        {!showGhosts && unscheduledTasks && unscheduledTasks.length > 0 && scheduleSettings?.autoScheduleEnabled !== false && (
-          <button
-            onClick={handleAutoSchedule}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
-          >
-            <Sparkles className="h-4 w-4" />
-            Auto-schedule ({unscheduledTasks.length})
-          </button>
-        )}
+        {/* Auto-schedule removed — users schedule manually via drag-and-drop */}
 
         {showGhosts && (
           <>

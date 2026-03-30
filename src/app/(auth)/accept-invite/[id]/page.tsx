@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { signIn, useSession } from 'next-auth/react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type InviteData = {
   id: string;
@@ -15,7 +15,9 @@ type InviteData = {
 
 export default function AcceptInvitePage() {
   const { id } = useParams<{ id: string }>();
-  const { data: session, status: sessionStatus } = useSession();
+  const searchParams = useSearchParams();
+  const token = searchParams.get('token');
+  const { status: sessionStatus } = useSession();
   const router = useRouter();
   const [invite, setInvite] = useState<InviteData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,6 +75,8 @@ export default function AcceptInvitePage() {
     try {
       const res = await fetch(`/api/invitations/${id}/accept`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -96,7 +100,10 @@ export default function AcceptInvitePage() {
       acceptInvitation();
     } else {
       // Redirect to Google OAuth with callback back to this page
-      signIn('google', { callbackUrl: `/accept-invite/${id}` });
+      const callbackUrl = token
+        ? `/accept-invite/${id}?token=${encodeURIComponent(token)}`
+        : `/accept-invite/${id}`;
+      signIn('google', { callbackUrl });
     }
   };
 

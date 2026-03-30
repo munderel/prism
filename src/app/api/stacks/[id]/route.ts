@@ -6,6 +6,7 @@ import {
   requireOwnership,
   authError,
 } from '@/lib/auth-guard';
+import { notFoundResponse, USER_SUMMARY_SELECT, safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -18,7 +19,7 @@ export async function GET(
   const stack = await prisma.goalStack.findUnique({
     where: { id },
     include: {
-      owner: { select: { id: true, name: true, image: true } },
+      owner: { select: USER_SUMMARY_SELECT },
       goals: {
         where: { deletedAt: null, parentId: null },
         orderBy: { sortOrder: 'asc' },
@@ -50,9 +51,7 @@ export async function GET(
     },
   });
 
-  if (!stack) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!stack) return notFoundResponse('Stack');
 
   // Non-admins can only see own stacks and company stacks
   if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
@@ -68,9 +67,7 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const stack = await prisma.goalStack.findUnique({ where: { id } });
-  if (!stack) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!stack) return notFoundResponse('Stack');
 
   if (stack.isCompany) {
     const auth = await requireAdmin();
@@ -80,7 +77,9 @@ export async function PATCH(
     if ('error' in auth) return authError(auth);
   }
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) data.name = body.name;
   if (body.weekStartDay !== undefined) data.weekStartDay = body.weekStartDay;
@@ -90,7 +89,7 @@ export async function PATCH(
     data,
   });
 
-  return Response.json(updated);
+  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(
@@ -99,9 +98,7 @@ export async function DELETE(
 ) {
   const { id } = await params;
   const stack = await prisma.goalStack.findUnique({ where: { id } });
-  if (!stack) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!stack) return notFoundResponse('Stack');
 
   if (stack.isCompany) {
     const auth = await requireAdmin();
@@ -112,5 +109,5 @@ export async function DELETE(
   }
 
   await prisma.goalStack.delete({ where: { id } });
-  return Response.json({ ok: true });
+  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }

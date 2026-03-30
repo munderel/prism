@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireTaskAccess, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 import { extractMentions, resolveMentions } from '@/lib/mention-parser';
 
@@ -33,7 +34,9 @@ export async function POST(
   const auth = await requireTaskAccess(taskId);
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { content } = body;
 
   if (!content?.trim()) {

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
+import { validateEmail, safeParseJson } from '@/lib/api-helpers';
 
 export async function POST(request: NextRequest) {
   // Dev mode only — block by default, only allow in explicit development mode
@@ -11,19 +12,16 @@ export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { email, name, role } = body;
 
-  if (!email || typeof email !== 'string') {
-    return Response.json({ error: 'Email is required' }, { status: 400 });
+  const emailResult = validateEmail(email);
+  if ('error' in emailResult) {
+    return Response.json({ error: emailResult.error }, { status: 400 });
   }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
-  // Basic email validation
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-    return Response.json({ error: 'Invalid email format' }, { status: 400 });
-  }
+  const normalizedEmail = emailResult.email;
 
   // Check if user already exists
   const existing = await prisma.user.findUnique({

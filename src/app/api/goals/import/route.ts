@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 import { parseYamlToGoals, diffGoals, buildGoalTree, type GoalNode } from '@/lib/yaml-handler';
 import { cascadeProgressUp } from '@/lib/progress';
@@ -13,7 +14,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { stackId, yamlContent, confirmed } = body;
 
   if (typeof yamlContent !== 'string' || yamlContent.length > MAX_YAML_SIZE) {

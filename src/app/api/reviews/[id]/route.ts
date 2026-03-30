@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { notFoundResponse, safeParseJson } from '@/lib/api-helpers';
 import { getNextReviewDate } from '@/lib/review-dates';
 
 export async function GET(
@@ -12,9 +13,7 @@ export async function GET(
   if ('error' in auth) return authError(auth);
 
   const review = await prisma.review.findUnique({ where: { id } });
-  if (!review) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!review) return notFoundResponse('Review');
 
   // Team reviews are accessible to all authenticated users; individual reviews only to owner/admin
   if (!review.isTeamReview && review.userId !== auth.userId && !auth.session.user.isAdmin) {
@@ -55,16 +54,16 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const review = await prisma.review.findUnique({ where: { id } });
-  if (!review) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!review) return notFoundResponse('Review');
 
   // Team reviews: any authenticated user can update; individual: only owner/admin
   if (!review.isTeamReview && review.userId !== auth.userId && !auth.session.user.isAdmin) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { checklistState, notes, complete, timeBlockStart, timeBlockEnd } = body;
 
   const data: any = {};
@@ -112,7 +111,7 @@ export async function PATCH(
   }
 
   const updated = await prisma.review.update({ where: { id }, data });
-  return Response.json(updated);
+  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(
@@ -124,9 +123,7 @@ export async function DELETE(
   if ('error' in auth) return authError(auth);
 
   const review = await prisma.review.findUnique({ where: { id } });
-  if (!review) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!review) return notFoundResponse('Review');
 
   // Team reviews: only admin can delete; individual: owner or admin
   if (review.isTeamReview && !auth.session.user.isAdmin) {
@@ -137,5 +134,5 @@ export async function DELETE(
   }
 
   await prisma.review.delete({ where: { id } });
-  return Response.json({ success: true }, { status: 200 });
+  return Response.json({ ok: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
 }

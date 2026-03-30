@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { pickDefined, notFoundResponse, hasAccess, forbiddenResponse, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
+import { parseBody, updateTaskSchema } from '@/lib/schemas';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
@@ -50,16 +51,15 @@ export async function PATCH(
   const canAccess = hasAccess(task.ownerId, auth.userId, auth.session.user.isAdmin) || task.assigneeId === auth.userId;
   if (!canAccess) return forbiddenResponse();
 
-  const body = await request.json();
+  const parsed = await parseBody(request, updateTaskSchema);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { status, dueDate, timeBlockStart, timeBlockEnd, isWinTheDay } = body;
 
   const data: any = pickDefined(body, [
     'title', 'description', 'priority', 'deliverable', 'estimatedMinutes',
     'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay',
   ]);
-  if (data.title !== undefined && typeof data.title === 'string' && data.title.trim().length < 3) {
-    return Response.json({ error: 'Task title must be at least 3 characters' }, { status: 400 });
-  }
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
   if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
   if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
@@ -160,7 +160,7 @@ export async function PATCH(
     }
   }
 
-  return Response.json(updated);
+  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(
@@ -192,5 +192,5 @@ export async function DELETE(
     await cascadeProgressUp(task.goalId);
   }
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }

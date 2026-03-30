@@ -38,7 +38,7 @@ describe('TaskEditor', () => {
 
   it('shows task type selector only in create mode', () => {
     renderWithProviders(<TaskEditor onSave={onSave} onClose={onClose} />);
-    expect(screen.getByText('Goal Stack')).toBeInTheDocument();
+    expect(screen.getByText('Improve')).toBeInTheDocument();
     expect(screen.getByText('React')).toBeInTheDocument();
     expect(screen.getByText('Maintenance')).toBeInTheDocument();
   });

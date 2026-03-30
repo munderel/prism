@@ -71,5 +71,5 @@ export async function PATCH(
     },
   });
 
-  return Response.json(updated);
+  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
 }

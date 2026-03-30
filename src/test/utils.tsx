@@ -2,6 +2,7 @@ import React from 'react';
 import { render, RenderOptions } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 import { LazyMotion, domAnimation } from 'framer-motion';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 // Import mocks to ensure they're registered
 import './mocks';
@@ -24,11 +25,13 @@ function createProviders(options: ProviderOptions = {}) {
 
   return function AllProviders({ children }: { children: React.ReactNode }) {
     return (
-      <SWRConfig value={{ fetcher, dedupingInterval: 0, provider: () => new Map() }}>
-        <LazyMotion features={domAnimation} strict>
-          {children}
-        </LazyMotion>
-      </SWRConfig>
+      <ToastProvider>
+        <SWRConfig value={{ fetcher, dedupingInterval: 0, provider: () => new Map() }}>
+          <LazyMotion features={domAnimation} strict>
+            {children}
+          </LazyMotion>
+        </SWRConfig>
+      </ToastProvider>
     );
   };
 }

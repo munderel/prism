@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   const { searchParams } = new URL(request.url);
-  const type = searchParams.get('type'); // WEEKLY, MONTHLY, QUARTERLY, YEARLY
+  const type = searchParams.get('type'); // WEEKLY, MONTHLY, YEARLY
   const from = searchParams.get('from');
   const to = searchParams.get('to');
   const format = searchParams.get('format') ?? 'json';

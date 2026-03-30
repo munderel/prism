@@ -107,7 +107,7 @@ describe('TaskCard', () => {
     });
     renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
     const dateEl = screen.getByText(new Date('2099-12-31T00:00:00.000Z').toLocaleDateString());
-    expect(dateEl).toHaveClass('text-gray-500');
+    expect(dateEl).toHaveClass('text-[var(--text-muted)]');
   });
 
   it('shows recurring icon when recurrenceRule is set', () => {

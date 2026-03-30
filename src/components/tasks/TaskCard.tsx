@@ -94,6 +94,14 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
           )}
         </div>
 
+        {/* Time block badge */}
+        {task.timeBlockStart && task.timeBlockEnd && (
+          <span className="text-xs rounded px-2 py-0.5 bg-indigo-500/15 text-indigo-400 flex-shrink-0">
+            {new Date(task.timeBlockStart).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
+            {new Date(task.timeBlockEnd).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          </span>
+        )}
+
         {/* Icons */}
         <div className="flex items-center gap-2">
           {task.goal && (

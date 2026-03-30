@@ -9,6 +9,7 @@ import { Building2, User, Users, Target, Filter, CalendarClock, Trash2, Calendar
 import { getLocalDateString } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
 import { GoalStackGuide } from '@/components/goals/GoalStackGuide';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const GoalStackTree = dynamic(
   () => import('@/components/goals/GoalStackTree').then((mod) => ({ default: mod.GoalStackTree })),
@@ -87,17 +88,24 @@ export default function GoalsPage() {
     );
     if (!confirmed) return;
 
+    const remaining = stacks.filter((s) => s.id !== stackId);
+    const prevSelectedId = selectedStackId;
+
+    // Optimistically remove from UI immediately
+    mutateStacks(remaining, { revalidate: false });
+    if (selectedStackId === stackId) {
+      setSelectedStackId(remaining.length > 0 ? remaining[0].id : null);
+    }
+
     const res = await fetch(`/api/stacks/${stackId}`, { method: 'DELETE' });
     if (res.ok) {
       toast.success(`Stack '${stackName}' deleted`);
-      if (selectedStackId === stackId) {
-        const remaining = stacks.filter((s) => s.id !== stackId);
-        setSelectedStackId(remaining.length > 0 ? remaining[0].id : null);
-      }
-      await mutateStacks();
     } else {
       const data = await res.json().catch(() => ({}));
       toast.error(data.error || 'Failed to delete stack');
+      // Revert optimistic update
+      await mutateStacks();
+      setSelectedStackId(prevSelectedId);
     }
   };
 
@@ -133,6 +141,7 @@ export default function GoalsPage() {
           <button
             onClick={() => setShowGuide(true)}
             className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
+            aria-label="Goal Stack Guide"
             title="Goal Stack Guide"
           >
             <HelpCircle className="h-5 w-5" />
@@ -231,6 +240,7 @@ export default function GoalsPage() {
                 e.stopPropagation();
                 handleDeleteStack(stack.id, stack.name);
               }}
+              aria-label={`Delete stack '${stack.name}'`}
               title={`Delete stack '${stack.name}'`}
               className="ml-1 rounded p-1 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all"
             >
@@ -342,13 +352,15 @@ export default function GoalsPage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.2 }}
         >
-          <GoalStackTree
-            stackId={selectedStack.id}
-            isCompanyStack={selectedStack.isCompany}
-            isAdmin={isAdmin}
-            showInProgress={showInProgress}
-            showDueToday={showDueToday}
-          />
+          <ErrorBoundary>
+            <GoalStackTree
+              stackId={selectedStack.id}
+              isCompanyStack={selectedStack.isCompany}
+              isAdmin={isAdmin}
+              showInProgress={showInProgress}
+              showDueToday={showDueToday}
+            />
+          </ErrorBoundary>
         </m.div>
       ) : (
         <div className="text-center py-16">
