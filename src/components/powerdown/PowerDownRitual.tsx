@@ -140,7 +140,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
 
   // Inline calendar state (now using CalendarSplitView)
-  const [userSettings, setUserSettings] = useState<{ workingHoursStart: string; workingHoursEnd: string } | null>(null);
+  const [_userSettings, setUserSettings] = useState<{ workingHoursStart: string; workingHoursEnd: string } | null>(null);
   const [unscheduledTomorrowItems, setUnscheduledTomorrowItems] = useState<any[]>([]);
 
   // Reschedule step state
