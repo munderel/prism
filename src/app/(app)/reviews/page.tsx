@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import { ClipboardCheck, Plus, Check, X, Users, User, Download, PlayCircle } from 'lucide-react';
@@ -64,6 +64,14 @@ const typeColors: Record<string, string> = {
 type TabValue = 'history' | 'team';
 
 export default function ReviewsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-400">Loading reviews...</div>}>
+      <ReviewsPageInner />
+    </Suspense>
+  );
+}
+
+function ReviewsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
