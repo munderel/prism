@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
@@ -15,6 +15,8 @@ interface TaskEditorProps {
 
 export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEditorProps) {
   const isEditing = !!task;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { dialogRef.current?.focus(); }, []);
 
   const [taskType, setTaskType] = useState(task?.taskType ?? (prefilledGoalId ? 'IMPROVE' : 'IMPROVE'));
   const [title, setTitle] = useState(task?.title ?? '');
@@ -49,27 +51,35 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   }, []);
 
   const fetchUsers = async () => {
-    const res = await fetch('/api/admin');
-    if (!res.ok) return;
-    const data = await res.json();
-    setUsers(Array.isArray(data) ? data : data.users ?? []);
+    try {
+      const res = await fetch('/api/admin');
+      if (!res.ok) { setError('Failed to load users'); return; }
+      const data = await res.json();
+      setUsers(Array.isArray(data) ? data : data.users ?? []);
+    } catch {
+      setError('Failed to load users');
+    }
   };
 
   const fetchGoals = async () => {
-    const stacksRes = await fetch('/api/stacks');
-    if (!stacksRes.ok) return;
-    const stacks = await stacksRes.json();
+    try {
+      const stacksRes = await fetch('/api/stacks');
+      if (!stacksRes.ok) { setError('Failed to load goal stacks'); return; }
+      const stacks = await stacksRes.json();
 
-    const results = await Promise.all(
-      stacks.map(async (stack: any) => {
-        const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
-        if (!goalsRes.ok) return [];
-        const data = await goalsRes.json();
-        return data.map((g: any) => ({ ...g, stackName: stack.name }));
-      })
-    );
-    const allGoals = results.flat();
-    setGoals(allGoals);
+      const results = await Promise.all(
+        stacks.map(async (stack: any) => {
+          const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
+          if (!goalsRes.ok) return [];
+          const data = await goalsRes.json();
+          return data.map((g: any) => ({ ...g, stackName: stack.name }));
+        })
+      );
+      const allGoals = results.flat();
+      setGoals(allGoals);
+    } catch {
+      setError('Failed to load goal stacks');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -135,6 +145,12 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
         onClick={onClose}
       >
         <m.div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="task-editor-title"
+          tabIndex={-1}
+          onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
@@ -142,10 +158,10 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            <h2 id="task-editor-title" className="text-lg font-semibold text-[var(--text-primary)]">
               {isEditing ? 'Edit Task' : 'New Task'}
             </h2>
-            <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <button aria-label="Close" title="Close" onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
               <X className="h-5 w-5" />
             </button>
           </div>

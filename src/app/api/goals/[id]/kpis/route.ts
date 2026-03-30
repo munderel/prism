@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import { validateKpiLevel, validateKpiLink } from '@/lib/goal-validation';
 
 export async function GET(
@@ -94,7 +95,9 @@ export async function POST(
     );
   }
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { name, type, unit, targetValue, linkedKpiId } = body;
 
   if (!name || !type) {

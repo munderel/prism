@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import { getNextReviewDate } from '@/lib/review-dates';
 import { nextDay } from 'date-fns';
 
@@ -11,6 +12,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const reviewType = searchParams.get('reviewType');
   const scope = searchParams.get('scope'); // 'team' | 'individual' | null (both)
+  const from = searchParams.get('from');
+  const to = searchParams.get('to');
 
   const conditions: any[] = [];
 
@@ -33,10 +36,23 @@ export async function GET(request: NextRequest) {
     conditions.push(individualWhere);
   }
 
+  // Date range filter
+  const dateFilter: any = {};
+  if (from) dateFilter.gte = new Date(from);
+  if (to) {
+    const toDate = new Date(to);
+    toDate.setDate(toDate.getDate() + 1);
+    dateFilter.lt = toDate;
+  }
+
+  const baseWhere: any = conditions.length === 1 ? conditions[0] : { OR: conditions };
+  if (from || to) baseWhere.scheduledDate = dateFilter;
+
   const reviews = await prisma.review.findMany({
-    where: conditions.length === 1 ? conditions[0] : { OR: conditions },
+    where: baseWhere,
     orderBy: { scheduledDate: 'desc' },
-    take: 50,
+    take: 100,
+    include: { answers: true },
   });
 
   return Response.json(reviews);
@@ -48,7 +64,7 @@ export async function GET(request: NextRequest) {
  */
 function computeMonthlyDate(rule: string, after: Date): Date {
   const year = after.getFullYear();
-  let month = after.getMonth();
+  const month = after.getMonth();
 
   const tryMonth = (m: number, y: number): Date | null => {
     if (rule === '15th') {
@@ -125,7 +141,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { reviewType, startDate, recurrenceDayOfWeek, isTeamReview, scheduleConfig } = body;
 
   if (!reviewType) {
@@ -215,14 +233,16 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return Response.json(review, { status: 201 });
+  return Response.json(review, { status: 201, headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { reviewType } = body;
 
   if (!reviewType) {
@@ -237,6 +257,6 @@ export async function DELETE(request: NextRequest) {
     },
   });
 
-  return Response.json({ success: true, deleted: result.count }, { status: 200 });
+  return Response.json({ ok: true, deleted: result.count }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
 }
 

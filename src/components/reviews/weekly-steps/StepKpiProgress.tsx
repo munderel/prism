@@ -27,9 +27,10 @@ interface StepKpiProgressProps {
   reviewId: string;
   initialNotes?: string;
   onNotesChange: (notes: string) => void;
+  isTeamReview?: boolean;
 }
 
-export function StepKpiProgress({ reviewId, initialNotes, onNotesChange }: StepKpiProgressProps) {
+export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChange, isTeamReview }: StepKpiProgressProps) {
   const [goalsWithKpis, setGoalsWithKpis] = useState<GoalWithKpis[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -49,46 +50,54 @@ export function StepKpiProgress({ reviewId, initialNotes, onNotesChange }: StepK
 
   const fetchGoalsWithKpis = async () => {
     try {
-      const stacksRes = await fetch('/api/stacks');
-      if (!stacksRes.ok) {
-        setLoading(false);
-        return;
-      }
-      const stacks = await stacksRes.json();
-
       const result: GoalWithKpis[] = [];
 
-      for (const stack of stacks) {
-        const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
-        if (!goalsRes.ok) continue;
-        const goals = await goalsRes.json();
+      if (isTeamReview) {
+        // Fetch company goals directly
+        const goalsRes = await fetch('/api/goals?isCompany=true');
+        if (!goalsRes.ok) { setLoading(false); return; }
+        const goalsRaw = await goalsRes.json();
+        const goals = Array.isArray(goalsRaw) ? goalsRaw : [];
 
         for (const goal of goals) {
           if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') continue;
           if (goal._count?.kpis === 0) continue;
-
-          // Fetch KPIs for this goal
           const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
           if (!kpisRes.ok) continue;
           const kpisData = await kpisRes.json();
           const kpis = kpisData.kpis ?? kpisData;
-
           if (kpis.length > 0) {
-            result.push({
-              id: goal.id,
-              title: goal.title,
-              level: goal.level,
-              status: goal.status,
-              progressPct: goal.progressPct,
-              kpis,
-            });
+            result.push({ id: goal.id, title: goal.title, level: goal.level, status: goal.status, progressPct: goal.progressPct, kpis });
+          }
+        }
+      } else {
+        const stacksRes = await fetch('/api/stacks');
+        if (!stacksRes.ok) { setLoading(false); return; }
+        const stacks = await stacksRes.json();
+
+        for (const stack of stacks) {
+          const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
+          if (!goalsRes.ok) continue;
+          const goalsRaw = await goalsRes.json();
+          const goals = Array.isArray(goalsRaw) ? goalsRaw : [];
+
+          for (const goal of goals) {
+            if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') continue;
+            if (goal._count?.kpis === 0) continue;
+            const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
+            if (!kpisRes.ok) continue;
+            const kpisData = await kpisRes.json();
+            const kpis = kpisData.kpis ?? kpisData;
+            if (kpis.length > 0) {
+              result.push({ id: goal.id, title: goal.title, level: goal.level, status: goal.status, progressPct: goal.progressPct, kpis });
+            }
           }
         }
       }
 
       setGoalsWithKpis(result);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to update KPI data:', err);
     }
     setLoading(false);
   };
@@ -108,8 +117,8 @@ export function StepKpiProgress({ reviewId, initialNotes, onNotesChange }: StepK
           kpis: g.kpis.map((k) => (k.id === kpiId ? { ...k, actualValue } : k)),
         }))
       );
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to update KPI data:', err);
     }
     setSaving(null);
   };
@@ -126,8 +135,8 @@ export function StepKpiProgress({ reviewId, initialNotes, onNotesChange }: StepK
       setGoalsWithKpis((prev) =>
         prev.map((g) => (g.id === goalId ? { ...g, status: 'COMPLETED', progressPct: 100 } : g))
       );
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to update KPI data:', err);
     }
     setSaving(null);
   };

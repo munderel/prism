@@ -1,6 +1,28 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireTaskAccess, authError } from '@/lib/auth-guard';
+import { parseBody, createAttachmentSchema } from '@/lib/schemas';
+import { validateFileUrl } from '@/lib/url-validation';
+
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+  'video/mp4',
+  'audio/mpeg',
+  'application/zip',
+]);
 
 export async function GET(
   _request: NextRequest,
@@ -26,21 +48,27 @@ export async function POST(
   const auth = await requireTaskAccess(taskId);
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
-  const { fileName, fileUrl, fileSize, mimeType } = body;
+  const parsed = await parseBody(request, createAttachmentSchema);
+  if ('error' in parsed) return parsed.error;
+  const { fileName, fileUrl, fileSize, mimeType } = parsed.data;
 
-  if (!fileName || !fileUrl || !fileSize || !mimeType) {
+  if (!ALLOWED_MIME_TYPES.has(mimeType)) {
     return Response.json(
-      { error: 'fileName, fileUrl, fileSize, and mimeType are required' },
+      { error: `Unsupported file type: ${mimeType}` },
       { status: 400 }
     );
+  }
+
+  const urlResult = validateFileUrl(fileUrl);
+  if ('error' in urlResult) {
+    return Response.json({ error: urlResult.error }, { status: 400 });
   }
 
   const attachment = await prisma.taskAttachment.create({
     data: {
       taskId,
       fileName,
-      fileUrl,
+      fileUrl: urlResult.url,
       fileSize,
       mimeType,
     },

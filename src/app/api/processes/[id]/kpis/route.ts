@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
 
 async function authorizeProcessAccess(processId: string, userId: string, isAdmin: boolean) {
   const process = await prisma.process.findUnique({
@@ -56,7 +56,9 @@ export async function POST(
   if (access.error === 'not_found') return notFoundResponse('Process');
   if (access.error === 'forbidden') return forbiddenResponse();
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { name, unit, targetValue, goalId } = body;
 
   if (!name) {

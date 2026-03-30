@@ -47,19 +47,15 @@ const tabs = [
 
 export function GoalStackGuide({ isOpen, onClose }: GoalStackGuideProps) {
   const [activeTab, setActiveTab] = useState(0);
-  const [dontShowAgain, setDontShowAgain] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setActiveTab(0);
-      setDontShowAgain(false);
     }
   }, [isOpen]);
 
   const handleClose = () => {
-    if (dontShowAgain) {
-      localStorage.setItem(STORAGE_KEY, 'true');
-    }
+    localStorage.setItem(STORAGE_KEY, 'true');
     onClose();
   };
 
@@ -127,16 +123,7 @@ export function GoalStackGuide({ isOpen, onClose }: GoalStackGuideProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-[var(--border-color)] px-6 py-4">
-          <label className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
-            <input
-              type="checkbox"
-              checked={dontShowAgain}
-              onChange={(e) => setDontShowAgain(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            Don&apos;t show again
-          </label>
+        <div className="flex items-center justify-end border-t border-[var(--border-color)] px-6 py-4">
           <button
             onClick={handleClose}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"

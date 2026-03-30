@@ -33,14 +33,22 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
   const fetchLastWeekTasks = async () => {
     try {
       const now = new Date();
-      const endDate = new Date(now);
-      // Set to start of today
-      endDate.setHours(0, 0, 0, 0);
-      const startDate = new Date(endDate);
-      startDate.setDate(startDate.getDate() - 7);
+      // Align to Mon-Sun week boundaries (matching weekly goal cycle)
+      const dayOfWeek = now.getDay();
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const thisMonday = new Date(now);
+      thisMonday.setDate(now.getDate() + mondayOffset);
+      thisMonday.setHours(0, 0, 0, 0);
+
+      const lastMonday = new Date(thisMonday);
+      lastMonday.setDate(thisMonday.getDate() - 7);
+
+      const lastSunday = new Date(thisMonday);
+      lastSunday.setDate(thisMonday.getDate() - 1);
+      lastSunday.setHours(23, 59, 59, 999);
 
       const res = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}`
+        `/api/tasks?startDate=${getLocalDateString(lastMonday)}&endDate=${getLocalDateString(lastSunday)}`
       );
       if (res.ok) {
         const data = await res.json();

@@ -143,7 +143,7 @@ export function computeDerailInfo(
   let daysUntilDerail: number | null = null;
   if (status !== 'derailing' && expectedPerDay > 0) {
     // Simulate adding zero-days until rate < derailThreshold
-    let simulated = actualCompleted;
+    const simulated = actualCompleted;
     let simWindow = windowDays;
     let extraDays = 0;
     while (extraDays < 60) {

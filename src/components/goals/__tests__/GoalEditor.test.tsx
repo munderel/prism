@@ -30,7 +30,7 @@ describe('GoalEditor', () => {
 
   it('defaults to HHG level when no parent is provided', () => {
     renderWithProviders(<GoalEditor stackId={stackId} onSave={onSave} onClose={onClose} />);
-    expect(screen.getByText('HHG')).toBeInTheDocument();
+    expect(screen.getAllByText('High Hard Goal').length).toBeGreaterThanOrEqual(1);
   });
 
   it('derives child level from parent goal', () => {

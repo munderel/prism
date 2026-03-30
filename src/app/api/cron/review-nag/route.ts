@@ -8,36 +8,41 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Find overdue reviews (scheduled before today, not completed)
-  const now = new Date();
+  try {
+    // Find overdue reviews (scheduled before today, not completed)
+    const now = new Date();
 
-  const overdueReviews = await prisma.review.findMany({
-    where: {
-      scheduledDate: { lt: now },
-      completedAt: null,
-    },
-    include: {
-      user: { select: { id: true } },
-    },
-  });
-
-  let notified = 0;
-
-  for (const review of overdueReviews) {
-    const prefs = await prisma.notificationPreference.findUnique({
-      where: { userId: review.user.id },
+    const overdueReviews = await prisma.review.findMany({
+      where: {
+        scheduledDate: { lt: now },
+        completedAt: null,
+      },
+      include: {
+        user: { select: { id: true } },
+      },
     });
 
-    if (!prefs || prefs.reviewNags) {
-      await notifyUser(
-        review.user.id,
-        'Review Overdue',
-        `Your ${review.reviewType} review (due ${new Date(review.scheduledDate).toLocaleDateString()}) is overdue. Complete it now.`,
-        '/reviews'
-      );
-      notified++;
-    }
-  }
+    let notified = 0;
 
-  return Response.json({ ok: true, overdue: overdueReviews.length, notified });
+    for (const review of overdueReviews) {
+      const prefs = await prisma.notificationPreference.findUnique({
+        where: { userId: review.user.id },
+      });
+
+      if (!prefs || prefs.reviewNags) {
+        await notifyUser(
+          review.user.id,
+          'Review Overdue',
+          `Your ${review.reviewType} review (due ${new Date(review.scheduledDate).toLocaleDateString()}) is overdue. Complete it now.`,
+          '/reviews'
+        );
+        notified++;
+      }
+    }
+
+    return Response.json({ ok: true, overdue: overdueReviews.length, notified });
+  } catch (error) {
+    console.error('[cron/review-nag] Unhandled error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }

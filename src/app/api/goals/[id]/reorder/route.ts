@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import { validateGoalLevel } from '@/lib/goal-validation';
 
 export async function PATCH(
@@ -27,7 +28,9 @@ export async function PATCH(
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { sortOrder, parentId } = body;
 
   if (sortOrder === undefined && parentId === undefined) {

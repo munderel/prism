@@ -4,13 +4,15 @@ import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import { prisma } from './prisma';
+import bcrypt from 'bcryptjs';
 
 // Dev-only credentials provider — passwordless email login for local development.
 // Gated behind NODE_ENV to prevent accidental exposure in production.
 const devProvider =
-  process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEV_LOGIN === 'true'
+  process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEV_LOGIN === 'true'
     ? [
         CredentialsProvider({
+          id: 'dev-login',
           name: 'Dev Login',
           credentials: {
             email: { label: 'Email', type: 'email', placeholder: 'admin@upwhiten.com' },
@@ -28,12 +30,117 @@ const devProvider =
       ]
     : [];
 
+// Production credentials provider — email + password with 2FA support
+const passwordProvider = CredentialsProvider({
+  id: 'password-login',
+  name: 'Password',
+  credentials: {
+    email: { label: 'Email', type: 'email' },
+    password: { label: 'Password', type: 'password' },
+    totpCode: { label: '2FA Code', type: 'text' },
+  },
+  async authorize(credentials) {
+    if (!credentials?.email || !credentials?.password) return null;
+
+    const normalizedEmail = credentials.email.trim().toLowerCase();
+
+    // Rate limiting: check recent failed attempts for this email
+    const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+    const MAX_FAILURES_IN_WINDOW = 5;
+    const LOCKOUT_THRESHOLD = 10;
+    const windowStart = new Date(Date.now() - RATE_WINDOW_MS);
+
+    const recentFailures = await prisma.loginAttempt.count({
+      where: {
+        email: normalizedEmail,
+        success: false,
+        createdAt: { gte: windowStart },
+      },
+    });
+
+    if (recentFailures >= MAX_FAILURES_IN_WINDOW) {
+      return null; // Too many recent failures — deny without checking password
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user || !user.passwordHash) return null;
+    if (user.isLockedOut) return null;
+
+    const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
+    if (!isValid) {
+      // Record failed attempt
+      await prisma.loginAttempt.create({
+        data: { email: normalizedEmail, success: false },
+      });
+
+      // Check for lockout: count consecutive failures since last success
+      const lastSuccess = await prisma.loginAttempt.findFirst({
+        where: { email: normalizedEmail, success: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      const consecutiveFailures = await prisma.loginAttempt.count({
+        where: {
+          email: normalizedEmail,
+          success: false,
+          createdAt: { gte: lastSuccess?.createdAt ?? new Date(0) },
+        },
+      });
+      if (consecutiveFailures >= LOCKOUT_THRESHOLD) {
+        await prisma.user.update({
+          where: { email: normalizedEmail },
+          data: { isLockedOut: true },
+        });
+      }
+
+      return null;
+    }
+
+    // Record successful login
+    await prisma.loginAttempt.create({
+      data: { email: normalizedEmail, success: true },
+    });
+
+    // Check 2FA if enabled
+    if (user.is2FAEnabled && user.totpSecret) {
+      if (!credentials.totpCode) {
+        // Signal to the frontend that 2FA is required
+        throw new Error('2FA_REQUIRED');
+      }
+      const { verifySync } = await import('otplib');
+      const isValidTotp = verifySync({
+        token: credentials.totpCode,
+        secret: user.totpSecret,
+      });
+      if (!isValidTotp) {
+        throw new Error('INVALID_2FA_CODE');
+      }
+    }
+
+    // Check if company enforces 2FA and user hasn't set it up yet
+    const companyAuth = await prisma.companyAuthSettings.findFirst();
+    if (companyAuth?.enforce2FA && !user.is2FAEnabled) {
+      throw new Error('2FA_SETUP_REQUIRED');
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      isAdmin: user.isAdmin,
+    };
+  },
+});
+
 export const authOptions: NextAuthOptions = {
   // PrismaAdapter is kept for Google OAuth account linking and DB user management.
   // With JWT strategy, sessions are stored in the token, not the DB Session table.
   adapter: PrismaAdapter(prisma),
   providers: [
     ...devProvider,
+    passwordProvider,
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
@@ -55,10 +162,8 @@ export const authOptions: NextAuthOptions = {
         token.adminCheckedAt = Date.now();
       }
 
-      // Re-fetch isAdmin from DB every 5 minutes to catch role changes.
-      // This eliminates a DB query on every authenticated request while keeping
-      // role updates propagating within a reasonable window for an internal tool.
-      const ADMIN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+      // Re-fetch isAdmin and lockout status from DB every 5 minutes
+      const ADMIN_CACHE_TTL = 5 * 60 * 1000;
       if (
         token.id &&
         (!token.adminCheckedAt ||
@@ -66,8 +171,12 @@ export const authOptions: NextAuthOptions = {
       ) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { isAdmin: true },
+          select: { isAdmin: true, isLockedOut: true },
         });
+        if (dbUser?.isLockedOut) {
+          // Invalidate the session for locked out users
+          return { ...token, isLockedOut: true };
+        }
         token.isAdmin = dbUser?.isAdmin ?? false;
         token.adminCheckedAt = Date.now();
       }
@@ -75,6 +184,10 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
+      if (token.isLockedOut) {
+        // Return empty session to force re-login
+        return { ...session, user: undefined };
+      }
       if (session.user) {
         session.user.id = token.id;
         session.user.isAdmin = token.isAdmin ?? false;
@@ -82,10 +195,23 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ account, user }) {
+      // For credentials provider, lockout was already checked in authorize()
+      if (account?.provider === 'password-login') return true;
+
+      // Check lockout status for OAuth providers
+      const dbUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { isLockedOut: true },
+      });
+      if (dbUser?.isLockedOut) return false;
+
       // Store Google refresh token on sign in
       if (account?.provider === 'google' && account.refresh_token) {
-        if (process.env.NODE_ENV === 'production' && !process.env.TOKEN_ENCRYPTION_KEY) {
-          console.error('[auth] TOKEN_ENCRYPTION_KEY is not set — refresh tokens will be stored unencrypted');
+        if (!process.env.TOKEN_ENCRYPTION_KEY) {
+          if (process.env.NODE_ENV === 'production') {
+            throw new Error('[auth] TOKEN_ENCRYPTION_KEY is required in production. Refusing to store unencrypted refresh tokens.');
+          }
+          console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — tokens stored unencrypted (dev only)');
         }
         await prisma.user.update({
           where: { id: user.id },
@@ -100,7 +226,7 @@ export const authOptions: NextAuthOptions = {
         });
       }
 
-      // Auto-promote first user to admin (uses transaction to prevent race condition)
+      // Auto-promote first user to admin
       if (account?.provider === 'google') {
         await prisma.$transaction(async (tx) => {
           const userCount = await tx.user.count();
@@ -113,7 +239,7 @@ export const authOptions: NextAuthOptions = {
         });
       }
 
-      // Check for pending invitation and apply role (only promote, never demote)
+      // Check for pending invitation and apply role
       if (account?.provider === 'google' && user.email) {
         const invitation = await prisma.invitation.findFirst({
           where: {
@@ -123,7 +249,6 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (invitation) {
-          // Only promote to admin via invitation; never demote an existing admin
           if (invitation.role === 'admin') {
             await prisma.user.update({
               where: { id: user.id },
@@ -149,5 +274,6 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days — persistent sessions
   },
 };

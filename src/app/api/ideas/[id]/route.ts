@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIceScore } from '@/lib/scoring';
-import { pickDefined } from '@/lib/api-helpers';
+import { pickDefined, validateIceScores, notFoundResponse, USER_SUMMARY_SELECT, safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -15,7 +15,7 @@ export async function GET(
   const idea = await prisma.idea.findUnique({
     where: { id },
     include: {
-      author: { select: { id: true, name: true, image: true } },
+      author: { select: USER_SUMMARY_SELECT },
       process: { select: { id: true, title: true } },
       task: { select: { id: true, title: true, status: true } },
       attachments: {
@@ -24,9 +24,7 @@ export async function GET(
     },
   });
 
-  if (!idea) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!idea) return notFoundResponse('Idea');
 
   // Non-admins can only see their own ideas
   if (idea.authorId !== auth.userId && !auth.session.user.isAdmin) {
@@ -45,9 +43,7 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const idea = await prisma.idea.findUnique({ where: { id } });
-  if (!idea) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!idea) return notFoundResponse('Idea');
 
   // Author can edit only if SUBMITTED; admins can always edit
   const isAuthor = idea.authorId === auth.userId;
@@ -57,7 +53,9 @@ export async function PATCH(
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { confidenceScore, easeScore, impactScore, status } = body;
 
   const data: any = pickDefined(body, ['title', 'description']);
@@ -69,11 +67,9 @@ export async function PATCH(
   const newEase = easeScore ?? idea.easeScore;
 
   if (confidenceScore !== undefined || easeScore !== undefined || impactScore !== undefined) {
-    // Validate scores are integers 1-5
-    for (const [name, value] of Object.entries({ impactScore: newImpact, confidenceScore: newConfidence, easeScore: newEase })) {
-      if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 5) {
-        return Response.json({ error: `${name} must be an integer between 1 and 5` }, { status: 400 });
-      }
+    const scoreError = validateIceScores({ impactScore: newImpact, confidenceScore: newConfidence, easeScore: newEase });
+    if (scoreError) {
+      return Response.json({ error: scoreError }, { status: 400 });
     }
 
     if (confidenceScore !== undefined) data.confidenceScore = confidenceScore;
@@ -95,7 +91,7 @@ export async function PATCH(
     where: { id },
     data,
     include: {
-      author: { select: { id: true, name: true, image: true } },
+      author: { select: USER_SUMMARY_SELECT },
       process: { select: { id: true, title: true } },
     },
   });
@@ -112,9 +108,7 @@ export async function DELETE(
   if ('error' in auth) return authError(auth);
 
   const idea = await prisma.idea.findUnique({ where: { id } });
-  if (!idea) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!idea) return notFoundResponse('Idea');
 
   // Author can delete only if SUBMITTED; admins can always delete
   const isAuthor = idea.authorId === auth.userId;

@@ -1,4 +1,5 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import { openrouter } from '@/lib/openrouter';
 import { courseBreakdownPrompt } from '@/lib/ai-prompts';
 import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
@@ -29,12 +30,9 @@ export async function POST(request: Request) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
 
   const { title, syllabus, targetCompletionDate, goalId } = body;
 

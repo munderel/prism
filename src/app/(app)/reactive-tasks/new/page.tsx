@@ -64,8 +64,9 @@ export default function NewReactiveTaskPage() {
           const data = await res.json();
           setUsers(data);
         }
-      } catch {
-        // Non-admins may not have access; silently fail
+      } catch (err) {
+        // Non-admins may not have access to admin endpoint
+        console.error('Failed to fetch users:', err);
       } finally {
         setUsersLoading(false);
       }

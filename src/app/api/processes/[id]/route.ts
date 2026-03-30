@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -43,7 +44,9 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
 
   const process = await prisma.process.findUnique({ where: { id } });
   if (!process) {
@@ -73,7 +76,7 @@ export async function PATCH(
         ...(defaultDurationMinutes !== undefined && { defaultDurationMinutes }),
       },
     });
-    return Response.json(updated);
+    return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
   }
 
   // Non-admin: can only update delegateId and delegateUntil on their own processes
@@ -90,7 +93,7 @@ export async function PATCH(
     },
   });
 
-  return Response.json(updated);
+  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(
@@ -104,5 +107,5 @@ export async function DELETE(
 
   await prisma.process.delete({ where: { id } });
 
-  return Response.json({ success: true });
+  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }

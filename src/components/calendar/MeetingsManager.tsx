@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Pencil, Trash2, Users, Clock } from 'lucide-react';
+import { X, Plus, Pencil, Trash2, Users, Clock, CalendarCheck } from 'lucide-react';
 import { getLocalDateString } from '@/lib/date-utils';
 
 interface Meeting {
@@ -54,16 +54,45 @@ const CADENCE_LABEL: Record<string, string> = {
   YEARLY: 'Yearly',
 };
 
+interface TeamReview {
+  id: string;
+  reviewType: string;
+  dayOfWeek: number;
+  time: string;
+  duration: number;
+  isActive: boolean;
+  createdBy: { id: string; name: string | null; email: string };
+}
+
+const REVIEW_TYPE_OPTIONS = [
+  { value: 'WEEKLY', label: 'Weekly' },
+  { value: 'MONTHLY', label: 'Monthly' },
+  { value: 'YEARLY', label: 'Yearly' },
+];
+
 interface MeetingsManagerProps {
   open: boolean;
   onClose: () => void;
+  isAdmin?: boolean;
 }
 
-export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
+export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsManagerProps) {
+  const [activeTab, setActiveTab] = useState<'meetings' | 'team-reviews'>('meetings');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Team Reviews state
+  const [teamReviews, setTeamReviews] = useState<TeamReview[]>([]);
+  const [loadingTeamReviews, setLoadingTeamReviews] = useState(false);
+  const [showTeamReviewForm, setShowTeamReviewForm] = useState(false);
+  const [editingTeamReviewId, setEditingTeamReviewId] = useState<string | null>(null);
+  const [trReviewType, setTrReviewType] = useState('WEEKLY');
+  const [trDayOfWeek, setTrDayOfWeek] = useState(1);
+  const [trTime, setTrTime] = useState('10:00');
+  const [trDuration, setTrDuration] = useState(60);
+  const [savingTeamReview, setSavingTeamReview] = useState(false);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -88,9 +117,21 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
     setLoading(false);
   }, []);
 
+  const fetchTeamReviews = useCallback(async () => {
+    setLoadingTeamReviews(true);
+    const res = await fetch('/api/team-reviews');
+    if (res.ok) {
+      setTeamReviews(await res.json());
+    }
+    setLoadingTeamReviews(false);
+  }, []);
+
   useEffect(() => {
-    if (open) fetchMeetings();
-  }, [open, fetchMeetings]);
+    if (open) {
+      fetchMeetings();
+      if (isAdmin) fetchTeamReviews();
+    }
+  }, [open, fetchMeetings, fetchTeamReviews, isAdmin]);
 
   // Debounced user search
   useEffect(() => {
@@ -113,6 +154,52 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
 
     return () => clearTimeout(timer);
   }, [userSearch, selectedAttendees]);
+
+  const resetTeamReviewForm = () => {
+    setTrReviewType('WEEKLY');
+    setTrDayOfWeek(1);
+    setTrTime('10:00');
+    setTrDuration(60);
+    setEditingTeamReviewId(null);
+    setShowTeamReviewForm(false);
+  };
+
+  const startEditTeamReview = (tr: TeamReview) => {
+    setTrReviewType(tr.reviewType);
+    setTrDayOfWeek(tr.dayOfWeek);
+    setTrTime(tr.time);
+    setTrDuration(tr.duration);
+    setEditingTeamReviewId(tr.id);
+    setShowTeamReviewForm(true);
+  };
+
+  const handleTeamReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingTeamReview(true);
+    const payload = { reviewType: trReviewType, dayOfWeek: trDayOfWeek, time: trTime, duration: trDuration };
+    if (editingTeamReviewId) {
+      await fetch(`/api/team-reviews/${editingTeamReviewId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await fetch('/api/team-reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    }
+    setSavingTeamReview(false);
+    resetTeamReviewForm();
+    fetchTeamReviews();
+  };
+
+  const handleDeleteTeamReview = async (id: string) => {
+    if (!confirm('Remove this team review from the calendar?')) return;
+    await fetch(`/api/team-reviews/${id}`, { method: 'DELETE' });
+    fetchTeamReviews();
+  };
 
   const resetForm = () => {
     setTitle('');
@@ -211,12 +298,161 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="text-xl font-bold text-[var(--text-primary)] mb-6 flex items-center gap-2">
+        <h2 className="text-xl font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
           <Users className="h-5 w-5 text-emerald-400" />
           Manage Meetings
         </h2>
 
+        {/* Tabs (admin only sees team reviews tab) */}
+        {isAdmin && (
+          <div className="flex gap-2 mb-6 border-b border-[var(--border-color)]">
+            <button
+              onClick={() => setActiveTab('meetings')}
+              className={`pb-2 px-1 text-sm font-medium transition-colors ${activeTab === 'meetings' ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
+            >
+              Meetings
+            </button>
+            <button
+              onClick={() => setActiveTab('team-reviews')}
+              className={`pb-2 px-1 text-sm font-medium transition-colors flex items-center gap-1 ${activeTab === 'team-reviews' ? 'text-orange-400 border-b-2 border-orange-400' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
+            >
+              <CalendarCheck className="h-4 w-4" />
+              Team Reviews
+            </button>
+          </div>
+        )}
+
+        {/* Team Reviews tab */}
+        {activeTab === 'team-reviews' && isAdmin && (
+          <div>
+            {loadingTeamReviews ? (
+              <p className="text-[var(--text-muted)] text-sm">Loading...</p>
+            ) : (
+              <div className="space-y-3 mb-6">
+                {teamReviews.length === 0 && !showTeamReviewForm && (
+                  <p className="text-[var(--text-muted)] text-sm text-center py-4">
+                    No team reviews scheduled. Create one to show it on everyone&apos;s calendar.
+                  </p>
+                )}
+                {teamReviews.map((tr) => (
+                  <div key={tr.id} className="flex items-center justify-between glass-panel p-4">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-semibold text-orange-400 truncate">TEAM REVIEW</h3>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-[var(--text-muted)]">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {tr.time} · {tr.duration}min
+                        </span>
+                        <span className="rounded bg-orange-900/40 px-2 py-0.5 text-orange-400">
+                          {REVIEW_TYPE_OPTIONS.find((o) => o.value === tr.reviewType)?.label}
+                        </span>
+                        <span>{DAY_OPTIONS.find((d) => d.value === tr.dayOfWeek)?.label}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4">
+                      <button
+                        onClick={() => startEditTeamReview(tr)}
+                        className="rounded-lg p-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-raised)] transition-colors"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTeamReview(tr.id)}
+                        className="rounded-lg p-2 text-[var(--text-muted)] hover:text-red-400 hover:bg-[var(--surface-raised)] transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showTeamReviewForm ? (
+              <form onSubmit={handleTeamReviewSubmit} className="space-y-4 glass-panel p-4">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  {editingTeamReviewId ? 'Edit Team Review' : 'New Team Review'}
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Review Type</label>
+                    <select
+                      value={trReviewType}
+                      onChange={(e) => setTrReviewType(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-orange-500 focus:outline-none"
+                    >
+                      {REVIEW_TYPE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
+                    <select
+                      value={trDayOfWeek}
+                      onChange={(e) => setTrDayOfWeek(Number(e.target.value))}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-orange-500 focus:outline-none"
+                    >
+                      {DAY_OPTIONS.map((d) => (
+                        <option key={d.value} value={d.value}>{d.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Time</label>
+                    <input
+                      type="time"
+                      value={trTime}
+                      onChange={(e) => setTrTime(e.target.value)}
+                      required
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-orange-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (min)</label>
+                    <input
+                      type="number"
+                      min={15}
+                      max={480}
+                      value={trDuration}
+                      onChange={(e) => setTrDuration(Number(e.target.value))}
+                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-orange-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="submit"
+                    disabled={savingTeamReview}
+                    className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50 transition-colors"
+                  >
+                    {savingTeamReview ? 'Saving...' : editingTeamReviewId ? 'Update' : 'Create'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetTeamReviewForm}
+                    className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--glass-border)] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                onClick={() => setShowTeamReviewForm(true)}
+                className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                New Team Review
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Meeting list */}
+        {activeTab === 'meetings' && (<>
         {loading ? (
           <p className="text-[var(--text-muted)] text-sm">Loading meetings...</p>
         ) : (
@@ -454,6 +690,7 @@ export function MeetingsManager({ open, onClose }: MeetingsManagerProps) {
             New Meeting
           </button>
         )}
+        </>)}
       </div>
     </div>
   );

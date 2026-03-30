@@ -1,8 +1,15 @@
+import React from 'react';
 import { vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { renderWithProviders, userEvent, createMockFetch } from '@/test/utils';
+import { renderWithProviders, userEvent } from '@/test/utils';
 import { createStack } from '@/test/fixtures';
 import GoalsPage from '../page';
+
+// Mock useToast
+vi.mock('@/components/ui/ToastProvider', () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  ToastProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
 // Mock dynamic import of GoalStackTree
 vi.mock('@/components/goals/GoalStackTree', () => ({
@@ -101,7 +108,7 @@ describe('GoalsPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText('Goal Stack')).toBeInTheDocument();
+      expect(screen.queryAllByText('Goal Stack').length).toBeGreaterThan(0);
     });
   });
 });

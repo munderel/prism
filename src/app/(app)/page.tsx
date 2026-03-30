@@ -5,7 +5,8 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import { Focus, AlertTriangle, Lightbulb, Moon } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import { getLocalDateString, toLocalDateKey } from '@/lib/date-utils';
+import { getLocalDateString, toLocalDateKey, formatDisplayDate } from '@/lib/date-utils';
+import { useToast } from '@/components/ui/ToastProvider';
 import { TaskCard } from '@/components/tasks/TaskCard';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
@@ -18,6 +19,64 @@ import { WeeklyHourTarget } from '@/components/calendar/WeeklyHourTarget';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import type { DerailInfo } from '@/lib/derail-detection';
 
+// --- Dashboard-specific interfaces based on API response shapes ---
+
+/** Task as returned by GET /api/tasks (Prisma Task + included relations) */
+interface DashboardTask {
+  id: string;
+  ownerId: string;
+  goalId: string | null;
+  processId: string | null;
+  taskType: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'REVIEW';
+  title: string;
+  description: string | null;
+  deliverable: string | null;
+  status: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'DROPPED';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  dueDate: string | null;
+  recurrenceRule: string | null;
+  calendarEventId: string | null;
+  timeBlockStart: string | null;
+  timeBlockEnd: string | null;
+  estimatedMinutes: number;
+  preferredTimeStart: string | null;
+  preferredTimeEnd: string | null;
+  isPinned: boolean;
+  isAutoScheduled: boolean;
+  isWinTheDay: boolean;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  rescheduledTo: string | null;
+  createdAt: string;
+  updatedAt: string;
+  aimInstanceId: string | null;
+  assigneeId: string | null;
+  goal?: { id: string; title: string; level: string; stack?: { name: string } } | null;
+  processExecution?: { process: { title: string } } | null;
+  _count?: { comments: number };
+}
+
+/** AIM instance as returned by GET /api/aims/instances (Prisma AimInstance + included relations) */
+interface DashboardAimInstance {
+  id: string;
+  userId: string;
+  aimCategoryId: string;
+  scheduledDate: string;
+  timeBlockStart: string | null;
+  timeBlockEnd: string | null;
+  isGroupOpen: boolean;
+  status: string;
+  completedAt: string | null;
+  activityNote: string | null;
+  selectedActivity: string | null;
+  phaseAtCompletion: string | null;
+  pointsEarned: number;
+  createdAt: string;
+  aimCategory: { id: string; name: string; [key: string]: unknown };
+  user?: { id: string; name: string | null; image: string | null };
+}
+
 interface DerailBatchResponse {
   [aimCategoryId: string]: {
     derailInfo: DerailInfo;
@@ -29,9 +88,10 @@ interface DerailBatchResponse {
 const FOCUS_MODE_KEY = 'prism-focus-mode';
 
 export default function DashboardPage() {
+  const toast = useToast();
   const { data: session, status: sessionStatus } = useSession();
   const [today, setToday] = useState(() => getLocalDateString());
-  const [editingTask, setEditingTask] = useState<any | 'new' | null>(null);
+  const [editingTask, setEditingTask] = useState<DashboardTask | 'new' | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily');
@@ -79,13 +139,13 @@ export default function DashboardPage() {
   const taskKey = viewMode === 'weekly'
     ? `/api/tasks?startDate=${weekRange.start}&endDate=${weekRange.end}`
     : `/api/tasks?date=${today}&includeUnscheduled=true`;
-  const { data: tasks, mutate, isLoading: tasksLoading } = useSWR(taskKey, { revalidateOnFocus: true });
-  const list = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
+  const { data: tasks, mutate, isLoading: tasksLoading } = useSWR<DashboardTask[]>(taskKey, { revalidateOnFocus: true });
+  const list: DashboardTask[] = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
   // Group tasks by day for weekly view
   const weeklyGrouped = useMemo(() => {
     if (viewMode !== 'weekly') return {};
-    const groups: Record<string, any[]> = {};
+    const groups: Record<string, DashboardTask[]> = {};
     // Initialize all 7 days
     const mon = new Date(weekRange.start + 'T00:00:00');
     for (let i = 0; i < 7; i++) {
@@ -109,15 +169,15 @@ export default function DashboardPage() {
   const aimSWRKey = viewMode === 'weekly'
     ? `/api/aims/instances?start=${weekRange.start}T00:00:00&end=${weekRange.end}T23:59:59`
     : `/api/aims/instances?start=${today}T00:00:00&end=${today}T23:59:59`;
-  const { data: aimInstances, mutate: mutateAims } = useSWR(aimSWRKey);
-  const aimList = useMemo(() => (Array.isArray(aimInstances) ? aimInstances : []), [aimInstances]);
+  const { data: aimInstances, mutate: mutateAims } = useSWR<DashboardAimInstance[]>(aimSWRKey);
+  const aimList: DashboardAimInstance[] = useMemo(() => (Array.isArray(aimInstances) ? aimInstances : []), [aimInstances]);
 
   // Batch-fetch derail info
   const { data: derailBatch } = useSWR<DerailBatchResponse>('/api/aims/derail-batch?days=14');
 
   // Build timeline blocks from tasks + AIMs
   const timelineBlocks = useMemo(() => {
-    const blocks: Array<{ id: string; title: string; start: string; end: string; type: string }> = [];
+    const blocks: Array<{ id: string; title: string; start: string; end: string; type: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'AIM' | 'REVIEW' | 'GOOGLE_CAL' | 'POWER_DOWN' | 'MEETING' }> = [];
 
     for (const t of list) {
       if (t.timeBlockStart && t.timeBlockEnd) {
@@ -159,17 +219,17 @@ export default function DashboardPage() {
 
   // Win the Day: top 3 ranked tasks from power-down
   const winTheDayTasks = useMemo(() => {
-    const wtdTasks = list.filter((t: any) => t.isWinTheDay);
+    const wtdTasks = list.filter((t) => t.isWinTheDay);
     // Sort by priority: URGENT > HIGH > MEDIUM > LOW
     const priorityOrder: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-    wtdTasks.sort((a: any, b: any) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99));
-    return wtdTasks.slice(0, 3).map((t: any, i: number) => ({
+    wtdTasks.sort((a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99));
+    return wtdTasks.slice(0, 3).map((t, i) => ({
       id: t.id,
       title: t.title,
       status: t.status,
       rank: i + 1,
-      timeBlockStart: t.timeBlockStart,
-      timeBlockEnd: t.timeBlockEnd,
+      timeBlockStart: t.timeBlockStart ?? undefined,
+      timeBlockEnd: t.timeBlockEnd ?? undefined,
     }));
   }, [list]);
 
@@ -186,7 +246,7 @@ export default function DashboardPage() {
 
   // Group tasks by type for checklist view
   const groupedTasks = useMemo(() => {
-    const groups: Record<string, any[]> = {
+    const groups: Record<string, DashboardTask[]> = {
       IMPROVE: [],
       REACT: [],
       MAINTENANCE: [],
@@ -208,19 +268,82 @@ export default function DashboardPage() {
     setEditingTask(null);
   }, [mutate]);
 
-  const handleEdit = useCallback((task: any) => setEditingTask(task), []);
+  const handleEdit = useCallback((task: DashboardTask) => setEditingTask(task), []);
   const handleDelete = useCallback(async (id: string) => {
     await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
     mutate();
   }, [mutate]);
-  const handleFocusStatusChange = useCallback(async (taskId: string, newStatus: string) => {
-    await fetch(`/api/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
+  const handleFocusStatusChange = useCallback((taskId: string, newStatus: string) => {
+    mutate(
+      async (currentData: DashboardTask[] | undefined) => {
+        const res = await fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!res.ok) throw new Error('Failed to update task');
+        return (Array.isArray(currentData) ? currentData : []).map((t) =>
+          t.id === taskId ? { ...t, status: newStatus as DashboardTask['status'] } : t
+        );
+      },
+      {
+        optimisticData: (currentData: DashboardTask[] | undefined) =>
+          (Array.isArray(currentData) ? currentData : []).map((t) =>
+            t.id === taskId ? { ...t, status: newStatus as DashboardTask['status'] } : t
+          ),
+        rollbackOnError: true,
+      }
+    ).catch(() => {
+      toast.error('Failed to update task');
     });
-    mutate();
-  }, [mutate]);
+  }, [mutate, toast]);
+
+  const handleBlockMove = useCallback((blockId: string, type: string, newStart: Date, newEnd: Date) => {
+    const startISO = newStart.toISOString();
+    const endISO = newEnd.toISOString();
+
+    if (type === 'AIM') {
+      mutateAims(
+        async (currentData: DashboardAimInstance[] | undefined) => {
+          await fetch(`/api/aims/instances/${blockId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
+          });
+          return (Array.isArray(currentData) ? currentData : []).map((a) =>
+            a.id === blockId ? { ...a, timeBlockStart: startISO, timeBlockEnd: endISO } : a
+          );
+        },
+        {
+          optimisticData: (currentData: DashboardAimInstance[] | undefined) =>
+            (Array.isArray(currentData) ? currentData : []).map((a) =>
+              a.id === blockId ? { ...a, timeBlockStart: startISO, timeBlockEnd: endISO } : a
+            ),
+          rollbackOnError: true,
+        }
+      );
+    } else {
+      mutate(
+        async (currentData: DashboardTask[] | undefined) => {
+          await fetch(`/api/tasks/${blockId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
+          });
+          return (Array.isArray(currentData) ? currentData : []).map((t) =>
+            t.id === blockId ? { ...t, timeBlockStart: startISO, timeBlockEnd: endISO } : t
+          );
+        },
+        {
+          optimisticData: (currentData: DashboardTask[] | undefined) =>
+            (Array.isArray(currentData) ? currentData : []).map((t) =>
+              t.id === blockId ? { ...t, timeBlockStart: startISO, timeBlockEnd: endISO } : t
+            ),
+          rollbackOnError: true,
+        }
+      );
+    }
+  }, [mutate, mutateAims]);
 
   const isLoading = sessionStatus === 'loading' || tasksLoading;
   const userName = session?.user?.name?.split(' ')[0] || (sessionStatus === 'loading' ? '...' : 'there');
@@ -280,6 +403,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
+              <p className="text-sm text-[var(--text-secondary)]">{formatDisplayDate(today, { weekday: true })}</p>
               <p className="text-sm text-[var(--text-muted)]">
                 Week of {new Date(weekRange.start + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(weekRange.end + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </p>
@@ -322,13 +446,27 @@ export default function DashboardPage() {
                             <input
                               type="checkbox"
                               checked={aim.status === 'COMPLETED'}
-                              onChange={async () => {
-                                await fetch(`/api/aims/instances/${aim.id}`, {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ status: aim.status === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED' }),
-                                });
-                                mutateAims();
+                              onChange={() => {
+                                const newStatus = aim.status === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED';
+                                mutateAims(
+                                  async (currentData: DashboardAimInstance[] | undefined) => {
+                                    await fetch(`/api/aims/instances/${aim.id}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ status: newStatus }),
+                                    });
+                                    return (Array.isArray(currentData) ? currentData : []).map((a) =>
+                                      a.id === aim.id ? { ...a, status: newStatus } : a
+                                    );
+                                  },
+                                  {
+                                    optimisticData: (currentData: DashboardAimInstance[] | undefined) =>
+                                      (Array.isArray(currentData) ? currentData : []).map((a) =>
+                                        a.id === aim.id ? { ...a, status: newStatus } : a
+                                      ),
+                                    rollbackOnError: true,
+                                  }
+                                );
                               }}
                               className="h-5 w-5 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-teal-600 focus:ring-teal-500"
                             />
@@ -357,6 +495,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
+              <p className="text-sm text-[var(--text-secondary)]">{formatDisplayDate(today, { weekday: true })}</p>
               <p className="text-sm text-[var(--text-muted)]">
                 {isLoading ? 'Loading...' : `${scheduledCount} item${scheduledCount !== 1 ? 's' : ''} scheduled today · ${weeklyScheduledHours}h scheduled`}
               </p>
@@ -373,29 +512,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Progress visualization */}
-          {!isLoading && list.length > 0 && (() => {
-            const done = list.filter((t: any) => t.status === 'DONE').length;
-            const total = list.length;
-            const pct = Math.round((done / total) * 100);
-            const msg = done === 0 ? 'Ready to start!' : done === total ? 'All tasks complete!' : `${done}/${total} tasks done — keep going!`;
-            return (
-              <div className="glass-panel p-3 mb-4 flex items-center gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-[var(--text-secondary)]">{msg}</span>
-                    <span className="text-xs text-[var(--text-muted)]">{pct}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-[var(--surface-raised)] overflow-hidden">
-                    <div className="h-full rounded-full bg-green-500 transition-all duration-500" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
           {/* Timeline */}
-          <DashboardTimeline blocks={timelineBlocks as any} className="mb-6" />
+          <DashboardTimeline blocks={timelineBlocks} className="mb-6" onBlockMove={handleBlockMove} />
 
           {/* Weekly hour target */}
           <div className="mb-6">
@@ -409,7 +527,6 @@ export default function DashboardPage() {
           {/* Grouped task checklists */}
           <div className="space-y-6 mb-6">
             {Object.entries(groupedTasks).map(([type, typeTasks]) => {
-              if (typeTasks.length === 0) return null;
               const colorKey = type as keyof typeof PRISM_COLORS;
               const colors = PRISM_COLORS[colorKey];
               if (!colors) return null;
@@ -420,68 +537,104 @@ export default function DashboardPage() {
                     <span>{colors.emoji}</span> {colors.label} Tasks
                     <span className="text-xs text-[var(--text-muted)] font-normal">({typeTasks.length})</span>
                   </h3>
-                  <div className="space-y-2">
-                    {typeTasks.map((task: any) => (
-                      <div key={task.id}>
-                        <TaskCard
-                          task={task}
-                          onToggle={(t: any) => handleFocusStatusChange(t.id, t.status === 'DONE' ? 'TODO' : 'DONE')}
-                          onEdit={handleEdit}
-                          onDelete={handleDelete}
-                          onClick={(t: any) => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
-                          onStatusChange={handleFocusStatusChange}
-                        />
-                        {expandedTaskId === task.id && (
-                          <div className="ml-8 mt-1 mb-2">
-                            <ClearGoalsDisplay taskId={task.id} compact />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  {typeTasks.length === 0 ? (
+                    <p className="text-xs text-[var(--text-muted)] ml-6">No {colors.label.toLowerCase()} tasks</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {typeTasks.map((task: any) => (
+                        <div key={task.id}>
+                          <TaskCard
+                            task={task}
+                            onToggle={(t: any) => handleFocusStatusChange(t.id, t.status === 'DONE' ? 'TODO' : 'DONE')}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
+                            onClick={(t: any) => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
+                            onStatusChange={handleFocusStatusChange}
+                          />
+                          {expandedTaskId === task.id && (
+                            <div className="ml-8 mt-1 mb-2">
+                              <ClearGoalsDisplay taskId={task.id} compact />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
 
           {/* AIMs today */}
-          {aimList.length > 0 && (
-            <div className="mb-6">
-              <h3 className={`text-sm font-semibold mb-2 flex items-center gap-1.5 ${PRISM_COLORS.AIM.textClass}`}>
-                <span>{PRISM_COLORS.AIM.emoji}</span> AIMs Today
-              </h3>
+          <div className="mb-6">
+            <h3 className={`text-sm font-semibold mb-2 flex items-center gap-1.5 ${PRISM_COLORS.AIM.textClass}`}>
+              <span>{PRISM_COLORS.AIM.emoji}</span> AIMs Today
+              <span className="text-xs text-[var(--text-muted)] font-normal">({aimList.length})</span>
+            </h3>
+            {aimList.length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)] ml-6">No AIMs scheduled</p>
+            ) : (
               <div className="space-y-2">
                 {aimList.map((aim: any) => {
                   const isDerailing = derailBatch?.[aim.aimCategoryId]?.derailInfo?.status === 'derailing';
                   const completedCount = derailBatch?.[aim.aimCategoryId]?.history?.filter((h) => h.completed).length ?? 0;
+                  const isCompleted = aim.status === 'COMPLETED';
                   return (
                     <div
                       key={aim.id}
-                      className={`glass-panel p-3 flex items-center gap-3 ${isDerailing ? 'border-red-500/30' : ''}`}
+                      className={`glass-panel px-4 py-3 flex items-center gap-3 hover:border-[var(--glass-border)] transition-colors ${isDerailing ? 'border-red-500/30' : ''}`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={aim.status === 'COMPLETED'}
-                        onChange={async () => {
-                          await fetch(`/api/aims/instances/${aim.id}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ status: aim.status === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED' }),
-                          });
-                          mutateAims();
+                      <button
+                        onClick={async () => {
+                          const newStatus = isCompleted ? 'SCHEDULED' : 'COMPLETED';
+                          mutateAims(
+                            async (currentData: any) => {
+                              await fetch(`/api/aims/instances/${aim.id}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ status: newStatus }),
+                              });
+                              return (Array.isArray(currentData) ? currentData : []).map((a: any) =>
+                                a.id === aim.id ? { ...a, status: newStatus } : a
+                              );
+                            },
+                            {
+                              optimisticData: (currentData: any) =>
+                                (Array.isArray(currentData) ? currentData : []).map((a: any) =>
+                                  a.id === aim.id ? { ...a, status: newStatus } : a
+                                ),
+                              rollbackOnError: true,
+                            }
+                          );
                         }}
-                        className="h-5 w-5 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-teal-600 focus:ring-teal-500"
-                      />
-                      <div className="flex-1">
-                        <span className={`text-sm font-medium ${aim.status === 'COMPLETED' ? 'text-gray-500 line-through' : 'text-[var(--text-primary)]'}`}>
+                        className={`flex-shrink-0 h-5 w-5 rounded border-2 transition-colors ${
+                          isCompleted
+                            ? 'bg-green-600 border-green-600'
+                            : 'border-[var(--border-color)] hover:border-teal-500'
+                        }`}
+                      >
+                        {isCompleted && (
+                          <svg
+                            className="h-full w-full text-white"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={3}
+                          >
+                            <path d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-sm font-medium truncate ${isCompleted ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}`}>
                           {aim.aimCategory?.name ?? 'AIM'}
                           {aim.selectedActivity && ` — ${aim.selectedActivity}`}
                         </span>
                         <div className="text-xs text-[var(--text-muted)]">
                           {isDerailing ? (
-                            <span className="text-red-400">⚠️ Derailing</span>
+                            <span className="text-red-400">Derailing</span>
                           ) : completedCount > 0 ? (
-                            <span>{completedCount} completed (14d) 🔥</span>
+                            <span>{completedCount} completed (14d)</span>
                           ) : null}
                         </div>
                       </div>
@@ -495,8 +648,8 @@ export default function DashboardPage() {
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Power Down reminder */}
           <Link

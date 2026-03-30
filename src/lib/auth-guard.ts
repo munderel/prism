@@ -7,6 +7,11 @@ export type AuthResult =
   | { session: Session; userId: string; error?: never; status?: never }
   | { session?: never; userId?: never; error: string; status: number };
 
+/**
+ * Verifies that a valid session exists for the current request.
+ * Returns `{ session, userId }` on success, or `{ error, status: 401 }` if unauthenticated.
+ * Use this as the baseline check in any authenticated API route.
+ */
 export async function requireAuth(): Promise<AuthResult> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -15,6 +20,11 @@ export async function requireAuth(): Promise<AuthResult> {
   return { session, userId: session.user.id };
 }
 
+/**
+ * Extends `requireAuth` by also asserting the user has `isAdmin: true`.
+ * Returns the same `AuthResult` on success, or `{ error, status: 403 }` if not an admin.
+ * Use this for admin-only routes instead of checking `isAdmin` manually.
+ */
 export async function requireAdmin(): Promise<AuthResult> {
   const result = await requireAuth();
   if ('error' in result) return result;
@@ -25,6 +35,11 @@ export async function requireAdmin(): Promise<AuthResult> {
   return result;
 }
 
+/**
+ * Asserts the current user either owns the resource (`ownerId`) or is an admin.
+ * Returns `AuthResult` on success, or `{ error, status: 403 }` if access is denied.
+ * Prefer this over `requireAdmin` when admins and owners both need write access.
+ */
 export async function requireOwnership(ownerId: string): Promise<AuthResult> {
   const result = await requireAuth();
   if ('error' in result) return result;
@@ -37,10 +52,19 @@ export async function requireOwnership(ownerId: string): Promise<AuthResult> {
   return result;
 }
 
+/**
+ * Converts a failed `AuthResult` into a JSON `Response` with the appropriate status code.
+ * Call this at the top of route handlers after a failed auth check, then `return authError(result)`.
+ */
 export function authError(result: AuthResult) {
   return Response.json({ error: result.error }, { status: result.status });
 }
 
+/**
+ * Verifies the current user can access a specific task (owner or admin).
+ * Returns `AuthResult & { task }` on success, or an error result with status 404/403/401.
+ * Use this in task-specific routes to combine auth and existence checks in one call.
+ */
 export async function requireTaskAccess(taskId: string): Promise<AuthResult & { task?: { id: string; ownerId: string } }> {
   const result = await requireAuth();
   if ('error' in result) return result;
@@ -57,6 +81,11 @@ export async function requireTaskAccess(taskId: string): Promise<AuthResult & { 
   return { ...result, task };
 }
 
+/**
+ * Checks whether a user may read/write a goal stack based on its `isCompany` flag and ownership.
+ * Returns `null` if access is allowed, or a 403 `Response` if it is not.
+ * Use this in stack routes after fetching the stack, before performing mutations.
+ */
 export function checkStackAccess(
   stack: { isCompany: boolean; ownerId: string },
   userId: string,

@@ -33,9 +33,6 @@ export function GoalEditor({
   const [title, setTitle] = useState(goal?.title ?? '');
   const [description, setDescription] = useState(goal?.description ?? '');
   const [status, setStatus] = useState(goal?.status ?? 'NOT_STARTED');
-  const [dueDate, setDueDate] = useState(
-    goal?.dueDate ? getLocalDateString(new Date(goal.dueDate)) : ''
-  );
   const [startDate, setStartDate] = useState(
     goal?.startDate ? getLocalDateString(new Date(goal.startDate)) : ''
   );
@@ -64,7 +61,6 @@ export function GoalEditor({
 
     try {
       const body: Record<string, any> = { title, description, status };
-      if (dueDate) body.dueDate = dueDate;
 
       if (isEditing) {
         if (goal.startDate || goal.endDate || isRootHHG) {
@@ -192,20 +188,22 @@ export function GoalEditor({
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm text-[var(--text-secondary)] mb-1">Start Date</label>
+                    <label className="block text-sm text-[var(--text-secondary)] mb-1">Start Date <span className="text-red-400">*</span></label>
                     <input
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
+                      required
                       className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-[var(--text-secondary)] mb-1">End Date</label>
+                    <label className="block text-sm text-[var(--text-secondary)] mb-1">End Date <span className="text-red-400">*</span></label>
                     <input
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
+                      required
                       className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
@@ -252,16 +250,6 @@ export function GoalEditor({
                 </div>
               </div>
             )}
-
-            <div>
-              <label className="block text-sm text-[var(--text-secondary)] mb-1">Due Date</label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
 
             <GoalCreationCoach
               goalLevel={derivedLevel as 'HIGH_HARD' | 'STRATEGIC' | 'MONTHLY' | 'WEEKLY'}

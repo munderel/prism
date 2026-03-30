@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -27,7 +28,9 @@ export async function POST(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { title, description, url, sortOrder } = body;
 
   if (!title || typeof title !== 'string') {

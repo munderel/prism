@@ -1,6 +1,8 @@
 import { google } from 'googleapis';
+import { randomBytes } from 'node:crypto';
 import { prisma } from './prisma';
 import { decryptToken } from './crypto';
+import { getCompletionUrl } from './completion-token';
 
 /**
  * Check if a user has a Google account linked (for graceful degradation).
@@ -187,7 +189,7 @@ export async function listGoogleEvents(
  */
 export async function syncTaskCalendarEvent(
   userId: string,
-  task: { calendarEventId?: string | null; title: string; description?: string | null; timeBlockStart?: Date | string | null; timeBlockEnd?: Date | string | null },
+  task: { id?: string; calendarEventId?: string | null; title: string; description?: string | null; timeBlockStart?: Date | string | null; timeBlockEnd?: Date | string | null },
   action: 'create' | 'update' | 'delete'
 ): Promise<string | null> {
   try {
@@ -196,10 +198,14 @@ export async function syncTaskCalendarEvent(
       return null;
     }
 
+    // Build description with completion link
+    const completionLink = task.id ? `\n\nMark complete in Prism: ${getCompletionUrl(task.id, userId)}` : '';
+    const fullDescription = (task.description ?? '') + completionLink;
+
     if (action === 'update' && task.calendarEventId) {
       await updateGoogleEvent(userId, task.calendarEventId, {
         summary: task.title,
-        description: task.description ?? undefined,
+        description: fullDescription || undefined,
         start: task.timeBlockStart ? new Date(task.timeBlockStart).toISOString() : undefined,
         end: task.timeBlockEnd ? new Date(task.timeBlockEnd).toISOString() : undefined,
       });
@@ -209,7 +215,7 @@ export async function syncTaskCalendarEvent(
     if (action === 'create' && task.timeBlockStart && task.timeBlockEnd) {
       const gcalEvent = await createGoogleEvent(userId, {
         summary: task.title,
-        description: task.description ?? undefined,
+        description: fullDescription || undefined,
         start: new Date(task.timeBlockStart).toISOString(),
         end: new Date(task.timeBlockEnd).toISOString(),
       });
@@ -250,7 +256,7 @@ export async function createGoogleEvent(
     if (event.addMeetLink) {
       eventBody.conferenceData = {
         createRequest: {
-          requestId: `meet-${Date.now()}`,
+          requestId: `meet-${randomBytes(8).toString('hex')}`,
           conferenceSolutionKey: { type: 'hangoutsMeet' },
         },
       };

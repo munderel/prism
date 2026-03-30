@@ -7,32 +7,40 @@ export async function GET(_request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  // Get all users with their streaks and task/review counts
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      image: true,
-      streaks: {
-        where: { streakType: 'daily_completion' },
-        select: { currentCount: true, bestCount: true },
-      },
-      _count: {
-        select: {
-          tasks: { where: { status: 'DONE' } },
-          reviews: { where: { completedAt: { not: null } } },
+  const [users, aimScores, publicWins] = await Promise.all([
+    prisma.user.findMany({
+      where: { isPublicOnLeaderboard: true },
+      select: {
+        id: true,
+        name: true,
+        image: true,
+        streaks: {
+          where: { streakType: 'daily_completion' },
+          select: { currentCount: true, bestCount: true },
+        },
+        _count: {
+          select: {
+            tasks: { where: { status: 'DONE' } },
+            reviews: { where: { completedAt: { not: null } } },
+          },
         },
       },
-    },
-  });
-
-  // Get aim scores per user (sum of pointsEarned from completed instances)
-  const aimScores = await prisma.aimInstance.groupBy({
-    by: ['userId'],
-    where: { status: 'COMPLETED' },
-    _sum: { pointsEarned: true },
-    _count: true,
-  });
+    }),
+    prisma.aimInstance.groupBy({
+      by: ['userId'],
+      where: { status: 'COMPLETED' },
+      _sum: { pointsEarned: true },
+      _count: true,
+    }),
+    prisma.publicWin.findMany({
+      take: 20,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { name: true, image: true } },
+        goal: { select: { title: true } },
+      },
+    }),
+  ]);
 
   const aimScoreMap = new Map(
     aimScores.map((a) => [a.userId, { points: a._sum.pointsEarned ?? 0, count: a._count }])
@@ -55,16 +63,6 @@ export async function GET(_request: NextRequest) {
   });
 
   leaderboard.sort((a, b) => b.score - a.score);
-
-  // Get recent public wins
-  const publicWins = await prisma.publicWin.findMany({
-    take: 20,
-    orderBy: { createdAt: 'desc' },
-    include: {
-      user: { select: { name: true, image: true } },
-      goal: { select: { title: true } },
-    },
-  });
 
   return new Response(JSON.stringify({ leaderboard, publicWins }), {
     headers: cacheHeaders(30, 120),

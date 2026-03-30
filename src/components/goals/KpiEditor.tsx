@@ -39,7 +39,7 @@ export function KpiEditor({
   const parentLevelLabel: Record<string, string> = {
     WEEKLY: 'Monthly',
     MONTHLY: 'Yearly',
-    STRATEGIC: 'HHG',
+    STRATEGIC: 'High Hard Goal',
   };
 
   const { data: parentKpis } = useSWR(

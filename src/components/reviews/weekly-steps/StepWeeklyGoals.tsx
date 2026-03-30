@@ -26,6 +26,7 @@ interface WeeklyGoal {
   startDate: string | null;
   endDate: string | null;
   parentTitle?: string;
+  parentId?: string;
   kpis: Kpi[];
 }
 
@@ -58,6 +59,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
   const [newKpiUnit, setNewKpiUnit] = useState('');
 
   const [saving, setSaving] = useState<string | null>(null);
+  const [editingStatusGoalId, setEditingStatusGoalId] = useState<string | null>(null);
   const [stackId, setStackId] = useState<string | null>(null);
   const [monthlyParentId, setMonthlyParentId] = useState<string | null>(null);
   const [creatingPlaceholder, setCreatingPlaceholder] = useState(false);
@@ -77,30 +79,32 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
         const goalsRaw = await goalsRes.json();
         const allGoals = Array.isArray(goalsRaw) ? goalsRaw : [];
 
-        // Current week boundaries
-        const weekStart = new Date(now);
-        const dayOfWeek = weekStart.getDay();
+        // Week boundaries: show last week + upcoming week
+        const dayOfWeek = now.getDay();
         const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        weekStart.setDate(weekStart.getDate() + mondayOffset);
-        weekStart.setHours(0, 0, 0, 0);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekEnd.getDate() + 6);
-        weekEnd.setHours(23, 59, 59, 999);
-        const nextWeekStart = new Date(weekEnd);
-        nextWeekStart.setDate(nextWeekStart.getDate() + 1);
-        nextWeekStart.setHours(0, 0, 0, 0);
-        const nextWeekEnd = new Date(nextWeekStart);
-        nextWeekEnd.setDate(nextWeekEnd.getDate() + 6);
-        nextWeekEnd.setHours(23, 59, 59, 999);
+        const thisMonday = new Date(now);
+        thisMonday.setDate(now.getDate() + mondayOffset);
+        thisMonday.setHours(0, 0, 0, 0);
+
+        const lastMonday = new Date(thisMonday);
+        lastMonday.setDate(thisMonday.getDate() - 7);
+        const lastSunday = new Date(thisMonday);
+        lastSunday.setDate(thisMonday.getDate() - 1);
+        lastSunday.setHours(23, 59, 59, 999);
+
+        const upcomingWeekStart = thisMonday;
+        const upcomingWeekEnd = new Date(thisMonday);
+        upcomingWeekEnd.setDate(thisMonday.getDate() + 6);
+        upcomingWeekEnd.setHours(23, 59, 59, 999);
 
         const result: WeeklyGoal[] = [];
         for (const g of allGoals) {
           if (!g.startDate || !g.endDate) continue;
           const gs = new Date(g.startDate);
           const ge = new Date(g.endDate);
-          const isCurrentWeek = gs <= weekEnd && ge >= weekStart;
-          const isNextWeek = gs <= nextWeekEnd && ge >= nextWeekStart;
-          if (!isCurrentWeek && !isNextWeek) continue;
+          const isLastWeek = gs <= lastSunday && ge >= lastMonday;
+          const isUpcomingWeek = gs <= upcomingWeekEnd && ge >= upcomingWeekStart;
+          if (!isLastWeek && !isUpcomingWeek) continue;
 
           let kpis: Kpi[] = [];
           try {
@@ -109,12 +113,16 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
           } catch { /* ignore */ }
 
           let parentTitle = '';
+          let parentId = '';
           try {
             const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
-            if (detailRes.ok) { const detail = await detailRes.json(); if (detail.parent) parentTitle = detail.parent.title; }
+            if (detailRes.ok) {
+              const detail = await detailRes.json();
+              if (detail.parent) { parentTitle = detail.parent.title; parentId = detail.parent.id; }
+            }
           } catch { /* ignore */ }
 
-          result.push({ id: g.id, title: g.title, description: g.description ?? null, status: g.status, level: g.level, startDate: g.startDate, endDate: g.endDate, parentTitle, kpis });
+          result.push({ id: g.id, title: g.title, description: g.description ?? null, status: g.status, level: g.level, startDate: g.startDate, endDate: g.endDate, parentTitle, parentId, kpis });
         }
         setGoals(result);
         setLoading(false);
@@ -124,23 +132,23 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       const stacksRes = await fetch('/api/stacks');
       if (!stacksRes.ok) { setLoading(false); return; }
       const stacks = await stacksRes.json();
-      // Current week boundaries
-      const weekStart = new Date(now);
-      const dayOfWeek = weekStart.getDay();
+      // Week boundaries: show last week + upcoming week
+      const dayOfWeek = now.getDay();
       const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      weekStart.setDate(weekStart.getDate() + mondayOffset);
-      weekStart.setHours(0, 0, 0, 0);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekEnd.getDate() + 6);
-      weekEnd.setHours(23, 59, 59, 999);
+      const thisMonday = new Date(now);
+      thisMonday.setDate(now.getDate() + mondayOffset);
+      thisMonday.setHours(0, 0, 0, 0);
 
-      // Next week boundaries
-      const nextWeekStart = new Date(weekEnd);
-      nextWeekStart.setDate(nextWeekStart.getDate() + 1);
-      nextWeekStart.setHours(0, 0, 0, 0);
-      const nextWeekEnd = new Date(nextWeekStart);
-      nextWeekEnd.setDate(nextWeekEnd.getDate() + 6);
-      nextWeekEnd.setHours(23, 59, 59, 999);
+      const lastMonday = new Date(thisMonday);
+      lastMonday.setDate(thisMonday.getDate() - 7);
+      const lastSunday = new Date(thisMonday);
+      lastSunday.setDate(thisMonday.getDate() - 1);
+      lastSunday.setHours(23, 59, 59, 999);
+
+      const upcomingWeekStart = thisMonday;
+      const upcomingWeekEnd = new Date(thisMonday);
+      upcomingWeekEnd.setDate(thisMonday.getDate() + 6);
+      upcomingWeekEnd.setHours(23, 59, 59, 999);
 
       const result: WeeklyGoal[] = [];
 
@@ -170,10 +178,10 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
           const gs = new Date(g.startDate);
           const ge = new Date(g.endDate);
 
-          // Show weekly goals for the upcoming week (or current week)
-          const isCurrentWeek = gs <= weekEnd && ge >= weekStart;
-          const isNextWeek = gs <= nextWeekEnd && ge >= nextWeekStart;
-          if (!isCurrentWeek && !isNextWeek) continue;
+          // Show last week and upcoming week goals
+          const isLastWeek = gs <= lastSunday && ge >= lastMonday;
+          const isUpcomingWeek = gs <= upcomingWeekEnd && ge >= upcomingWeekStart;
+          if (!isLastWeek && !isUpcomingWeek) continue;
 
           // Fetch KPIs
           let kpis: Kpi[] = [];
@@ -187,13 +195,14 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
             // ignore
           }
 
-          // Get parent title
+          // Get parent title and id
           let parentTitle = '';
+          let parentId = '';
           try {
             const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
             if (detailRes.ok) {
               const detail = await detailRes.json();
-              if (detail.parent) parentTitle = detail.parent.title;
+              if (detail.parent) { parentTitle = detail.parent.title; parentId = detail.parent.id; }
             }
           } catch {
             // ignore
@@ -208,6 +217,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
             startDate: g.startDate,
             endDate: g.endDate,
             parentTitle,
+            parentId,
             kpis,
           });
         }
@@ -254,6 +264,24 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       console.error('Failed during weekly goals operation:', err);
     }
     setSaving(null);
+  };
+
+  const saveStatus = async (goalId: string, newStatus: string) => {
+    setSaving(goalId);
+    try {
+      await fetch(`/api/goals/${goalId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      setGoals((prev) =>
+        prev.map((g) => g.id === goalId ? { ...g, status: newStatus } : g)
+      );
+    } catch (err) {
+      console.error('Failed to save goal status:', err);
+    }
+    setSaving(null);
+    setEditingStatusGoalId(null);
   };
 
   const createGoal = async () => {
@@ -520,9 +548,22 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
                           {goal.title}
                         </p>
                         {goal.parentTitle && (
-                          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
-                            under {goal.parentTitle}
-                          </p>
+                          <span className="text-xs text-[var(--text-muted)] mt-0.5">
+                            under{' '}
+                            {goal.parentId ? (
+                              <a
+                                href="/goals"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {goal.parentTitle}
+                              </a>
+                            ) : (
+                              goal.parentTitle
+                            )}
+                          </span>
                         )}
                       </>
                     )}
@@ -530,13 +571,32 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
 
                   {!isEditing && (
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${
-                        goal.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
-                        goal.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
-                        'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-                      }`}>
-                        {goal.status.replace('_', ' ')}
-                      </span>
+                      {editingStatusGoalId === goal.id ? (
+                        <select
+                          autoFocus
+                          value={goal.status}
+                          onChange={(e) => saveStatus(goal.id, e.target.value)}
+                          onBlur={() => setEditingStatusGoalId(null)}
+                          className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                        >
+                          {['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED'].map((s) => (
+                            <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <button
+                          onClick={() => setEditingStatusGoalId(goal.id)}
+                          title="Click to change status"
+                          className={`text-xs px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity cursor-pointer ${
+                            goal.status === 'COMPLETED'   ? 'bg-green-500/20 text-green-400' :
+                            goal.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
+                            goal.status === 'ABANDONED'   ? 'bg-red-500/20 text-red-400' :
+                            'bg-[var(--surface-raised)] text-[var(--text-muted)]'
+                          }`}
+                        >
+                          {goal.status.replace(/_/g, ' ')}
+                        </button>
+                      )}
                       <button
                         onClick={() => startEditing(goal)}
                         className="p-1 text-[var(--text-muted)] hover:text-indigo-400 transition-colors"

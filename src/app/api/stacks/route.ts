@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { cacheHeaders } from '@/lib/api-helpers';
+import { cacheHeaders, safeParseJson } from '@/lib/api-helpers';
 
 
 export async function GET() {
@@ -30,7 +30,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
   const { name, isCompany } = body;
 
   if (!name || typeof name !== 'string') {
@@ -51,7 +53,7 @@ export async function POST(request: NextRequest) {
         ownerId: auth.userId,
       },
     });
-    return Response.json(stack, { status: 201 });
+    return Response.json(stack, { status: 201, headers: { 'Cache-Control': 'no-store' } });
   }
 
   const auth = await requireAuth();

@@ -5,7 +5,7 @@ import {
   authError,
   checkStackAccess,
 } from '@/lib/auth-guard';
-import { pickDefined } from '@/lib/api-helpers';
+import { pickDefined, notFoundResponse, safeParseJson } from '@/lib/api-helpers';
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
 
@@ -60,9 +60,7 @@ export async function GET(
     },
   });
 
-  if (!goal || goal.deletedAt) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
   const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
   if (accessDenied) return accessDenied;
@@ -83,15 +81,15 @@ export async function PATCH(
     include: { stack: true, parent: { select: { level: true } } },
   });
 
-  if (!goal || goal.deletedAt) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
   const accessDeniedPatch = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
   if (accessDeniedPatch) return accessDeniedPatch;
 
-  const body = await request.json();
-  const { title, description, status, dueDate, level } = body;
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
+  const { status, dueDate, level } = body;
 
   // Validate level change if provided
   if (level && level !== goal.level) {
@@ -118,7 +116,7 @@ export async function PATCH(
 
   await cascadeProgressUp(id);
 
-  return Response.json(updated);
+  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(
@@ -134,9 +132,7 @@ export async function DELETE(
     include: { stack: true },
   });
 
-  if (!goal || goal.deletedAt) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
   const accessDeniedDel = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
   if (accessDeniedDel) return accessDeniedDel;
@@ -149,7 +145,7 @@ export async function DELETE(
     await cascadeProgressUp(goal.parentId);
   }
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 async function softDeleteDescendants(goalId: string, now: Date) {

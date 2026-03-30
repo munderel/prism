@@ -1,28 +1,36 @@
 'use client';
 
 import {
-  Target, TrendingUp, AlertTriangle, CheckCircle2, Edit3, Calendar, FileText, Star,
+  Target, TrendingUp, CheckCircle2, Edit3, Calendar, FileText, Star, Trophy, Eye,
 } from 'lucide-react';
 import { PeriodReviewWizard } from './PeriodReviewWizard';
 import type { Goal, HhgGroup, StepConfig } from './shared/review-types';
 
+// Yearly review steps — reordered per Prism overhaul spec (2026-03-28)
+// 1. HHG Assessment → 2. Current Year Overview → 3. Review Monthly Goals →
+// 4. Successes & Difficulties → 5. Monthly KPI Progress →
+// 6. On-Track Assessment → 7. Modify Goals → 8. Create Monthly Goals → 9. Notes
 const STEPS: StepConfig[] = [
-  { key: 'current-goals', title: 'Current Goals', icon: Star },
-  { key: 'difficulties', title: 'Difficulties', icon: AlertTriangle },
-  { key: 'kpi-progress', title: 'KPI Progress', icon: TrendingUp },
+  { key: 'hhg-assessment', title: 'High Hard Goal Assessment', icon: Star },
+  { key: 'current-goals', title: 'Current Year Overview', icon: Eye },
+  { key: 'review-monthly', title: 'Review Monthly Goals', icon: Target },
+  { key: 'successes-difficulties', title: 'Successes & Difficulties', icon: Trophy },
+  { key: 'kpi-progress', title: 'Monthly KPI Progress', icon: TrendingUp },
   { key: 'on-track', title: 'On-Track Assessment', icon: CheckCircle2 },
-  { key: 'goal-adjustment', title: 'Goal Adjustment', icon: Edit3 },
-  { key: 'plan-next-year', title: 'Plan Next Year', icon: Calendar },
+  { key: 'goal-adjustment', title: 'Modify Goals', icon: Edit3 },
+  { key: 'plan-next-year', title: 'Create Monthly Goals', icon: Calendar },
   { key: 'notes-completion', title: 'Notes & Completion', icon: FileText },
 ];
 
 const STEP_DESCRIPTIONS: Record<string, string> = {
-  'current-goals': 'Review your High Hard Goals and yearly strategic objectives.',
-  'difficulties': 'Reflect on the major friction, blockers, and challenges you faced this year.',
-  'kpi-progress': 'Update your annual KPIs with actual values to track overall progress.',
-  'on-track': 'Assess whether each strategic goal is on track, behind, or at risk.',
-  'goal-adjustment': 'Modify, update, or add strategic goals for the coming year.',
-  'plan-next-year': 'Refine monthly goals for the upcoming year to stay aligned with your HHG.',
+  'hhg-assessment': 'Is your High Hard Goal still the right one? Review and adjust if needed.',
+  'current-goals': 'Review yearly goals expandable to monthly breakdowns.',
+  'review-monthly': 'Review completed and incomplete monthly goals for the year.',
+  'successes-difficulties': 'Capture your biggest wins and reflect on challenges faced this year.',
+  'kpi-progress': 'Update monthly KPI actuals to track overall progress.',
+  'on-track': 'Assess each monthly goal. This auto-fills the yearly on-track status.',
+  'goal-adjustment': 'Modify monthly goals for current and upcoming year.',
+  'plan-next-year': 'Create monthly goals with KPIs for the upcoming year. Goal creation coach available.',
   'notes-completion': 'Add any final reflections or notes, then complete the review.',
 };
 
@@ -50,7 +58,7 @@ function YearlyCurrentGoalsHierarchy({ groups }: { groups: HhgGroup[] }) {
               <div className="flex items-start gap-3">
                 <Star className="h-5 w-5 text-amber-400 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-amber-400 uppercase tracking-wide font-medium mb-1">HHG</p>
+                  <p className="text-xs text-amber-400 uppercase tracking-wide font-medium mb-1">High Hard Goal</p>
                   <p className="text-sm font-medium text-[var(--text-primary)]">{group.hhg.title}</p>
                   {group.hhg.description && (
                     <p className="text-xs text-[var(--text-muted)] mt-1">{group.hhg.description}</p>
@@ -215,10 +223,11 @@ function YearlyCurrentGoals({ strategicGoals, hhgGoal }: { strategicGoals: Goal[
   );
 }
 
-export function YearlyReviewWizard({ reviewId }: { reviewId: string }) {
+export function YearlyReviewWizard({ reviewId, isTeamReview }: { reviewId: string; isTeamReview?: boolean }) {
   return (
     <PeriodReviewWizard
       reviewId={reviewId}
+      isTeamReview={isTeamReview}
       goalLevel="STRATEGIC"
       parentGoalLevel="HIGH_HARD"
       childGoalLevel="MONTHLY"

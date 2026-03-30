@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { enrichTrainingProgress, pickDefined } from '@/lib/api-helpers';
+import { enrichTrainingProgress, pickDefined, notFoundResponse, hasAccess, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
 
 export async function GET(
   request: NextRequest,
@@ -44,13 +44,8 @@ export async function GET(
     },
   });
 
-  if (!item) {
-    return Response.json({ error: 'Training item not found' }, { status: 404 });
-  }
-
-  if (item.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!item) return notFoundResponse('Training item');
+  if (!hasAccess(item.ownerId, auth.userId, auth.session.user.isAdmin)) return forbiddenResponse();
 
   return Response.json(enrichTrainingProgress(item));
 }
@@ -65,19 +60,12 @@ export async function PUT(
   const { id } = await params;
 
   const existing = await prisma.trainingItem.findUnique({ where: { id } });
-  if (!existing) {
-    return Response.json({ error: 'Training item not found' }, { status: 404 });
-  }
-  if (existing.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!existing) return notFoundResponse('Training item');
+  if (!hasAccess(existing.ownerId, auth.userId, auth.session.user.isAdmin)) return forbiddenResponse();
 
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
 
   const { targetCompletionDate, goalId } = body;
 
@@ -95,7 +83,7 @@ export async function PUT(
     },
   });
 
-  return Response.json(updated);
+  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(
@@ -111,12 +99,8 @@ export async function DELETE(
     where: { id },
     include: { trainingTasks: { select: { taskId: true } } },
   });
-  if (!existing) {
-    return Response.json({ error: 'Training item not found' }, { status: 404 });
-  }
-  if (existing.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!existing) return notFoundResponse('Training item');
+  if (!hasAccess(existing.ownerId, auth.userId, auth.session.user.isAdmin)) return forbiddenResponse();
 
   // Delete linked Task records too (they were created by the training system)
   const taskIds = existing.trainingTasks.map((tt) => tt.taskId);
@@ -130,5 +114,5 @@ export async function DELETE(
       : []),
   ]);
 
-  return Response.json({ success: true });
+  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }

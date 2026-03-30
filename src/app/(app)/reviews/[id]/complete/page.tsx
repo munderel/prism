@@ -2,14 +2,12 @@ import { prisma } from '@/lib/prisma';
 import { ReviewWizard } from '@/components/reviews/ReviewWizard';
 import { WeeklyReviewWizard } from '@/components/reviews/WeeklyReviewWizard';
 import { MonthlyReviewWizard } from '@/components/reviews/MonthlyReviewWizard';
-import { QuarterlyReviewWizard } from '@/components/reviews/QuarterlyReviewWizard';
 import { YearlyReviewWizard } from '@/components/reviews/YearlyReviewWizard';
 import { ClipboardList } from 'lucide-react';
 
 const REVIEW_TITLES: Record<string, string> = {
   WEEKLY: 'Weekly Review',
   MONTHLY: 'Monthly Review',
-  QUARTERLY: 'Quarterly Review',
   YEARLY: 'Yearly Review',
 };
 
@@ -19,10 +17,11 @@ export default async function ReviewCompletePage({ params }: { params: Promise<{
   // Fetch review type to decide which wizard to render
   const review = await prisma.review.findUnique({
     where: { id },
-    select: { reviewType: true },
+    select: { reviewType: true, isTeamReview: true },
   });
 
   const reviewType = review?.reviewType ?? null;
+  const isTeamReview = review?.isTeamReview ?? false;
   const title = (reviewType && REVIEW_TITLES[reviewType]) || 'Complete Review';
 
   return (
@@ -34,13 +33,11 @@ export default async function ReviewCompletePage({ params }: { params: Promise<{
         </h1>
       </div>
       {reviewType === 'WEEKLY' ? (
-        <WeeklyReviewWizard reviewId={id} />
+        <WeeklyReviewWizard reviewId={id} isTeamReview={isTeamReview} />
       ) : reviewType === 'MONTHLY' ? (
-        <MonthlyReviewWizard reviewId={id} />
-      ) : reviewType === 'QUARTERLY' ? (
-        <QuarterlyReviewWizard reviewId={id} />
+        <MonthlyReviewWizard reviewId={id} isTeamReview={isTeamReview} />
       ) : reviewType === 'YEARLY' ? (
-        <YearlyReviewWizard reviewId={id} />
+        <YearlyReviewWizard reviewId={id} isTeamReview={isTeamReview} />
       ) : (
         <ReviewWizard reviewId={id} />
       )}

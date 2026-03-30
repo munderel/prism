@@ -1,4 +1,3 @@
-import { vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import { renderWithProviders, createMockFetch, userEvent } from '@/test/utils';
 import { createComment } from '@/test/fixtures';

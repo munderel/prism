@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
+import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
+import { parseBody, createInvitationSchema } from '@/lib/schemas';
 
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RATE_LIMIT_MAX = 10; // max invitations per hour
@@ -36,23 +38,10 @@ export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
-  const { email, role } = body;
-
-  if (!email || typeof email !== 'string') {
-    return Response.json({ error: 'Email is required' }, { status: 400 });
-  }
-
+  const parsed = await parseBody(request, createInvitationSchema);
+  if ('error' in parsed) return parsed.error;
+  const { email, role } = parsed.data;
   const normalizedEmail = email.trim().toLowerCase();
-
-  // Basic email validation
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-    return Response.json({ error: 'Invalid email format' }, { status: 400 });
-  }
-
-  if (role && role !== 'admin' && role !== 'user') {
-    return Response.json({ error: 'Role must be "admin" or "user"' }, { status: 400 });
-  }
 
   // Rate limiting: max 10 invitations per hour per admin
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -100,11 +89,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const verificationToken = crypto.randomBytes(32).toString('hex');
     const invitation = await prisma.invitation.create({
       data: {
         email: normalizedEmail,
         role: role || 'user',
         invitedById: auth.userId,
+        token: verificationToken,
       },
       include: {
         invitedBy: {
@@ -113,7 +104,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return Response.json(invitation, { status: 201 });
+    return Response.json(
+      { ...invitation, inviteUrl: `/accept-invite/${invitation.id}?token=${verificationToken}` },
+      { status: 201, headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (err) {
     console.error('Failed to create invitation:', err);
     return Response.json(

@@ -1,35 +1,45 @@
 'use client';
 
 import {
-  Target, TrendingUp, AlertTriangle, CheckCircle2, Edit3, Calendar, FileText,
+  Target, TrendingUp, CheckCircle2, Edit3, Calendar, FileText, Eye, Trophy,
 } from 'lucide-react';
 import { PeriodReviewWizard } from './PeriodReviewWizard';
 import type { StepConfig } from './shared/review-types';
 
+// Monthly review steps — reordered per Prism overhaul spec (2026-03-28)
+// 1. Big Picture (HHG + yearly) → 2. Current Monthly Goals (expandable to weekly) →
+// 3. Review Weekly Goals → 4. Successes & Difficulties → 5. Weekly KPI Progress →
+// 6. On-Track Assessment → 7. Modify Goals (reorder weekly) →
+// 8. Create Weekly Goals (with coach) → 9. Notes
 const STEPS: StepConfig[] = [
-  { key: 'current-goals', title: 'Current Goals', icon: Target },
-  { key: 'difficulties', title: 'Difficulties', icon: AlertTriangle },
-  { key: 'kpi-progress', title: 'KPI Progress', icon: TrendingUp },
+  { key: 'big-picture', title: 'Big Picture', icon: Eye },
+  { key: 'current-goals', title: 'Current Monthly Goals', icon: Target },
+  { key: 'review-weekly', title: 'Review Weekly Goals', icon: TrendingUp },
+  { key: 'successes-difficulties', title: 'Successes & Difficulties', icon: Trophy },
+  { key: 'kpi-progress', title: 'Weekly KPI Progress', icon: TrendingUp },
   { key: 'on-track', title: 'On-Track Assessment', icon: CheckCircle2 },
-  { key: 'goal-adjustment', title: 'Goal Adjustment', icon: Edit3 },
-  { key: 'plan-next-month', title: 'Plan Next Month', icon: Calendar },
+  { key: 'goal-adjustment', title: 'Modify Goals', icon: Edit3 },
+  { key: 'plan-next-month', title: 'Create Weekly Goals', icon: Calendar },
   { key: 'notes-completion', title: 'Notes & Completion', icon: FileText },
 ];
 
 const STEP_DESCRIPTIONS: Record<string, string> = {
-  'current-goals': 'Review your monthly goals and how they connect to your yearly objectives.',
-  'difficulties': 'Reflect on friction, blockers, and difficulties you experienced this month.',
-  'kpi-progress': 'Update your monthly KPIs with actual values to track progress.',
-  'on-track': 'Assess whether each monthly goal is on track, behind, or at risk.',
-  'goal-adjustment': 'Modify, update, or add monthly goals as needed.',
-  'plan-next-month': 'Plan weekly goals for next month to stay on track.',
+  'big-picture': 'Start with your High Hard Goal and yearly vision for motivation. Remember the bigger picture.',
+  'current-goals': 'Review your monthly goals, expandable to see weekly breakdowns.',
+  'review-weekly': 'Review completed and incomplete weekly goals for the month.',
+  'successes-difficulties': 'Capture wins and successes, then reflect on difficulties and blockers.',
+  'kpi-progress': 'Update weekly KPI actuals to track progress toward monthly targets.',
+  'on-track': 'Assess each weekly goal. This auto-fills the monthly on-track status.',
+  'goal-adjustment': 'Modify weekly and monthly goals at all levels. Drag to reorder weekly goal sequence.',
+  'plan-next-month': 'Create weekly goals with KPIs for the upcoming month. Goal creation coach available.',
   'notes-completion': 'Add any final reflections or notes, then complete the review.',
 };
 
-export function MonthlyReviewWizard({ reviewId }: { reviewId: string }) {
+export function MonthlyReviewWizard({ reviewId, isTeamReview }: { reviewId: string; isTeamReview?: boolean }) {
   return (
     <PeriodReviewWizard
       reviewId={reviewId}
+      isTeamReview={isTeamReview}
       goalLevel="MONTHLY"
       parentGoalLevel="STRATEGIC"
       childGoalLevel="WEEKLY"
@@ -46,7 +56,7 @@ export function MonthlyReviewWizard({ reviewId }: { reviewId: string }) {
       notesPlaceholder="What stood out this month? What will you do differently?"
       kpiEmptyMessage="No KPIs found for your monthly goals."
       onTrackEmptyMessage="No monthly goals to assess."
-      planNextPeriodDescription="Plan your weekly goals for next month. These will break down into actionable weekly targets."
+      planNextPeriodDescription="Create weekly goals with KPIs for the upcoming month. Use the goal creation coach for guidance."
       planNextPeriodPlaceholder="New weekly goal..."
       findNextPeriodParent={(primaryGoals) => {
         const now = new Date();

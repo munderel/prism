@@ -43,6 +43,11 @@ export default function SettingsPage() {
   // Powerdown Time
   const [powerdownTime, setPowerdownTime] = useState('17:30');
 
+  // Weekly Review Schedule
+  const [weeklyReviewDayOfWeek, setWeeklyReviewDayOfWeek] = useState<number>(0);
+  const [weeklyReviewTime, setWeeklyReviewTime] = useState('10:00');
+  const [weeklyReviewDuration, setWeeklyReviewDuration] = useState(60);
+
   // Dev user creation
   const [createName, setCreateName] = useState('');
   const [createEmail, setCreateEmail] = useState('');
@@ -91,6 +96,9 @@ export default function SettingsPage() {
       if (data.taskSchedulePeriod) setTaskSchedulePeriod(data.taskSchedulePeriod);
       if (Array.isArray(data.selectedCalendarIds)) setSelectedCalendarIds(data.selectedCalendarIds);
       if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
+      if (data.weeklyReviewDayOfWeek != null) setWeeklyReviewDayOfWeek(data.weeklyReviewDayOfWeek);
+      if (data.weeklyReviewTime) setWeeklyReviewTime(data.weeklyReviewTime);
+      if (data.weeklyReviewDuration) setWeeklyReviewDuration(data.weeklyReviewDuration);
     }
   };
 
@@ -127,7 +135,7 @@ export default function SettingsPage() {
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime }),
+      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration }),
     });
     // Revalidate sidebar's settings cache so hidden features take effect immediately
     globalMutate('/api/settings?scope=user');
@@ -578,6 +586,53 @@ export default function SettingsPage() {
           />
           <button onClick={saveUserSettings} disabled={saving}
             className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+            Save
+          </button>
+        </section>
+
+        {/* Weekly Review Schedule */}
+        <section className="glass-panel p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-blue-400" />
+            Weekly Review Schedule
+          </h2>
+          <p className="text-xs text-[var(--text-muted)] mb-4">Set your weekly review day and time. It will appear as a recurring event on your calendar.</p>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
+              <select
+                value={weeklyReviewDayOfWeek}
+                onChange={(e) => setWeeklyReviewDayOfWeek(Number(e.target.value))}
+                className={inputClasses}
+              >
+                {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day, i) => (
+                  <option key={i} value={i}>{day}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Time</label>
+              <input
+                type="time"
+                value={weeklyReviewTime}
+                onChange={(e) => setWeeklyReviewTime(e.target.value)}
+                className={inputClasses}
+              />
+            </div>
+          </div>
+          <div className="mb-4">
+            <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
+            <input
+              type="number"
+              min={15}
+              max={480}
+              value={weeklyReviewDuration}
+              onChange={(e) => setWeeklyReviewDuration(Number(e.target.value))}
+              className={`${inputClasses} w-32`}
+            />
+          </div>
+          <button onClick={saveUserSettings} disabled={saving}
+            className="mt-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
             Save
           </button>
         </section>

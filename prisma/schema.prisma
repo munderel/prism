@@ -27,21 +27,6 @@ model Account {
   @@unique([provider, providerAccountId])
 }
 
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
 
 // === CORE MODELS ===
 
@@ -67,14 +52,17 @@ model User {
   totpSecret            String?   @db.Text
   is2FAEnabled          Boolean   @default(false)
   isLockedOut           Boolean   @default(false)
+  isPublicOnLeaderboard Boolean   @default(false)
   taskSchedulePeriod    String?   // "working" | "casual" | "both"
   selectedCalendarIds   Json      @default("[]") // String[] of Google Calendar IDs to sync
   powerdownTime         String?   // "HH:mm" format, e.g. "17:30"
+  weeklyReviewDayOfWeek Int?      // 0=Sun,1=Mon,...6=Sat
+  weeklyReviewTime      String?   // "HH:mm" format, e.g. "10:00"
+  weeklyReviewDuration  Int?      // minutes, defaults to 60
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   accounts              Account[]
-  sessions              Session[]
   goalStacks            GoalStack[]
   tasks                 Task[]
   reviews               Review[]
@@ -100,6 +88,7 @@ model User {
   feedback             Feedback[]
   goalAssignments      GoalAssignee[]
   processKpiEntries    ProcessKpiEntry[]
+  recurringTeamReviews RecurringTeamReview[] @relation("TeamReviewCreator")
 }
 
 model CompanySettings {
@@ -269,6 +258,8 @@ model Task {
   @@index([ownerId, dueDate])
   @@index([ownerId, status])
   @@index([assigneeId])
+  @@index([dueDate, status])
+  @@index([goalId, status])
 }
 
 model Streak {
@@ -365,6 +356,22 @@ model PowerdownSession {
   @@index([userId, sessionDate])
 }
 
+// === RECURRING TEAM REVIEWS ===
+
+model RecurringTeamReview {
+  id          String     @id @default(cuid())
+  reviewType  ReviewType
+  dayOfWeek   Int        // 0=Sun, 1=Mon, ..., 6=Sat
+  time        String     // "HH:mm"
+  duration    Int        @default(60)
+  isActive    Boolean    @default(true)
+  createdById String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  createdBy User @relation("TeamReviewCreator", fields: [createdById], references: [id], onDelete: Cascade)
+}
+
 // === COLLABORATION ===
 
 model TaskComment {
@@ -432,6 +439,7 @@ model Invitation {
   id          String           @id @default(cuid())
   email       String
   role        String           @default("user")
+  token       String?          @unique
   status      InvitationStatus @default(PENDING)
   invitedById String
   acceptedAt  DateTime?
@@ -865,6 +873,17 @@ model CompanyAuthSettings {
   enforce2FA        Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+// === LOGIN ATTEMPT TRACKING ===
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
 }
 
 // === PROCESS KPI SYSTEM ===

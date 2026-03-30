@@ -47,7 +47,7 @@ describe('PowerDownRitual', () => {
     await waitFor(() => {
       expect(screen.getByText(/Step 1/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Mark Task Completion/)).toBeInTheDocument();
+    expect(screen.getByText(/Review Today/)).toBeInTheDocument();
   });
 
   it('shows completed task count on step 1', async () => {
@@ -87,7 +87,7 @@ describe('PowerDownRitual', () => {
     await waitFor(() => {
       expect(screen.getByText(/Step 2/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Record Distractions/)).toBeInTheDocument();
+    expect(screen.getByText(/Weekly Goals & Tasks/)).toBeInTheDocument();
   });
 
   it('shows step 9 with Complete Power Down button', async () => {
@@ -172,15 +172,14 @@ describe('PowerDownRitual', () => {
     });
   });
 
-  it('shows incomplete tasks on step 5 with reschedule buttons', async () => {
+  it('shows Clear Goals on step 5', async () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
         return { id: 'session-1', currentStep: 5, tomorrowPlan: [] };
       },
       '/api/tasks': [
-        { id: 't1', title: 'Incomplete task', status: 'TODO' },
-        { id: 't2', title: 'Done task', status: 'DONE' },
+        { id: 't1', title: 'Tomorrow task', status: 'TODO' },
       ],
     });
     render(<PowerDownRitual onComplete={onComplete} />);
@@ -188,11 +187,9 @@ describe('PowerDownRitual', () => {
     await waitFor(() => {
       expect(screen.getByText(/Step 5/)).toBeInTheDocument();
     });
-    expect(screen.getByText('Incomplete task')).toBeInTheDocument();
-    expect(screen.getByText(/1 incomplete task from today/)).toBeInTheDocument();
   });
 
-  it('shows Top 3 Tomorrow on step 6', async () => {
+  it('shows Goal Clarity Summary on step 6', async () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
@@ -208,7 +205,7 @@ describe('PowerDownRitual', () => {
     await waitFor(() => {
       expect(screen.getByText(/Step 6/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Top 3 Tomorrow/)).toBeInTheDocument();
+    expect(screen.getByText(/Goal Clarity Summary/)).toBeInTheDocument();
   });
 
   it('shows Previous button on steps after step 1', async () => {

@@ -41,7 +41,8 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
       personalStacks.map(async (stack: any) => {
         const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
         if (!goalsRes.ok) return [];
-        const goals = await goalsRes.json();
+        const goalsRaw = await goalsRes.json();
+        const goals = Array.isArray(goalsRaw) ? goalsRaw : [];
         return goals.map((g: any) => ({ ...g, ownerName: stack.owner?.name ?? 'Unknown' }));
       })
     );

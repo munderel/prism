@@ -7,6 +7,7 @@ import { CalendarDays, Video, GripVertical, Clock, Users, Flame, ClipboardList }
 import { useSession } from 'next-auth/react';
 import { Draggable } from '@fullcalendar/interaction';
 import { MeetingsManager } from '@/components/calendar/MeetingsManager';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // FullCalendar needs dynamic import (no SSR)
 const CalendarView = dynamic(
@@ -216,7 +217,6 @@ export default function CalendarPage() {
     if (!settingsData) return undefined;
     const s = settingsData;
     return {
-      autoScheduleEnabled: s.autoScheduleEnabled ?? true,
       workingHoursStart: s.workingHoursStart ?? '09:00',
       workingHoursEnd: s.workingHoursEnd ?? '17:00',
       casualHoursStart: s.casualHoursStart ?? '17:00',
@@ -391,7 +391,7 @@ export default function CalendarPage() {
         )}
       </div>
 
-      <MeetingsManager open={showMeetings} onClose={() => setShowMeetings(false)} />
+      <MeetingsManager open={showMeetings} onClose={() => setShowMeetings(false)} isAdmin={isAdmin} />
 
       <div className="flex gap-6">
         {/* Unscheduled Items Sidebar */}
@@ -430,12 +430,14 @@ export default function CalendarPage() {
 
         {/* Calendar + Event Details */}
         <div className="flex-1 min-w-0">
-          <CalendarView
-            onEventClick={handleEventClick}
-            onExternalDrop={handleExternalDrop}
-            unscheduledTasks={allUnscheduledItems}
-            scheduleSettings={scheduleSettings}
-          />
+          <ErrorBoundary>
+            <CalendarView
+              onEventClick={handleEventClick}
+              onExternalDrop={handleExternalDrop}
+              unscheduledTasks={allUnscheduledItems}
+              scheduleSettings={scheduleSettings}
+            />
+          </ErrorBoundary>
 
           {/* Event details panel */}
           {selectedEvent && (

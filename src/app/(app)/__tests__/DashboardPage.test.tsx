@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { renderWithProviders, userEvent } from '@/test/utils';
+import { renderWithProviders } from '@/test/utils';
 import { createTask } from '@/test/fixtures';
 import DashboardPage from '../page';
 
@@ -15,6 +15,30 @@ vi.mock('@/components/tasks/TaskEditor', () => ({
       <button onClick={props.onClose}>Close Editor</button>
     </div>
   ),
+}));
+
+vi.mock('@/components/dashboard/WinTheDayCard', () => ({
+  WinTheDayCard: () => <div data-testid="win-the-day-card" />,
+}));
+
+vi.mock('@/components/dopamine/WinTheDayCelebration', () => ({
+  WinTheDayCelebration: () => null,
+}));
+
+vi.mock('@/components/dashboard/FocusView', () => ({
+  FocusView: () => <div data-testid="focus-view" />,
+}));
+
+vi.mock('@/components/dashboard/DashboardTimeline', () => ({
+  DashboardTimeline: () => <div data-testid="dashboard-timeline" />,
+}));
+
+vi.mock('@/components/dashboard/QuickAddMenu', () => ({
+  QuickAddMenu: () => <button>Quick Add</button>,
+}));
+
+vi.mock('@/components/calendar/WeeklyHourTarget', () => ({
+  WeeklyHourTarget: () => <div data-testid="weekly-hour-target" />,
 }));
 
 const tasks = [
@@ -33,75 +57,53 @@ function renderPage(taskData: any[] = tasks) {
 }
 
 describe('DashboardPage', () => {
-  it('shows welcome message with user name', async () => {
+  it('shows greeting with user first name', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/Welcome back, Test User/)).toBeInTheDocument();
+      // Greeting depends on time of day: "Good morning", "Good afternoon", or "Good evening"
+      expect(screen.getByText(/Test/)).toBeInTheDocument();
     });
   });
 
-  it('renders stat cards with correct counts', async () => {
+  it('renders Quick Add button', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText('Total Tasks')).toBeInTheDocument();
-    });
-
-    // 4 total, 1 done, 1 in progress, 1 urgent
-    const statValues = screen.getAllByText(/^[0-4]$/);
-    expect(statValues.length).toBeGreaterThanOrEqual(4);
-  });
-
-  it('renders DailyTaskList component', async () => {
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('daily-task-list')).toBeInTheDocument();
+      expect(screen.getByText('Quick Add')).toBeInTheDocument();
     });
   });
 
-  it('shows Quick Add button', async () => {
+  it('renders WinTheDayCard component', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Quick Add/i })).toBeInTheDocument();
+      expect(screen.getByTestId('win-the-day-card')).toBeInTheDocument();
     });
   });
 
-  it('opens TaskEditor when Quick Add is clicked', async () => {
-    const user = userEvent.setup();
+  it('renders DashboardTimeline component', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Quick Add/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /Quick Add/i }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('task-editor')).toBeInTheDocument();
+      expect(screen.getByTestId('dashboard-timeline')).toBeInTheDocument();
     });
   });
 
-  it('closes TaskEditor when close is triggered', async () => {
-    const user = userEvent.setup();
+  it('renders Power Down link', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Quick Add/i })).toBeInTheDocument();
+      expect(screen.getByText('Power Down')).toBeInTheDocument();
     });
+  });
 
-    await user.click(screen.getByRole('button', { name: /Quick Add/i }));
+  it('renders view mode toggle buttons', async () => {
+    renderPage();
 
     await waitFor(() => {
-      expect(screen.getByTestId('task-editor')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByText('Close Editor'));
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('task-editor')).not.toBeInTheDocument();
+      expect(screen.getByText('Daily')).toBeInTheDocument();
+      expect(screen.getByText('Weekly')).toBeInTheDocument();
     });
   });
 
@@ -109,9 +111,8 @@ describe('DashboardPage', () => {
     renderPage([]);
 
     await waitFor(() => {
-      expect(screen.getByText('Total Tasks')).toBeInTheDocument();
+      // Page should still render without errors
+      expect(screen.getByText('Quick Add')).toBeInTheDocument();
     });
-    // All stat values should be 0
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
   });
 });

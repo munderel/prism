@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
+import { Prisma, GoalLevel, GoalStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { cacheHeaders } from '@/lib/api-helpers';
+import { parseBody, createGoalSchema } from '@/lib/schemas';
 import {
   requireAuth,
   requireAdmin,
@@ -16,6 +18,48 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const stackId = searchParams.get('stackId');
+  const isCompanyParam = searchParams.get('isCompany');
+  const levelParam = searchParams.get('level');
+  const statusParam = searchParams.get('status');
+
+  // Support querying by isCompany/level without stackId (for reviews)
+  if (!stackId && (isCompanyParam || levelParam)) {
+    const stackWhere: Prisma.GoalStackWhereInput = {};
+    if (isCompanyParam === 'true') {
+      stackWhere.isCompany = true;
+    } else {
+      stackWhere.ownerId = auth.userId;
+      stackWhere.isCompany = false;
+    }
+
+    const stacks = await prisma.goalStack.findMany({ where: stackWhere, select: { id: true } });
+    const stackIds = stacks.map((s) => s.id);
+
+    if (stackIds.length === 0) {
+      return Response.json([], { headers: cacheHeaders(10, 60) });
+    }
+
+    const goalWhere: Prisma.GoalWhereInput = { stackId: { in: stackIds }, deletedAt: null };
+    if (levelParam) goalWhere.level = levelParam as GoalLevel;
+    if (statusParam) goalWhere.status = statusParam as GoalStatus;
+
+    const goals = await prisma.goal.findMany({
+      where: goalWhere,
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        children: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } },
+        tasks: {
+          select: { id: true, title: true, status: true, priority: true, dueDate: true, taskType: true },
+          orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
+        },
+        _count: { select: { kpis: true } },
+        kpis: true,
+        stack: { select: { id: true, name: true, isCompany: true } },
+      },
+    });
+
+    return Response.json(goals, { headers: cacheHeaders(10, 60) });
+  }
 
   if (!stackId) {
     return Response.json({ error: 'stackId is required' }, { status: 400 });
@@ -62,15 +106,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const body = await request.json();
-  const { stackId, parentId, level, title, description, dueDate, startDate, endDate, autoGenerate } = body;
-
-  if (!stackId || !level || !title) {
-    return Response.json(
-      { error: 'stackId, level, and title are required' },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(request, createGoalSchema);
+  if ('error' in parsed) return parsed.error;
+  const { stackId, parentId, level, title, description, dueDate, startDate, endDate, autoGenerate } = parsed.data;
 
   // Verify stack access
   const stack = await prisma.goalStack.findUnique({ where: { id: stackId } });
@@ -238,10 +276,9 @@ export async function POST(request: NextRequest) {
         while (cursor <= monthEnd) {
           const weekStart = new Date(cursor);
 
-          // Week end = 6 days after the week start day, or month end
-          const naturalEnd = new Date(cursor);
-          naturalEnd.setDate(naturalEnd.getDate() + 6);
-          const weekEnd = naturalEnd > monthEnd ? new Date(monthEnd) : naturalEnd;
+          // Week end = always 6 days after start (full 7-day week, may span into next month)
+          const weekEnd = new Date(cursor);
+          weekEnd.setDate(weekEnd.getDate() + 6);
           weekEnd.setHours(23, 59, 59, 999);
 
           allWeekData.push({
@@ -267,7 +304,7 @@ export async function POST(request: NextRequest) {
       return hhg;
     });
 
-    return Response.json(result, { status: 201 });
+    return Response.json(result, { status: 201, headers: { 'Cache-Control': 'no-store' } });
   }
 
   const goal = await prisma.goal.create({
@@ -288,5 +325,5 @@ export async function POST(request: NextRequest) {
     await cascadeProgressUp(goal.parentId);
   }
 
-  return Response.json(goal, { status: 201 });
+  return Response.json(goal, { status: 201, headers: { 'Cache-Control': 'no-store' } });
 }
