@@ -53,11 +53,45 @@ export async function PATCH(
     return Response.json({ error: 'Process not found' }, { status: 404 });
   }
 
+  // Handle per-execution time override (drag-drop from calendar)
+  if (body.scheduledDate && (body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined)) {
+    const date = new Date(body.scheduledDate);
+    date.setHours(0, 0, 0, 0);
+    const nextDay = new Date(date.getTime() + 86400000);
+
+    let execution = await prisma.processExecution.findFirst({
+      where: {
+        processId: id,
+        scheduledDate: { gte: date, lt: nextDay },
+      },
+    });
+
+    if (!execution) {
+      execution = await prisma.processExecution.create({
+        data: {
+          processId: id,
+          executedById: auth.userId,
+          scheduledDate: date,
+        },
+      });
+    }
+
+    const updated = await prisma.processExecution.update({
+      where: { id: execution.id },
+      data: {
+        ...(body.timeBlockStart !== undefined && { timeBlockStart: body.timeBlockStart ? new Date(body.timeBlockStart) : null }),
+        ...(body.timeBlockEnd !== undefined && { timeBlockEnd: body.timeBlockEnd ? new Date(body.timeBlockEnd) : null }),
+      },
+    });
+
+    return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+  }
+
   const isAdmin = auth.session.user.isAdmin;
 
   if (isAdmin) {
     // Admin can update all fields
-    const { title, description, assigneeId, delegateId, delegateUntil, cadence, cadenceRule, defaultDurationMinutes } = body;
+    const { title, description, assigneeId, delegateId, delegateUntil, cadence, cadenceRule, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;
 
     if (defaultDurationMinutes !== undefined && (typeof defaultDurationMinutes !== 'number' || defaultDurationMinutes <= 0)) {
       return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
@@ -74,22 +108,28 @@ export async function PATCH(
         ...(cadence !== undefined && { cadence }),
         ...(cadenceRule !== undefined && { cadenceRule }),
         ...(defaultDurationMinutes !== undefined && { defaultDurationMinutes }),
+        ...(scheduledTime !== undefined && { scheduledTime: scheduledTime || null }),
+        ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
+        ...(scheduledDayOfMonth !== undefined && { scheduledDayOfMonth: scheduledDayOfMonth ?? null }),
       },
     });
     return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
   }
 
-  // Non-admin: can only update delegateId and delegateUntil on their own processes
+  // Non-admin: can update delegateId/delegateUntil and calendar scheduling on their own processes
   if (process.assigneeId !== auth.userId) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { delegateId, delegateUntil } = body;
+  const { delegateId, delegateUntil, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;
   const updated = await prisma.process.update({
     where: { id },
     data: {
       ...(delegateId !== undefined && { delegateId: delegateId || null }),
       ...(delegateUntil !== undefined && { delegateUntil: delegateUntil ? new Date(delegateUntil) : null }),
+      ...(scheduledTime !== undefined && { scheduledTime: scheduledTime || null }),
+      ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
+      ...(scheduledDayOfMonth !== undefined && { scheduledDayOfMonth: scheduledDayOfMonth ?? null }),
     },
   });
 

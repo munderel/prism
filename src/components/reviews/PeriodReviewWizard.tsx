@@ -299,6 +299,23 @@ export interface PeriodReviewConfig {
    * Default picks a goal from primaryGoals by date heuristic.
    */
   findNextPeriodParent?: (primaryGoals: Goal[], allGoals: Goal[]) => string | null;
+  /**
+   * Optional: custom GoalAdjustmentStep renderer.
+   * If not provided, the default GoalAdjustmentStep is used.
+   */
+  renderGoalAdjustment?: (context: {
+    allGoals: Goal[];
+    primaryGoals: Goal[];
+    childGoals: Goal[];
+    stackId: string | null;
+    editingGoals: Record<string, { title: string; description: string; status: string }>;
+    onEdit: (goalId: string, field: string, value: string) => void;
+    onSave: (goalId: string) => void;
+    newGoalTitle: string;
+    onNewGoalTitleChange: (v: string) => void;
+    onAddGoal: () => void;
+    goalLevelLabel: string;
+  }) => ReactNode;
 }
 
 /* ------------------------------------------------------------------ */
@@ -545,6 +562,7 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
     renderCurrentGoals,
     getKpiGoals,
     findNextPeriodParent,
+    renderGoalAdjustment,
     isTeamReview,
   } = config;
 
@@ -1030,21 +1048,39 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
               />
             )}
             {step.key === 'goal-adjustment' && (
-              <GoalAdjustmentStep
-                goals={primaryGoals}
-                editingGoals={editingGoals}
-                onEdit={(goalId, field, value) =>
-                  setEditingGoals((prev) => ({
-                    ...prev,
-                    [goalId]: { ...prev[goalId], [field]: value },
-                  }))
-                }
-                onSave={saveGoalEdit}
-                newGoalTitle={newGoalTitle}
-                onNewGoalTitleChange={setNewGoalTitle}
-                onAddGoal={addNewGoal}
-                goalLevelLabel={goalLevelLabel}
-              />
+              renderGoalAdjustment
+                ? renderGoalAdjustment({
+                    allGoals,
+                    primaryGoals,
+                    childGoals,
+                    stackId,
+                    editingGoals,
+                    onEdit: (goalId, field, value) =>
+                      setEditingGoals((prev) => ({
+                        ...prev,
+                        [goalId]: { ...prev[goalId], [field]: value },
+                      })),
+                    onSave: saveGoalEdit,
+                    newGoalTitle,
+                    onNewGoalTitleChange: setNewGoalTitle,
+                    onAddGoal: addNewGoal,
+                    goalLevelLabel,
+                  })
+                : <GoalAdjustmentStep
+                    goals={primaryGoals}
+                    editingGoals={editingGoals}
+                    onEdit={(goalId, field, value) =>
+                      setEditingGoals((prev) => ({
+                        ...prev,
+                        [goalId]: { ...prev[goalId], [field]: value },
+                      }))
+                    }
+                    onSave={saveGoalEdit}
+                    newGoalTitle={newGoalTitle}
+                    onNewGoalTitleChange={setNewGoalTitle}
+                    onAddGoal={addNewGoal}
+                    goalLevelLabel={goalLevelLabel}
+                  />
             )}
             {planStepKey && step.key === planStepKey && (
               <PlanNextPeriodStep

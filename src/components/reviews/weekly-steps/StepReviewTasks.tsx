@@ -32,23 +32,36 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
 
   const fetchLastWeekTasks = async () => {
     try {
+      // Fetch personal stack to get weekStartDay setting
+      let weekStartDay = 1; // Default Monday
+      try {
+        const stacksRes = await fetch('/api/stacks');
+        if (stacksRes.ok) {
+          const stacks = await stacksRes.json();
+          const personal = stacks.find((s: any) => !s.isCompany);
+          if (personal?.weekStartDay !== undefined) {
+            weekStartDay = personal.weekStartDay;
+          }
+        }
+      } catch { /* use default */ }
+
       const now = new Date();
-      // Align to Mon-Sun week boundaries (matching weekly goal cycle)
+      // Align to week boundaries using stack's weekStartDay (0=Sun, 1=Mon, etc.)
       const dayOfWeek = now.getDay();
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const thisMonday = new Date(now);
-      thisMonday.setDate(now.getDate() + mondayOffset);
-      thisMonday.setHours(0, 0, 0, 0);
+      const diff = (dayOfWeek - weekStartDay + 7) % 7;
+      const thisWeekStart = new Date(now);
+      thisWeekStart.setDate(now.getDate() - diff);
+      thisWeekStart.setHours(0, 0, 0, 0);
 
-      const lastMonday = new Date(thisMonday);
-      lastMonday.setDate(thisMonday.getDate() - 7);
+      const lastWeekStart = new Date(thisWeekStart);
+      lastWeekStart.setDate(thisWeekStart.getDate() - 7);
 
-      const lastSunday = new Date(thisMonday);
-      lastSunday.setDate(thisMonday.getDate() - 1);
-      lastSunday.setHours(23, 59, 59, 999);
+      const lastWeekEnd = new Date(thisWeekStart);
+      lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
+      lastWeekEnd.setHours(23, 59, 59, 999);
 
       const res = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(lastMonday)}&endDate=${getLocalDateString(lastSunday)}`
+        `/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}`
       );
       if (res.ok) {
         const data = await res.json();

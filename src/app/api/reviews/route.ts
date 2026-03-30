@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { reviewType, startDate, recurrenceDayOfWeek, isTeamReview, scheduleConfig } = body;
+  const { reviewType, scheduledDate: scheduledDateStr, startDate, recurrenceDayOfWeek, isTeamReview, scheduleConfig } = body;
 
   if (!reviewType) {
     return Response.json({ error: 'reviewType is required' }, { status: 400 });
@@ -168,23 +168,21 @@ export async function POST(request: NextRequest) {
   const existing = await prisma.review.findFirst({ where: existingWhere });
 
   if (existing) {
-    return Response.json({ error: 'An incomplete review of this type already exists' }, { status: 409 });
+    return Response.json({ error: 'An incomplete review of this type already exists', existingId: existing.id }, { status: 409 });
   }
 
   const now = new Date();
 
-  // Calculate scheduled date, using scheduleConfig recurrence rules when provided
+  // Calculate scheduled date
   let scheduledDate: Date;
-  if (scheduleConfig) {
+  if (scheduledDateStr) {
+    // Direct date from calendar click
+    scheduledDate = new Date(scheduledDateStr);
+  } else if (scheduleConfig) {
     const configType = scheduleConfig.type as string;
     if (configType === 'weekly' && scheduleConfig.dayOfWeek !== null && scheduleConfig.dayOfWeek !== undefined) {
       const dayOfWeek = scheduleConfig.dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6;
-      if (now.getDay() === dayOfWeek) {
-        // If today is the target day, schedule for next week
-        scheduledDate = nextDay(now, dayOfWeek);
-      } else {
-        scheduledDate = nextDay(now, dayOfWeek);
-      }
+      scheduledDate = nextDay(now, dayOfWeek);
     } else if (configType === 'monthly' && scheduleConfig.recurrenceRule) {
       scheduledDate = computeMonthlyDate(scheduleConfig.recurrenceRule, now);
     } else if (configType === 'yearly' && scheduleConfig.recurrenceRule) {
@@ -193,7 +191,6 @@ export async function POST(request: NextRequest) {
       scheduledDate = getNextReviewDate(reviewType);
     }
   } else if (startDate && recurrenceDayOfWeek !== undefined && recurrenceDayOfWeek !== null) {
-    // Find the next occurrence of the specified day of week on or after startDate
     const base = new Date(startDate);
     const dayOfWeek = recurrenceDayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6;
     if (base.getDay() === dayOfWeek) {

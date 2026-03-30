@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { KpiTimeLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { notFoundResponse, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
@@ -59,21 +60,51 @@ export async function POST(
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { name, unit, targetValue, goalId } = body;
+  const { name, unit, targetValue, goalId, goals } = body;
 
   if (!name) {
     return Response.json({ error: 'name is required' }, { status: 400 });
   }
 
-  const kpi = await prisma.processKpi.create({
-    data: {
-      processId: id,
-      name,
-      unit: unit || null,
-      targetValue: targetValue ?? null,
-      goalId: goalId || null,
-    },
+  // Validate goal timeLevel values if provided
+  const validTimeLevels = Object.values(KpiTimeLevel) as string[];
+  if (Array.isArray(goals) && goals.length > 0) {
+    for (const g of goals) {
+      if (!validTimeLevels.includes(g.timeLevel)) {
+        return Response.json({ error: `Invalid timeLevel: ${g.timeLevel}` }, { status: 400 });
+      }
+      if (typeof g.targetValue !== 'number' || !isFinite(g.targetValue)) {
+        return Response.json({ error: 'Goal targetValue must be a finite number' }, { status: 400 });
+      }
+    }
+  }
+
+  const kpiWithGoals = await prisma.$transaction(async (tx) => {
+    const kpi = await tx.processKpi.create({
+      data: {
+        processId: id,
+        name,
+        unit: unit || null,
+        targetValue: targetValue ?? null,
+        goalId: goalId || null,
+      },
+    });
+
+    if (Array.isArray(goals) && goals.length > 0) {
+      await tx.processKpiGoal.createMany({
+        data: goals.map((g: { timeLevel: string; targetValue: number }) => ({
+          kpiId: kpi.id,
+          timeLevel: g.timeLevel as KpiTimeLevel,
+          targetValue: g.targetValue,
+        })),
+      });
+    }
+
+    return tx.processKpi.findUnique({
+      where: { id: kpi.id },
+      include: { goals: true, goal: { select: { id: true, title: true } } },
+    });
   });
 
-  return Response.json(kpi, { status: 201 });
+  return Response.json(kpiWithGoals, { status: 201 });
 }

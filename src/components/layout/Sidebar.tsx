@@ -19,6 +19,7 @@ import {
   ListChecks,
   Settings,
   Zap,
+  TrendingUp,
 } from 'lucide-react';
 import { StreakCounter } from '@/components/dopamine/StreakCounter';
 import { useEffect, useState, useMemo } from 'react';
@@ -50,6 +51,7 @@ const navSections = [
     items: [
       { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
       { href: '/reports', label: 'Reports', icon: BarChart3 },
+      { href: '/kpis', label: 'KPI Dashboard', icon: TrendingUp },
     ],
   },
   {

@@ -82,3 +82,123 @@ export function formatDisplayDate(
   if (options?.weekday) fmt.weekday = 'long';
   return d.toLocaleDateString('en-US', fmt);
 }
+
+// ─── Date boundary helpers ────────────────────────────────────────────────────
+
+export interface DateBoundary {
+  start: string;
+  end: string;
+}
+
+export interface LabeledDateBoundary extends DateBoundary {
+  label: string;
+}
+
+/**
+ * Returns the Monday–Sunday boundaries of the week containing the given date
+ * (defaults to today) as YYYY-MM-DD strings in local timezone.
+ */
+export function getWeekBoundaries(date?: Date): DateBoundary {
+  const d = date ? new Date(date) : new Date();
+  // getDay(): 0 = Sunday, 1 = Monday, …, 6 = Saturday
+  // Shift so Monday = 0, …, Sunday = 6
+  const dayOfWeek = (d.getDay() + 6) % 7;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - dayOfWeek);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return {
+    start: getLocalDateString(monday),
+    end: getLocalDateString(sunday),
+  };
+}
+
+/**
+ * Returns the first and last day of the month containing the given date
+ * (defaults to today) as YYYY-MM-DD strings in local timezone.
+ */
+export function getMonthBoundaries(date?: Date): DateBoundary {
+  const d = date ?? new Date();
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0); // day 0 of next month = last day of this month
+  return {
+    start: getLocalDateString(firstDay),
+    end: getLocalDateString(lastDay),
+  };
+}
+
+/**
+ * Returns Jan 1 and Dec 31 of the year containing the given date
+ * (defaults to today) as YYYY-MM-DD strings in local timezone.
+ */
+export function getYearBoundaries(date?: Date): DateBoundary {
+  const year = (date ?? new Date()).getFullYear();
+  return {
+    start: `${year}-01-01`,
+    end: `${year}-12-31`,
+  };
+}
+
+/**
+ * Returns an array of labeled week boundaries that fall within (or overlap)
+ * the given month. Weeks start on Monday. Partial weeks at the start or end
+ * of the month are included, clipped to the month boundaries.
+ *
+ * @param year  Full 4-digit year (e.g. 2026)
+ * @param month 1-based month number (1 = January, 12 = December)
+ */
+export function getWeeksInMonth(year: number, month: number): LabeledDateBoundary[] {
+  const firstOfMonth = new Date(year, month - 1, 1);
+  const lastOfMonth = new Date(year, month, 0);
+
+  const weeks: LabeledDateBoundary[] = [];
+  // Start from the Monday of the first week that contains any day in the month
+  const dayOfWeek = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
+  const cursor = new Date(firstOfMonth);
+  cursor.setDate(firstOfMonth.getDate() - dayOfWeek); // rewind to Monday
+
+  let weekIndex = 1;
+  while (cursor <= lastOfMonth) {
+    const weekStart = new Date(cursor);
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(cursor.getDate() + 6);
+
+    // Clip to month boundaries
+    const clippedStart = weekStart < firstOfMonth ? firstOfMonth : weekStart;
+    const clippedEnd = weekEnd > lastOfMonth ? lastOfMonth : weekEnd;
+
+    weeks.push({
+      label: `Week ${weekIndex}`,
+      start: getLocalDateString(clippedStart),
+      end: getLocalDateString(clippedEnd),
+    });
+
+    weekIndex++;
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return weeks;
+}
+
+/** Short month names in order, used as labels. */
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Returns an array of labeled month boundaries for every month in the given year.
+ *
+ * @param year Full 4-digit year (e.g. 2026)
+ */
+export function getMonthsInYear(year: number): LabeledDateBoundary[] {
+  return MONTH_LABELS.map((label, i) => {
+    const month = i; // 0-based
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    return {
+      label,
+      start: getLocalDateString(firstDay),
+      end: getLocalDateString(lastDay),
+    };
+  });
+}

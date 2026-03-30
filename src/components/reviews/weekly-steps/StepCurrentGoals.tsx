@@ -278,7 +278,7 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           {goal.level === 'MONTHLY' && goal.startDate && (() => {
             const d = new Date(goal.startDate + 'T00:00:00');
             return (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400">
+              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400">
                 {d.toLocaleString('default', { month: 'long', year: 'numeric' })}
               </span>
             );
@@ -341,7 +341,9 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           {node.monthlyGoals.length > 0 && (
             <div className="space-y-2 ml-4">
               <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide font-medium">
-                Monthly Goals
+                Monthly Goals{node.monthlyGoals.length > 0 && node.monthlyGoals[0].startDate && (
+                  <> — {new Date(node.monthlyGoals[0].startDate + 'T00:00:00').toLocaleString('default', { month: 'long', year: 'numeric' })}</>
+                )}
               </span>
               {node.monthlyGoals.map((g) => renderGoalCard(g, 0))}
             </div>

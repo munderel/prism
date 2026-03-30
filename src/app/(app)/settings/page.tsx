@@ -48,6 +48,16 @@ export default function SettingsPage() {
   const [weeklyReviewTime, setWeeklyReviewTime] = useState('10:00');
   const [weeklyReviewDuration, setWeeklyReviewDuration] = useState(60);
 
+  // Monthly Review Schedule
+  const [monthlyReviewRecurrenceRule, setMonthlyReviewRecurrenceRule] = useState<string | null>(null);
+  const [monthlyReviewTime, setMonthlyReviewTime] = useState('10:00');
+  const [monthlyReviewDuration, setMonthlyReviewDuration] = useState(60);
+
+  // Yearly Review Schedule
+  const [yearlyReviewRecurrenceRule, setYearlyReviewRecurrenceRule] = useState<string | null>(null);
+  const [yearlyReviewTime, setYearlyReviewTime] = useState('10:00');
+  const [yearlyReviewDuration, setYearlyReviewDuration] = useState(60);
+
   // Dev user creation
   const [createName, setCreateName] = useState('');
   const [createEmail, setCreateEmail] = useState('');
@@ -99,6 +109,12 @@ export default function SettingsPage() {
       if (data.weeklyReviewDayOfWeek != null) setWeeklyReviewDayOfWeek(data.weeklyReviewDayOfWeek);
       if (data.weeklyReviewTime) setWeeklyReviewTime(data.weeklyReviewTime);
       if (data.weeklyReviewDuration) setWeeklyReviewDuration(data.weeklyReviewDuration);
+      if (data.monthlyReviewRecurrenceRule) setMonthlyReviewRecurrenceRule(data.monthlyReviewRecurrenceRule);
+      if (data.monthlyReviewTime) setMonthlyReviewTime(data.monthlyReviewTime);
+      if (data.monthlyReviewDuration) setMonthlyReviewDuration(data.monthlyReviewDuration);
+      if (data.yearlyReviewRecurrenceRule) setYearlyReviewRecurrenceRule(data.yearlyReviewRecurrenceRule);
+      if (data.yearlyReviewTime) setYearlyReviewTime(data.yearlyReviewTime);
+      if (data.yearlyReviewDuration) setYearlyReviewDuration(data.yearlyReviewDuration);
     }
   };
 
@@ -135,7 +151,7 @@ export default function SettingsPage() {
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration }),
+      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration }),
     });
     // Revalidate sidebar's settings cache so hidden features take effect immediately
     globalMutate('/api/settings?scope=user');
@@ -590,47 +606,178 @@ export default function SettingsPage() {
           </button>
         </section>
 
-        {/* Weekly Review Schedule */}
+        {/* Review Schedule */}
         <section className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Calendar className="h-5 w-5 text-blue-400" />
-            Weekly Review Schedule
+            Review Schedule
           </h2>
-          <p className="text-xs text-[var(--text-muted)] mb-4">Set your weekly review day and time. It will appear as a recurring event on your calendar.</p>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
-              <select
-                value={weeklyReviewDayOfWeek}
-                onChange={(e) => setWeeklyReviewDayOfWeek(Number(e.target.value))}
-                className={inputClasses}
-              >
-                {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day, i) => (
-                  <option key={i} value={i}>{day}</option>
-                ))}
-              </select>
+          <p className="text-xs text-[var(--text-muted)] mb-6">Configure your review cadences. Each will appear as a recurring event on your calendar.</p>
+
+          {/* Weekly Review */}
+          <div className="mb-6 pb-6 border-b border-[var(--border-color)]">
+            <h3 className="text-sm font-semibold text-green-400 mb-3">Weekly Review</h3>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
+                <select
+                  value={weeklyReviewDayOfWeek}
+                  onChange={(e) => setWeeklyReviewDayOfWeek(Number(e.target.value))}
+                  className={inputClasses}
+                >
+                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day, i) => (
+                    <option key={i} value={i}>{day}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Time</label>
+                <input
+                  type="time"
+                  value={weeklyReviewTime}
+                  onChange={(e) => setWeeklyReviewTime(e.target.value)}
+                  className={inputClasses}
+                />
+              </div>
             </div>
             <div>
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Time</label>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
               <input
-                type="time"
-                value={weeklyReviewTime}
-                onChange={(e) => setWeeklyReviewTime(e.target.value)}
-                className={inputClasses}
+                type="number"
+                min={15}
+                max={480}
+                value={weeklyReviewDuration}
+                onChange={(e) => setWeeklyReviewDuration(Number(e.target.value))}
+                className={`${inputClasses} w-32`}
               />
             </div>
           </div>
-          <div className="mb-4">
-            <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
-            <input
-              type="number"
-              min={15}
-              max={480}
-              value={weeklyReviewDuration}
-              onChange={(e) => setWeeklyReviewDuration(Number(e.target.value))}
-              className={`${inputClasses} w-32`}
-            />
+
+          {/* Monthly Review */}
+          <div className="mb-6 pb-6 border-b border-[var(--border-color)]">
+            <h3 className="text-sm font-semibold text-blue-400 mb-3">Monthly Review</h3>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Recurrence</label>
+                <select
+                  value={monthlyReviewRecurrenceRule ?? ''}
+                  onChange={(e) => setMonthlyReviewRecurrenceRule(e.target.value || null)}
+                  className={inputClasses}
+                >
+                  <option value="">Not scheduled</option>
+                  <option value="last-friday">Last Friday</option>
+                  <option value="last-monday">Last Monday</option>
+                  <option value="1st-monday">1st Monday</option>
+                  <option value="1st-friday">1st Friday</option>
+                  <option value="15th">15th of month</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Time</label>
+                <input
+                  type="time"
+                  value={monthlyReviewTime}
+                  onChange={(e) => setMonthlyReviewTime(e.target.value)}
+                  className={inputClasses}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
+              <input
+                type="number"
+                min={15}
+                max={480}
+                value={monthlyReviewDuration}
+                onChange={(e) => setMonthlyReviewDuration(Number(e.target.value))}
+                className={`${inputClasses} w-32`}
+              />
+            </div>
           </div>
+
+          {/* Yearly Review */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-yellow-400 mb-3">Yearly Review</h3>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Recurrence</label>
+                <select
+                  value={yearlyReviewRecurrenceRule?.startsWith('custom:') ? 'custom' : (yearlyReviewRecurrenceRule ?? '')}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'custom') {
+                      setYearlyReviewRecurrenceRule('custom:12-30');
+                    } else {
+                      setYearlyReviewRecurrenceRule(val || null);
+                    }
+                  }}
+                  className={inputClasses}
+                >
+                  <option value="">Not scheduled</option>
+                  <option value="last-sat-dec">Last Saturday of December</option>
+                  <option value="dec-30">December 30</option>
+                  <option value="dec-31">December 31</option>
+                  <option value="custom">Custom date</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--text-secondary)] mb-1">Time</label>
+                <input
+                  type="time"
+                  value={yearlyReviewTime}
+                  onChange={(e) => setYearlyReviewTime(e.target.value)}
+                  className={inputClasses}
+                />
+              </div>
+            </div>
+            {yearlyReviewRecurrenceRule?.startsWith('custom:') && (
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs text-[var(--text-secondary)] mb-1">Month</label>
+                  <select
+                    value={parseInt(yearlyReviewRecurrenceRule.split(':')[1]?.split('-')[0] ?? '12')}
+                    onChange={(e) => {
+                      const month = e.target.value.padStart(2, '0');
+                      const day = yearlyReviewRecurrenceRule.split(':')[1]?.split('-')[1] ?? '30';
+                      setYearlyReviewRecurrenceRule(`custom:${month}-${day}`);
+                    }}
+                    className={inputClasses}
+                  >
+                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m, i) => (
+                      <option key={i} value={i + 1}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--text-secondary)] mb-1">Day</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={parseInt(yearlyReviewRecurrenceRule.split(':')[1]?.split('-')[1] ?? '30')}
+                    onChange={(e) => {
+                      const month = yearlyReviewRecurrenceRule.split(':')[1]?.split('-')[0] ?? '12';
+                      const day = e.target.value.padStart(2, '0');
+                      setYearlyReviewRecurrenceRule(`custom:${month}-${day}`);
+                    }}
+                    className={`${inputClasses} w-32`}
+                  />
+                </div>
+              </div>
+            )}
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
+              <input
+                type="number"
+                min={15}
+                max={480}
+                value={yearlyReviewDuration}
+                onChange={(e) => setYearlyReviewDuration(Number(e.target.value))}
+                className={`${inputClasses} w-32`}
+              />
+            </div>
+          </div>
+
           <button onClick={saveUserSettings} disabled={saving}
             className="mt-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
             Save

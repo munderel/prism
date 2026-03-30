@@ -14,7 +14,7 @@ export async function POST(
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { title, description, cadence, assigneeId, defaultDurationMinutes } = body;
+  const { title, description, cadence, assigneeId, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;
 
   if (!title || typeof title !== 'string') {
     return Response.json({ error: 'title is required' }, { status: 400 });
@@ -32,6 +32,9 @@ export async function POST(
       cadence: cadence || 'WEEKLY',
       assigneeId: assigneeId || null,
       ...(defaultDurationMinutes !== undefined && { defaultDurationMinutes }),
+      ...(scheduledTime !== undefined && { scheduledTime: scheduledTime || null }),
+      ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
+      ...(scheduledDayOfMonth !== undefined && { scheduledDayOfMonth: scheduledDayOfMonth ?? null }),
     },
     include: {
       assignee: { select: { id: true, name: true, email: true } },
