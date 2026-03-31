@@ -15,12 +15,14 @@ type Task = {
   status: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'DROPPED';
   dueDate: string | null;
   ownerId: string;
+  owner: { id: string; name: string | null; email: string } | null;
   assigneeId: string | null;
   createdAt: string;
   taskType: string;
   goal: { id: string; title: string; level: string } | null;
   processExecution: { process: { title: string } } | null;
   _count: { comments: number };
+  attachments: { id: string; fileName: string; fileUrl: string }[];
 };
 
 type FilterPriority = 'ALL' | 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
@@ -90,7 +92,14 @@ export default function ReactiveTasksPage() {
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === 'PRIORITY') return (PRIORITY_ORDER[b.priority] ?? 0) - (PRIORITY_ORDER[a.priority] ?? 0);
+        if (sortBy === 'PRIORITY') {
+          const p = (PRIORITY_ORDER[b.priority] ?? 0) - (PRIORITY_ORDER[a.priority] ?? 0);
+          if (p !== 0) return p;
+          if (!a.dueDate && !b.dueDate) return 0;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        }
         if (sortBy === 'DUE_DATE') {
           if (!a.dueDate && !b.dueDate) return 0;
           if (!a.dueDate) return 1;
@@ -254,6 +263,13 @@ export default function ReactiveTasksPage() {
                     </span>
                   </button>
 
+                  {/* Owner */}
+                  {task.owner && (
+                    <span className="flex-shrink-0 text-xs text-[var(--text-muted)]">
+                      {task.owner.name || task.owner.email}
+                    </span>
+                  )}
+
                   {/* Status Badge (clickable to toggle) */}
                   {!isDone ? (
                     <button
@@ -277,14 +293,6 @@ export default function ReactiveTasksPage() {
                         : 'text-[var(--text-muted)]'
                     }`}>
                       {formatRelativeDate(task.dueDate)}
-                    </span>
-                  )}
-
-                  {/* Comment count */}
-                  {task._count.comments > 0 && (
-                    <span className="flex-shrink-0 flex items-center gap-1 text-xs text-[var(--text-muted)]">
-                      <MessageSquare className="h-3 w-3" />
-                      {task._count.comments}
                     </span>
                   )}
 
@@ -318,6 +326,28 @@ export default function ReactiveTasksPage() {
                       </pre>
                     ) : (
                       <p className="text-sm text-[var(--text-muted)] italic">No description provided</p>
+                    )}
+                    {task.attachments && task.attachments.length > 0 && (
+                      <div className="mt-3 space-y-1">
+                        <p className="text-xs font-medium text-[var(--text-muted)]">Attachments</p>
+                        {task.attachments.map((att) => (
+                          <a
+                            key={att.id}
+                            href={att.fileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                          >
+                            {att.fileName}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {task._count.comments > 0 && (
+                      <div className="mt-3 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        {task._count.comments} comment{task._count.comments !== 1 ? 's' : ''}
+                      </div>
                     )}
                   </div>
                 )}

@@ -93,9 +93,11 @@ export async function GET(request: NextRequest) {
       { dueDate: 'asc' },
     ],
     include: {
+      owner: { select: { id: true, name: true, email: true } },
       goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } },
       processExecution: { include: { process: { select: { title: true } } } },
       _count: { select: { comments: true } },
+      attachments: { select: { id: true, fileName: true, fileUrl: true } },
     },
   });
 
