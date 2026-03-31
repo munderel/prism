@@ -5,14 +5,13 @@ import { notifyUser } from '@/lib/notifications';
 /**
  * Check for derailing tasks and send notifications.
  * Called on-demand from /api/tasks GET instead of a cron job.
- * Uses a simple time-based guard to avoid spamming notifications
- * on every request — only runs the check once per 30 minutes.
+ * Uses a time-based guard to run at most once per 30 minutes.
  */
 
 let lastCheckTime = 0;
-const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
-export async function checkDerailingTasks() {
+export async function checkDerailingTasks(): Promise<void> {
   const now = Date.now();
   if (now - lastCheckTime < CHECK_INTERVAL_MS) return;
   lastCheckTime = now;
@@ -33,32 +32,31 @@ export async function checkDerailingTasks() {
     });
 
     const derailingTasks = tasks.filter(
-      (task) => checkTaskDerailStatus(task, task.owner.timezone) === 'derailing'
+      (task) => checkTaskDerailStatus(task, task.owner.timezone) === 'derailing',
     );
-
     if (derailingTasks.length === 0) return;
 
-    const ownerIds = Array.from(new Set(derailingTasks.map((t) => t.owner.id)));
+    const ownerIds = [...new Set(derailingTasks.map((t) => t.owner.id))];
     const prefs = await prisma.notificationPreference.findMany({
       where: { userId: { in: ownerIds } },
     });
     const prefsMap = new Map(prefs.map((p) => [p.userId, p]));
 
-    const notifications = derailingTasks
-      .filter((task) => {
-        const pref = prefsMap.get(task.owner.id);
-        return !pref || pref.derailingAlerts;
-      })
-      .map((task) =>
-        notifyUser(
-          task.owner.id,
-          'Task Derailing!',
-          `"${task.title}" is past 6pm and not done. Take action now.`,
-          '/tasks'
-        )
-      );
-
-    await Promise.all(notifications);
+    await Promise.all(
+      derailingTasks
+        .filter((task) => {
+          const pref = prefsMap.get(task.owner.id);
+          return !pref || pref.derailingAlerts;
+        })
+        .map((task) =>
+          notifyUser(
+            task.owner.id,
+            'Task Derailing!',
+            `"${task.title}" is past 6pm and not done. Take action now.`,
+            '/tasks',
+          ),
+        ),
+    );
   } catch (error) {
     console.error('[derailing-checker] Error:', error);
   }

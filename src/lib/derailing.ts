@@ -10,33 +10,27 @@ interface TaskLike {
 /**
  * Check derailing status for a task based on user's local time.
  * - at_risk (orange): daily task TODO past 2pm local
- * - derailing (red): daily task !DONE past 6pm local
+ * - derailing (red): daily task not DONE past 6pm local
  */
 export function checkTaskDerailStatus(
   task: TaskLike,
-  timezone: string
+  timezone: string,
 ): DerailStatus {
   if (task.status === 'DONE' || task.status === 'DROPPED') return 'ok';
   if (!task.dueDate) return 'ok';
 
-  const now = new Date();
-  const dueDate = new Date(task.dueDate);
+  const zonedNow = toZonedTime(new Date(), timezone);
+  const zonedDue = toZonedTime(new Date(task.dueDate), timezone);
 
   // Only check tasks due today
-  const zonedNow = toZonedTime(now, timezone);
-  const zonedDue = toZonedTime(dueDate, timezone);
-
-  if (
-    zonedNow.getFullYear() !== zonedDue.getFullYear() ||
-    zonedNow.getMonth() !== zonedDue.getMonth() ||
-    zonedNow.getDate() !== zonedDue.getDate()
-  ) {
-    return 'ok';
-  }
+  const sameDay =
+    zonedNow.getFullYear() === zonedDue.getFullYear() &&
+    zonedNow.getMonth() === zonedDue.getMonth() &&
+    zonedNow.getDate() === zonedDue.getDate();
+  if (!sameDay) return 'ok';
 
   const hour = zonedNow.getHours();
-
-  if (hour >= 18 && task.status !== 'DONE') return 'derailing';
+  if (hour >= 18) return 'derailing';
   if (hour >= 14 && task.status === 'TODO') return 'at_risk';
 
   return 'ok';
@@ -51,23 +45,4 @@ export function checkStreakAtRisk(
 ): boolean {
   const zonedNow = toZonedTime(new Date(), timezone);
   return completionsToday === 0 && zonedNow.getHours() >= 12;
-}
-
-/**
- * Get all derailing tasks for a user's task list.
- */
-export function getDerailingTasks(
-  tasks: TaskLike[],
-  timezone: string
-): { atRisk: TaskLike[]; derailing: TaskLike[] } {
-  const atRisk: TaskLike[] = [];
-  const derailing: TaskLike[] = [];
-
-  for (const task of tasks) {
-    const status = checkTaskDerailStatus(task, timezone);
-    if (status === 'at_risk') atRisk.push(task);
-    else if (status === 'derailing') derailing.push(task);
-  }
-
-  return { atRisk, derailing };
 }

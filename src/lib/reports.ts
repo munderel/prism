@@ -1,3 +1,5 @@
+import { getLocalDateString } from './date-utils';
+
 interface TaskData {
   status: string;
   taskType: string;
@@ -44,8 +46,7 @@ export function computeIndividualReport(
   const dailyMap = new Map<string, number>();
   for (const t of tasks) {
     if (t.status === 'DONE' && t.completedAt) {
-      const d = new Date(t.completedAt);
-      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const date = getLocalDateString(new Date(t.completedAt as string));
       dailyMap.set(date, (dailyMap.get(date) ?? 0) + 1);
     }
   }
@@ -65,20 +66,30 @@ export function computeIndividualReport(
   };
 }
 
+function getSuggestion(frequency: number): string {
+  if (frequency > 20) return 'Automate';
+  if (frequency > 10) return 'Delegate';
+  return 'Keep';
+}
+
 export function computeLeverageAnalysis(maintenanceTasks: TaskData[]): CompanyReport['leverageAnalysis'] {
-  const freq = new Map<string, number>();
+  const freq = new Map<string, { count: number; recurrenceRule: string }>();
 
   for (const t of maintenanceTasks) {
-    const count = freq.get(t.title) ?? 0;
-    freq.set(t.title, count + 1);
+    const existing = freq.get(t.title);
+    if (existing) {
+      existing.count++;
+    } else {
+      freq.set(t.title, { count: 1, recurrenceRule: t.recurrenceRule ?? '' });
+    }
   }
 
   return Array.from(freq.entries())
-    .map(([title, frequency]) => ({
+    .map(([title, { count, recurrenceRule }]) => ({
       title,
-      recurrenceRule: maintenanceTasks.find((t) => t.title === title)?.recurrenceRule ?? '',
-      frequency,
-      suggestion: frequency > 20 ? 'Automate' : frequency > 10 ? 'Delegate' : 'Keep',
+      recurrenceRule,
+      frequency: count,
+      suggestion: getSuggestion(count),
     }))
     .sort((a, b) => b.frequency - a.frequency);
 }

@@ -161,6 +161,34 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+/**
+ * Try to find an available slot across multiple days within the given time range.
+ * On `now`'s day, the range start is clamped to the current time to avoid scheduling in the past.
+ * Returns the slot start time, or null if no day has availability.
+ */
+function findSlotAcrossDays(
+  days: Date[],
+  now: Date,
+  hours: WorkingHours,
+  durationMs: number,
+  occupied: CalendarEvent[]
+): Date | null {
+  for (const day of days) {
+    let rangeStart = setTimeOnDate(day, hours.start);
+    const rangeEnd = setTimeOnDate(day, hours.end);
+
+    if (isSameDay(day, now) && now.getTime() > rangeStart.getTime()) {
+      rangeStart = new Date(now);
+    }
+
+    if (rangeStart.getTime() >= rangeEnd.getTime()) continue;
+
+    const slot = findSlotInRange(day, rangeStart, rangeEnd, durationMs, occupied);
+    if (slot) return slot;
+  }
+  return null;
+}
+
 // ---------- Main scheduling function ----------
 
 /**
@@ -189,16 +217,12 @@ export function autoSchedule(
     const priDiff = PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority];
     if (priDiff !== 0) return priDiff;
 
-    // dueDate ASC, nulls last
-    if (a.dueDate && b.dueDate) {
-      return a.dueDate.getTime() - b.dueDate.getTime();
-    }
+    if (a.dueDate && b.dueDate) return a.dueDate.getTime() - b.dueDate.getTime();
     if (a.dueDate && !b.dueDate) return -1;
     if (!a.dueDate && b.dueDate) return 1;
     return 0;
   });
 
-  // Accumulate occupied slots (existing events + newly scheduled)
   const occupied: CalendarEvent[] = [...existingEvents];
   const results: ProposedSlot[] = [];
 
@@ -207,59 +231,26 @@ export function autoSchedule(
     const durationMs = task.estimatedMinutes * 60 * 1000;
     const days = getDaysBetween(now, horizon);
 
-    let scheduled = false;
-
-    // First pass: try preferred time window on each day
+    // First pass: try preferred time window
+    let slot: Date | null = null;
     if (task.preferredTimeStart && task.preferredTimeEnd) {
-      for (const day of days) {
-        let prefStart = setTimeOnDate(day, task.preferredTimeStart);
-        const prefEnd = setTimeOnDate(day, task.preferredTimeEnd);
-
-        // On today, clamp start to current time so we don't schedule in the past
-        if (isSameDay(day, now) && now.getTime() > prefStart.getTime()) {
-          prefStart = new Date(now);
-        }
-
-        // If clamping pushed start past end, skip this day
-        if (prefStart.getTime() >= prefEnd.getTime()) continue;
-
-        const slot = findSlotInRange(day, prefStart, prefEnd, durationMs, occupied);
-        if (slot) {
-          const slotEnd = new Date(slot.getTime() + durationMs);
-          results.push({ taskId: task.id, start: slot, end: slotEnd });
-          occupied.push({ start: slot, end: slotEnd });
-          scheduled = true;
-          break;
-        }
-      }
+      const preferredHours: WorkingHours = {
+        start: task.preferredTimeStart,
+        end: task.preferredTimeEnd,
+      };
+      slot = findSlotAcrossDays(days, now, preferredHours, durationMs, occupied);
     }
 
     // Second pass: try any working-hours slot
-    if (!scheduled) {
-      for (const day of days) {
-        let whStart = setTimeOnDate(day, workingHours.start);
-        const whEnd = setTimeOnDate(day, workingHours.end);
-
-        // On today, clamp start to current time so we don't schedule in the past
-        if (isSameDay(day, now) && now.getTime() > whStart.getTime()) {
-          whStart = new Date(now);
-        }
-
-        // If clamping pushed start past end, skip this day
-        if (whStart.getTime() >= whEnd.getTime()) continue;
-
-        const slot = findSlotInRange(day, whStart, whEnd, durationMs, occupied);
-        if (slot) {
-          const slotEnd = new Date(slot.getTime() + durationMs);
-          results.push({ taskId: task.id, start: slot, end: slotEnd });
-          occupied.push({ start: slot, end: slotEnd });
-          scheduled = true;
-          break;
-        }
-      }
+    if (!slot) {
+      slot = findSlotAcrossDays(days, now, workingHours, durationMs, occupied);
     }
 
-    // If still not scheduled, silently exclude
+    if (slot) {
+      const slotEnd = new Date(slot.getTime() + durationMs);
+      results.push({ taskId: task.id, start: slot, end: slotEnd });
+      occupied.push({ start: slot, end: slotEnd });
+    }
   }
 
   return results;
@@ -299,64 +290,43 @@ export function autoScheduleWithPeriods(
   settings: ScheduleSettings,
   today?: Date
 ): ProposedSlot[] {
-  const workingTasks: SchedulableTask[] = [];
-  const casualTasks: SchedulableTask[] = [];
-  const bothTasks: SchedulableTask[] = [];
-
+  // Group tasks by scheduling period
+  const groups: Record<string, SchedulableTask[]> = { working: [], casual: [], both: [] };
   for (const task of tasks) {
     const period = task.schedulingPeriod ?? 'both';
-    if (period === 'working') {
-      workingTasks.push(task);
-    } else if (period === 'casual') {
-      casualTasks.push(task);
-    } else {
-      bothTasks.push(task);
-    }
+    groups[period].push(task);
   }
 
-  // Compute the combined range for 'both' tasks
-  const { hours: whStartH, minutes: whStartM } = parseTime(settings.workingHours.start);
-  const { hours: whEndH, minutes: whEndM } = parseTime(settings.workingHours.end);
-  const { hours: chStartH, minutes: chStartM } = parseTime(settings.casualHours.start);
-  const { hours: chEndH, minutes: chEndM } = parseTime(settings.casualHours.end);
-
-  const whStartTotal = whStartH * 60 + whStartM;
-  const whEndTotal = whEndH * 60 + whEndM;
-  const chStartTotal = chStartH * 60 + chStartM;
-  const chEndTotal = chEndH * 60 + chEndM;
-
-  const earliestMin = Math.min(whStartTotal, chStartTotal);
-  const latestMin = Math.max(whEndTotal, chEndTotal);
-
-  const pad = (n: number) => String(n).padStart(2, '0');
+  // Compute combined hours range for 'both' tasks
+  const toMinutes = (hhmm: string): number => {
+    const { hours, minutes } = parseTime(hhmm);
+    return hours * 60 + minutes;
+  };
+  const fromMinutes = (total: number): string => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+  };
   const combinedHours: WorkingHours = {
-    start: `${pad(Math.floor(earliestMin / 60))}:${pad(earliestMin % 60)}`,
-    end: `${pad(Math.floor(latestMin / 60))}:${pad(latestMin % 60)}`,
+    start: fromMinutes(Math.min(toMinutes(settings.workingHours.start), toMinutes(settings.casualHours.start))),
+    end: fromMinutes(Math.max(toMinutes(settings.workingHours.end), toMinutes(settings.casualHours.end))),
   };
 
-  // Schedule each group; accumulate occupied slots so later groups see earlier placements
+  // Schedule each group in priority order; accumulate occupied slots across groups
   const allOccupied: CalendarEvent[] = [...existingEvents];
   const results: ProposedSlot[] = [];
 
-  // Schedule working tasks first (highest priority period)
-  const workingSlots = autoSchedule(workingTasks, allOccupied, settings.workingHours, today);
-  for (const slot of workingSlots) {
-    results.push(slot);
-    allOccupied.push({ start: slot.start, end: slot.end });
-  }
+  const schedule: Array<[SchedulableTask[], WorkingHours]> = [
+    [groups.working, settings.workingHours],
+    [groups.casual, settings.casualHours],
+    [groups.both, combinedHours],
+  ];
 
-  // Then casual tasks
-  const casualSlots = autoSchedule(casualTasks, allOccupied, settings.casualHours, today);
-  for (const slot of casualSlots) {
-    results.push(slot);
-    allOccupied.push({ start: slot.start, end: slot.end });
-  }
-
-  // Finally 'both' tasks get the full combined range
-  const bothSlots = autoSchedule(bothTasks, allOccupied, combinedHours, today);
-  for (const slot of bothSlots) {
-    results.push(slot);
-    allOccupied.push({ start: slot.start, end: slot.end });
+  for (const [groupTasks, hours] of schedule) {
+    const slots = autoSchedule(groupTasks, allOccupied, hours, today);
+    for (const slot of slots) {
+      results.push(slot);
+      allOccupied.push({ start: slot.start, end: slot.end });
+    }
   }
 
   return results;

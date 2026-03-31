@@ -200,31 +200,22 @@ async function main() {
   ];
 
   for (const cat of aimCategories) {
+    const id = cat.name.toLowerCase().replace(/\s+/g, '-');
+    const data = {
+      name: cat.name,
+      description: cat.description,
+      defaultFrequency: cat.defaultFrequency,
+      defaultDurationMin: cat.defaultDurationMin,
+      isGroupable: cat.isGroupable,
+      isDefault: cat.isDefault,
+      isDaily: cat.isDaily,
+      activities: cat.activities,
+      schedulePeriod: cat.schedulePeriod,
+    };
     await prisma.aimCategory.upsert({
-      where: { id: cat.name.toLowerCase().replace(/\s+/g, '-') },
-      update: {
-        name: cat.name,
-        description: cat.description,
-        defaultFrequency: cat.defaultFrequency,
-        defaultDurationMin: cat.defaultDurationMin,
-        isGroupable: cat.isGroupable,
-        isDefault: cat.isDefault,
-        isDaily: cat.isDaily,
-        activities: cat.activities,
-        schedulePeriod: cat.schedulePeriod,
-      },
-      create: {
-        id: cat.name.toLowerCase().replace(/\s+/g, '-'),
-        name: cat.name,
-        description: cat.description,
-        defaultFrequency: cat.defaultFrequency,
-        defaultDurationMin: cat.defaultDurationMin,
-        isGroupable: cat.isGroupable,
-        isDefault: cat.isDefault,
-        isDaily: cat.isDaily,
-        activities: cat.activities,
-        schedulePeriod: cat.schedulePeriod,
-      },
+      where: { id },
+      update: data,
+      create: { id, ...data },
     });
   }
 
@@ -264,21 +255,24 @@ async function main() {
     return date;
   }
 
-  // Create (or find) the personal goal stack
-  let personalStack: { id: string; [k: string]: any } | null = await prisma.goalStack.findFirst({
-    where: { ownerId: adminUser.id, name: 'Personal Stack' },
-  });
-  if (!personalStack) {
-    personalStack = await prisma.goalStack.create({
-      data: {
-        ownerId: adminUser.id,
-        name: 'Personal Stack',
-        visibility: 'private',
-        weekStartDay: 1, // Monday
-      },
-    });
+  // Helper: create a Date at a specific UTC hour/minute on a given day
+  function timeBlock(base: Date, hours: number, minutes: number): Date {
+    const d = new Date(base);
+    d.setUTCHours(hours, minutes, 0, 0);
+    return d;
   }
-  const stack = personalStack!;
+
+  // Create (or find) the personal goal stack
+  const stack = (await prisma.goalStack.findFirst({
+    where: { ownerId: adminUser.id, name: 'Personal Stack' },
+  })) ?? (await prisma.goalStack.create({
+    data: {
+      ownerId: adminUser.id,
+      name: 'Personal Stack',
+      visibility: 'private',
+      weekStartDay: 1, // Monday
+    },
+  }));
 
   // --- HHG ---
   const hhg = await prisma.goal.upsert({
@@ -410,21 +404,31 @@ async function main() {
       const isPast = weekEnd < now;
       const isCurrent = weekStart <= now && now <= weekEnd;
 
+      let status: typeof GoalStatus[keyof typeof GoalStatus];
+      let progressPct: number;
+      if (isPast) {
+        status = GoalStatus.COMPLETED;
+        progressPct = 100;
+      } else if (isCurrent) {
+        status = GoalStatus.IN_PROGRESS;
+        progressPct = 50;
+      } else {
+        status = GoalStatus.NOT_STARTED;
+        progressPct = 0;
+      }
+
+      const title = `Week ${w + 1} of ${monthNames[month]} ${year}`;
       const goal = await prisma.goal.upsert({
         where: { id: weekId },
-        update: {
-          title: `Week ${w + 1} of ${monthNames[month]} ${year}`,
-          status: isPast ? GoalStatus.COMPLETED : isCurrent ? GoalStatus.IN_PROGRESS : GoalStatus.NOT_STARTED,
-          progressPct: isPast ? 100 : isCurrent ? 50 : 0,
-        },
+        update: { title, status, progressPct },
         create: {
           id: weekId,
           stackId: stack.id,
           parentId: monthlyGoalId,
           level: GoalLevel.WEEKLY,
-          title: `Week ${w + 1} of ${monthNames[month]} ${year}`,
-          status: isPast ? GoalStatus.COMPLETED : isCurrent ? GoalStatus.IN_PROGRESS : GoalStatus.NOT_STARTED,
-          progressPct: isPast ? 100 : isCurrent ? 50 : 0,
+          title,
+          status,
+          progressPct,
           startDate: weekStart,
           endDate: weekEnd,
           sortOrder: w,
@@ -438,9 +442,20 @@ async function main() {
     return records;
   }
 
+  // Lookup monthly goals by year
+  const monthlyGoalsByYear: Record<number, Record<string, typeof hhg>> = {
+    2025: monthly2025,
+    2026: monthly2026,
+    2027: monthly2027,
+  };
+
+  function getMonthlyGoals(year: number): Record<string, typeof hhg> {
+    return monthlyGoalsByYear[year] ?? {};
+  }
+
   // Current month weekly goals (up to 3)
   const currentMonthKey = `seed-monthly-${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-  const currentMonthGoals = currentYear === 2026 ? monthly2026 : currentYear === 2025 ? monthly2025 : monthly2027;
+  const currentMonthGoals = getMonthlyGoals(currentYear);
   if (currentMonthGoals[currentMonthKey]) {
     await createWeeklyGoals(currentMonthGoals[currentMonthKey].id, currentYear, currentMonth, 3);
   }
@@ -449,31 +464,25 @@ async function main() {
   const nextMonth = (currentMonth + 1) % 12;
   const nextMonthYear = currentMonth === 11 ? currentYear + 1 : currentYear;
   const nextMonthKey = `seed-monthly-${nextMonthYear}-${String(nextMonth + 1).padStart(2, '0')}`;
-  const nextMonthGoals = nextMonthYear === 2026 ? monthly2026 : nextMonthYear === 2025 ? monthly2025 : monthly2027;
+  const nextMonthGoals = getMonthlyGoals(nextMonthYear);
   if (nextMonthGoals[nextMonthKey]) {
     await createWeeklyGoals(nextMonthGoals[nextMonthKey].id, nextMonthYear, nextMonth, 2);
   }
 
-  // Also seed 2-3 weekly goals for current+next month under 2025 yearly if year is 2025
-  // (Already handled dynamically above based on currentYear)
-
   // ============================================================
   // SECTION 2B: Company Goal Stack
   // ============================================================
-  let companyStack: { id: string; [k: string]: any } | null = await prisma.goalStack.findFirst({
+  const companyStack = (await prisma.goalStack.findFirst({
     where: { ownerId: adminUser.id, name: 'UpWhiten Company Goals' },
-  });
-  if (!companyStack) {
-    companyStack = await prisma.goalStack.create({
-      data: {
-        ownerId: adminUser.id,
-        name: 'UpWhiten Company Goals',
-        isCompany: true,
-        visibility: 'company',
-        weekStartDay: 1,
-      },
-    });
-  }
+  })) ?? (await prisma.goalStack.create({
+    data: {
+      ownerId: adminUser.id,
+      name: 'UpWhiten Company Goals',
+      isCompany: true,
+      visibility: 'company',
+      weekStartDay: 1,
+    },
+  }));
 
   // Company HHG
   const companyHhg = await prisma.goal.upsert({
@@ -644,8 +653,8 @@ async function main() {
       dueDate: thisWeekFriday,
       startedAt: yesterday,
       isWinTheDay: true,
-      timeBlockStart: (() => { const d = new Date(today); d.setUTCHours(9, 0, 0, 0); return d; })(),
-      timeBlockEnd: (() => { const d = new Date(today); d.setUTCHours(11, 30, 0, 0); return d; })(),
+      timeBlockStart: timeBlock(today, 9, 0),
+      timeBlockEnd: timeBlock(today, 11, 30),
     },
     {
       id: 'seed-task-improve-todo',
@@ -669,8 +678,8 @@ async function main() {
       estimatedMinutes: 60,
       dueDate: today,
       isWinTheDay: false,
-      timeBlockStart: (() => { const d = new Date(today); d.setUTCHours(14, 0, 0, 0); return d; })(),
-      timeBlockEnd: (() => { const d = new Date(today); d.setUTCHours(15, 0, 0, 0); return d; })(),
+      timeBlockStart: timeBlock(today, 14, 0),
+      timeBlockEnd: timeBlock(today, 15, 0),
     },
     {
       id: 'seed-task-react-done',
@@ -695,8 +704,8 @@ async function main() {
       recurrenceRule: 'RRULE:FREQ=WEEKLY;BYDAY=MO',
       dueDate: today,
       isWinTheDay: false,
-      timeBlockStart: (() => { const d = new Date(today); d.setUTCHours(15, 30, 0, 0); return d; })(),
-      timeBlockEnd: (() => { const d = new Date(today); d.setUTCHours(15, 45, 0, 0); return d; })(),
+      timeBlockStart: timeBlock(today, 15, 30),
+      timeBlockEnd: timeBlock(today, 15, 45),
     },
     {
       id: 'seed-task-maint-inprogress',
@@ -768,8 +777,8 @@ async function main() {
       dueDate: today,
       startedAt: yesterday,
       isWinTheDay: false,
-      timeBlockStart: (() => { const d = new Date(today); d.setUTCHours(11, 0, 0, 0); return d; })(),
-      timeBlockEnd: (() => { const d = new Date(today); d.setUTCHours(12, 0, 0, 0); return d; })(),
+      timeBlockStart: timeBlock(today, 11, 0),
+      timeBlockEnd: timeBlock(today, 12, 0),
     },
     {
       id: 'seed-task-improve-location',
@@ -900,10 +909,6 @@ async function main() {
 
     // Deep Work: daily, 11/14 completed. TODAY = SCHEDULED (not done yet)
     const deepWorkCompleted = !isToday && d !== 2 && d !== 7 && d !== 12;
-    const deepWorkTimeStart = new Date(date);
-    deepWorkTimeStart.setUTCHours(9, 0, 0, 0);
-    const deepWorkTimeEnd = new Date(date);
-    deepWorkTimeEnd.setUTCHours(10, 30, 0, 0);
     aimInstanceData.push({
       userId: adminUser.id,
       aimCategoryId: 'deep-work',
@@ -912,16 +917,12 @@ async function main() {
       completedAt: deepWorkCompleted ? date : undefined,
       phaseAtCompletion: deepWorkCompleted ? 'FLOW' : undefined,
       pointsEarned: deepWorkCompleted ? 10 : 0,
-      ...(isToday ? { timeBlockStart: deepWorkTimeStart, timeBlockEnd: deepWorkTimeEnd } : {}),
+      ...(isToday ? { timeBlockStart: timeBlock(date, 9, 0), timeBlockEnd: timeBlock(date, 10, 30) } : {}),
     });
 
     // Exercise: every day for seeding, but TODAY always gets one SCHEDULED
     if (isToday || dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
       const exerciseCompleted = !isToday && d < 10;
-      const exTimeStart = new Date(date);
-      exTimeStart.setUTCHours(12, 0, 0, 0);
-      const exTimeEnd = new Date(date);
-      exTimeEnd.setUTCHours(13, 0, 0, 0);
       aimInstanceData.push({
         userId: adminUser.id,
         aimCategoryId: 'exercise',
@@ -931,17 +932,13 @@ async function main() {
         selectedActivity: isToday ? 'strength' : ['strength', 'cardio', 'HIIT'][d % 3],
         phaseAtCompletion: exerciseCompleted ? 'SPROUT' : undefined,
         pointsEarned: exerciseCompleted ? 5 : 0,
-        ...(isToday ? { timeBlockStart: exTimeStart, timeBlockEnd: exTimeEnd } : {}),
+        ...(isToday ? { timeBlockStart: timeBlock(date, 12, 0), timeBlockEnd: timeBlock(date, 13, 0) } : {}),
       });
     }
 
     // Active Recovery: always one for today SCHEDULED
     if (isToday || dayOfWeek === 2 || dayOfWeek === 4 || dayOfWeek === 6) {
       const recoveryCompleted = !isToday && d < 12;
-      const arTimeStart = new Date(date);
-      arTimeStart.setUTCHours(18, 0, 0, 0);
-      const arTimeEnd = new Date(date);
-      arTimeEnd.setUTCHours(18, 30, 0, 0);
       aimInstanceData.push({
         userId: adminUser.id,
         aimCategoryId: 'active-recovery',
@@ -951,7 +948,7 @@ async function main() {
         selectedActivity: isToday ? 'sauna' : ['sauna', 'mindfulness', 'light yoga'][d % 3],
         phaseAtCompletion: recoveryCompleted ? 'GROW' : undefined,
         pointsEarned: recoveryCompleted ? 5 : 0,
-        ...(isToday ? { timeBlockStart: arTimeStart, timeBlockEnd: arTimeEnd } : {}),
+        ...(isToday ? { timeBlockStart: timeBlock(date, 18, 0), timeBlockEnd: timeBlock(date, 18, 30) } : {}),
       });
     }
 
@@ -982,26 +979,21 @@ async function main() {
   const nextFriday = new Date(today);
   nextFriday.setUTCDate(nextFriday.getUTCDate() + ((5 - today.getUTCDay() + 7) % 7 || 7));
 
-  const weeklyReviewTimeStart = new Date(nextFriday);
-  weeklyReviewTimeStart.setUTCHours(14, 0, 0, 0);
-  const weeklyReviewTimeEnd = new Date(nextFriday);
-  weeklyReviewTimeEnd.setUTCHours(14, 30, 0, 0);
-
   // Weekly review — scheduled for next Friday
   await prisma.review.upsert({
     where: { id: 'seed-review-weekly' },
     update: {
       scheduledDate: nextFriday,
-      timeBlockStart: weeklyReviewTimeStart,
-      timeBlockEnd: weeklyReviewTimeEnd,
+      timeBlockStart: timeBlock(nextFriday, 14, 0),
+      timeBlockEnd: timeBlock(nextFriday, 14, 30),
     },
     create: {
       id: 'seed-review-weekly',
       userId: adminUser.id,
       reviewType: ReviewType.WEEKLY,
       scheduledDate: nextFriday,
-      timeBlockStart: weeklyReviewTimeStart,
-      timeBlockEnd: weeklyReviewTimeEnd,
+      timeBlockStart: timeBlock(nextFriday, 14, 0),
+      timeBlockEnd: timeBlock(nextFriday, 14, 30),
       recurrenceDayOfWeek: 5, // Friday
     },
   });
@@ -1041,12 +1033,6 @@ async function main() {
   // ============================================================
   // SECTION 8: PowerDown Session
   // ============================================================
-  // Completed session for yesterday
-  const pdYesterday = new Date(yesterday);
-  pdYesterday.setUTCHours(17, 30, 0, 0);
-  const pdYesterdayEnd = new Date(yesterday);
-  pdYesterdayEnd.setUTCHours(17, 45, 0, 0);
-
   // Delete + recreate for idempotency (no unique constraint)
   await prisma.powerdownSession.deleteMany({
     where: { userId: adminUser.id, sessionDate: yesterday },
@@ -1056,9 +1042,9 @@ async function main() {
       userId: adminUser.id,
       sessionDate: yesterday,
       currentStep: 5,
-      completedAt: pdYesterdayEnd,
-      timeBlockStart: pdYesterday,
-      timeBlockEnd: pdYesterdayEnd,
+      completedAt: timeBlock(yesterday, 17, 45),
+      timeBlockStart: timeBlock(yesterday, 17, 30),
+      timeBlockEnd: timeBlock(yesterday, 17, 45),
       distractions: [
         'Got pulled into a Slack thread about office supplies for 20 min',
         'Checked Twitter twice during deep work block',
@@ -1205,6 +1191,7 @@ async function main() {
   // ============================================================
   // SECTION 13: Streaks
   // ============================================================
+  const streakData = { currentCount: 5, bestCount: 12, lastActiveDate: yesterday };
   await prisma.streak.upsert({
     where: {
       userId_streakType: {
@@ -1212,17 +1199,11 @@ async function main() {
         streakType: 'daily_completion',
       },
     },
-    update: {
-      currentCount: 5,
-      bestCount: 12,
-      lastActiveDate: yesterday,
-    },
+    update: streakData,
     create: {
       userId: adminUser.id,
       streakType: 'daily_completion',
-      currentCount: 5,
-      bestCount: 12,
-      lastActiveDate: yesterday,
+      ...streakData,
     },
   });
 

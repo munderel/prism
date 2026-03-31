@@ -51,40 +51,58 @@ export async function notifyUser(
     prisma.pushSubscription.findMany({ where: { userId } }),
   ]);
 
-  const pushPromise = (async () => {
-    if (prefs && !prefs.pushEnabled) return;
-    const payload = JSON.stringify({ title, body, url });
-    await Promise.allSettled(
-      subscriptions.map(async (sub) => {
-        try {
-          await webpush.sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload
-          );
-        } catch (err: any) {
-          if (err.statusCode === 410 || err.statusCode === 404) {
-            await prisma.pushSubscription.delete({ where: { id: sub.id } });
-          }
+  await Promise.all([
+    sendPushNotifications(prefs, subscriptions, title, body, url),
+    sendEmailNotification(prefs, transporter, user?.email, title, body),
+  ]);
+}
+
+async function sendPushNotifications(
+  prefs: { pushEnabled: boolean } | null,
+  subscriptions: { id: string; endpoint: string; p256dh: string; auth: string }[],
+  title: string,
+  body: string,
+  url?: string,
+): Promise<void> {
+  if (prefs && !prefs.pushEnabled) return;
+
+  const payload = JSON.stringify({ title, body, url });
+  await Promise.allSettled(
+    subscriptions.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          payload,
+        );
+      } catch (err: unknown) {
+        const statusCode = (err as { statusCode?: number }).statusCode;
+        if (statusCode === 410 || statusCode === 404) {
+          await prisma.pushSubscription.delete({ where: { id: sub.id } });
         }
-      })
-    );
-  })();
+      }
+    }),
+  );
+}
 
-  const emailPromise = (async () => {
-    if (!transporter) return;
-    if (prefs && !prefs.emailEnabled) return;
-    if (!user?.email) return;
-    try {
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM ?? 'noreply@goaldashboard.app',
-        to: user.email,
-        subject: title,
-        html: `<p>${escapeHtml(body)}</p>`,
-      });
-    } catch (err) {
-      console.error('[notifications] Email send failed:', err instanceof Error ? err.message : err);
-    }
-  })();
+async function sendEmailNotification(
+  prefs: { emailEnabled: boolean } | null,
+  mailer: typeof transporter,
+  email: string | undefined,
+  title: string,
+  body: string,
+): Promise<void> {
+  if (!mailer) return;
+  if (prefs && !prefs.emailEnabled) return;
+  if (!email) return;
 
-  await Promise.all([pushPromise, emailPromise]);
+  try {
+    await mailer.sendMail({
+      from: process.env.SMTP_FROM ?? 'noreply@goaldashboard.app',
+      to: email,
+      subject: title,
+      html: `<p>${escapeHtml(body)}</p>`,
+    });
+  } catch (err) {
+    console.error('[notifications] Email send failed:', err instanceof Error ? err.message : err);
+  }
 }
