@@ -1,7 +1,17 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+
+const MEETING_INCLUDE = {
+  createdBy: { select: { id: true, name: true, email: true } },
+} as const;
+
+async function findMeetingOrFail(id: string): Promise<{ id: string } | Response> {
+  const meeting = await prisma.meeting.findUnique({ where: { id } });
+  if (!meeting) return notFoundResponse('Meeting');
+  return meeting;
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -11,35 +21,25 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
+  const meeting = await findMeetingOrFail(id);
+  if (meeting instanceof Response) return meeting;
+
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 
-  const existing = await prisma.meeting.findUnique({ where: { id } });
-  if (!existing) {
-    return Response.json({ error: 'Meeting not found' }, { status: 404 });
-  }
-
-  const { title, description, cadence, dayOfWeek, occurDate, timeStart, timeEnd, attendeeIds } = body;
+  const data: Record<string, unknown> = pickDefined(body, ['title', 'cadence', 'timeStart', 'timeEnd', 'attendeeIds']);
+  if (body.description !== undefined) data.description = body.description || null;
+  if (body.dayOfWeek !== undefined) data.dayOfWeek = body.dayOfWeek ?? null;
+  if (body.occurDate !== undefined) data.occurDate = body.occurDate ? new Date(body.occurDate) : null;
 
   const updated = await prisma.meeting.update({
     where: { id },
-    data: {
-      ...(title !== undefined && { title }),
-      ...(description !== undefined && { description: description || null }),
-      ...(cadence !== undefined && { cadence }),
-      ...(dayOfWeek !== undefined && { dayOfWeek: dayOfWeek ?? null }),
-      ...(occurDate !== undefined && { occurDate: occurDate ? new Date(occurDate) : null }),
-      ...(timeStart !== undefined && { timeStart }),
-      ...(timeEnd !== undefined && { timeEnd }),
-      ...(attendeeIds !== undefined && { attendeeIds }),
-    },
-    include: {
-      createdBy: { select: { id: true, name: true, email: true } },
-    },
+    data,
+    include: MEETING_INCLUDE,
   });
 
-  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(updated, NO_STORE);
 }
 
 export async function DELETE(
@@ -50,13 +50,9 @@ export async function DELETE(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-
-  const existing = await prisma.meeting.findUnique({ where: { id } });
-  if (!existing) {
-    return Response.json({ error: 'Meeting not found' }, { status: 404 });
-  }
+  const meeting = await findMeetingOrFail(id);
+  if (meeting instanceof Response) return meeting;
 
   await prisma.meeting.delete({ where: { id } });
-
-  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }

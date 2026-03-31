@@ -3,6 +3,10 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { cacheHeaders } from '@/lib/api-helpers';
 
+function computeScore(streak: number, tasks: number, reviews: number, aimPoints: number): number {
+  return streak * 10 + tasks + reviews * 5 + aimPoints;
+}
+
 export async function GET(_request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
@@ -46,25 +50,26 @@ export async function GET(_request: NextRequest) {
     aimScores.map((a) => [a.userId, { points: a._sum.pointsEarned ?? 0, count: a._count }])
   );
 
-  const leaderboard = users.map((u) => {
-    const aimData = aimScoreMap.get(u.id) ?? { points: 0, count: 0 };
-    return {
-      id: u.id,
-      name: u.name ?? 'Unknown',
-      image: u.image,
-      streak: u.streaks[0]?.currentCount ?? 0,
-      bestStreak: u.streaks[0]?.bestCount ?? 0,
-      tasksCompleted: u._count.tasks,
-      reviewsCompleted: u._count.reviews,
-      aimsCompleted: aimData.count,
-      aimScore: aimData.points,
-      score: (u.streaks[0]?.currentCount ?? 0) * 10 + u._count.tasks + u._count.reviews * 5 + aimData.points,
-    };
-  });
+  const leaderboard = users
+    .map((u) => {
+      const streak = u.streaks[0]?.currentCount ?? 0;
+      const aimData = aimScoreMap.get(u.id) ?? { points: 0, count: 0 };
+      return {
+        id: u.id,
+        name: u.name ?? 'Unknown',
+        image: u.image,
+        streak,
+        bestStreak: u.streaks[0]?.bestCount ?? 0,
+        tasksCompleted: u._count.tasks,
+        reviewsCompleted: u._count.reviews,
+        aimsCompleted: aimData.count,
+        aimScore: aimData.points,
+        score: computeScore(streak, u._count.tasks, u._count.reviews, aimData.points),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
 
-  leaderboard.sort((a, b) => b.score - a.score);
-
-  return new Response(JSON.stringify({ leaderboard, publicWins }), {
+  return Response.json({ leaderboard, publicWins }, {
     headers: cacheHeaders(30, 120),
   });
 }

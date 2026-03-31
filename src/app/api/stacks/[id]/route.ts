@@ -6,7 +6,18 @@ import {
   requireOwnership,
   authError,
 } from '@/lib/auth-guard';
-import { notFoundResponse, USER_SUMMARY_SELECT, safeParseJson } from '@/lib/api-helpers';
+import { notFoundResponse, USER_SUMMARY_SELECT, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+
+/** Authorize write access: admins for company stacks, owners for personal stacks. */
+async function requireStackWriteAccess(stack: { isCompany: boolean; ownerId: string }): Promise<Response | null> {
+  const auth = stack.isCompany
+    ? await requireAdmin()
+    : await requireOwnership(stack.ownerId);
+  if ('error' in auth) return authError(auth);
+  return null;
+}
+
+const ACTIVE_GOALS = { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' as const } };
 
 export async function GET(
   _request: NextRequest,
@@ -21,26 +32,18 @@ export async function GET(
     include: {
       owner: { select: USER_SUMMARY_SELECT },
       goals: {
-        where: { deletedAt: null, parentId: null },
-        orderBy: { sortOrder: 'asc' },
+        ...ACTIVE_GOALS,
+        where: { ...ACTIVE_GOALS.where, parentId: null },
         include: {
           children: {
-            where: { deletedAt: null },
-            orderBy: { sortOrder: 'asc' },
+            ...ACTIVE_GOALS,
             include: {
               children: {
-                where: { deletedAt: null },
-                orderBy: { sortOrder: 'asc' },
+                ...ACTIVE_GOALS,
                 include: {
                   children: {
-                    where: { deletedAt: null },
-                    orderBy: { sortOrder: 'asc' },
-                    include: {
-                      children: {
-                        where: { deletedAt: null },
-                        orderBy: { sortOrder: 'asc' },
-                      },
-                    },
+                    ...ACTIVE_GOALS,
+                    include: { children: ACTIVE_GOALS },
                   },
                 },
               },
@@ -53,7 +56,6 @@ export async function GET(
 
   if (!stack) return notFoundResponse('Stack');
 
-  // Non-admins can only see own stacks and company stacks
   if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
@@ -69,27 +71,15 @@ export async function PATCH(
   const stack = await prisma.goalStack.findUnique({ where: { id } });
   if (!stack) return notFoundResponse('Stack');
 
-  if (stack.isCompany) {
-    const auth = await requireAdmin();
-    if ('error' in auth) return authError(auth);
-  } else {
-    const auth = await requireOwnership(stack.ownerId);
-    if ('error' in auth) return authError(auth);
-  }
+  const denied = await requireStackWriteAccess(stack);
+  if (denied) return denied;
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const data: Record<string, unknown> = {};
-  if (body.name !== undefined) data.name = body.name;
-  if (body.weekStartDay !== undefined) data.weekStartDay = body.weekStartDay;
+  const data = pickDefined(parsed.data, ['name', 'weekStartDay']);
 
-  const updated = await prisma.goalStack.update({
-    where: { id },
-    data,
-  });
-
-  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+  const updated = await prisma.goalStack.update({ where: { id }, data });
+  return Response.json(updated, NO_STORE);
 }
 
 export async function DELETE(
@@ -100,14 +90,9 @@ export async function DELETE(
   const stack = await prisma.goalStack.findUnique({ where: { id } });
   if (!stack) return notFoundResponse('Stack');
 
-  if (stack.isCompany) {
-    const auth = await requireAdmin();
-    if ('error' in auth) return authError(auth);
-  } else {
-    const auth = await requireOwnership(stack.ownerId);
-    if ('error' in auth) return authError(auth);
-  }
+  const denied = await requireStackWriteAccess(stack);
+  if (denied) return denied;
 
   await prisma.goalStack.delete({ where: { id } });
-  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }

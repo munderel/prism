@@ -2,53 +2,40 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 
+const CSV_HEADERS = ['id', 'reviewType', 'isTeamReview', 'scheduledDate', 'completedAt', 'userName', 'userEmail', 'notes', 'checklistState'] as const;
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
   const { searchParams } = new URL(request.url);
-  const type = searchParams.get('type'); // WEEKLY, MONTHLY, YEARLY
+  const type = searchParams.get('type');
   const from = searchParams.get('from');
   const to = searchParams.get('to');
   const format = searchParams.get('format') ?? 'json';
-  const scope = searchParams.get('scope'); // 'individual' | 'team'
+  const scope = searchParams.get('scope');
 
   if (format !== 'json' && format !== 'csv') {
-    return Response.json(
-      { error: 'format must be "json" or "csv"' },
-      { status: 400 }
-    );
+    return Response.json({ error: 'format must be "json" or "csv"' }, { status: 400 });
   }
 
-  // Build where clause for completed reviews
-  const where: any = { completedAt: { not: null } };
+  const completedAt: any = { not: null };
+  if (from) completedAt.gte = new Date(from);
+  if (to) completedAt.lte = new Date(to);
 
-  if (type) {
-    where.reviewType = type;
-  }
+  const where: any = { completedAt };
+  if (type) where.reviewType = type;
 
-  if (from || to) {
-    where.completedAt = { ...where.completedAt };
-    if (from) where.completedAt.gte = new Date(from);
-    if (to) where.completedAt.lte = new Date(to);
-  }
-
-  // Scope filtering
   if (scope === 'individual') {
     where.isTeamReview = false;
-    if (!auth.session.user.isAdmin) {
-      where.userId = auth.userId;
-    }
+    if (!auth.session.user.isAdmin) where.userId = auth.userId;
   } else if (scope === 'team') {
     where.isTeamReview = true;
-  } else {
-    // No scope filter: individual reviews limited to own (unless admin), team reviews visible to all
-    if (!auth.session.user.isAdmin) {
-      where.OR = [
-        { isTeamReview: true },
-        { isTeamReview: false, userId: auth.userId },
-      ];
-    }
+  } else if (!auth.session.user.isAdmin) {
+    where.OR = [
+      { isTeamReview: true },
+      { isTeamReview: false, userId: auth.userId },
+    ];
   }
 
   const reviews = await prisma.review.findMany({
@@ -61,26 +48,7 @@ export async function GET(request: NextRequest) {
     return Response.json(reviews);
   }
 
-  // CSV format
-  const csvRows: string[] = [];
-
-  // Header
-  csvRows.push(
-    [
-      'id',
-      'reviewType',
-      'isTeamReview',
-      'scheduledDate',
-      'completedAt',
-      'userName',
-      'userEmail',
-      'notes',
-      'checklistState',
-    ]
-      .map(escapeCSV)
-      .join(',')
-  );
-
+  const csvRows = [CSV_HEADERS.map(escapeCSV).join(',')];
   for (const r of reviews) {
     csvRows.push(
       [
@@ -99,9 +67,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const csv = csvRows.join('\n');
-
-  return new Response(csv, {
+  return new Response(csvRows.join('\n'), {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="reviews-export-${new Date().toISOString().split('T')[0]}.csv"`,

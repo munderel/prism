@@ -4,6 +4,23 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { cascadeKpiUpdate, recalculateMonthlyNumericKpi, recalculateBinaryKpi } from '@/lib/kpi-progress';
 import { pickDefined, notFoundResponse, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
 
+/** Fetch a KPI and verify the caller has permission to modify it. */
+async function loadAndAuthorizeKpi(id: string, auth: { userId: string; session: { user: { isAdmin: boolean } } }) {
+  const kpi = await prisma.kpi.findUnique({
+    where: { id },
+    include: { goal: { include: { stack: true } } },
+  });
+
+  if (!kpi) return { error: notFoundResponse('KPI') } as const;
+
+  const { stack } = kpi.goal;
+  if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
+    return { error: forbiddenResponse() } as const;
+  }
+
+  return { kpi } as const;
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -12,24 +29,16 @@ export async function PUT(
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const kpi = await prisma.kpi.findUnique({
-    where: { id },
-    include: { goal: { include: { stack: true } } },
-  });
-
-  if (!kpi) return notFoundResponse('KPI');
-
-  const stack = kpi.goal.stack;
-  if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return forbiddenResponse();
-  }
+  const result = await loadAndAuthorizeKpi(id, auth);
+  if ('error' in result) return result.error;
+  const { kpi } = result;
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { name, isComplete, actualValue } = body;
 
-  const data: Record<string, any> = pickDefined(body, ['name', 'unit', 'targetValue', 'actualValue', 'sortOrder']);
+  const data: Record<string, unknown> = pickDefined(body, ['name', 'unit', 'targetValue', 'actualValue', 'sortOrder']);
   if (isComplete !== undefined) {
     data.isComplete = isComplete;
     data.completedAt = isComplete ? new Date() : null;
@@ -68,19 +77,9 @@ export async function DELETE(
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const kpi = await prisma.kpi.findUnique({
-    where: { id },
-    include: { goal: { include: { stack: true } } },
-  });
-
-  if (!kpi) return notFoundResponse('KPI');
-
-  const stack = kpi.goal.stack;
-  if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return forbiddenResponse();
-  }
-
-  const linkedKpiId = kpi.linkedKpiId;
+  const result = await loadAndAuthorizeKpi(id, auth);
+  if ('error' in result) return result.error;
+  const { kpi } = result;
 
   // Unlink any KPIs that point to this one (avoid FK constraint)
   await prisma.kpi.updateMany({
@@ -91,16 +90,16 @@ export async function DELETE(
   await prisma.kpi.delete({ where: { id } });
 
   // Recalculate former linked monthly KPI if there was a link
-  if (linkedKpiId) {
+  if (kpi.linkedKpiId) {
     const linkedKpi = await prisma.kpi.findUnique({
-      where: { id: linkedKpiId },
+      where: { id: kpi.linkedKpiId },
       select: { type: true },
     });
     if (linkedKpi) {
       if (linkedKpi.type === 'NUMERIC') {
-        await recalculateMonthlyNumericKpi(linkedKpiId);
+        await recalculateMonthlyNumericKpi(kpi.linkedKpiId);
       } else {
-        await recalculateBinaryKpi(linkedKpiId, false);
+        await recalculateBinaryKpi(kpi.linkedKpiId, false);
       }
     }
   }

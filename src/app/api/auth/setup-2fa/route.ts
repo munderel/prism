@@ -1,32 +1,41 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { safeParseJson } from '@/lib/api-helpers';
+import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson, NO_STORE, notFoundResponse } from '@/lib/api-helpers';
 import { generateSecret, generateURI, verifySync } from 'otplib';
 import QRCode from 'qrcode';
+
+/** Extract and validate a TOTP code from the request body. */
+async function extractCode(
+  request: Request
+): Promise<{ code: string; error?: never } | { code?: never; error: Response }> {
+  const parsed = await safeParseJson(request);
+  if (parsed.error) {
+    return { error: parsed.error };
+  }
+  const { code } = parsed.data;
+  if (!code) {
+    return { error: Response.json({ error: 'Code is required' }, { status: 400 }) };
+  }
+  return { code };
+}
 
 /**
  * GET /api/auth/setup-2fa
  * Generate a TOTP secret and QR code for the authenticated user.
  */
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
 
   const user = await prisma.user.findUnique({
-    where: { id: session.user.id as string },
+    where: { id: auth.userId },
     select: { email: true, is2FAEnabled: true },
   });
 
-  if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
-  }
+  if (!user) return notFoundResponse('User');
 
   if (user.is2FAEnabled) {
-    return NextResponse.json(
+    return Response.json(
       { error: '2FA is already enabled. Disable it first to reconfigure.' },
       { status: 400 }
     );
@@ -38,15 +47,11 @@ export async function GET() {
 
   // Store the secret temporarily (not yet verified)
   await prisma.user.update({
-    where: { id: session.user.id as string },
+    where: { id: auth.userId },
     data: { totpSecret: secret },
   });
 
-  return NextResponse.json({
-    secret,
-    qrCode: qrCodeDataUrl,
-    otpauthUrl,
-  });
+  return Response.json({ secret, qrCode: qrCodeDataUrl, otpauthUrl });
 }
 
 /**
@@ -54,56 +59,38 @@ export async function GET() {
  * Verify TOTP code and enable 2FA for the authenticated user.
  */
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
-  if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { code } = body;
-  if (!code) {
-    return NextResponse.json({ error: 'Code is required' }, { status: 400 });
-  }
+  const extracted = await extractCode(request);
+  if ('error' in extracted) return extracted.error;
 
   const user = await prisma.user.findUnique({
-    where: { id: session.user.id as string },
+    where: { id: auth.userId },
     select: { totpSecret: true, is2FAEnabled: true },
   });
 
   if (!user?.totpSecret) {
-    return NextResponse.json(
+    return Response.json(
       { error: 'No 2FA secret found. Start setup first.' },
       { status: 400 }
     );
   }
 
   if (user.is2FAEnabled) {
-    return NextResponse.json(
-      { error: '2FA is already enabled' },
-      { status: 400 }
-    );
+    return Response.json({ error: '2FA is already enabled' }, { status: 400 });
   }
 
-  const isValid = verifySync({
-    token: code,
-    secret: user.totpSecret,
-  });
-
-  if (!isValid) {
-    return NextResponse.json(
-      { error: 'Invalid verification code' },
-      { status: 400 }
-    );
+  if (!verifySync({ token: extracted.code, secret: user.totpSecret })) {
+    return Response.json({ error: 'Invalid verification code' }, { status: 400 });
   }
 
   await prisma.user.update({
-    where: { id: session.user.id as string },
+    where: { id: auth.userId },
     data: { is2FAEnabled: true },
   });
 
-  return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }
 
 /**
@@ -111,41 +98,29 @@ export async function POST(request: Request) {
  * Disable 2FA for the authenticated user.
  */
 export async function DELETE(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
-  if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { code } = body;
-  if (!code) {
-    return NextResponse.json({ error: 'Current 2FA code is required to disable' }, { status: 400 });
-  }
+  const extracted = await extractCode(request);
+  if ('error' in extracted) return extracted.error;
 
   const user = await prisma.user.findUnique({
-    where: { id: session.user.id as string },
+    where: { id: auth.userId },
     select: { totpSecret: true, is2FAEnabled: true },
   });
 
   if (!user?.is2FAEnabled || !user.totpSecret) {
-    return NextResponse.json({ error: '2FA is not enabled' }, { status: 400 });
+    return Response.json({ error: '2FA is not enabled' }, { status: 400 });
   }
 
-  const isValid = verifySync({
-    token: code,
-    secret: user.totpSecret,
-  });
-
-  if (!isValid) {
-    return NextResponse.json({ error: 'Invalid verification code' }, { status: 400 });
+  if (!verifySync({ token: extracted.code, secret: user.totpSecret })) {
+    return Response.json({ error: 'Invalid verification code' }, { status: 400 });
   }
 
   await prisma.user.update({
-    where: { id: session.user.id as string },
+    where: { id: auth.userId },
     data: { is2FAEnabled: false, totpSecret: null },
   });
 
-  return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }

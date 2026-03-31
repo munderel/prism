@@ -3,7 +3,6 @@ import { prisma } from '@/lib/prisma';
 import { requireCronSecret } from '@/lib/auth-guard';
 import { computeNextDueDate } from '@/lib/process-scheduler';
 
-// Vercel crons only invoke GET, so export GET as the handler
 export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -25,18 +24,8 @@ export async function GET(request: NextRequest) {
 
     const results = await Promise.all(
       dueProcesses.map(async (process) => {
-        // Determine responsible user
-        let responsibleUserId: string | null = null;
-
-        if (
-          process.delegateId &&
-          process.delegateUntil &&
-          process.delegateUntil >= today
-        ) {
-          responsibleUserId = process.delegateId;
-        } else if (process.assigneeId) {
-          responsibleUserId = process.assigneeId;
-        }
+        const hasDelegation = process.delegateId && process.delegateUntil && process.delegateUntil >= today;
+        const responsibleUserId = hasDelegation ? process.delegateId : process.assigneeId;
 
         if (!responsibleUserId) {
           return { processId: process.id, skipped: true, reason: 'no responsible user' };

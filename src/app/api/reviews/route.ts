@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { safeParseJson, NO_STORE } from '@/lib/api-helpers';
 import { getNextReviewDate } from '@/lib/review-dates';
 import { nextDay } from 'date-fns';
 
@@ -11,32 +11,27 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const reviewType = searchParams.get('reviewType');
-  const scope = searchParams.get('scope'); // 'team' | 'individual' | null (both)
+  const scope = searchParams.get('scope');
   const from = searchParams.get('from');
   const to = searchParams.get('to');
 
   const conditions: any[] = [];
 
-  // Team reviews are visible to everyone
   if (scope !== 'individual') {
     const teamWhere: any = { isTeamReview: true };
     if (reviewType) teamWhere.reviewType = reviewType;
     conditions.push(teamWhere);
   }
 
-  // Individual reviews: owner sees their own, admin sees all
   if (scope !== 'team') {
     const individualWhere: any = { isTeamReview: false };
-    if (auth.session.user.isAdmin) {
-      // Admin can see all individual reviews
-    } else {
+    if (!auth.session.user.isAdmin) {
       individualWhere.userId = auth.userId;
     }
     if (reviewType) individualWhere.reviewType = reviewType;
     conditions.push(individualWhere);
   }
 
-  // Date range filter
   const dateFilter: any = {};
   if (from) dateFilter.gte = new Date(from);
   if (to) {
@@ -119,15 +114,8 @@ function computeYearlyDate(rule: string, after: Date, customDate?: string): Date
     return d > after ? d : new Date(year + 1, 11, 31);
   }
   if (rule === 'last-sat-dec') {
-    // Last Saturday of December
-    const dec31 = new Date(year, 11, 31);
-    const diff = (dec31.getDay() - 6 + 7) % 7;
-    const d = new Date(year, 11, 31 - diff);
-    return d > after ? d : (() => {
-      const dec31Next = new Date(year + 1, 11, 31);
-      const diff2 = (dec31Next.getDay() - 6 + 7) % 7;
-      return new Date(year + 1, 11, 31 - diff2);
-    })();
+    const d = lastSaturdayOfDec(year);
+    return d > after ? d : lastSaturdayOfDec(year + 1);
   }
   if (rule === 'custom' && customDate) {
     const d = new Date(customDate);
@@ -135,6 +123,39 @@ function computeYearlyDate(rule: string, after: Date, customDate?: string): Date
   }
 
   return new Date(year + 1, 0, 1);
+}
+
+function lastSaturdayOfDec(year: number): Date {
+  const dec31 = new Date(year, 11, 31);
+  const diff = (dec31.getDay() - 6 + 7) % 7;
+  return new Date(year, 11, 31 - diff);
+}
+
+function computeScheduledDate(config: any, now: Date, reviewType: string): Date {
+  const configType = config.type as string;
+  if (configType === 'weekly' && config.dayOfWeek != null) {
+    return nextDay(now, config.dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6);
+  }
+  if (configType === 'monthly' && config.recurrenceRule) {
+    return computeMonthlyDate(config.recurrenceRule, now);
+  }
+  if (configType === 'yearly' && config.recurrenceRule) {
+    return computeYearlyDate(config.recurrenceRule, now, config.customDate);
+  }
+  return getNextReviewDate(reviewType);
+}
+
+function computeTimeBlock(
+  scheduledDate: Date,
+  time?: string,
+  duration?: number
+): { timeBlockStart: Date; timeBlockEnd: Date } | Record<string, never> {
+  if (!time || !duration) return {};
+  const [h, m] = time.split(':').map(Number);
+  const blockStart = new Date(scheduledDate);
+  blockStart.setHours(h, m, 0, 0);
+  const blockEnd = new Date(blockStart.getTime() + duration * 60_000);
+  return { timeBlockStart: blockStart, timeBlockEnd: blockEnd };
 }
 
 export async function POST(request: NextRequest) {
@@ -150,20 +171,17 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'reviewType is required' }, { status: 400 });
   }
 
-  // Team reviews require admin role
   if (isTeamReview) {
     const adminAuth = await requireAdmin();
     if ('error' in adminAuth) return authError(adminAuth);
   }
 
-  // Check for existing overdue/pending review of this type
-  const existingWhere: any = { reviewType, completedAt: null };
-  if (isTeamReview) {
-    existingWhere.isTeamReview = true;
-  } else {
-    existingWhere.userId = auth.userId;
-    existingWhere.isTeamReview = false;
-  }
+  const existingWhere: any = {
+    reviewType,
+    completedAt: null,
+    isTeamReview: !!isTeamReview,
+    ...(!isTeamReview && { userId: auth.userId }),
+  };
 
   const existing = await prisma.review.findFirst({ where: existingWhere });
 
@@ -173,49 +191,22 @@ export async function POST(request: NextRequest) {
 
   const now = new Date();
 
-  // Calculate scheduled date
   let scheduledDate: Date;
   if (scheduledDateStr) {
-    // Direct date from calendar click
     scheduledDate = new Date(scheduledDateStr);
   } else if (scheduleConfig) {
-    const configType = scheduleConfig.type as string;
-    if (configType === 'weekly' && scheduleConfig.dayOfWeek !== null && scheduleConfig.dayOfWeek !== undefined) {
-      const dayOfWeek = scheduleConfig.dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6;
-      scheduledDate = nextDay(now, dayOfWeek);
-    } else if (configType === 'monthly' && scheduleConfig.recurrenceRule) {
-      scheduledDate = computeMonthlyDate(scheduleConfig.recurrenceRule, now);
-    } else if (configType === 'yearly' && scheduleConfig.recurrenceRule) {
-      scheduledDate = computeYearlyDate(scheduleConfig.recurrenceRule, now, scheduleConfig.customDate);
-    } else {
-      scheduledDate = getNextReviewDate(reviewType);
-    }
-  } else if (startDate && recurrenceDayOfWeek !== undefined && recurrenceDayOfWeek !== null) {
+    scheduledDate = computeScheduledDate(scheduleConfig, now, reviewType);
+  } else if (startDate && recurrenceDayOfWeek != null) {
     const base = new Date(startDate);
     const dayOfWeek = recurrenceDayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6;
-    if (base.getDay() === dayOfWeek) {
-      scheduledDate = base;
-    } else {
-      scheduledDate = nextDay(base, dayOfWeek);
-    }
+    scheduledDate = base.getDay() === dayOfWeek ? base : nextDay(base, dayOfWeek);
   } else if (startDate) {
     scheduledDate = new Date(startDate);
   } else {
     scheduledDate = getNextReviewDate(reviewType);
   }
 
-  // If scheduleConfig provides time + duration, compute time blocks
-  let timeBlockStart: Date | undefined;
-  let timeBlockEnd: Date | undefined;
-  if (scheduleConfig?.time && scheduleConfig?.duration) {
-    const [h, m] = (scheduleConfig.time as string).split(':').map(Number);
-    const durationMin = scheduleConfig.duration as number;
-    const blockStart = new Date(scheduledDate);
-    blockStart.setHours(h, m, 0, 0);
-    const blockEnd = new Date(blockStart.getTime() + durationMin * 60 * 1000);
-    timeBlockStart = blockStart;
-    timeBlockEnd = blockEnd;
-  }
+  const timeBlock = computeTimeBlock(scheduledDate, scheduleConfig?.time, scheduleConfig?.duration);
 
   const review = await prisma.review.create({
     data: {
@@ -223,14 +214,13 @@ export async function POST(request: NextRequest) {
       reviewType,
       scheduledDate,
       startDate: startDate ? new Date(startDate) : undefined,
-      recurrenceDayOfWeek: recurrenceDayOfWeek ?? (scheduleConfig?.dayOfWeek !== null && scheduleConfig?.dayOfWeek !== undefined ? scheduleConfig.dayOfWeek : undefined),
+      recurrenceDayOfWeek: recurrenceDayOfWeek ?? scheduleConfig?.dayOfWeek ?? undefined,
       isTeamReview: isTeamReview ?? false,
-      ...(timeBlockStart ? { timeBlockStart } : {}),
-      ...(timeBlockEnd ? { timeBlockEnd } : {}),
+      ...timeBlock,
     },
   });
 
-  return Response.json(review, { status: 201, headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(review, { status: 201, ...NO_STORE });
 }
 
 export async function DELETE(request: NextRequest) {
@@ -254,6 +244,6 @@ export async function DELETE(request: NextRequest) {
     },
   });
 
-  return Response.json({ ok: true, deleted: result.count }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true, deleted: result.count }, { status: 200, ...NO_STORE });
 }
 

@@ -1,4 +1,5 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson, hasAccess, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
 import { openrouter } from '@/lib/openrouter';
 import { quizGenerationPrompt } from '@/lib/ai-prompts';
 import { prisma } from '@/lib/prisma';
@@ -8,30 +9,21 @@ export async function POST(request: Request) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
 
   const { trainingItemId, chapterRange, material } = body;
 
-  // Validate trainingItemId if provided
-  let trainingItem: any = null;
   let materialText = material;
 
   if (trainingItemId) {
-    trainingItem = await prisma.trainingItem.findUnique({
+    const trainingItem = await prisma.trainingItem.findUnique({
       where: { id: trainingItemId },
     });
-    if (!trainingItem) {
-      return Response.json({ error: 'Training item not found' }, { status: 404 });
-    }
-    if (trainingItem.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    // Use the training item title as material if not explicitly provided
+    if (!trainingItem) return notFoundResponse('Training item');
+    if (!hasAccess(trainingItem.ownerId, auth.userId, auth.session.user.isAdmin)) return forbiddenResponse();
+
     if (!materialText) {
       materialText = trainingItem.title;
     }
@@ -55,11 +47,10 @@ export async function POST(request: Request) {
     const messages = quizGenerationPrompt(materialText, chapterRange);
     const result = await openrouter.chatJSON<any>(messages);
 
-    // Create QuizAttempt record with generated questions
     const quizAttempt = await prisma.quizAttempt.create({
       data: {
-        trainingItemId: trainingItemId || null,
-        trainingTaskId: body.trainingTaskId || null,
+        trainingItemId: trainingItemId ?? null,
+        trainingTaskId: body.trainingTaskId ?? null,
         questions: result.questions ?? result,
       },
     });

@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { safeParseJson, NO_STORE } from '@/lib/api-helpers';
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
@@ -28,14 +28,12 @@ export async function PATCH(request: NextRequest) {
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { userId, isAdmin } = body;
+  const { userId, isAdmin } = parsed.data;
 
   if (!userId) {
     return Response.json({ error: 'userId is required' }, { status: 400 });
   }
 
-  // Prevent removing own admin
   if (userId === auth.userId && !isAdmin) {
     return Response.json({ error: 'Cannot remove your own admin role' }, { status: 400 });
   }
@@ -46,7 +44,7 @@ export async function PATCH(request: NextRequest) {
     select: { id: true, name: true, isAdmin: true },
   });
 
-  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(updated, NO_STORE);
 }
 
 export async function DELETE(request: NextRequest) {
@@ -55,8 +53,7 @@ export async function DELETE(request: NextRequest) {
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { userId } = body;
+  const { userId } = parsed.data;
 
   if (!userId) {
     return Response.json({ error: 'userId is required' }, { status: 400 });
@@ -67,6 +64,5 @@ export async function DELETE(request: NextRequest) {
   }
 
   await prisma.user.delete({ where: { id: userId } });
-
-  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }

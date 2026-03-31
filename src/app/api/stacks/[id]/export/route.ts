@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
 import { exportGoalsToYaml, buildGoalTree, type YamlMeta } from '@/lib/yaml-handler';
 
 export async function GET(
@@ -18,12 +19,10 @@ export async function GET(
     },
   });
 
-  if (!stack) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!stack) return notFoundResponse('Stack');
 
   if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
   // Fetch all goals as flat list, then build tree using shared utility

@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { NO_STORE } from '@/lib/api-helpers';
 import bcrypt from 'bcryptjs';
 import { parseBody, registerSchema } from '@/lib/schemas';
 
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       },
     });
     if (recentAttempts >= 5) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Too many registration attempts. Please try again later.' },
         { status: 429 }
       );
@@ -40,47 +40,48 @@ export async function POST(request: Request) {
     });
 
     if (!invitation) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Invalid or expired invitation' },
         { status: 403 }
       );
     }
 
-    // Check if user already exists
+    // Check if user already exists (e.g. via Google OAuth)
     const existingUser = await prisma.user.findUnique({
       where: { email: normalizedEmail },
     });
 
-    if (existingUser) {
-      // User exists (maybe via Google OAuth) — add password to existing account
-      if (existingUser.passwordHash) {
-        return NextResponse.json(
-          { error: 'Account already has a password set' },
-          { status: 409 }
-        );
-      }
+    if (existingUser?.passwordHash) {
+      return Response.json(
+        { error: 'Account already has a password set' },
+        { status: 409 }
+      );
+    }
 
-      const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, 12);
+    const acceptInvitation = prisma.invitation.update({
+      where: { id: invitation.id },
+      data: { status: 'ACCEPTED', acceptedAt: new Date() },
+    });
+
+    if (existingUser) {
+      // Add password to existing OAuth account
       await prisma.$transaction([
         prisma.user.update({
           where: { id: existingUser.id },
           data: {
             passwordHash,
             name: name || existingUser.name,
-            isAdmin: invitation.role === 'admin' ? true : existingUser.isAdmin,
+            isAdmin: invitation.role === 'admin' || existingUser.isAdmin,
           },
         }),
-        prisma.invitation.update({
-          where: { id: invitation.id },
-          data: { status: 'ACCEPTED', acceptedAt: new Date() },
-        }),
+        acceptInvitation,
       ]);
 
-      return NextResponse.json({ ok: true, userId: existingUser.id }, { headers: { 'Cache-Control': 'no-store' } });
+      return Response.json({ ok: true, userId: existingUser.id }, NO_STORE);
     }
 
     // Create new user
-    const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
@@ -99,10 +100,10 @@ export async function POST(request: Request) {
       return newUser;
     });
 
-    return NextResponse.json({ ok: true, userId: user.id }, { headers: { 'Cache-Control': 'no-store' } });
+    return Response.json({ ok: true, userId: user.id }, NO_STORE);
   } catch (error) {
     console.error('[register] Error:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Registration failed' },
       { status: 500 }
     );

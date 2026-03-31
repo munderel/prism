@@ -3,27 +3,21 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 
-/**
- * Subscribe to push notifications.
- */
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { endpoint, keys } = body;
+  const { endpoint, keys } = parsed.data;
 
   if (!endpoint || !keys?.p256dh || !keys?.auth) {
     return Response.json({ error: 'Invalid push subscription' }, { status: 400 });
   }
 
-  // Upsert subscription
   const existing = await prisma.pushSubscription.findFirst({
     where: { userId: auth.userId, endpoint },
   });
-
   if (existing) {
     return Response.json(existing);
   }
@@ -40,9 +34,6 @@ export async function POST(request: NextRequest) {
   return Response.json(sub, { status: 201 });
 }
 
-/**
- * Unsubscribe from push notifications.
- */
 export async function DELETE(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
