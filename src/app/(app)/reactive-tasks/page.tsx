@@ -80,6 +80,7 @@ export default function ReactiveTasksPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
   const filtered = useMemo(() => {
     if (!tasks) return [];
@@ -113,13 +114,21 @@ export default function ReactiveTasksPage() {
 
   const updateTask = useCallback(async (id: string, data: Record<string, unknown>) => {
     setUpdatingId(id);
+    setError('');
     try {
       const res = await fetch(`/api/tasks/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (res.ok) mutate();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || 'Failed to update task');
+        return;
+      }
+      mutate();
+    } catch {
+      setError('Network error — please try again');
     } finally {
       setUpdatingId(null);
     }
@@ -198,6 +207,15 @@ export default function ReactiveTasksPage() {
           <option value="NEWEST">Sort: Newest</option>
         </select>
       </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-600/30 bg-red-600/10 px-4 py-3 text-sm text-red-400 flex items-center justify-between">
+          {error}
+          <button onClick={() => setError('')} className="text-red-400 hover:text-red-300 ml-2">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Task List */}
       {!tasks ? (
@@ -288,7 +306,7 @@ export default function ReactiveTasksPage() {
                   {/* Due Date */}
                   {task.dueDate && (
                     <span className={`flex-shrink-0 text-xs ${
-                      new Date(task.dueDate) < new Date() && !isDone
+                      new Date(task.dueDate.split('T')[0] + 'T23:59:59') < new Date() && !isDone
                         ? 'text-red-400 font-medium'
                         : 'text-[var(--text-muted)]'
                     }`}>
