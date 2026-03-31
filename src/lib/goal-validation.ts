@@ -53,11 +53,9 @@ export function validateKpiLink(
   childKpiType: string,
   parentKpiType: string
 ): boolean {
-  // Child's parent level must match the target KPI's goal level
-  if (VALID_PARENT[childGoalLevel as GoalLevel] !== parentKpiGoalLevel) return false;
-  // Child goal's parent must be the target KPI's goal
-  if (childGoalParentId !== parentKpiGoalId) return false;
-  // Types must match
-  if (childKpiType !== parentKpiType) return false;
-  return true;
+  return (
+    VALID_PARENT[childGoalLevel as GoalLevel] === parentKpiGoalLevel &&
+    childGoalParentId === parentKpiGoalId &&
+    childKpiType === parentKpiType
+  );
 }

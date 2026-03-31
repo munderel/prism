@@ -37,11 +37,12 @@ export async function updateGoogleEvent(
   if (!calendar) return null;
 
   try {
-    const requestBody: any = {};
-    if (event.summary !== undefined) requestBody.summary = event.summary;
-    if (event.description !== undefined) requestBody.description = event.description;
-    if (event.start !== undefined) requestBody.start = { dateTime: event.start };
-    if (event.end !== undefined) requestBody.end = { dateTime: event.end };
+    const requestBody: any = {
+      ...event.summary !== undefined && { summary: event.summary },
+      ...event.description !== undefined && { description: event.description },
+      ...event.start !== undefined && { start: { dateTime: event.start } },
+      ...event.end !== undefined && { end: { dateTime: event.end } },
+    };
 
     const response = await calendar.events.patch({
       calendarId: 'primary',
@@ -93,19 +94,13 @@ export async function getCalendarClient(userId: string) {
 
   if (!user?.googleRefreshToken || !account) return null;
 
-  // Decrypt the token if encryption is enabled
-  let refreshToken: string;
+  // Decrypt the token if encryption is enabled, falling back to plaintext for pre-migration tokens
+  let refreshToken = user.googleRefreshToken;
   if (process.env.TOKEN_ENCRYPTION_KEY) {
-    const decrypted = decryptToken(user.googleRefreshToken);
-    if (decrypted) {
-      refreshToken = decrypted;
-    } else {
-      // Fallback for pre-migration plaintext tokens
+    refreshToken = decryptToken(user.googleRefreshToken) ?? refreshToken;
+    if (refreshToken === user.googleRefreshToken) {
       console.warn(`[calendar] Failed to decrypt refresh token for user ${userId} — using as plaintext (pre-migration token?)`);
-      refreshToken = user.googleRefreshToken;
     }
-  } else {
-    refreshToken = user.googleRefreshToken;
   }
 
   const oauth2Client = new google.auth.OAuth2(
@@ -147,40 +142,33 @@ export async function listGoogleEvents(
   const calendar = await getCalendarClient(userId);
   if (!calendar) return [];
 
-  const ids = calendarIds && calendarIds.length > 0 ? calendarIds : ['primary'];
+  const ids = calendarIds?.length ? calendarIds : ['primary'];
 
-  try {
-    const results = await Promise.all(
-      ids.map(async (calendarId) => {
-        try {
-          const response = await calendar.events.list({
-            calendarId,
-            timeMin,
-            timeMax,
-            singleEvents: true,
-            orderBy: 'startTime',
-            maxResults: 100,
-          });
-          return response.data.items ?? [];
-        } catch {
-          console.warn(`[calendar] Failed to fetch events from calendar ${calendarId}`);
-          return [];
-        }
-      })
-    );
+  const results = await Promise.all(
+    ids.map(async (calendarId) => {
+      try {
+        const response = await calendar.events.list({
+          calendarId,
+          timeMin,
+          timeMax,
+          singleEvents: true,
+          orderBy: 'startTime',
+          maxResults: 100,
+        });
+        return response.data.items ?? [];
+      } catch {
+        console.warn(`[calendar] Failed to fetch events from calendar ${calendarId}`);
+        return [];
+      }
+    })
+  );
 
-    // Merge and sort by start time
-    const allEvents = results.flat();
-    allEvents.sort((a, b) => {
-      const aTime = a.start?.dateTime ?? a.start?.date ?? '';
-      const bTime = b.start?.dateTime ?? b.start?.date ?? '';
-      return aTime.localeCompare(bTime);
-    });
-
-    return allEvents;
-  } catch {
-    return [];
-  }
+  // Merge and sort by start time
+  return results.flat().sort((a, b) => {
+    const aTime = a.start?.dateTime ?? a.start?.date ?? '';
+    const bTime = b.start?.dateTime ?? b.start?.date ?? '';
+    return aTime.localeCompare(bTime);
+  });
 }
 
 /**

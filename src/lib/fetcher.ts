@@ -1,5 +1,5 @@
-export const fetcher = (url: string) =>
-  fetch(url, { signal: AbortSignal.timeout(15000) }).then((r) => {
-    if (!r.ok) throw new Error(`API error: ${r.status}`);
-    return r.json();
-  });
+export async function fetcher(url: string): Promise<unknown> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  return response.json();
+}

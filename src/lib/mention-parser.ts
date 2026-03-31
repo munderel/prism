@@ -3,9 +3,8 @@
  * Returns deduplicated array of mention names (lowercase).
  */
 export function extractMentions(text: string): string[] {
-  const mentions: Set<string> = new Set();
-  // Match @word at start of string or after whitespace, but not preceded by non-whitespace (emails)
   const regex = /(?:^|(?<=\s))@([\w.]+)/g;
+  const mentions = new Set<string>();
   let match;
 
   while ((match = regex.exec(text)) !== null) {
@@ -37,18 +36,11 @@ export function resolveMentions(mentionNames: string[], users: UserLike[]): Reso
     const lower = mention.toLowerCase();
 
     const user = users.find((u) => {
-      // Match first name
       if (u.name && u.name.toLowerCase().startsWith(lower)) return true;
-      // Match first.last format against full name
       if (u.name && lower.includes('.')) {
-        const normalized = u.name.toLowerCase().replace(/\s+/g, '.');
-        if (normalized === lower) return true;
+        if (u.name.toLowerCase().replace(/\s+/g, '.') === lower) return true;
       }
-      // Match email prefix
-      if (u.email) {
-        const emailPrefix = u.email.split('@')[0].toLowerCase();
-        if (emailPrefix === lower) return true;
-      }
+      if (u.email && u.email.split('@')[0].toLowerCase() === lower) return true;
       return false;
     });
 

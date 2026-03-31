@@ -46,10 +46,8 @@ export function validateFileUrl(
     return { error: 'fileUrl points to a blocked host' };
   }
 
-  for (const pattern of PRIVATE_IP_RANGES) {
-    if (pattern.test(parsed.hostname)) {
-      return { error: 'fileUrl must not point to a private/internal IP' };
-    }
+  if (PRIVATE_IP_RANGES.some((pattern) => pattern.test(parsed.hostname))) {
+    return { error: 'fileUrl must not point to a private/internal IP' };
   }
 
   return { url: raw };

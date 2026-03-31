@@ -76,9 +76,6 @@ const KEY_TO_LEVEL: Record<string, string> = {
   daily_goals: 'DAILY',
 };
 
-/**
- * Convert a GoalNode to the spec's semantic YAML object.
- */
 function goalToSemanticObj(node: GoalNode): Record<string, any> {
   const obj: Record<string, any> = { title: node.title };
   if (node.id) obj.id = node.id;
@@ -118,9 +115,6 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
   return obj;
 }
 
-/**
- * Parse a semantic YAML object back into GoalNode(s).
- */
 function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
   const node: GoalNode = {
     title: obj.title,
@@ -164,9 +158,6 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
   return node;
 }
 
-/**
- * Export goal tree to spec-compliant YAML with meta section.
- */
 export function exportGoalsToYaml(goals: GoalNode[], meta: YamlMeta): string {
   const doc: Record<string, any> = { meta };
 
@@ -181,9 +172,6 @@ export function exportGoalsToYaml(goals: GoalNode[], meta: YamlMeta): string {
   return yaml.dump(doc, { lineWidth: 120, noRefs: true, sortKeys: false });
 }
 
-/**
- * Parse spec-compliant YAML back to GoalNode array + meta.
- */
 export function parseYamlToGoals(yamlContent: string): { goals: GoalNode[]; meta: YamlMeta } {
   const doc = yaml.load(yamlContent) as Record<string, any>;
   const meta: YamlMeta = doc.meta ?? { name: '', owner: '', is_company: false, exported_at: '' };
@@ -204,9 +192,6 @@ export function parseYamlToGoals(yamlContent: string): { goals: GoalNode[]; meta
   return { goals, meta };
 }
 
-/**
- * Build a GoalNode tree from flat DB goals (shared by export + import routes).
- */
 export function buildGoalTree(goals: any[]): GoalNode[] {
   const map = new Map<string, GoalNode>();
   const roots: GoalNode[] = [];
@@ -251,9 +236,6 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
   return roots;
 }
 
-/**
- * Flatten a goal tree into a map of id → GoalNode for comparison.
- */
 function flattenGoals(
   nodes: GoalNode[],
   map: Map<string, GoalNode> = new Map()
@@ -269,9 +251,6 @@ function flattenGoals(
   return map;
 }
 
-/**
- * Collect all goals without IDs (new goals from YAML import).
- */
 function collectNewGoals(nodes: GoalNode[]): GoalNode[] {
   const result: GoalNode[] = [];
   for (const node of nodes) {
@@ -288,6 +267,48 @@ function collectNewGoals(nodes: GoalNode[]): GoalNode[] {
 const DIFF_FIELDS: (keyof GoalNode)[] = ['title', 'description', 'status', 'level', 'dueDate'];
 const KPI_DIFF_FIELDS: (keyof KpiNode)[] = ['type', 'unit', 'target', 'actual', 'complete'];
 
+function diffFields<T>(current: T, incoming: T, fields: (keyof T)[]): Record<string, GoalDiffChange> {
+  const changes: Record<string, GoalDiffChange> = {};
+  for (const field of fields) {
+    if (current[field] !== incoming[field]) {
+      changes[field as string] = { from: current[field], to: incoming[field] };
+    }
+  }
+  return changes;
+}
+
+function diffKpis(currentKpis: KpiNode[], incomingKpis: KpiNode[]): Omit<KpiDiffEntry, 'goalTitle'> | null {
+  if (currentKpis.length === 0 && incomingKpis.length === 0) return null;
+
+  const currentByName = new Map(currentKpis.map((k) => [k.name, k]));
+  const incomingByName = new Map(incomingKpis.map((k) => [k.name, k]));
+
+  const added: KpiDiffEntry['added'] = [];
+  const removed: KpiDiffEntry['removed'] = [];
+  const modified: KpiDiffEntry['modified'] = [];
+
+  for (const [name, kpi] of incomingByName) {
+    const currentKpi = currentByName.get(name);
+    if (!currentKpi) {
+      added.push({ name, type: kpi.type });
+      continue;
+    }
+    const changes = diffFields(currentKpi, kpi, KPI_DIFF_FIELDS);
+    if (Object.keys(changes).length > 0) {
+      modified.push({ name, changes });
+    }
+  }
+
+  for (const [name, kpi] of currentByName) {
+    if (!incomingByName.has(name)) {
+      removed.push({ name, type: kpi.type });
+    }
+  }
+
+  if (added.length === 0 && removed.length === 0 && modified.length === 0) return null;
+  return { added, removed, modified };
+}
+
 export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
   const currentMap = flattenGoals(current);
   const incomingMap = flattenGoals(incoming);
@@ -295,85 +316,29 @@ export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
   const added = collectNewGoals(incoming);
 
   const deleted: GoalDiff['deleted'] = [];
-  Array.from(currentMap.entries()).forEach(([id, node]) => {
+  for (const [id, node] of currentMap) {
     if (!incomingMap.has(id)) {
       deleted.push({ id, title: node.title });
     }
-  });
+  }
 
   const modified: GoalDiff['modified'] = [];
-  Array.from(incomingMap.entries()).forEach(([id, incomingNode]) => {
-    const currentNode = currentMap.get(id);
-    if (!currentNode) return;
+  const kpiChanges: KpiDiffEntry[] = [];
 
-    const changes: Record<string, GoalDiffChange> = {};
-    for (const field of DIFF_FIELDS) {
-      const from = currentNode[field];
-      const to = incomingNode[field];
-      if (from !== to) {
-        changes[field] = { from, to };
-      }
-    }
+  for (const [id, incomingNode] of incomingMap) {
+    const currentNode = currentMap.get(id);
+    if (!currentNode) continue;
+
+    const changes = diffFields(currentNode, incomingNode, DIFF_FIELDS);
     if (Object.keys(changes).length > 0) {
       modified.push({ id, title: incomingNode.title, changes });
     }
-  });
 
-  // Compute KPI-level diffs for goals that exist in both trees
-  const kpiChanges: KpiDiffEntry[] = [];
-  Array.from(incomingMap.entries()).forEach(([id, incomingNode]) => {
-    const currentNode = currentMap.get(id);
-    if (!currentNode) return;
-
-    const currentKpis = currentNode.kpis ?? [];
-    const incomingKpis = incomingNode.kpis ?? [];
-    if (currentKpis.length === 0 && incomingKpis.length === 0) return;
-
-    const currentByName = new Map(currentKpis.map((k) => [k.name, k]));
-    const incomingByName = new Map(incomingKpis.map((k) => [k.name, k]));
-
-    const addedKpis: { name: string; type: string }[] = [];
-    const removedKpis: { name: string; type: string }[] = [];
-    const modifiedKpis: { name: string; changes: Record<string, GoalDiffChange> }[] = [];
-
-    Array.from(incomingByName.entries()).forEach(([name, kpi]) => {
-      if (!currentByName.has(name)) {
-        addedKpis.push({ name, type: kpi.type });
-      }
-    });
-
-    Array.from(currentByName.entries()).forEach(([name, kpi]) => {
-      if (!incomingByName.has(name)) {
-        removedKpis.push({ name, type: kpi.type });
-      }
-    });
-
-    Array.from(incomingByName.entries()).forEach(([name, incomingKpi]) => {
-      const currentKpi = currentByName.get(name);
-      if (!currentKpi) return;
-
-      const kpiChangesMap: Record<string, GoalDiffChange> = {};
-      for (const field of KPI_DIFF_FIELDS) {
-        const from = currentKpi[field];
-        const to = incomingKpi[field];
-        if (from !== to) {
-          kpiChangesMap[field] = { from, to };
-        }
-      }
-      if (Object.keys(kpiChangesMap).length > 0) {
-        modifiedKpis.push({ name, changes: kpiChangesMap });
-      }
-    });
-
-    if (addedKpis.length > 0 || removedKpis.length > 0 || modifiedKpis.length > 0) {
-      kpiChanges.push({
-        goalTitle: incomingNode.title,
-        added: addedKpis,
-        removed: removedKpis,
-        modified: modifiedKpis,
-      });
+    const kpiDiff = diffKpis(currentNode.kpis ?? [], incomingNode.kpis ?? []);
+    if (kpiDiff) {
+      kpiChanges.push({ goalTitle: incomingNode.title, ...kpiDiff });
     }
-  });
+  }
 
   return { added, deleted, modified, kpiChanges };
 }

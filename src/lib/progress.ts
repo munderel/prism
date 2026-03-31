@@ -79,16 +79,16 @@ export async function cascadeProgressUp(goalId: string): Promise<void> {
     }
 
     // Auto-update status based on progress (never override manual COMPLETED or ABANDONED)
-    const autoStatus: Record<string, string> = {};
+    const statusUpdate: Record<string, string> = {};
     if (progress === 100 && (goal.status === 'NOT_STARTED' || goal.status === 'IN_PROGRESS')) {
-      autoStatus.status = 'COMPLETED';
+      statusUpdate.status = 'COMPLETED';
     } else if (progress > 0 && goal.status === 'NOT_STARTED') {
-      autoStatus.status = 'IN_PROGRESS';
+      statusUpdate.status = 'IN_PROGRESS';
     }
 
     await prisma.goal.update({
       where: { id: currentId },
-      data: { progressPct: progress, ...autoStatus },
+      data: { progressPct: progress, ...statusUpdate },
     });
 
     currentId = goal.parentId as string | null;

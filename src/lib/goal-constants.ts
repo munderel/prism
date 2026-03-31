@@ -64,23 +64,35 @@ export function formatGoalDateRange(
   startDate: string | null | undefined,
   endDate: string | null | undefined
 ): string | null {
-  if (!startDate || !endDate) {
+  if (!startDate) {
+    return level === 'HIGH_HARD' ? '5-10 Year Goal' : null;
+  }
+
+  const s = new Date(startDate);
+
+  if (!endDate) {
     if (level === 'HIGH_HARD') return '5-10 Year Goal';
-    if (level === 'STRATEGIC' && startDate) return String(new Date(startDate).getFullYear());
+    if (level === 'STRATEGIC') return String(s.getFullYear());
     return null;
   }
-  const s = new Date(startDate);
+
   const e = new Date(endDate);
-  if (level === 'HIGH_HARD') {
-    const years = e.getFullYear() - s.getFullYear();
-    const label = years <= 1 ? '1-Year' : `${years}-Year`;
-    return `${label} High Hard Goal (${s.getFullYear()}\u2013${e.getFullYear()})`;
+
+  switch (level) {
+    case 'HIGH_HARD': {
+      const years = e.getFullYear() - s.getFullYear();
+      const label = years <= 1 ? '1-Year' : `${years}-Year`;
+      return `${label} High Hard Goal (${s.getFullYear()}\u2013${e.getFullYear()})`;
+    }
+    case 'STRATEGIC':
+      return String(s.getFullYear());
+    case 'MONTHLY':
+    case 'WEEKLY': {
+      const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      return `${start} \u2013 ${end}`;
+    }
+    default:
+      return null;
   }
-  if (level === 'STRATEGIC') {
-    return String(s.getFullYear());
-  }
-  if (level === 'MONTHLY' || level === 'WEEKLY') {
-    return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} \u2013 ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  }
-  return null;
 }

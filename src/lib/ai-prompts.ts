@@ -1,8 +1,5 @@
 import type { ChatMessage } from './openrouter';
 
-/**
- * Breaks a book into reading groups with quiz points.
- */
 export function bookBreakdownPrompt(title: string, description?: string): ChatMessage[] {
   return [
     {
@@ -43,9 +40,6 @@ Return JSON in this format:
   ];
 }
 
-/**
- * Breaks a course into modules and lessons.
- */
 export function courseBreakdownPrompt(title: string, syllabus?: string): ChatMessage[] {
   return [
     {
@@ -85,9 +79,6 @@ Return JSON in this format:
   ];
 }
 
-/**
- * Generates 5 comprehension questions for a given material and chapter range.
- */
 export function quizGenerationPrompt(material: string, chapterRange: string): ChatMessage[] {
   return [
     {
@@ -123,9 +114,6 @@ Include a mix of multiple-choice (with 4 options) and short-answer questions.`,
   ];
 }
 
-/**
- * Grades user answers with feedback.
- */
 export function quizCheckPrompt(
   questions: { id: number; question: string; correctAnswer: string }[],
   userAnswers: { id: number; answer: string }[]
@@ -166,9 +154,6 @@ Return JSON in this format:
   ];
 }
 
-/**
- * Decomposes a task/goal into clear sub-steps (power-down decomposition).
- */
 export function clearGoalsPrompt(title: string, description?: string): ChatMessage[] {
   return [
     {
@@ -201,9 +186,6 @@ Return JSON in this format:
   ];
 }
 
-/**
- * Suggests daily tasks for a weekly goal based on existing tasks.
- */
 export function taskSuggestionPrompt(
   weeklyGoal: string,
   existingTasks: string[]
