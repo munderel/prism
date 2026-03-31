@@ -37,7 +37,6 @@ interface GoalTreeItem {
   status: string;
   progressPct: number;
   parentId: string | null;
-  dueDate: string | null;
   startDate: string | null;
   endDate: string | null;
   stackId: string;
@@ -215,7 +214,7 @@ export function GoalStackTree({
           return due && due <= today && item.task?.status !== 'DONE';
         }
         const goal = item.goal;
-        const due = goal?.dueDate ? new Date(goal.dueDate) : goal?.endDate ? new Date(goal.endDate) : null;
+        const due = goal?.endDate ? new Date(goal.endDate) : null;
         return due && due <= today && goal?.status !== 'COMPLETED' && goal?.status !== 'ABANDONED';
       });
     }
@@ -332,10 +331,10 @@ export function GoalStackTree({
     mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
   }, [mutateGoals, stackId]);
 
-  const handleTaskEditorSave = useCallback(() => {
+  const handleTaskEditorSave = useCallback(async () => {
     setTaskEditorState({ open: false });
-    // Pass a fresh fetch to mutate so it bypasses SWR's dedupingInterval
-    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+    // Await fresh fetch then revalidate to ensure new tasks appear immediately
+    await mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: true });
   }, [mutateGoals, stackId]);
 
   if (isLoading) {

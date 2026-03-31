@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
-import { ListTodo, Plus, ChevronLeft, ChevronRight, CalendarRange } from 'lucide-react';
+import { ListTodo, ChevronLeft, ChevronRight, CalendarRange } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { AgendaView } from '@/components/tasks/AgendaView';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
@@ -65,16 +65,20 @@ export default function TasksPage() {
   // Fetch AIM instances for the current date range
   const aimRangeKey = useMemo(() => {
     const d = new Date(date + 'T00:00:00');
-    if (viewMode === 'day') {
-      return `/api/aims/instances?start=${date}T00:00:00&end=${date}T23:59:59`;
-    }
+    let rangeStart: Date;
+    let rangeEnd: Date;
     if (viewMode === 'week') {
-      return `/api/aims/instances?start=${toDateStr(getWeekStart(d))}T00:00:00&end=${toDateStr(getWeekEnd(d))}T23:59:59`;
+      rangeStart = new Date(toDateStr(getWeekStart(d)) + 'T00:00:00');
+      rangeEnd = new Date(toDateStr(getWeekEnd(d)) + 'T23:59:59.999');
+    } else if (viewMode === 'month') {
+      rangeStart = new Date(toDateStr(getFirstOfMonth(d)) + 'T00:00:00');
+      rangeEnd = new Date(toDateStr(getLastOfMonth(d)) + 'T23:59:59.999');
+    } else {
+      // day + agenda fallback
+      rangeStart = new Date(date + 'T00:00:00');
+      rangeEnd = new Date(date + 'T23:59:59.999');
     }
-    if (viewMode === 'month') {
-      return `/api/aims/instances?start=${toDateStr(getFirstOfMonth(d))}T00:00:00&end=${toDateStr(getLastOfMonth(d))}T23:59:59`;
-    }
-    return `/api/aims/instances?start=${date}T00:00:00&end=${date}T23:59:59`;
+    return `/api/aims/instances?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
   }, [date, viewMode]);
   const { data: aimInstancesData, mutate: mutateAims } = useSWR(aimRangeKey);
   const aimInstances = useMemo(() => (Array.isArray(aimInstancesData) ? aimInstancesData : []), [aimInstancesData]);
@@ -202,13 +206,6 @@ export default function TasksPage() {
         </h1>
         <div className="flex items-center gap-2">
           <QuickAddMenu />
-          <button
-            onClick={() => { setEditingTask(null); setShowEditor(true); }}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            New Task
-          </button>
         </div>
       </div>
 
@@ -328,6 +325,50 @@ export default function TasksPage() {
               )}
             </div>
           )}
+
+          {/* AIMs Section */}
+          {aimInstances.length > 0 && (
+            <div className="mt-6">
+              <h2 className={`text-sm font-semibold mb-3 flex items-center gap-1.5 ${PRISM_COLORS.AIM.textClass}`}>
+                <span>{PRISM_COLORS.AIM.emoji}</span> AIMs
+                <span className="text-xs text-[var(--text-muted)] font-normal">({aimInstances.length})</span>
+              </h2>
+              <div className="space-y-2">
+                {aimInstances.map((aim: any) => (
+                  <div
+                    key={aim.id}
+                    className="glass-panel p-3 flex items-center gap-3"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={aim.status === 'COMPLETED'}
+                      onChange={async () => {
+                        await fetch(`/api/aims/instances/${aim.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ status: aim.status === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED' }),
+                        });
+                        mutateAims();
+                      }}
+                      className="h-5 w-5 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-teal-600 focus:ring-teal-500"
+                    />
+                    <div className="flex-1">
+                      <span className={`text-sm font-medium ${aim.status === 'COMPLETED' ? 'text-gray-500 line-through' : 'text-[var(--text-primary)]'}`}>
+                        {aim.aimCategory?.name ?? 'AIM'}
+                        {aim.selectedActivity && ` — ${aim.selectedActivity}`}
+                      </span>
+                    </div>
+                    {aim.timeBlockStart && aim.timeBlockEnd && (
+                      <span className={`text-xs rounded px-2 py-0.5 ${PRISM_COLORS.AIM.bgClass} ${PRISM_COLORS.AIM.textClass}`}>
+                        {new Date(aim.timeBlockStart).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
+                        {new Date(aim.timeBlockEnd).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Detail panel */}
@@ -354,50 +395,6 @@ export default function TasksPage() {
           )}
         </div>
       </div>
-
-      {/* AIMs Section */}
-      {aimInstances.length > 0 && (
-        <div className="mt-6">
-          <h2 className={`text-sm font-semibold mb-3 flex items-center gap-1.5 ${PRISM_COLORS.AIM.textClass}`}>
-            <span>{PRISM_COLORS.AIM.emoji}</span> AIMs
-            <span className="text-xs text-[var(--text-muted)] font-normal">({aimInstances.length})</span>
-          </h2>
-          <div className="space-y-2">
-            {aimInstances.map((aim: any) => (
-              <div
-                key={aim.id}
-                className="glass-panel p-3 flex items-center gap-3"
-              >
-                <input
-                  type="checkbox"
-                  checked={aim.status === 'COMPLETED'}
-                  onChange={async () => {
-                    await fetch(`/api/aims/instances/${aim.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ status: aim.status === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED' }),
-                    });
-                    mutateAims();
-                  }}
-                  className="h-5 w-5 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-teal-600 focus:ring-teal-500"
-                />
-                <div className="flex-1">
-                  <span className={`text-sm font-medium ${aim.status === 'COMPLETED' ? 'text-gray-500 line-through' : 'text-[var(--text-primary)]'}`}>
-                    {aim.aimCategory?.name ?? 'AIM'}
-                    {aim.selectedActivity && ` — ${aim.selectedActivity}`}
-                  </span>
-                </div>
-                {aim.timeBlockStart && aim.timeBlockEnd && (
-                  <span className={`text-xs rounded px-2 py-0.5 ${PRISM_COLORS.AIM.bgClass} ${PRISM_COLORS.AIM.textClass}`}>
-                    {new Date(aim.timeBlockStart).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
-                    {new Date(aim.timeBlockEnd).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Editor modal */}
       {showEditor && (

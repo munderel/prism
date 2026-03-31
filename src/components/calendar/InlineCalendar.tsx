@@ -201,7 +201,7 @@ export function InlineCalendar({
   const typeColors: Record<string, string> = {
     task: 'bg-indigo-500',
     aim: 'bg-teal-500',
-    review: 'bg-amber-500',
+    review: 'bg-rose-500',
   };
 
   return (

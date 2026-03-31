@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { m, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -12,7 +13,7 @@ const SECTIONS = [
   { key: 'IMPROVE', label: 'Improve', color: 'text-indigo-400' },
   { key: 'REACT', label: 'React', color: 'text-yellow-400' },
   { key: 'MAINTENANCE', label: 'Maintenance', color: 'text-cyan-400' },
-  { key: 'REVIEW', label: 'Review', color: 'text-amber-400' },
+  { key: 'REVIEW', label: 'Review', color: 'text-rose-400' },
 ] as const;
 
 /** Task shape returned by the /api/tasks endpoint */
@@ -51,6 +52,7 @@ interface DailyTaskListProps {
 }
 
 export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick, onStatusChange }: DailyTaskListProps) {
+  const router = useRouter();
   const swrKey = prefetchedTasks ? null : `/api/tasks?date=${date}&includeUnscheduled=true`;
   const { data: swrData, isLoading, mutate } = useSWR(swrKey);
   const data = prefetchedTasks ?? swrData;
@@ -192,7 +194,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
                       onToggle={handleToggle}
                       onEdit={onEdit}
                       onDelete={onDelete}
-                      onClick={onClick}
+                      onClick={(t: DailyTask) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } onClick?.(t); }}
                       onStatusChange={handleStatusChange}
                       onWinTheDayToggle={handleWinTheDayToggle}
                     />

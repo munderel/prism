@@ -183,10 +183,12 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
           new Date(t.dueDate) >= upcomingWeekStart &&
           new Date(t.dueDate) <= upcomingWeekEnd;
         const include =
-          upcomingWeekGoalIds.has(t.goalId) ||               // linked to upcoming week goal
+          (t.goalId && upcomingWeekGoalIds.has(t.goalId)) || // linked to upcoming week goal
           (t.taskType === 'MAINTENANCE' && dueDateInWeek) || // maintenance due this week
           t.taskType === 'REACT' ||                          // all open react tasks
-          (t.goalId && personalGoalIds.has(t.goalId));       // part of personal goal stack
+          (t.goalId && personalGoalIds.has(t.goalId)) ||     // part of personal goal stack
+          dueDateInWeek ||                                   // any task due this week
+          (!t.goalId && !t.dueDate && t.status === 'TODO');  // unlinked TODO tasks
         if (include) {
           items.push({ id: t.id, itemType: 'task', title: t.title, duration: t.estimatedMinutes || 60, taskType: t.taskType, priority: t.priority });
         }
@@ -579,8 +581,8 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                   </button>
                 </div>
                 {calendarModalOpen && (
-                  <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-2 px-2 pb-2">
-                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-16px)] flex flex-col overflow-hidden shadow-2xl">
+                  <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-[72px] px-2 pb-2">
+                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
                       <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
                         <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
                         <button
@@ -641,8 +643,8 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                   </button>
                 </div>
                 {calendarModalOpen && (
-                  <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-2 px-2 pb-2">
-                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-16px)] flex flex-col overflow-hidden shadow-2xl">
+                  <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-[72px] px-2 pb-2">
+                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
                       <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
                         <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
                         <button

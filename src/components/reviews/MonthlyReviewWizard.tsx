@@ -4,7 +4,7 @@ import {
   Target, TrendingUp, CheckCircle2, Edit3, Calendar, FileText, Eye, Trophy,
 } from 'lucide-react';
 import { PeriodReviewWizard } from './PeriodReviewWizard';
-import type { StepConfig } from './shared/review-types';
+import type { Goal, StepConfig } from './shared/review-types';
 
 // Monthly review steps — reordered per Prism overhaul spec (2026-03-28)
 // 1. Big Picture (HHG + yearly) → 2. Current Monthly Goals (expandable to weekly) →
@@ -58,6 +58,15 @@ export function MonthlyReviewWizard({ reviewId, isTeamReview }: { reviewId: stri
       onTrackEmptyMessage="No monthly goals to assess."
       planNextPeriodDescription="Create weekly goals with KPIs for the upcoming month. Use the goal creation coach for guidance."
       planNextPeriodPlaceholder="New weekly goal..."
+      getKpiGoals={(primaryGoals: Goal[], allGoals: Goal[]) => {
+        // Fetch KPIs from weekly goals (children of monthly goals) instead of monthly goals themselves
+        const primaryIds = new Set(primaryGoals.map((g) => g.id));
+        const weeklyGoals = allGoals.filter(
+          (g) => g.level === 'WEEKLY' && g.parentId && primaryIds.has(g.parentId)
+        );
+        // Include both monthly and weekly KPIs
+        return [...primaryGoals, ...weeklyGoals];
+      }}
       findNextPeriodParent={(primaryGoals) => {
         const now = new Date();
         const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
