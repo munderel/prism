@@ -1,12 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { getEffectiveDuration, getEffectiveFrequency } from '@/lib/aim-phases';
+import { getEffectiveDuration, getEffectiveFrequency, type UserAimLike } from '@/lib/aim-phases';
 
 export async function GET() {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  // Get current week boundaries (Monday–Sunday)
+  // Get current week boundaries (Monday-Sunday)
   const now = new Date();
   const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
   const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
@@ -23,8 +23,7 @@ export async function GET() {
     include: { aimCategory: true },
   });
 
-  // Also get default aim categories that have no UserAim record yet
-  // (the UI treats these as active by default)
+  // Default aim categories that have no UserAim record yet
   const userAimCategoryIds = new Set(userAims.map((ua) => ua.aimCategoryId));
   const defaultCategories = await prisma.aimCategory.findMany({
     where: { isDefault: true, id: { notIn: Array.from(userAimCategoryIds) } },
@@ -52,7 +51,6 @@ export async function GET() {
     })),
   ];
 
-  // Get existing instances for this week
   const existingInstances = await prisma.aimInstance.findMany({
     where: {
       userId: auth.userId,
@@ -61,7 +59,7 @@ export async function GET() {
     include: { aimCategory: true },
   });
 
-  const items: Array<{
+  interface UnscheduledItem {
     id: string;
     type: 'aim';
     title: string;
@@ -70,11 +68,12 @@ export async function GET() {
     duration: number;
     source: 'aims';
     activities: string[] | null;
-  }> = [];
+  }
+
+  const items: UnscheduledItem[] = [];
 
   for (const aim of activeAims) {
-    // Use phased effective values based on habit-building progression
-    const userAimLike = {
+    const userAimLike: UserAimLike = {
       customDuration: aim.customDuration,
       customFrequency: aim.customFrequency,
       currentPhase: aim.currentPhase,
@@ -86,39 +85,41 @@ export async function GET() {
     };
     const frequency = getEffectiveFrequency(userAimLike);
     const duration = getEffectiveDuration(userAimLike);
+    const activities = Array.isArray(aim.aimCategory.activities)
+      ? aim.aimCategory.activities as string[]
+      : null;
+
     const categoryInstances = existingInstances.filter(
       (i) => i.aimCategoryId === aim.aimCategoryId
     );
 
     // Existing instances without time blocks (need scheduling)
-    const unscheduledInstances = categoryInstances.filter(
-      (i) => !i.timeBlockStart && i.status === 'SCHEDULED'
-    );
-    for (const inst of unscheduledInstances) {
-      items.push({
-        id: `aim-instance-${inst.id}`,
-        type: 'aim',
-        title: `${aim.aimCategory.name}`,
-        aimCategoryId: aim.aimCategoryId,
-        aimInstanceId: inst.id,
-        duration,
-        source: 'aims',
-        activities: Array.isArray(aim.aimCategory.activities) ? aim.aimCategory.activities as string[] : null,
-      });
+    for (const inst of categoryInstances) {
+      if (!inst.timeBlockStart && inst.status === 'SCHEDULED') {
+        items.push({
+          id: `aim-instance-${inst.id}`,
+          type: 'aim',
+          title: aim.aimCategory.name,
+          aimCategoryId: aim.aimCategoryId,
+          aimInstanceId: inst.id,
+          duration,
+          source: 'aims',
+          activities,
+        });
+      }
     }
 
     // Missing instances (frequency not met yet)
-    const totalExisting = categoryInstances.length;
-    const missing = Math.max(0, frequency - totalExisting);
+    const missing = Math.max(0, frequency - categoryInstances.length);
     for (let i = 0; i < missing; i++) {
       items.push({
         id: `aim-new-${aim.aimCategoryId}-${i}`,
         type: 'aim',
-        title: `${aim.aimCategory.name}`,
+        title: aim.aimCategory.name,
         aimCategoryId: aim.aimCategoryId,
         duration,
         source: 'aims',
-        activities: Array.isArray(aim.aimCategory.activities) ? aim.aimCategory.activities as string[] : null,
+        activities,
       });
     }
   }

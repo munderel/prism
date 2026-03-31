@@ -2,19 +2,7 @@ import { NextRequest } from 'next/server';
 import { KpiTimeLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
-
-async function authorizeProcessAccess(processId: string, userId: string, isAdmin: boolean) {
-  const process = await prisma.process.findUnique({
-    where: { id: processId },
-    select: { id: true, assigneeId: true, delegateId: true },
-  });
-  if (!process) return { error: 'not_found' as const };
-  if (isAdmin || process.assigneeId === userId || process.delegateId === userId) {
-    return { process };
-  }
-  return { error: 'forbidden' as const };
-}
+import { authorizeProcessAccess, safeParseJson, validateKpiGoals } from '@/lib/api-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -25,8 +13,7 @@ export async function GET(
   if ('error' in auth) return authError(auth);
 
   const access = await authorizeProcessAccess(id, auth.userId, auth.session.user.isAdmin);
-  if (access.error === 'not_found') return notFoundResponse('Process');
-  if (access.error === 'forbidden') return forbiddenResponse();
+  if ('error' in access) return access.error;
 
   const kpis = await prisma.processKpi.findMany({
     where: { processId: id },
@@ -54,8 +41,7 @@ export async function POST(
   if ('error' in auth) return authError(auth);
 
   const access = await authorizeProcessAccess(id, auth.userId, auth.session.user.isAdmin);
-  if (access.error === 'not_found') return notFoundResponse('Process');
-  if (access.error === 'forbidden') return forbiddenResponse();
+  if ('error' in access) return access.error;
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
@@ -66,17 +52,9 @@ export async function POST(
     return Response.json({ error: 'name is required' }, { status: 400 });
   }
 
-  // Validate goal timeLevel values if provided
-  const validTimeLevels = Object.values(KpiTimeLevel) as string[];
   if (Array.isArray(goals) && goals.length > 0) {
-    for (const g of goals) {
-      if (!validTimeLevels.includes(g.timeLevel)) {
-        return Response.json({ error: `Invalid timeLevel: ${g.timeLevel}` }, { status: 400 });
-      }
-      if (typeof g.targetValue !== 'number' || !isFinite(g.targetValue)) {
-        return Response.json({ error: 'Goal targetValue must be a finite number' }, { status: 400 });
-      }
-    }
+    const goalsError = validateKpiGoals(goals, Object.values(KpiTimeLevel) as string[]);
+    if (goalsError) return Response.json({ error: goalsError }, { status: 400 });
   }
 
   const kpiWithGoals = await prisma.$transaction(async (tx) => {

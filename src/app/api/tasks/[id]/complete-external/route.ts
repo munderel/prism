@@ -55,11 +55,15 @@ function htmlResponse(body: string, status = 200) {
   );
 }
 
+function getBaseUrl(): string {
+  return process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+}
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const taskId = params.id;
+  const { id: taskId } = await params;
   const { searchParams } = request.nextUrl;
   const token = searchParams.get('token');
   const userId = searchParams.get('userId');
@@ -73,13 +77,10 @@ export async function GET(
     );
   }
 
-  // Validate token
-  let isValid = false;
-  try {
-    isValid = verifyCompletionToken(taskId, userId, token);
-  } catch {
-    isValid = false;
-  }
+  const isValid = (() => {
+    try { return verifyCompletionToken(taskId, userId, token); }
+    catch { return false; }
+  })();
 
   if (!isValid) {
     return htmlResponse(
@@ -90,7 +91,6 @@ export async function GET(
     );
   }
 
-  // Look up the task
   const task = await prisma.task.findUnique({ where: { id: taskId } });
 
   if (!task) {
@@ -111,31 +111,24 @@ export async function GET(
     );
   }
 
-  // Already completed
   if (task.status === 'DONE') {
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
     return htmlResponse(
       `<div class="icon">&#9989;</div>
        <h1>Task Was Already Completed</h1>
        <p>This task was marked as done on ${task.completedAt ? task.completedAt.toLocaleDateString() : 'a previous date'}.</p>
-       <a href="${baseUrl}">Open Prism</a>`,
+       <a href="${getBaseUrl()}">Open Prism</a>`,
     );
   }
 
-  // Mark as complete
   await prisma.task.update({
     where: { id: taskId },
-    data: {
-      status: 'DONE',
-      completedAt: new Date(),
-    },
+    data: { status: 'DONE', completedAt: new Date() },
   });
 
-  const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
   return htmlResponse(
     `<div class="icon">&#127881;</div>
      <h1>Task Marked Complete!</h1>
      <p>Nice work. This task has been marked as done.</p>
-     <a href="${baseUrl}">Open Prism</a>`,
+     <a href="${getBaseUrl()}">Open Prism</a>`,
   );
 }

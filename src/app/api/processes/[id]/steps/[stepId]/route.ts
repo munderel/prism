@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
 
 export async function PATCH(
   request: NextRequest,
@@ -13,20 +13,13 @@ export async function PATCH(
   const { stepId } = await params;
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { title, description, url, sortOrder } = body;
 
   const step = await prisma.processStep.update({
     where: { id: stepId },
-    data: {
-      ...(title !== undefined && { title }),
-      ...(description !== undefined && { description }),
-      ...(url !== undefined && { url }),
-      ...(sortOrder !== undefined && { sortOrder }),
-    },
+    data: pickDefined(parsed.data, ['title', 'description', 'url', 'sortOrder']),
   });
 
-  return Response.json(step, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(step, NO_STORE);
 }
 
 export async function DELETE(
@@ -40,5 +33,5 @@ export async function DELETE(
 
   await prisma.processStep.delete({ where: { id: stepId } });
 
-  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }

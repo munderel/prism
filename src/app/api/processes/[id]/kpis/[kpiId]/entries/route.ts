@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
+import { authorizeProcessAccess, notFoundResponse, safeParseJson } from '@/lib/api-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -11,17 +11,9 @@ export async function POST(
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  // Verify process exists and user has access
-  const process = await prisma.process.findUnique({
-    where: { id: processId },
-    select: { id: true, assigneeId: true, delegateId: true },
-  });
-  if (!process) return notFoundResponse('Process');
-  if (!auth.session.user.isAdmin && process.assigneeId !== auth.userId && process.delegateId !== auth.userId) {
-    return forbiddenResponse();
-  }
+  const access = await authorizeProcessAccess(processId, auth.userId, auth.session.user.isAdmin);
+  if ('error' in access) return access.error;
 
-  // Verify KPI exists and belongs to this process
   const kpi = await prisma.processKpi.findUnique({ where: { id: kpiId } });
   if (!kpi || kpi.processId !== processId) return notFoundResponse('KPI');
 
@@ -30,12 +22,12 @@ export async function POST(
   const body = parsed.data;
   const { value, date, notes } = body;
 
-  if (value === undefined || value === null) {
+  if (value == null) {
     return Response.json({ error: 'value is required' }, { status: 400 });
   }
 
   const numValue = Number(value);
-  if (isNaN(numValue) || !isFinite(numValue)) {
+  if (!isFinite(numValue)) {
     return Response.json({ error: 'value must be a valid number' }, { status: 400 });
   }
 

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { requireAuth, requireAdmin, authError, checkStackAccess } from '@/lib/auth-guard';
+import { safeParseJson, notFoundResponse } from '@/lib/api-helpers';
 import { validateGoalLevel } from '@/lib/goal-validation';
 
 export async function PATCH(
@@ -17,15 +17,14 @@ export async function PATCH(
     include: { stack: true },
   });
 
-  if (!goal || goal.deletedAt) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
   if (goal.stack.isCompany) {
     const adminAuth = await requireAdmin();
     if ('error' in adminAuth) return authError(adminAuth);
-  } else if (goal.stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  } else {
+    const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+    if (accessDenied) return accessDenied;
   }
 
   const parsed = await safeParseJson(request);

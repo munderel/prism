@@ -37,7 +37,6 @@ export async function POST(
     return Response.json({ error: 'title is required' }, { status: 400 });
   }
 
-  // If no sortOrder provided, put it at the end
   let order = sortOrder;
   if (order === undefined) {
     const lastStep = await prisma.processStep.findFirst({

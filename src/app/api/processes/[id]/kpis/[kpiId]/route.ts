@@ -2,19 +2,7 @@ import { NextRequest } from 'next/server';
 import { KpiTimeLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, forbiddenResponse, safeParseJson, pickDefined } from '@/lib/api-helpers';
-
-async function authorizeProcessAccess(processId: string, userId: string, isAdmin: boolean) {
-  const process = await prisma.process.findUnique({
-    where: { id: processId },
-    select: { id: true, assigneeId: true, delegateId: true },
-  });
-  if (!process) return { error: 'not_found' as const };
-  if (isAdmin || process.assigneeId === userId || process.delegateId === userId) {
-    return { process };
-  }
-  return { error: 'forbidden' as const };
-}
+import { authorizeProcessAccess, notFoundResponse, safeParseJson, pickDefined, validateKpiGoals } from '@/lib/api-helpers';
 
 export async function PATCH(
   request: NextRequest,
@@ -25,8 +13,7 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const access = await authorizeProcessAccess(processId, auth.userId, auth.session.user.isAdmin);
-  if (access.error === 'not_found') return notFoundResponse('Process');
-  if (access.error === 'forbidden') return forbiddenResponse();
+  if ('error' in access) return access.error;
 
   const kpi = await prisma.processKpi.findUnique({ where: { id: kpiId } });
   if (!kpi || kpi.processId !== processId) return notFoundResponse('KPI');
@@ -36,20 +23,11 @@ export async function PATCH(
   const body = parsed.data;
 
   const kpiFields = pickDefined(body, ['name', 'unit', 'targetValue', 'goalId']);
-
   const { goals } = body;
 
-  // Validate goal timeLevel values if provided
   if (Array.isArray(goals) && goals.length > 0) {
-    const validTimeLevels = Object.values(KpiTimeLevel) as string[];
-    for (const g of goals) {
-      if (!validTimeLevels.includes(g.timeLevel)) {
-        return Response.json({ error: `Invalid timeLevel: ${g.timeLevel}` }, { status: 400 });
-      }
-      if (typeof g.targetValue !== 'number' || !isFinite(g.targetValue)) {
-        return Response.json({ error: 'Goal targetValue must be a finite number' }, { status: 400 });
-      }
-    }
+    const goalsError = validateKpiGoals(goals, Object.values(KpiTimeLevel) as string[]);
+    if (goalsError) return Response.json({ error: goalsError }, { status: 400 });
   }
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -92,8 +70,7 @@ export async function DELETE(
   if ('error' in auth) return authError(auth);
 
   const access = await authorizeProcessAccess(processId, auth.userId, auth.session.user.isAdmin);
-  if (access.error === 'not_found') return notFoundResponse('Process');
-  if (access.error === 'forbidden') return forbiddenResponse();
+  if ('error' in access) return access.error;
 
   const kpi = await prisma.processKpi.findUnique({ where: { id: kpiId } });
   if (!kpi || kpi.processId !== processId) return notFoundResponse('KPI');

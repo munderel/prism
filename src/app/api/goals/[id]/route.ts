@@ -83,8 +83,8 @@ export async function PATCH(
 
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDeniedPatch = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
-  if (accessDeniedPatch) return accessDeniedPatch;
+  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  if (accessDenied) return accessDenied;
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
@@ -134,8 +134,8 @@ export async function DELETE(
 
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDeniedDel = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
-  if (accessDeniedDel) return accessDeniedDel;
+  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  if (accessDenied) return accessDenied;
 
   // Soft-delete this goal and all descendants
   const now = new Date();

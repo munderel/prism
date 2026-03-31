@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
 
 export async function GET(
   _request: NextRequest,
@@ -29,9 +29,7 @@ export async function GET(
     },
   });
 
-  if (!process) {
-    return Response.json({ error: 'Process not found' }, { status: 404 });
-  }
+  if (!process) return notFoundResponse('Process');
 
   return Response.json(process);
 }
@@ -49,9 +47,7 @@ export async function PATCH(
   const body = parsed.data;
 
   const process = await prisma.process.findUnique({ where: { id } });
-  if (!process) {
-    return Response.json({ error: 'Process not found' }, { status: 404 });
-  }
+  if (!process) return notFoundResponse('Process');
 
   // Handle per-execution time override (drag-drop from calendar)
   if (body.scheduledDate && (body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined)) {
@@ -84,56 +80,38 @@ export async function PATCH(
       },
     });
 
-    return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+    return Response.json(updated, NO_STORE);
   }
 
   const isAdmin = auth.session.user.isAdmin;
 
-  if (isAdmin) {
-    // Admin can update all fields
-    const { title, description, assigneeId, delegateId, delegateUntil, cadence, cadenceRule, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;
-
-    if (defaultDurationMinutes !== undefined && (typeof defaultDurationMinutes !== 'number' || defaultDurationMinutes <= 0)) {
-      return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
-    }
-
-    const updated = await prisma.process.update({
-      where: { id },
-      data: {
-        ...(title !== undefined && { title }),
-        ...(description !== undefined && { description }),
-        ...(assigneeId !== undefined && { assigneeId: assigneeId || null }),
-        ...(delegateId !== undefined && { delegateId: delegateId || null }),
-        ...(delegateUntil !== undefined && { delegateUntil: delegateUntil ? new Date(delegateUntil) : null }),
-        ...(cadence !== undefined && { cadence }),
-        ...(cadenceRule !== undefined && { cadenceRule }),
-        ...(defaultDurationMinutes !== undefined && { defaultDurationMinutes }),
-        ...(scheduledTime !== undefined && { scheduledTime: scheduledTime || null }),
-        ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
-        ...(scheduledDayOfMonth !== undefined && { scheduledDayOfMonth: scheduledDayOfMonth ?? null }),
-      },
-    });
-    return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+  if (body.defaultDurationMinutes !== undefined && (typeof body.defaultDurationMinutes !== 'number' || body.defaultDurationMinutes <= 0)) {
+    return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
   }
 
-  // Non-admin: can update delegateId/delegateUntil and calendar scheduling on their own processes
-  if (process.assigneeId !== auth.userId) {
+  // Non-admin can only update their own processes
+  if (!isAdmin && process.assigneeId !== auth.userId) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { delegateId, delegateUntil, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;
+
   const updated = await prisma.process.update({
     where: { id },
     data: {
+      // Fields accessible to both admins and assignees
       ...(delegateId !== undefined && { delegateId: delegateId || null }),
       ...(delegateUntil !== undefined && { delegateUntil: delegateUntil ? new Date(delegateUntil) : null }),
       ...(scheduledTime !== undefined && { scheduledTime: scheduledTime || null }),
       ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
       ...(scheduledDayOfMonth !== undefined && { scheduledDayOfMonth: scheduledDayOfMonth ?? null }),
+      // Admin-only fields
+      ...(isAdmin && pickDefined(body, ['title', 'description', 'cadence', 'cadenceRule', 'defaultDurationMinutes'])),
+      ...(isAdmin && body.assigneeId !== undefined && { assigneeId: body.assigneeId || null }),
     },
   });
 
-  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(updated, NO_STORE);
 }
 
 export async function DELETE(
@@ -147,5 +125,5 @@ export async function DELETE(
 
   await prisma.process.delete({ where: { id } });
 
-  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }
