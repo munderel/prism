@@ -122,7 +122,7 @@ export default function NewReactiveTaskPage() {
         throw new Error(data.error || 'Failed to create reactive task');
       }
 
-      router.push('/tasks');
+      router.push('/reactive-tasks');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {
