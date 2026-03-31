@@ -1,10 +1,10 @@
-import { encryptToken } from './crypto';
 import { NextAuthOptions } from 'next-auth';
-import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
-import { prisma } from './prisma';
 import bcrypt from 'bcryptjs';
+import { encryptToken } from './crypto';
+import { prisma } from './prisma';
 
 // Dev-only credentials provider — passwordless email login for local development.
 // Gated behind NODE_ENV to prevent accidental exposure in production.
@@ -144,6 +144,7 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
           access_type: 'offline',
