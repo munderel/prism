@@ -8,13 +8,15 @@ import { parseLocalDate } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
+import { checkDerailingTasks } from '@/lib/derailing-checker';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
   // Create maintenance tasks for any due processes (idempotent)
-  await checkAndCreateDueProcessTasks();
+  // Check for derailing tasks and send notifications (throttled to once per 30 min)
+  await Promise.all([checkAndCreateDueProcessTasks(), checkDerailingTasks()]);
 
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date');

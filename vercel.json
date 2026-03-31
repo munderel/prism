@@ -1,10 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/cron/derailing",
-      "schedule": "*/30 * * * *"
-    },
-    {
       "path": "/api/cron/review-nag",
       "schedule": "0 13 * * *"
     }
