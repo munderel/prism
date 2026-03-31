@@ -198,12 +198,20 @@ export const authOptions: NextAuthOptions = {
       // For credentials provider, lockout was already checked in authorize()
       if (account?.provider === 'password-login') return true;
 
-      // Check lockout status for OAuth providers
+      // On first-ever OAuth sign-in, the PrismaAdapter may not have committed
+      // the user row yet when this callback fires. Guard all DB operations
+      // by checking if the user actually exists first.
       const dbUser = await prisma.user.findUnique({
         where: { id: user.id },
-        select: { isLockedOut: true },
+        select: { id: true, isLockedOut: true },
       });
-      if (dbUser?.isLockedOut) return false;
+
+      // User doesn't exist in DB yet (first sign-in) — allow sign-in,
+      // the adapter will create the user after this callback returns true.
+      // We'll handle token storage and admin promotion on their next sign-in.
+      if (!dbUser) return true;
+
+      if (dbUser.isLockedOut) return false;
 
       // Store Google refresh token on sign in
       if (account?.provider === 'google' && account.refresh_token) {
