@@ -3,14 +3,16 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 
+const MEETING_INCLUDE = {
+  createdBy: { select: { id: true, name: true, email: true } },
+} as const;
+
 export async function GET() {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
   const meetings = await prisma.meeting.findMany({
-    include: {
-      createdBy: { select: { id: true, name: true, email: true } },
-    },
+    include: MEETING_INCLUDE,
     orderBy: { createdAt: 'desc' },
   });
 
@@ -23,8 +25,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { title, description, cadence, dayOfWeek, occurDate, timeStart, timeEnd, attendeeIds } = body;
+  const { title, description, cadence, dayOfWeek, occurDate, timeStart, timeEnd, attendeeIds } = parsed.data;
 
   if (!title || !cadence || !timeStart || !timeEnd) {
     return Response.json(
@@ -52,9 +53,7 @@ export async function POST(request: NextRequest) {
       attendeeIds: attendeeIds || [],
       createdById: auth.userId,
     },
-    include: {
-      createdBy: { select: { id: true, name: true, email: true } },
-    },
+    include: MEETING_INCLUDE,
   });
 
   return Response.json(meeting, { status: 201 });

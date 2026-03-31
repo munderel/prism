@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
+import { notFoundResponse, safeParseJson, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -17,21 +18,18 @@ export async function POST(
     },
   });
 
-  if (!idea) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!idea) return notFoundResponse('Idea');
 
   if (idea.status === 'CONVERTED') {
     return Response.json({ error: 'Idea has already been converted' }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const { ownerId, priority, dueDate } = body;
+  const parsed = await safeParseJson(request);
+  const body = 'error' in parsed ? {} : parsed.data;
+  const { ownerId, priority, dueDate } = body as Record<string, any>;
 
-  // Determine owner: explicit ownerId > process assignee > idea author
   const taskOwnerId = ownerId ?? idea.process?.assigneeId ?? idea.authorId;
 
-  // Create a REACT task from the idea in a transaction
   const result = await prisma.$transaction(async (tx) => {
     const task = await tx.task.create({
       data: {
@@ -53,7 +51,7 @@ export async function POST(
         taskId: task.id,
       },
       include: {
-        author: { select: { id: true, name: true, image: true } },
+        author: { select: USER_SUMMARY_SELECT },
         process: { select: { id: true, title: true } },
         task: { select: { id: true, title: true, status: true, ownerId: true } },
       },

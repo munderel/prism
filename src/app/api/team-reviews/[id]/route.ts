@@ -1,7 +1,16 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { safeParseJson, pickDefined } from '@/lib/api-helpers';
+
+const VALID_REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'YEARLY'] as const;
+
+const TEAM_REVIEW_INCLUDE = {
+  createdBy: { select: { id: true, name: true, email: true } },
+  members: {
+    include: { user: { select: { id: true, name: true, email: true } } },
+  },
+} as const;
 
 export async function PATCH(
   request: NextRequest,
@@ -14,12 +23,12 @@ export async function PATCH(
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data as any;
+  const body = parsed.data;
 
-  if (body.reviewType !== undefined && !['WEEKLY', 'MONTHLY', 'YEARLY'].includes(body.reviewType)) {
+  if (body.reviewType !== undefined && !VALID_REVIEW_TYPES.includes(body.reviewType)) {
     return Response.json({ error: 'Invalid reviewType' }, { status: 400 });
   }
-  if (body.dayOfWeek !== undefined && body.dayOfWeek !== null && (body.dayOfWeek < 0 || body.dayOfWeek > 6)) {
+  if (body.dayOfWeek != null && (body.dayOfWeek < 0 || body.dayOfWeek > 6)) {
     return Response.json({ error: 'dayOfWeek must be 0-6' }, { status: 400 });
   }
   if (body.time !== undefined && !/^\d{2}:\d{2}$/.test(body.time)) {
@@ -29,17 +38,9 @@ export async function PATCH(
     return Response.json({ error: 'duration must be at least 1 minute' }, { status: 400 });
   }
 
-  const data: any = {};
-  if (body.reviewType !== undefined) data.reviewType = body.reviewType;
-  if (body.dayOfWeek !== undefined) data.dayOfWeek = body.dayOfWeek;
-  if (body.recurrenceRule !== undefined) data.recurrenceRule = body.recurrenceRule;
-  if (body.time !== undefined) data.time = body.time;
-  if (body.duration !== undefined) data.duration = body.duration;
-  if (body.isActive !== undefined) data.isActive = body.isActive;
+  const data: any = pickDefined(body, ['reviewType', 'dayOfWeek', 'recurrenceRule', 'time', 'duration', 'isActive']);
 
-  // Update members if provided
   if (Array.isArray(body.memberIds)) {
-    // Delete existing members and recreate
     await prisma.recurringTeamReviewMember.deleteMany({
       where: { recurringTeamReviewId: id },
     });
@@ -51,12 +52,7 @@ export async function PATCH(
   const record = await prisma.recurringTeamReview.update({
     where: { id },
     data,
-    include: {
-      createdBy: { select: { id: true, name: true, email: true } },
-      members: {
-        include: { user: { select: { id: true, name: true, email: true } } },
-      },
-    },
+    include: TEAM_REVIEW_INCLUDE,
   });
 
   return Response.json(record);

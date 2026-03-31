@@ -4,7 +4,6 @@ import { requireAdmin, authError } from '@/lib/auth-guard';
 import { validateEmail, safeParseJson } from '@/lib/api-helpers';
 
 export async function POST(request: NextRequest) {
-  // Dev mode only — block by default, only allow in explicit development mode
   if (process.env.NODE_ENV !== 'development') {
     return Response.json({ error: 'Not available in production' }, { status: 403 });
   }
@@ -14,36 +13,25 @@ export async function POST(request: NextRequest) {
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { email, name, role } = body;
+  const { email, name, role } = parsed.data;
 
   const emailResult = validateEmail(email);
   if ('error' in emailResult) {
     return Response.json({ error: emailResult.error }, { status: 400 });
   }
-  const normalizedEmail = emailResult.email;
 
-  // Check if user already exists
-  const existing = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-  });
+  const existing = await prisma.user.findUnique({ where: { email: emailResult.email } });
   if (existing) {
     return Response.json({ error: 'A user with this email already exists' }, { status: 409 });
   }
 
   const user = await prisma.user.create({
     data: {
-      email: normalizedEmail,
+      email: emailResult.email,
       name: name?.trim() || null,
       isAdmin: role === 'admin',
     },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      isAdmin: true,
-      createdAt: true,
-    },
+    select: { id: true, email: true, name: true, isAdmin: true, createdAt: true },
   });
 
   return Response.json(user, { status: 201 });

@@ -2,47 +2,63 @@ import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateSettingsSchema } from '@/lib/schemas';
+
+const USER_SETTINGS_SELECT = {
+  mtp: true,
+  timezone: true,
+  hasCompletedOnboarding: true,
+  hiddenFeatures: true,
+  notificationPreference: true,
+  workingHoursStart: true,
+  workingHoursEnd: true,
+  casualHoursStart: true,
+  casualHoursEnd: true,
+  taskSchedulePeriod: true,
+  selectedCalendarIds: true,
+  powerdownTime: true,
+  weeklyReviewDayOfWeek: true,
+  weeklyReviewTime: true,
+  weeklyReviewDuration: true,
+  monthlyReviewRecurrenceRule: true,
+  monthlyReviewTime: true,
+  monthlyReviewDuration: true,
+  yearlyReviewRecurrenceRule: true,
+  yearlyReviewTime: true,
+  yearlyReviewDuration: true,
+  isPublicOnLeaderboard: true,
+} as const;
+
+const USER_UPDATABLE_FIELDS = [
+  'mtp', 'hasCompletedOnboarding', 'hiddenFeatures',
+  'workingHoursStart', 'workingHoursEnd', 'casualHoursStart', 'casualHoursEnd',
+  'taskSchedulePeriod', 'selectedCalendarIds', 'powerdownTime',
+  'weeklyReviewDayOfWeek', 'weeklyReviewTime', 'weeklyReviewDuration',
+  'monthlyReviewRecurrenceRule', 'monthlyReviewTime', 'monthlyReviewDuration',
+  'yearlyReviewRecurrenceRule', 'yearlyReviewTime', 'yearlyReviewDuration',
+  'isPublicOnLeaderboard',
+];
+
+const NOTIFICATION_PREF_FIELDS = [
+  'emailEnabled', 'pushEnabled', 'derailingAlerts', 'mentionAlerts', 'reviewNags',
+] as const;
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
   const { searchParams } = new URL(request.url);
-  const scope = searchParams.get('scope'); // 'user' | 'company'
+  const scope = searchParams.get('scope');
 
   if (scope === 'company') {
     const settings = await prisma.companySettings.findFirst();
     return Response.json(settings ?? { companyMtp: null });
   }
 
-  // User settings
   const user = await prisma.user.findUnique({
     where: { id: auth.userId },
-    select: {
-      mtp: true,
-      timezone: true,
-      hasCompletedOnboarding: true,
-      hiddenFeatures: true,
-      notificationPreference: true,
-      workingHoursStart: true,
-      workingHoursEnd: true,
-      casualHoursStart: true,
-      casualHoursEnd: true,
-      taskSchedulePeriod: true,
-      selectedCalendarIds: true,
-      powerdownTime: true,
-      weeklyReviewDayOfWeek: true,
-      weeklyReviewTime: true,
-      weeklyReviewDuration: true,
-      monthlyReviewRecurrenceRule: true,
-      monthlyReviewTime: true,
-      monthlyReviewDuration: true,
-      yearlyReviewRecurrenceRule: true,
-      yearlyReviewTime: true,
-      yearlyReviewDuration: true,
-      isPublicOnLeaderboard: true,
-    },
+    select: USER_SETTINGS_SELECT,
   });
 
   return Response.json(user);
@@ -55,61 +71,30 @@ export async function PATCH(request: NextRequest) {
   const parsed = await parseBody(request, updateSettingsSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { scope } = body;
 
-  if (scope === 'company') {
+  if (body.scope === 'company') {
     const adminAuth = await requireAdmin();
     if ('error' in adminAuth) return authError(adminAuth);
 
     const { companyMtp } = body;
     const existing = await prisma.companySettings.findFirst();
-
-    if (existing) {
-      const updated = await prisma.companySettings.update({
-        where: { id: existing.id },
-        data: { companyMtp },
-      });
-      return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
-    }
-
-    const created = await prisma.companySettings.create({
-      data: { companyMtp },
-    });
-    return Response.json(created, { headers: { 'Cache-Control': 'no-store' } });
+    const result = existing
+      ? await prisma.companySettings.update({ where: { id: existing.id }, data: { companyMtp } })
+      : await prisma.companySettings.create({ data: { companyMtp } });
+    return Response.json(result, NO_STORE);
   }
 
-  // User settings
-  const { mtp, timezone, hasCompletedOnboarding, hiddenFeatures, notificationPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, isPublicOnLeaderboard } = body;
+  // Build user update payload from defined fields
+  const data: Prisma.UserUpdateInput = pickDefined(body, USER_UPDATABLE_FIELDS);
 
-  const data: Prisma.UserUpdateInput = {};
-  if (mtp !== undefined) data.mtp = mtp;
-  if (timezone !== undefined) {
+  if (body.timezone !== undefined) {
     try {
-      Intl.DateTimeFormat(undefined, { timeZone: timezone });
-      data.timezone = timezone;
+      Intl.DateTimeFormat(undefined, { timeZone: body.timezone });
+      data.timezone = body.timezone;
     } catch {
       return Response.json({ error: 'Invalid timezone' }, { status: 400 });
     }
   }
-  if (hasCompletedOnboarding !== undefined) data.hasCompletedOnboarding = hasCompletedOnboarding;
-  if (hiddenFeatures !== undefined) data.hiddenFeatures = hiddenFeatures;
-  if (workingHoursStart !== undefined) data.workingHoursStart = workingHoursStart;
-  if (workingHoursEnd !== undefined) data.workingHoursEnd = workingHoursEnd;
-  if (casualHoursStart !== undefined) data.casualHoursStart = casualHoursStart;
-  if (casualHoursEnd !== undefined) data.casualHoursEnd = casualHoursEnd;
-  if (taskSchedulePeriod !== undefined) data.taskSchedulePeriod = taskSchedulePeriod;
-  if (selectedCalendarIds !== undefined) data.selectedCalendarIds = selectedCalendarIds;
-  if (powerdownTime !== undefined) data.powerdownTime = powerdownTime;
-  if (weeklyReviewDayOfWeek !== undefined) data.weeklyReviewDayOfWeek = weeklyReviewDayOfWeek;
-  if (weeklyReviewTime !== undefined) data.weeklyReviewTime = weeklyReviewTime;
-  if (weeklyReviewDuration !== undefined) data.weeklyReviewDuration = weeklyReviewDuration;
-  if (monthlyReviewRecurrenceRule !== undefined) data.monthlyReviewRecurrenceRule = monthlyReviewRecurrenceRule;
-  if (monthlyReviewTime !== undefined) data.monthlyReviewTime = monthlyReviewTime;
-  if (monthlyReviewDuration !== undefined) data.monthlyReviewDuration = monthlyReviewDuration;
-  if (yearlyReviewRecurrenceRule !== undefined) data.yearlyReviewRecurrenceRule = yearlyReviewRecurrenceRule;
-  if (yearlyReviewTime !== undefined) data.yearlyReviewTime = yearlyReviewTime;
-  if (yearlyReviewDuration !== undefined) data.yearlyReviewDuration = yearlyReviewDuration;
-  if (isPublicOnLeaderboard !== undefined) data.isPublicOnLeaderboard = isPublicOnLeaderboard;
 
   const user = await prisma.user.update({
     where: { id: auth.userId },
@@ -118,12 +103,11 @@ export async function PATCH(request: NextRequest) {
   });
 
   // Update notification preferences (whitelist valid boolean fields only)
-  if (notificationPrefs && typeof notificationPrefs === 'object') {
-    const allowedFields = ['emailEnabled', 'pushEnabled', 'derailingAlerts', 'mentionAlerts', 'reviewNags'] as const;
+  if (body.notificationPrefs && typeof body.notificationPrefs === 'object') {
     const sanitized: Record<string, boolean> = {};
-    for (const field of allowedFields) {
-      if (typeof notificationPrefs[field] === 'boolean') {
-        sanitized[field] = notificationPrefs[field];
+    for (const field of NOTIFICATION_PREF_FIELDS) {
+      if (typeof body.notificationPrefs[field] === 'boolean') {
+        sanitized[field] = body.notificationPrefs[field];
       }
     }
     if (Object.keys(sanitized).length > 0) {
@@ -135,5 +119,5 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  return Response.json(user, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(user, NO_STORE);
 }

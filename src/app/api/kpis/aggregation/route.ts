@@ -39,6 +39,19 @@ interface ProcessKpiAggregation {
   kpis: KpiAggregation[];
 }
 
+/** Returns progress as a percentage, or null when there is no valid target. */
+function progressPct(value: number, target: number | null): number | null {
+  if (target == null || target === 0) return null;
+  return (value / target) * 100;
+}
+
+/** Maps a parent time level to its sub-period time level. */
+function getSubTimeLevel(parent: KpiTimeLevel): KpiTimeLevel | null {
+  if (parent === KpiTimeLevel.MONTHLY) return KpiTimeLevel.WEEKLY;
+  if (parent === KpiTimeLevel.YEARLY) return KpiTimeLevel.MONTHLY;
+  return null;
+}
+
 // ─── GET /api/kpis/aggregation ────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -79,17 +92,15 @@ export async function GET(request: NextRequest) {
   }
 
   // ── Optional filters ──────────────────────────────────────────────────────
-  const filterUserId = searchParams.get('userId') ?? null;
-  const filterProcessId = searchParams.get('processId') ?? null;
-  const filterAssigneeId = searchParams.get('assigneeId') ?? null;
+  const filterUserId = searchParams.get('userId');
+  const filterProcessId = searchParams.get('processId');
+  const filterAssigneeId = searchParams.get('assigneeId');
 
   // ── Query ProcessKpis ─────────────────────────────────────────────────────
   const kpis = await prisma.processKpi.findMany({
     where: {
-      ...(filterProcessId ? { processId: filterProcessId } : {}),
-      ...(filterAssigneeId
-        ? { process: { assigneeId: filterAssigneeId } }
-        : {}),
+      ...(filterProcessId && { processId: filterProcessId }),
+      ...(filterAssigneeId && { process: { assigneeId: filterAssigneeId } }),
     },
     include: {
       goals: true,
@@ -103,17 +114,10 @@ export async function GET(request: NextRequest) {
     orderBy: [{ processId: 'asc' }, { name: 'asc' }],
   });
 
+  const meta = { timeLevel, startDate, endDate, userId: filterUserId, assigneeId: filterAssigneeId };
+
   if (kpis.length === 0) {
-    return Response.json({
-      processes: [],
-      meta: {
-        timeLevel,
-        startDate,
-        endDate,
-        userId: filterUserId,
-        assigneeId: filterAssigneeId,
-      },
-    });
+    return Response.json({ processes: [], meta });
   }
 
   // ── Query entries in date range ───────────────────────────────────────────
@@ -126,7 +130,7 @@ export async function GET(request: NextRequest) {
         gte: new Date(startDate + 'T00:00:00'),
         lte: new Date(endDate + 'T23:59:59'),
       },
-      ...(filterUserId ? { userId: filterUserId } : {}),
+      ...(filterUserId && { userId: filterUserId }),
     },
     select: { kpiId: true, value: true, date: true },
   });
@@ -148,43 +152,26 @@ export async function GET(request: NextRequest) {
   for (const kpi of kpis) {
     const kpiEntries = entriesByKpiId.get(kpi.id) ?? [];
 
-    // Total aggregated value across the full range
     const aggregatedValue = kpiEntries.reduce((sum, e) => sum + e.value, 0);
-    const entryCount = kpiEntries.length;
+    const targetValue = kpi.goals.find((g) => g.timeLevel === timeLevel)?.targetValue ?? null;
 
-    // Look up the target for this timeLevel from ProcessKpiGoal
-    const goalForLevel = kpi.goals.find((g) => g.timeLevel === timeLevel);
-    const targetValue = goalForLevel?.targetValue ?? null;
-    const progressPct =
-      targetValue != null && targetValue !== 0
-        ? (aggregatedValue / targetValue) * 100
-        : null;
-
-    // Sub-periods — use the finer-grained target (WEEKLY for month subs, MONTHLY for year subs)
+    // Sub-periods -- use the finer-grained target (WEEKLY for month subs, MONTHLY for year subs)
     let subPeriods: SubPeriod[] = [];
     if (subPeriodBoundaries.length > 0) {
-      const subTimeLevel = timeLevel === KpiTimeLevel.MONTHLY ? KpiTimeLevel.WEEKLY
-        : timeLevel === KpiTimeLevel.YEARLY ? KpiTimeLevel.MONTHLY
+      const subTimeLevel = getSubTimeLevel(timeLevel);
+      const subTargetValue = subTimeLevel
+        ? kpi.goals.find((g) => g.timeLevel === subTimeLevel)?.targetValue ?? null
         : null;
-      const subGoal = subTimeLevel ? kpi.goals.find((g) => g.timeLevel === subTimeLevel) : null;
-      const subTargetValue = subGoal?.targetValue ?? null;
 
       const buckets = aggregateEntries(kpiEntries, subPeriodBoundaries);
-      subPeriods = subPeriodBoundaries.map((boundary, i) => {
-        const subAggValue = buckets[i];
-        const subProgressPct =
-          subTargetValue != null && subTargetValue !== 0
-            ? (subAggValue / subTargetValue) * 100
-            : null;
-        return {
-          label: boundary.label,
-          start: boundary.start,
-          end: boundary.end,
-          aggregatedValue: subAggValue,
-          targetValue: subTargetValue,
-          progressPct: subProgressPct,
-        };
-      });
+      subPeriods = subPeriodBoundaries.map((boundary, i) => ({
+        label: boundary.label,
+        start: boundary.start,
+        end: boundary.end,
+        aggregatedValue: buckets[i],
+        targetValue: subTargetValue,
+        progressPct: progressPct(buckets[i], subTargetValue),
+      }));
     }
 
     const kpiAggregation: KpiAggregation = {
@@ -194,8 +181,8 @@ export async function GET(request: NextRequest) {
       timeLevel,
       aggregatedValue,
       targetValue,
-      progressPct,
-      entryCount,
+      progressPct: progressPct(aggregatedValue, targetValue),
+      entryCount: kpiEntries.length,
       subPeriods,
     };
 
@@ -217,14 +204,5 @@ export async function GET(request: NextRequest) {
 
   const processes = Array.from(processMap.values());
 
-  return Response.json({
-    processes,
-    meta: {
-      timeLevel,
-      startDate,
-      endDate,
-      userId: filterUserId,
-      assigneeId: filterAssigneeId,
-    },
-  });
+  return Response.json({ processes, meta });
 }

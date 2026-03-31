@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 
+const STREAK_MILESTONES = new Set([7, 14, 30, 50, 100]);
+
 export async function GET(_request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
@@ -24,8 +26,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { streakType } = body;
+  const { streakType } = parsed.data;
 
   if (!streakType) {
     return Response.json({ error: 'streakType is required' }, { status: 400 });
@@ -38,54 +39,49 @@ export async function POST(request: NextRequest) {
     where: { userId_streakType: { userId: auth.userId, streakType } },
   });
 
-  if (existing) {
-    const lastActive = existing.lastActiveDate;
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    let newCount: number;
-    if (lastActive && lastActive >= yesterday && lastActive < today) {
-      // Continuing streak from yesterday
-      newCount = existing.currentCount + 1;
-    } else if (lastActive && lastActive >= today) {
-      // Already updated today
-      return Response.json(existing);
-    } else {
-      // Streak broken, start over
-      newCount = 1;
-    }
-
-    const updated = await prisma.streak.update({
-      where: { id: existing.id },
+  if (!existing) {
+    const streak = await prisma.streak.create({
       data: {
-        currentCount: newCount,
-        bestCount: Math.max(existing.bestCount, newCount),
+        userId: auth.userId,
+        streakType,
+        currentCount: 1,
+        bestCount: 1,
         lastActiveDate: today,
       },
     });
-
-    // Create PublicWin at milestones
-    if ([7, 14, 30, 50, 100].includes(newCount)) {
-      await prisma.publicWin.create({
-        data: {
-          userId: auth.userId,
-          message: `${newCount}-day ${streakType} streak!`,
-        },
-      });
-    }
-
-    return Response.json(updated);
+    return Response.json(streak, { status: 201 });
   }
 
-  const streak = await prisma.streak.create({
+  const lastActive = existing.lastActiveDate;
+
+  // Already updated today
+  if (lastActive && lastActive >= today) {
+    return Response.json(existing);
+  }
+
+  // Continue streak if last active yesterday, otherwise reset to 1
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isContinuation = lastActive != null && lastActive >= yesterday;
+  const newCount = isContinuation ? existing.currentCount + 1 : 1;
+
+  const updated = await prisma.streak.update({
+    where: { id: existing.id },
     data: {
-      userId: auth.userId,
-      streakType,
-      currentCount: 1,
-      bestCount: 1,
+      currentCount: newCount,
+      bestCount: Math.max(existing.bestCount, newCount),
       lastActiveDate: today,
     },
   });
 
-  return Response.json(streak, { status: 201 });
+  if (STREAK_MILESTONES.has(newCount)) {
+    await prisma.publicWin.create({
+      data: {
+        userId: auth.userId,
+        message: `${newCount}-day ${streakType} streak!`,
+      },
+    });
+  }
+
+  return Response.json(updated);
 }

@@ -11,13 +11,12 @@ export async function GET(request: NextRequest) {
   const startDate = searchParams.get('startDate');
   const endDate = searchParams.get('endDate');
 
-  const where: any = { userId: auth.userId };
+  const where: Record<string, unknown> = { userId: auth.userId };
 
   if (startDate && endDate) {
-    const rangeStart = new Date(startDate);
     const rangeEnd = new Date(endDate);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
-    where.logDate = { gte: rangeStart, lt: rangeEnd };
+    where.logDate = { gte: new Date(startDate), lt: rangeEnd };
   }
 
   const distractions = await prisma.distractionLog.findMany({
@@ -34,8 +33,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { content, notes, logDate, source } = body;
+  const { content, notes, logDate, source } = parsed.data;
 
   if (!content) {
     return Response.json({ error: 'content is required' }, { status: 400 });

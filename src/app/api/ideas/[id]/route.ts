@@ -2,7 +2,16 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIceScore } from '@/lib/scoring';
-import { pickDefined, validateIceScores, notFoundResponse, USER_SUMMARY_SELECT, safeParseJson } from '@/lib/api-helpers';
+import { pickDefined, validateIceScores, notFoundResponse, forbiddenResponse, USER_SUMMARY_SELECT, safeParseJson } from '@/lib/api-helpers';
+
+/**
+ * Check if the user can mutate an idea.
+ * Authors can only mutate their own ideas while in SUBMITTED status; admins can always mutate.
+ */
+function canMutateIdea(idea: { authorId: string; status: string }, userId: string, isAdmin: boolean): boolean {
+  if (isAdmin) return true;
+  return idea.authorId === userId && idea.status === 'SUBMITTED';
+}
 
 export async function GET(
   _request: NextRequest,
@@ -26,9 +35,8 @@ export async function GET(
 
   if (!idea) return notFoundResponse('Idea');
 
-  // Non-admins can only see their own ideas
   if (idea.authorId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
   return Response.json(idea);
@@ -45,12 +53,10 @@ export async function PATCH(
   const idea = await prisma.idea.findUnique({ where: { id } });
   if (!idea) return notFoundResponse('Idea');
 
-  // Author can edit only if SUBMITTED; admins can always edit
-  const isAuthor = idea.authorId === auth.userId;
   const isAdmin = auth.session.user.isAdmin;
 
-  if (!isAdmin && (!isAuthor || idea.status !== 'SUBMITTED')) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  if (!canMutateIdea(idea, auth.userId, isAdmin)) {
+    return forbiddenResponse();
   }
 
   const parsed = await safeParseJson(request);
@@ -110,12 +116,8 @@ export async function DELETE(
   const idea = await prisma.idea.findUnique({ where: { id } });
   if (!idea) return notFoundResponse('Idea');
 
-  // Author can delete only if SUBMITTED; admins can always delete
-  const isAuthor = idea.authorId === auth.userId;
-  const isAdmin = auth.session.user.isAdmin;
-
-  if (!isAdmin && (!isAuthor || idea.status !== 'SUBMITTED')) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  if (!canMutateIdea(idea, auth.userId, auth.session.user.isAdmin)) {
+    return forbiddenResponse();
   }
 
   await prisma.idea.delete({ where: { id } });

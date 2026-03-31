@@ -1,8 +1,15 @@
 import { NextRequest } from 'next/server';
+import { ReviewType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, safeParseJson } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
 
+type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
+
+/** Check if an individual (non-team) review is accessible to the current user. */
+function canAccessIndividualReview(review: NonNullable<Review>, userId: string, isAdmin: boolean): boolean {
+  return review.isTeamReview || review.userId === userId || isAdmin;
+}
 
 export async function GET(
   _request: NextRequest,
@@ -14,35 +21,12 @@ export async function GET(
 
   const review = await prisma.review.findUnique({ where: { id } });
   if (!review) return notFoundResponse('Review');
-
-  // Team reviews are accessible to all authenticated users; individual reviews only to owner/admin
-  if (!review.isTeamReview && review.userId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
+  if (!canAccessIndividualReview(review, auth.userId, auth.session.user.isAdmin)) {
+    return notFoundResponse('Review');
   }
 
-  // Include the template (prefer team template for team reviews)
-  const template = await prisma.reviewTemplate.findUnique({
-    where: {
-      reviewType_isTeamTemplate: {
-        reviewType: review.reviewType,
-        isTeamTemplate: review.isTeamReview,
-      },
-    },
-  });
-
-  // Fallback to individual template if no team template exists
-  const fallbackTemplate = !template && review.isTeamReview
-    ? await prisma.reviewTemplate.findUnique({
-        where: {
-          reviewType_isTeamTemplate: {
-            reviewType: review.reviewType,
-            isTeamTemplate: false,
-          },
-        },
-      })
-    : null;
-
-  return Response.json({ ...review, template: template ?? fallbackTemplate });
+  const template = await findTemplate(review.reviewType, review.isTeamReview);
+  return Response.json({ ...review, template });
 }
 
 export async function PATCH(
@@ -55,29 +39,22 @@ export async function PATCH(
 
   const review = await prisma.review.findUnique({ where: { id } });
   if (!review) return notFoundResponse('Review');
-
-  // Team reviews: any authenticated user can update; individual: only owner/admin
-  if (!review.isTeamReview && review.userId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
+  if (!canAccessIndividualReview(review, auth.userId, auth.session.user.isAdmin)) {
+    return notFoundResponse('Review');
   }
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { checklistState, notes, complete, timeBlockStart, timeBlockEnd } = body;
 
-  const data: any = {};
-  if (checklistState !== undefined) data.checklistState = checklistState;
-  if (notes !== undefined) data.notes = notes;
-  if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
-  if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
+  const data: any = pickDefined(body, ['checklistState', 'notes']);
 
-  if (complete) {
-    data.completedAt = new Date();
-  }
+  if (body.timeBlockStart !== undefined) data.timeBlockStart = body.timeBlockStart ? new Date(body.timeBlockStart) : null;
+  if (body.timeBlockEnd !== undefined) data.timeBlockEnd = body.timeBlockEnd ? new Date(body.timeBlockEnd) : null;
+  if (body.complete) data.completedAt = new Date();
 
   const updated = await prisma.review.update({ where: { id }, data });
-  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(updated, NO_STORE);
 }
 
 export async function DELETE(
@@ -91,14 +68,25 @@ export async function DELETE(
   const review = await prisma.review.findUnique({ where: { id } });
   if (!review) return notFoundResponse('Review');
 
-  // Team reviews: only admin can delete; individual: owner or admin
   if (review.isTeamReview && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
-  if (!review.isTeamReview && review.userId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
+  if (!canAccessIndividualReview(review, auth.userId, auth.session.user.isAdmin)) {
+    return notFoundResponse('Review');
   }
 
   await prisma.review.delete({ where: { id } });
-  return Response.json({ ok: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, { status: 200, ...NO_STORE });
+}
+
+/** Find the template for a review type, falling back from team to individual template. */
+async function findTemplate(reviewType: ReviewType, isTeamReview: boolean) {
+  const template = await prisma.reviewTemplate.findUnique({
+    where: { reviewType_isTeamTemplate: { reviewType, isTeamTemplate: isTeamReview } },
+  });
+  if (template || !isTeamReview) return template;
+
+  return prisma.reviewTemplate.findUnique({
+    where: { reviewType_isTeamTemplate: { reviewType, isTeamTemplate: false } },
+  });
 }

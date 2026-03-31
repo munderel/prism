@@ -1,4 +1,5 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson, hasAccess } from '@/lib/api-helpers';
 import { openrouter } from '@/lib/openrouter';
 import { quizCheckPrompt } from '@/lib/ai-prompts';
 import { prisma } from '@/lib/prisma';
@@ -8,16 +9,12 @@ export async function POST(request: Request) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
 
   const { quizAttemptId, questions, userAnswers } = body;
 
-  // If quizAttemptId is provided, load questions from the attempt
   let questionsToGrade = questions;
   let quizAttempt: any = null;
 
@@ -31,10 +28,9 @@ export async function POST(request: Request) {
     if (!quizAttempt) {
       return Response.json({ error: 'Quiz attempt not found' }, { status: 404 });
     }
-    if (quizAttempt.trainingItem && quizAttempt.trainingItem.ownerId !== auth.userId && !auth.session.user.isAdmin) {
+    if (quizAttempt.trainingItem && !hasAccess(quizAttempt.trainingItem.ownerId, auth.userId, auth.session.user.isAdmin)) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
-    // Use stored questions if not explicitly provided
     if (!questionsToGrade) {
       questionsToGrade = quizAttempt.questions;
     }
@@ -54,7 +50,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // Validate total serialized input length
   const serialized = JSON.stringify({ questions: questionsToGrade, userAnswers });
   if (serialized.length > MAX_AI_INPUT_LENGTH) {
     return Response.json(
@@ -67,8 +62,7 @@ export async function POST(request: Request) {
     const messages = quizCheckPrompt(questionsToGrade, userAnswers);
     const result = await openrouter.chatJSON<any>(messages);
 
-    // Update QuizAttempt if we have one
-    if (quizAttemptId && quizAttempt) {
+    if (quizAttempt) {
       await prisma.quizAttempt.update({
         where: { id: quizAttemptId },
         data: {
@@ -82,7 +76,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       ...result,
-      quizAttemptId: quizAttemptId || null,
+      quizAttemptId: quizAttemptId ?? null,
     });
   } catch (err) {
     return handleAIError(err, 'training/quiz/check');

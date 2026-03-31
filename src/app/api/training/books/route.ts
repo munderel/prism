@@ -1,4 +1,5 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 import { openrouter } from '@/lib/openrouter';
 import { bookBreakdownPrompt } from '@/lib/ai-prompts';
 import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
@@ -26,16 +27,20 @@ interface BookBreakdown {
   quizPoints: QuizPoint[];
 }
 
+function buildQuizLabel(group: ReadingGroup, quizPoints: QuizPoint[]): string {
+  const qp = quizPoints.find((q) => q.afterGroup === group.groupNumber);
+  const range = `${group.chapterStart}-${group.chapterEnd}`;
+  const topics = qp?.focusTopics?.length ? ` (${qp.focusTopics.join(', ')})` : '';
+  return `Quiz: Chapters ${range}${topics}`;
+}
+
 export async function POST(request: Request) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.data;
 
   const { title, description, targetCompletionDate, goalId } = body;
 
@@ -57,31 +62,27 @@ export async function POST(request: Request) {
     const messages = bookBreakdownPrompt(title, description);
     const breakdown = await openrouter.chatJSON<BookBreakdown>(messages);
 
-    const target = targetCompletionDate ? new Date(targetCompletionDate) : null;
-
-    // Count total tasks: reading groups + quiz tasks
     const readingGroups = breakdown.readingGroups ?? [];
     const quizPoints = breakdown.quizPoints ?? [];
     const quizAfterGroups = new Set(quizPoints.map((q) => q.afterGroup));
 
-    // Build a flat list of tasks in order
     const taskEntries: TaskEntry[] = [];
 
     for (const group of readingGroups) {
+      const range = `${group.chapterStart}-${group.chapterEnd}`;
+
       taskEntries.push({
         label: `Read: ${group.label}${group.summary ? ' - ' + group.summary : ''}`,
-        chapterRange: `${group.chapterStart}-${group.chapterEnd}`,
+        chapterRange: range,
         moduleIndex: null,
         isQuizDay: false,
         estimatedMinutes: group.estimatedMinutes || 60,
       });
 
-      // Insert quiz task after this group if applicable
       if (group.quizAfter || quizAfterGroups.has(group.groupNumber)) {
-        const qp = quizPoints.find((q) => q.afterGroup === group.groupNumber);
         taskEntries.push({
-          label: `Quiz: Chapters ${group.chapterStart}-${group.chapterEnd}${qp?.focusTopics?.length ? ' (' + qp.focusTopics.join(', ') + ')' : ''}`,
-          chapterRange: `${group.chapterStart}-${group.chapterEnd}`,
+          label: buildQuizLabel(group, quizPoints),
+          chapterRange: range,
           moduleIndex: null,
           isQuizDay: true,
           estimatedMinutes: 30,
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
       resolvedTitle: breakdown.title || title,
       description: description ?? null,
       aiMetadata: breakdown,
-      targetCompletionDate: target,
+      targetCompletionDate: targetCompletionDate ? new Date(targetCompletionDate) : null,
       goalId: goalId ?? null,
       taskEntries,
     });

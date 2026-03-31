@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { enrichTrainingProgress, pickDefined, notFoundResponse, hasAccess, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
+import { enrichTrainingProgress, pickDefined, notFoundResponse, hasAccess, forbiddenResponse, safeParseJson, NO_STORE } from '@/lib/api-helpers';
 
 export async function GET(
   request: NextRequest,
@@ -83,7 +83,7 @@ export async function PUT(
     },
   });
 
-  return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(updated, NO_STORE);
 }
 
 export async function DELETE(
@@ -102,17 +102,15 @@ export async function DELETE(
   if (!existing) return notFoundResponse('Training item');
   if (!hasAccess(existing.ownerId, auth.userId, auth.session.user.isAdmin)) return forbiddenResponse();
 
-  // Delete linked Task records too (they were created by the training system)
   const taskIds = existing.trainingTasks.map((tt) => tt.taskId);
 
-  await prisma.$transaction([
-    // TrainingTasks and QuizAttempts cascade from TrainingItem delete
+  const operations = [
     prisma.trainingItem.delete({ where: { id } }),
-    // Also remove the actual Task records
-    ...(taskIds.length > 0
-      ? [prisma.task.deleteMany({ where: { id: { in: taskIds } } })]
-      : []),
-  ]);
+  ];
+  if (taskIds.length > 0) {
+    operations.push(prisma.task.deleteMany({ where: { id: { in: taskIds } } }));
+  }
+  await prisma.$transaction(operations);
 
-  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }

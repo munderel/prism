@@ -9,7 +9,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Find overdue reviews (scheduled before today, not completed)
     const now = new Date();
 
     const overdueReviews = await prisma.review.findMany({
@@ -22,25 +21,30 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    let notified = 0;
+    // Batch-fetch notification preferences for all review owners
+    const ownerIds = Array.from(new Set(overdueReviews.map((r) => r.user.id)));
+    const prefs = await prisma.notificationPreference.findMany({
+      where: { userId: { in: ownerIds } },
+    });
+    const prefsMap = new Map(prefs.map((p) => [p.userId, p]));
 
-    for (const review of overdueReviews) {
-      const prefs = await prisma.notificationPreference.findUnique({
-        where: { userId: review.user.id },
-      });
-
-      if (!prefs || prefs.reviewNags) {
-        await notifyUser(
+    const notifications = overdueReviews
+      .filter((review) => {
+        const pref = prefsMap.get(review.user.id);
+        return !pref || pref.reviewNags;
+      })
+      .map((review) =>
+        notifyUser(
           review.user.id,
           'Review Overdue',
           `Your ${review.reviewType} review (due ${new Date(review.scheduledDate).toLocaleDateString()}) is overdue. Complete it now.`,
           '/reviews'
-        );
-        notified++;
-      }
-    }
+        )
+      );
 
-    return Response.json({ ok: true, overdue: overdueReviews.length, notified });
+    await Promise.all(notifications);
+
+    return Response.json({ ok: true, overdue: overdueReviews.length, notified: notifications.length });
   } catch (error) {
     console.error('[cron/review-nag] Unhandled error:', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });

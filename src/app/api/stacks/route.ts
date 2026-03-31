@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { cacheHeaders, safeParseJson } from '@/lib/api-helpers';
-
+import { cacheHeaders, safeParseJson, NO_STORE } from '@/lib/api-helpers';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -32,35 +31,24 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { name, isCompany } = body;
+  const { name, isCompany, visibility } = parsed.data;
 
   if (!name || typeof name !== 'string') {
     return Response.json({ error: 'Name is required' }, { status: 400 });
   }
 
-  const { visibility } = body;
-
-  if (isCompany || visibility === 'company' || visibility === 'group') {
-    const auth = await requireAdmin();
-    if ('error' in auth) return authError(auth);
-
-    const stack = await prisma.goalStack.create({
-      data: {
-        name,
-        isCompany: isCompany || visibility === 'company',
-        visibility: visibility || (isCompany ? 'company' : 'group'),
-        ownerId: auth.userId,
-      },
-    });
-    return Response.json(stack, { status: 201, headers: { 'Cache-Control': 'no-store' } });
-  }
-
-  const auth = await requireAuth();
+  const requiresAdmin = isCompany || visibility === 'company' || visibility === 'group';
+  const auth = requiresAdmin ? await requireAdmin() : await requireAuth();
   if ('error' in auth) return authError(auth);
 
   const stack = await prisma.goalStack.create({
-    data: { name, isCompany: false, visibility: 'private', ownerId: auth.userId },
+    data: {
+      name,
+      isCompany: requiresAdmin ? (isCompany || visibility === 'company') : false,
+      visibility: requiresAdmin ? (visibility || (isCompany ? 'company' : 'group')) : 'private',
+      ownerId: auth.userId,
+    },
   });
-  return Response.json(stack, { status: 201 });
+
+  return Response.json(stack, { status: 201, ...NO_STORE });
 }
