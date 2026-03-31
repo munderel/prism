@@ -198,23 +198,29 @@ export const authOptions: NextAuthOptions = {
       // For credentials provider, lockout was already checked in authorize()
       if (account?.provider === 'password-login') return true;
 
-      // On first-ever OAuth sign-in, the PrismaAdapter may not have committed
-      // the user row yet when this callback fires. Guard all DB operations
-      // by checking if the user actually exists first.
-      const dbUser = await prisma.user.findUnique({
-        where: { id: user.id },
-        select: { id: true, isLockedOut: true },
-      });
+      // Check lockout status for OAuth providers.
+      // Look up by email (not id) because for new OAuth users, user.id is
+      // a temporary Google profile ID that doesn't exist in the DB yet.
+      if (user.email) {
+        const dbUser = await prisma.user.findUnique({
+          where: { email: user.email },
+          select: { isLockedOut: true },
+        });
+        if (dbUser?.isLockedOut) return false;
+      }
 
-      // User doesn't exist in DB yet (first sign-in) — allow sign-in,
-      // the adapter will create the user after this callback returns true.
-      // We'll handle token storage and admin promotion on their next sign-in.
-      if (!dbUser) return true;
+      return true;
+    },
+  },
+  events: {
+    // Write operations run here instead of in callbacks.signIn because
+    // events.signIn fires AFTER the PrismaAdapter creates the user,
+    // so user.id is always a valid DB record ID.
+    async signIn({ user, account }) {
+      if (account?.provider !== 'google') return;
 
-      if (dbUser.isLockedOut) return false;
-
-      // Store Google refresh token on sign in
-      if (account?.provider === 'google' && account.refresh_token) {
+      // Store Google refresh token (encrypted)
+      if (account.refresh_token) {
         if (!process.env.TOKEN_ENCRYPTION_KEY) {
           if (process.env.NODE_ENV === 'production') {
             throw new Error('[auth] TOKEN_ENCRYPTION_KEY is required in production. Refusing to store unencrypted refresh tokens.');
@@ -235,20 +241,18 @@ export const authOptions: NextAuthOptions = {
       }
 
       // Auto-promote first user to admin
-      if (account?.provider === 'google') {
-        await prisma.$transaction(async (tx) => {
-          const userCount = await tx.user.count();
-          if (userCount <= 1) {
-            await tx.user.update({
-              where: { id: user.id },
-              data: { isAdmin: true },
-            });
-          }
-        });
-      }
+      await prisma.$transaction(async (tx) => {
+        const userCount = await tx.user.count();
+        if (userCount <= 1) {
+          await tx.user.update({
+            where: { id: user.id },
+            data: { isAdmin: true },
+          });
+        }
+      });
 
       // Check for pending invitation and apply role
-      if (account?.provider === 'google' && user.email) {
+      if (user.email) {
         const invitation = await prisma.invitation.findFirst({
           where: {
             email: user.email.toLowerCase(),
@@ -273,8 +277,6 @@ export const authOptions: NextAuthOptions = {
           });
         }
       }
-
-      return true;
     },
   },
   pages: {
