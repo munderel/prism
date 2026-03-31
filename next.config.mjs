@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  eslint: {
+    // Lint is already run in CI (GitHub Actions) — skip during `next build` to avoid
+    // treating warnings as errors and blocking deployment.
+    ignoreDuringBuilds: true,
+  },
   async redirects() {
     return [
       { source: '/dashboard', destination: '/', permanent: true },
