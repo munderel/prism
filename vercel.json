@@ -7,10 +7,6 @@
     {
       "path": "/api/cron/review-nag",
       "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/process-tasks",
-      "schedule": "0 10 * * *"
     }
   ]
 }
