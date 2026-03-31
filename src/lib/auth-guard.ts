@@ -91,10 +91,7 @@ export function checkStackAccess(
   userId: string,
   isAdmin: boolean
 ): Response | null {
-  if (stack.isCompany && !isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
-  if (!stack.isCompany && stack.ownerId !== userId && !isAdmin) {
+  if (!isAdmin && (stack.isCompany || stack.ownerId !== userId)) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
   return null;

@@ -2,11 +2,24 @@ import { prisma } from '@/lib/prisma';
 import { computeNextDueDate } from '@/lib/process-scheduler';
 
 /**
+ * Determine the responsible user for a process, considering delegation.
+ */
+function getResponsibleUserId(
+  process: { assigneeId: string | null; delegateId: string | null; delegateUntil: Date | null },
+  today: Date
+): string | null {
+  if (process.delegateId && process.delegateUntil && process.delegateUntil >= today) {
+    return process.delegateId;
+  }
+  return process.assigneeId;
+}
+
+/**
  * Check for processes that are due and create maintenance tasks for them.
  * Called on-demand from /api/tasks GET to avoid needing a cron job.
  * Idempotent — skips processes that already have an execution today.
  */
-export async function checkAndCreateDueProcessTasks() {
+export async function checkAndCreateDueProcessTasks(): Promise<void> {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -22,18 +35,7 @@ export async function checkAndCreateDueProcessTasks() {
 
   await Promise.all(
     dueProcesses.map(async (process) => {
-      let responsibleUserId: string | null = null;
-
-      if (
-        process.delegateId &&
-        process.delegateUntil &&
-        process.delegateUntil >= today
-      ) {
-        responsibleUserId = process.delegateId;
-      } else if (process.assigneeId) {
-        responsibleUserId = process.assigneeId;
-      }
-
+      const responsibleUserId = getResponsibleUserId(process, today);
       if (!responsibleUserId) return;
 
       const existingExecution = await prisma.processExecution.findFirst({
@@ -44,14 +46,16 @@ export async function checkAndCreateDueProcessTasks() {
       });
       if (existingExecution) return;
 
+      const nextDueAt = computeNextDueDate(process.cadence, now);
+
       await prisma.$transaction(async (tx) => {
         const task = await tx.task.create({
           data: {
-            ownerId: responsibleUserId!,
+            ownerId: responsibleUserId,
             taskType: 'MAINTENANCE',
             title: process.title,
             description: process.description,
-            dueDate: computeNextDueDate(process.cadence, now),
+            dueDate: nextDueAt,
             status: 'TODO',
             priority: 'MEDIUM',
             estimatedMinutes: process.defaultDurationMinutes,
@@ -69,10 +73,7 @@ export async function checkAndCreateDueProcessTasks() {
 
         await tx.process.update({
           where: { id: process.id },
-          data: {
-            lastRunAt: now,
-            nextDueAt: computeNextDueDate(process.cadence, now),
-          },
+          data: { lastRunAt: now, nextDueAt },
         });
       });
     })

@@ -41,15 +41,13 @@ export async function createTrainingItemWithTasks(params: CreateTrainingItemPara
   } = params;
 
   const now = new Date();
-  const target = targetCompletionDate;
-  const totalEntries = taskEntries.length;
 
-  const getDueDate = (index: number): Date | null => {
-    if (!target || totalEntries <= 1) return target;
-    const totalMs = target.getTime() - now.getTime();
-    const stepMs = totalMs / totalEntries;
+  function getDueDate(index: number): Date | null {
+    if (!targetCompletionDate || taskEntries.length <= 1) return targetCompletionDate;
+    const totalMs = targetCompletionDate.getTime() - now.getTime();
+    const stepMs = totalMs / taskEntries.length;
     return new Date(now.getTime() + stepMs * (index + 1));
-  };
+  }
 
   return prisma.$transaction(async (tx) => {
     const trainingItem = await tx.trainingItem.create({
@@ -59,7 +57,7 @@ export async function createTrainingItemWithTasks(params: CreateTrainingItemPara
         title: resolvedTitle,
         description,
         aiMetadata: aiMetadata as any,
-        targetCompletionDate: target,
+        targetCompletionDate,
         goalId,
       },
     });

@@ -8,7 +8,7 @@
  * SPROUT/GROW/FLOW use the phase-adjusted frequency from aim-phases.ts.
  */
 
-import { getEffectiveFrequency, type UserAimLike as PhaseUserAimLike } from './aim-phases';
+import { getEffectiveFrequency } from './aim-phases';
 
 export type DerailStatus = 'on_track' | 'caution' | 'derailing';
 
@@ -19,8 +19,6 @@ export interface DerailInfo {
   completionRate: number; // 0-1, actual rate over the window
   expectedRate: number; // 0-1, expected rate over the window
 }
-
-// ---- Minimal shape contracts so the lib stays decoupled from Prisma ----
 
 interface AimCategoryLike {
   isDaily: boolean;
@@ -44,8 +42,6 @@ interface AimInstanceLike {
   completedAt: Date | string | null;
 }
 
-// ---- Helpers ----
-
 /** Count distinct calendar dates on which an instance was completed. */
 function countCompletedDays(instances: AimInstanceLike[]): number {
   const days = new Set<string>();
@@ -61,31 +57,13 @@ function countCompletedDays(instances: AimInstanceLike[]): number {
 /**
  * Phase-aware expected completions-per-day.
  *
- * Uses getEffectiveFrequency from aim-phases.ts so that:
- * - SEED expects 1x/week (= 1/7 per day)
- * - SPROUT/GROW/FLOW scale appropriately
- * - Daily aims always expect 1/day
+ * Daily aims always expect 1/day.
+ * Weekly aims use getEffectiveFrequency (phase-adjusted) divided by 7.
  */
 function expectedRatePerDay(userAim: UserAimLike): number {
   if (userAim.aimCategory.isDaily) return 1;
-
-  // Build the shape expected by getEffectiveFrequency
-  const phaseAim: PhaseUserAimLike = {
-    customDuration: userAim.customDuration,
-    customFrequency: userAim.customFrequency,
-    currentPhase: userAim.currentPhase,
-    phaseStartedAt: userAim.phaseStartedAt,
-    aimCategory: {
-      defaultDurationMin: userAim.aimCategory.defaultDurationMin,
-      defaultFrequency: userAim.aimCategory.defaultFrequency,
-    },
-  };
-
-  const effectiveFreq = getEffectiveFrequency(phaseAim);
-  return effectiveFreq / 7;
+  return getEffectiveFrequency(userAim) / 7;
 }
-
-// ---- Main entry point ----
 
 /**
  * Compute derail info for a single aim.
@@ -114,15 +92,14 @@ export function computeDerailInfo(
   const actualCompleted = countCompletedDays(instances);
 
   const completionRate = expectedTotal > 0 ? actualCompleted / expectedTotal : 1;
-  const expectedRate = expectedTotal > 0 ? 1 : 0; // normalised target = 1
+  const expectedRate = expectedTotal > 0 ? 1 : 0;
 
-  // Apply sensitivity: the higher derailSensitivityDays, the more forgiving.
-  // sensitivity of 1 (default) means standard thresholds.
-  // sensitivity of 3 means thresholds are relaxed by ~30%.
+  // Higher derailSensitivityDays = more forgiving thresholds.
+  // sens=1 (default) -> multiplier 1.0, sens=3 -> multiplier 0.8
   const sens = Math.max(1, userAim.derailSensitivityDays);
-  const sensitivityMultiplier = 1 - (sens - 1) * 0.1; // e.g. sens=1 -> 1.0, sens=3 -> 0.8
-  const cautionThreshold = 0.8 * Math.max(0.3, sensitivityMultiplier);
-  const derailThreshold = 0.5 * Math.max(0.3, sensitivityMultiplier);
+  const sensitivityMultiplier = Math.max(0.3, 1 - (sens - 1) * 0.1);
+  const cautionThreshold = 0.8 * sensitivityMultiplier;
+  const derailThreshold = 0.5 * sensitivityMultiplier;
 
   let status: DerailStatus;
   let message: string;
@@ -138,19 +115,12 @@ export function computeDerailInfo(
     message = 'Derailing! Immediate action needed.';
   }
 
-  // Estimate days until derail: how many more zero-completion days before
+  // Estimate days until derail: how many zero-completion days before
   // the rolling rate drops below the derail threshold?
   let daysUntilDerail: number | null = null;
   if (status !== 'derailing' && expectedPerDay > 0) {
-    // Simulate adding zero-days until rate < derailThreshold
-    const simulated = actualCompleted;
-    let simWindow = windowDays;
-    let extraDays = 0;
-    while (extraDays < 60) {
-      extraDays++;
-      simWindow++;
-      const simExpected = expectedPerDay * simWindow;
-      const simRate = simulated / simExpected;
+    for (let extraDays = 1; extraDays <= 60; extraDays++) {
+      const simRate = actualCompleted / (expectedPerDay * (windowDays + extraDays));
       if (simRate < derailThreshold) {
         daysUntilDerail = extraDays;
         break;
@@ -163,24 +133,6 @@ export function computeDerailInfo(
     message,
     daysUntilDerail,
     completionRate: Math.round(completionRate * 1000) / 1000,
-    expectedRate: Math.round(expectedRate * 1000) / 1000,
+    expectedRate,
   };
-}
-
-/**
- * Batch-compute derail info for multiple aims.
- *
- * @param aims  Array of { userAim, instances } pairs.
- * @param windowDays  Analysis window size (default 14).
- * @returns Map from userAim.id -> DerailInfo
- */
-export function computeAllDerailInfo(
-  aims: { userAim: UserAimLike & { id: string }; instances: AimInstanceLike[] }[],
-  windowDays = 14,
-): Map<string, DerailInfo> {
-  const result = new Map<string, DerailInfo>();
-  for (const { userAim, instances } of aims) {
-    result.set(userAim.id, computeDerailInfo(userAim, instances, windowDays));
-  }
-  return result;
 }

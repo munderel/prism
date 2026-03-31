@@ -8,6 +8,7 @@ import {
   getWeeksInMonth,
   getMonthsInYear,
   parseLocalDate,
+  toLocalDateKey,
 } from './date-utils';
 
 /**
@@ -42,7 +43,7 @@ export function getDateRangeForTimeLevel(
 export function getSubPeriodBoundaries(
   timeLevel: KpiTimeLevel,
   startDate: string,
-  endDate: string,
+  _endDate: string,
 ): LabeledDateBoundary[] {
   const start = parseLocalDate(startDate);
 
@@ -80,26 +81,7 @@ export function aggregateEntries(
   const totals = new Array<number>(boundaries.length).fill(0);
 
   for (const entry of entries) {
-    // Normalise to YYYY-MM-DD for string comparison (avoids timezone issues)
-    let dateKey: string;
-    if (typeof entry.date === 'string') {
-      // If it's already YYYY-MM-DD take it as-is; otherwise parse and reformat
-      if (/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
-        dateKey = entry.date;
-      } else {
-        const d = new Date(entry.date);
-        const y = d.getFullYear();
-        const mo = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        dateKey = `${y}-${mo}-${day}`;
-      }
-    } else {
-      const d = entry.date;
-      const y = d.getFullYear();
-      const mo = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      dateKey = `${y}-${mo}-${day}`;
-    }
+    const dateKey = toLocalDateKey(entry.date);
 
     for (let i = 0; i < boundaries.length; i++) {
       if (dateKey >= boundaries[i].start && dateKey <= boundaries[i].end) {
