@@ -191,14 +191,9 @@ const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
  * @param year Full 4-digit year (e.g. 2026)
  */
 export function getMonthsInYear(year: number): LabeledDateBoundary[] {
-  return MONTH_LABELS.map((label, i) => {
-    const month = i; // 0-based
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    return {
-      label,
-      start: getLocalDateString(firstDay),
-      end: getLocalDateString(lastDay),
-    };
-  });
+  return MONTH_LABELS.map((label, i) => ({
+    label,
+    start: getLocalDateString(new Date(year, i, 1)),
+    end: getLocalDateString(new Date(year, i + 1, 0)),
+  }));
 }

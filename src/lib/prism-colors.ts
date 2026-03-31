@@ -121,20 +121,11 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
   },
 };
 
+const TASK_TYPE_KEYS: Set<string> = new Set(['IMPROVE', 'REACT', 'MAINTENANCE', 'REVIEW']);
+
 /** Map task type enum values to Prism color keys */
 export function taskTypeToColorKey(taskType: string): ItemType {
-  switch (taskType) {
-    case 'IMPROVE':
-      return 'IMPROVE';
-    case 'REACT':
-      return 'REACT';
-    case 'MAINTENANCE':
-      return 'MAINTENANCE';
-    case 'REVIEW':
-      return 'REVIEW';
-    default:
-      return 'IMPROVE';
-  }
+  return TASK_TYPE_KEYS.has(taskType) ? (taskType as ItemType) : 'IMPROVE';
 }
 
 /** Get color definition for a task type */

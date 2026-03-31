@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+// === SHARED FIELD SCHEMAS ===
+
+const hhmmTime = z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable();
+const reviewDuration = z.number().int().min(1).max(480).optional().nullable();
+
 // === AUTH ===
 
 export const registerSchema = z.object({
@@ -78,22 +83,22 @@ export const updateSettingsSchema = z.object({
   timezone: z.string().optional(),
   hasCompletedOnboarding: z.boolean().optional(),
   hiddenFeatures: z.array(z.string()).optional(),
-  workingHoursStart: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
-  workingHoursEnd: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
-  casualHoursStart: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
-  casualHoursEnd: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
+  workingHoursStart: hhmmTime,
+  workingHoursEnd: hhmmTime,
+  casualHoursStart: hhmmTime,
+  casualHoursEnd: hhmmTime,
   taskSchedulePeriod: z.enum(['working', 'casual', 'both']).optional().nullable(),
   selectedCalendarIds: z.array(z.string()).optional(),
-  powerdownTime: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
+  powerdownTime: hhmmTime,
   weeklyReviewDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
-  weeklyReviewTime: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
-  weeklyReviewDuration: z.number().int().min(1).max(480).optional().nullable(),
+  weeklyReviewTime: hhmmTime,
+  weeklyReviewDuration: reviewDuration,
   monthlyReviewRecurrenceRule: z.enum(['last-friday', 'last-monday', '1st-monday', '1st-friday', '15th']).optional().nullable(),
-  monthlyReviewTime: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
-  monthlyReviewDuration: z.number().int().min(1).max(480).optional().nullable(),
+  monthlyReviewTime: hhmmTime,
+  monthlyReviewDuration: reviewDuration,
   yearlyReviewRecurrenceRule: z.string().max(50).optional().nullable(),
-  yearlyReviewTime: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
-  yearlyReviewDuration: z.number().int().min(1).max(480).optional().nullable(),
+  yearlyReviewTime: hhmmTime,
+  yearlyReviewDuration: reviewDuration,
   isPublicOnLeaderboard: z.boolean().optional(),
   companyMtp: z.string().max(10000).optional(),
   notificationPrefs: z.object({

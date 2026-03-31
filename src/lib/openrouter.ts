@@ -13,6 +13,14 @@ interface ChatMessage {
   content: string;
 }
 
+interface ClientConfig {
+  apiKey: string;
+  baseUrl: string;
+  defaultModel: string;
+  maxRetries: number;
+  timeoutMs: number;
+}
+
 class OpenRouterClient {
   private apiKey: string;
   private baseUrl: string;
@@ -20,13 +28,7 @@ class OpenRouterClient {
   private maxRetries: number;
   private timeoutMs: number;
 
-  constructor(config: {
-    apiKey: string;
-    baseUrl: string;
-    defaultModel: string;
-    maxRetries: number;
-    timeoutMs: number;
-  }) {
+  constructor(config: ClientConfig) {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl;
     this.defaultModel = config.defaultModel;
@@ -88,10 +90,9 @@ class OpenRouterClient {
     throw lastError ?? new AIError('Unknown error', 'MODEL_ERROR', false);
   }
 
-  async chatJSON<T>(messages: ChatMessage[], options?: any): Promise<T> {
+  async chatJSON<T>(messages: ChatMessage[], options?: { model?: string; temperature?: number; maxTokens?: number }): Promise<T> {
     const response = await this.chat(messages, options);
     try {
-      // Try to extract JSON from response (may be wrapped in markdown code blocks)
       let content = response.content.trim();
       const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (jsonMatch) content = jsonMatch[1].trim();

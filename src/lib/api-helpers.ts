@@ -39,9 +39,6 @@ export function cacheHeaders(maxAge = 10, staleWhileRevalidate = 60) {
 }
 
 /**
- * Enrich a training item (with included trainingTasks→task) with progress counts.
- */
-/**
  * Standard 404 response.
  */
 export function notFoundResponse(entity = 'Resource') {
@@ -111,30 +108,7 @@ export async function safeParseJson<T = any>(
 }
 
 /**
- * Validate password strength.
- * Returns null if valid, or an error message string.
- */
-export function validatePassword(password: string): string | null {
-  if (password.length < 12) {
-    return 'Password must be at least 12 characters';
-  }
-  if (!/[a-z]/.test(password)) {
-    return 'Password must contain at least one lowercase letter';
-  }
-  if (!/[A-Z]/.test(password)) {
-    return 'Password must contain at least one uppercase letter';
-  }
-  if (!/\d/.test(password)) {
-    return 'Password must contain at least one digit';
-  }
-  if (!/[^a-zA-Z0-9]/.test(password)) {
-    return 'Password must contain at least one special character';
-  }
-  return null;
-}
-
-/**
- * Prisma select for user summary fields — reuse wherever you include a user relation.
+ * Prisma select for user summary fields -- reuse wherever you include a user relation.
  */
 export const USER_SUMMARY_SELECT = { id: true, name: true, image: true } as const;
 
@@ -146,6 +120,9 @@ export function hasAccess(resourceOwnerId: string, userId: string, isAdmin: bool
   return isAdmin || resourceOwnerId === userId;
 }
 
+/**
+ * Enrich a training item (with included trainingTasks->task) with progress counts.
+ */
 export function enrichTrainingProgress<
   T extends { trainingTasks: { task: { status: string } }[] }
 >(item: T) {
