@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { safeParseJson, notFoundResponse } from '@/lib/api-helpers';
 import { cascadeProgressUp } from '@/lib/progress';
 
 export async function POST(
@@ -76,9 +76,7 @@ export async function DELETE(
   }
 
   const link = await prisma.goalLink.findUnique({ where: { id: linkId } });
-  if (!link || link.companyGoalId !== companyGoalId) {
-    return Response.json({ error: 'Link not found' }, { status: 404 });
-  }
+  if (!link || link.companyGoalId !== companyGoalId) return notFoundResponse('Link');
 
   await prisma.goalLink.delete({ where: { id: linkId } });
   await cascadeProgressUp(companyGoalId);

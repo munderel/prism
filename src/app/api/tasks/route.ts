@@ -54,29 +54,16 @@ export async function GET(request: NextRequest) {
 
   // Build date filter
   const dateFilter: any = {};
-  if (startDate && endDate) {
-    const rangeStart = parseLocalDate(startDate);
-    const rangeEnd = parseLocalDate(endDate);
+  if ((startDate && endDate) || date) {
+    const rangeStart = startDate ? parseLocalDate(startDate) : parseLocalDate(date!);
+    const rangeEnd = endDate ? parseLocalDate(endDate) : new Date(rangeStart);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
+
+    const rangeCondition = { dueDate: { gte: rangeStart, lt: rangeEnd } };
     if (includeUnscheduled) {
-      dateFilter.OR = [
-        { dueDate: { gte: rangeStart, lt: rangeEnd } },
-        { dueDate: null },
-      ];
+      dateFilter.OR = [rangeCondition, { dueDate: null }];
     } else {
-      dateFilter.dueDate = { gte: rangeStart, lt: rangeEnd };
-    }
-  } else if (date) {
-    const start = parseLocalDate(date);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    if (includeUnscheduled) {
-      dateFilter.OR = [
-        { dueDate: { gte: start, lt: end } },
-        { dueDate: null },
-      ];
-    } else {
-      dateFilter.dueDate = { gte: start, lt: end };
+      Object.assign(dateFilter, rangeCondition);
     }
   }
 
@@ -121,13 +108,13 @@ export async function POST(request: NextRequest) {
   const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay } = parsed.data;
 
   // IMPROVE tasks require a goalId
+  if (taskType === 'IMPROVE' && !goalId) {
+    return Response.json({ error: 'goalId is required for IMPROVE tasks' }, { status: 400 });
+  }
+
   if (taskType === 'IMPROVE') {
-    if (!goalId) {
-      return Response.json({ error: 'goalId is required for IMPROVE tasks' }, { status: 400 });
-    }
-    // Verify goal ownership
     const goal = await prisma.goal.findUnique({
-      where: { id: goalId },
+      where: { id: goalId! },
       include: { stack: true },
     });
     if (!goal || goal.deletedAt) {

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
+import { safeParseJson, notFoundResponse } from '@/lib/api-helpers';
 import { validateKpiLevel, validateKpiLink } from '@/lib/goal-validation';
 
 export async function GET(
@@ -17,22 +17,19 @@ export async function GET(
     include: { stack: true },
   });
 
-  if (!goal || goal.deletedAt) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  if (!goal.stack.isCompany && goal.stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  if (accessDenied) return accessDenied;
 
   const kpis = await prisma.kpi.findMany({
     where: { goalId },
     orderBy: { sortOrder: 'asc' },
   });
 
-  // Enrich KPIs with linked child actuals (monthly←weekly, yearly←monthly, HHG←yearly)
-  const levelsWithChildren = ['HIGH_HARD', 'STRATEGIC', 'MONTHLY'];
-  if (levelsWithChildren.includes(goal.level)) {
+  // Enrich KPIs with linked child actuals (monthly<-weekly, yearly<-monthly, HHG<-yearly)
+  const LEVELS_WITH_CHILDREN = ['HIGH_HARD', 'STRATEGIC', 'MONTHLY'];
+  if (LEVELS_WITH_CHILDREN.includes(goal.level)) {
     const kpiIds = kpis.map((k) => k.id);
     const allLinkedChildren = await prisma.kpi.findMany({
       where: { linkedKpiId: { in: kpiIds } },
@@ -80,13 +77,10 @@ export async function POST(
     include: { stack: true },
   });
 
-  if (!goal || goal.deletedAt) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
+  if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  if (!goal.stack.isCompany && goal.stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  if (accessDenied) return accessDenied;
 
   if (!validateKpiLevel(goal.level)) {
     return Response.json(

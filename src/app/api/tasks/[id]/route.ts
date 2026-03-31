@@ -71,17 +71,16 @@ export async function PATCH(
   // Status transitions
   if (status !== undefined) {
     data.status = status;
-
-    if (status === 'IN_PROGRESS' && !task.startedAt) {
-      data.startedAt = new Date();
-    }
-
-    if (status === 'DONE') {
-      data.completedAt = new Date();
-    }
-
-    if (status === 'DROPPED') {
-      data.failedAt = new Date();
+    switch (status) {
+      case 'IN_PROGRESS':
+        if (!task.startedAt) data.startedAt = new Date();
+        break;
+      case 'DONE':
+        data.completedAt = new Date();
+        break;
+      case 'DROPPED':
+        data.failedAt = new Date();
+        break;
     }
   }
 

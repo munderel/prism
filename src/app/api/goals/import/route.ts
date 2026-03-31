@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { safeParseJson, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
 
 import { parseYamlToGoals, diffGoals, buildGoalTree, type GoalNode } from '@/lib/yaml-handler';
 import { cascadeProgressUp } from '@/lib/progress';
@@ -19,13 +19,6 @@ export async function POST(request: NextRequest) {
   const body = parsed.data;
   const { stackId, yamlContent, confirmed } = body;
 
-  if (typeof yamlContent !== 'string' || yamlContent.length > MAX_YAML_SIZE) {
-    return Response.json(
-      { error: 'YAML content must be a string under 256KB' },
-      { status: 400 }
-    );
-  }
-
   if (!stackId || !yamlContent) {
     return Response.json(
       { error: 'stackId and yamlContent are required' },
@@ -33,16 +26,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const stack = await prisma.goalStack.findUnique({ where: { id: stackId } });
-  if (!stack) {
-    return Response.json({ error: 'Stack not found' }, { status: 404 });
+  if (typeof yamlContent !== 'string' || yamlContent.length > MAX_YAML_SIZE) {
+    return Response.json(
+      { error: 'YAML content must be a string under 256KB' },
+      { status: 400 }
+    );
   }
+
+  const stack = await prisma.goalStack.findUnique({ where: { id: stackId } });
+  if (!stack) return notFoundResponse('Stack');
 
   if (stack.isCompany) {
     const adminAuth = await requireAdmin();
     if ('error' in adminAuth) return authError(adminAuth);
   } else if (stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
   // Parse incoming YAML (spec semantic format)
@@ -235,8 +233,7 @@ async function createNewGoals(
 
       // Create KPIs for this goal
       if (node.kpis?.length) {
-        const kpiLevel = node.level;
-        const isMonthlyOrAbove = ['STRATEGIC', 'MONTHLY'].includes(kpiLevel);
+        const isParentLevel = ['STRATEGIC', 'MONTHLY'].includes(node.level);
         for (let ki = 0; ki < node.kpis.length; ki++) {
           const kpiNode = node.kpis[ki];
           const createdKpi = await prisma.kpi.create({
@@ -254,7 +251,7 @@ async function createNewGoals(
           });
 
           // Queue link resolution for weekly KPIs
-          if (kpiNode.linked_to && !isMonthlyOrAbove && parentId) {
+          if (kpiNode.linked_to && !isParentLevel && parentId) {
             kpiLinkQueue.push({
               kpiId: createdKpi.id,
               parentGoalId: parentId,

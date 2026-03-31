@@ -9,13 +9,46 @@ export async function GET() {
 
   const userAims = await prisma.userAim.findMany({
     where: { userId: auth.userId },
-    include: {
-      aimCategory: true,
-    },
+    include: { aimCategory: true },
     orderBy: { createdAt: 'asc' },
   });
 
   return Response.json(userAims);
+}
+
+interface AimInput {
+  aimCategoryId: string;
+  isActive?: boolean;
+  customDuration?: number;
+  customFrequency?: number;
+  customActivities?: any;
+  currentPhase?: string;
+  phaseStartedAt?: string;
+  completionCount?: number;
+  currentStreak?: number;
+}
+
+/** Build the shared data payload for both create and update in a upsert. */
+function buildAimData(aim: AimInput, userId?: string): Record<string, any> {
+  const data: Record<string, any> = {
+    isActive: aim.isActive ?? true,
+    customDuration: aim.customDuration ?? null,
+    customFrequency: aim.customFrequency ?? null,
+    customActivities: aim.customActivities ?? undefined,
+  };
+
+  if (userId) {
+    data.userId = userId;
+    data.aimCategoryId = aim.aimCategoryId;
+  }
+
+  // Phase reset fields -- only include when explicitly provided
+  if (aim.currentPhase !== undefined) data.currentPhase = aim.currentPhase;
+  if (aim.phaseStartedAt !== undefined) data.phaseStartedAt = new Date(aim.phaseStartedAt);
+  if (aim.completionCount !== undefined) data.completionCount = aim.completionCount;
+  if (aim.currentStreak !== undefined) data.currentStreak = aim.currentStreak;
+
+  return data;
 }
 
 export async function PUT(request: NextRequest) {
@@ -24,85 +57,42 @@ export async function PUT(request: NextRequest) {
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { aims } = body;
+  const { aims } = parsed.data;
 
   if (!Array.isArray(aims)) {
     return Response.json({ error: 'aims must be an array' }, { status: 400 });
   }
 
-  // Validate each aim entry
-  for (const aim of aims) {
-    if (!aim.aimCategoryId) {
-      return Response.json({ error: 'Each aim must have aimCategoryId' }, { status: 400 });
-    }
-
-    // Verify the category exists
-    const cat = await prisma.aimCategory.findUnique({ where: { id: aim.aimCategoryId } });
-    if (!cat) {
-      return Response.json({ error: `AimCategory ${aim.aimCategoryId} not found` }, { status: 404 });
-    }
+  // Validate all categories exist upfront in a single query
+  const categoryIds = aims.map((a: AimInput) => a.aimCategoryId).filter(Boolean);
+  if (categoryIds.length !== aims.length) {
+    return Response.json({ error: 'Each aim must have aimCategoryId' }, { status: 400 });
   }
 
-  // Upsert each aim preference in a transaction
+  const existingCategories = await prisma.aimCategory.findMany({
+    where: { id: { in: categoryIds } },
+    select: { id: true },
+  });
+  const existingIds = new Set(existingCategories.map((c) => c.id));
+  const missingId = categoryIds.find((id: string) => !existingIds.has(id));
+  if (missingId) {
+    return Response.json({ error: `AimCategory ${missingId} not found` }, { status: 404 });
+  }
+
   const results = await prisma.$transaction(
-    aims.map((aim: {
-      aimCategoryId: string;
-      isActive?: boolean;
-      customDuration?: number;
-      customFrequency?: number;
-      customActivities?: any;
-      currentPhase?: string;
-      phaseStartedAt?: string;
-      completionCount?: number;
-      currentStreak?: number;
-    }) => {
-      // Build update payload — only include reset fields when explicitly provided
-      const updateData: Record<string, any> = {
-        isActive: aim.isActive ?? true,
-        customDuration: aim.customDuration ?? null,
-        customFrequency: aim.customFrequency ?? null,
-        customActivities: aim.customActivities ?? undefined,
-      };
-      const createData: Record<string, any> = {
-        userId: auth.userId,
-        aimCategoryId: aim.aimCategoryId,
-        isActive: aim.isActive ?? true,
-        customDuration: aim.customDuration ?? null,
-        customFrequency: aim.customFrequency ?? null,
-        customActivities: aim.customActivities ?? undefined,
-      };
-
-      // Support phase reset fields (C2: Reset to Seed)
-      if (aim.currentPhase !== undefined) {
-        updateData.currentPhase = aim.currentPhase;
-        createData.currentPhase = aim.currentPhase;
-      }
-      if (aim.phaseStartedAt !== undefined) {
-        updateData.phaseStartedAt = new Date(aim.phaseStartedAt);
-        createData.phaseStartedAt = new Date(aim.phaseStartedAt);
-      }
-      if (aim.completionCount !== undefined) {
-        updateData.completionCount = aim.completionCount;
-        createData.completionCount = aim.completionCount;
-      }
-      if (aim.currentStreak !== undefined) {
-        updateData.currentStreak = aim.currentStreak;
-        createData.currentStreak = aim.currentStreak;
-      }
-
-      return prisma.userAim.upsert({
+    aims.map((aim: AimInput) =>
+      prisma.userAim.upsert({
         where: {
           userId_aimCategoryId: {
             userId: auth.userId,
             aimCategoryId: aim.aimCategoryId,
           },
         },
-        update: updateData,
-        create: createData as any,
+        update: buildAimData(aim),
+        create: buildAimData(aim, auth.userId) as any,
         include: { aimCategory: true },
-      });
-    })
+      })
+    )
   );
 
   return Response.json(results);

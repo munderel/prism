@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -41,7 +41,7 @@ export async function POST(
     },
   });
 
-  return Response.json(process, { status: 201, headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(process, { status: 201, ...NO_STORE });
 }
 
 export async function PATCH(
@@ -54,18 +54,13 @@ export async function PATCH(
   const { id } = await params;
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { name, description } = body;
 
   const fn = await prisma.businessFunction.update({
     where: { id },
-    data: {
-      ...(name !== undefined && { name }),
-      ...(description !== undefined && { description }),
-    },
+    data: pickDefined(parsed.data, ['name', 'description']),
   });
 
-  return Response.json(fn, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(fn, NO_STORE);
 }
 
 export async function DELETE(
@@ -79,5 +74,5 @@ export async function DELETE(
 
   await prisma.businessFunction.delete({ where: { id } });
 
-  return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true }, NO_STORE);
 }

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { safeParseJson } from '@/lib/api-helpers';
 
 interface BatchUpdate {
   id: string;
@@ -11,56 +12,44 @@ interface BatchUpdate {
 }
 
 function isValidISODate(value: string): boolean {
-  const d = new Date(value);
-  return !isNaN(d.getTime());
+  return !isNaN(new Date(value).getTime());
+}
+
+function validateEntry(entry: BatchUpdate): string | null {
+  if (!entry.id || typeof entry.id !== 'string') {
+    return 'Each update must have a valid id';
+  }
+  if (!entry.timeBlockStart || !isValidISODate(entry.timeBlockStart)) {
+    return `Invalid or missing timeBlockStart for task ${entry.id}`;
+  }
+  if (!entry.timeBlockEnd || !isValidISODate(entry.timeBlockEnd)) {
+    return `Invalid or missing timeBlockEnd for task ${entry.id}`;
+  }
+  if (new Date(entry.timeBlockEnd) <= new Date(entry.timeBlockStart)) {
+    return `timeBlockEnd must be after timeBlockStart for task ${entry.id}`;
+  }
+  return null;
 }
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  let body: { updates?: BatchUpdate[] };
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+  const parsed = await safeParseJson(request);
+  if ('error' in parsed) return parsed.error;
+  const { updates } = parsed.data as { updates?: BatchUpdate[] };
 
-  const { updates } = body;
-
-  // Validate: updates must be a non-empty array
   if (!Array.isArray(updates) || updates.length === 0) {
     return Response.json(
       { error: 'updates must be a non-empty array' },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
-  // Validate each entry
   for (const entry of updates) {
-    if (!entry.id || typeof entry.id !== 'string') {
-      return Response.json(
-        { error: 'Each update must have a valid id' },
-        { status: 400 }
-      );
-    }
-    if (!entry.timeBlockStart || !isValidISODate(entry.timeBlockStart)) {
-      return Response.json(
-        { error: `Invalid or missing timeBlockStart for task ${entry.id}` },
-        { status: 400 }
-      );
-    }
-    if (!entry.timeBlockEnd || !isValidISODate(entry.timeBlockEnd)) {
-      return Response.json(
-        { error: `Invalid or missing timeBlockEnd for task ${entry.id}` },
-        { status: 400 }
-      );
-    }
-    if (new Date(entry.timeBlockEnd) <= new Date(entry.timeBlockStart)) {
-      return Response.json(
-        { error: `timeBlockEnd must be after timeBlockStart for task ${entry.id}` },
-        { status: 400 }
-      );
+    const validationError = validateEntry(entry);
+    if (validationError) {
+      return Response.json({ error: validationError }, { status: 400 });
     }
   }
 

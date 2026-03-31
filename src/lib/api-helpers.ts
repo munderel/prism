@@ -108,6 +108,11 @@ export async function safeParseJson<T = any>(
 }
 
 /**
+ * Standard response options for mutation endpoints that should not be cached.
+ */
+export const NO_STORE = { headers: { 'Cache-Control': 'no-store' } } as const;
+
+/**
  * Prisma select for user summary fields -- reuse wherever you include a user relation.
  */
 export const USER_SUMMARY_SELECT = { id: true, name: true, image: true } as const;
@@ -118,6 +123,50 @@ export const USER_SUMMARY_SELECT = { id: true, name: true, image: true } as cons
  */
 export function hasAccess(resourceOwnerId: string, userId: string, isAdmin: boolean): boolean {
   return isAdmin || resourceOwnerId === userId;
+}
+
+/**
+ * Verify the user has access to a process (admin, assignee, or delegate).
+ * Returns the process on success, or a ready-made error Response.
+ */
+export async function authorizeProcessAccess(
+  processId: string,
+  userId: string,
+  isAdmin: boolean
+): Promise<
+  | { process: { id: string; assigneeId: string | null; delegateId: string | null }; error?: never }
+  | { process?: never; error: Response }
+> {
+  const { prisma } = await import('./prisma');
+  const process = await prisma.process.findUnique({
+    where: { id: processId },
+    select: { id: true, assigneeId: true, delegateId: true },
+  });
+  if (!process) return { error: notFoundResponse('Process') };
+  if (isAdmin || process.assigneeId === userId || process.delegateId === userId) {
+    return { process };
+  }
+  return { error: forbiddenResponse() };
+}
+
+/**
+ * Validate an array of KPI goal entries.
+ * Each goal must have a valid timeLevel (from the provided enum values) and a finite numeric targetValue.
+ * Returns an error message string or null if valid.
+ */
+export function validateKpiGoals(
+  goals: Array<{ timeLevel: string; targetValue: unknown }>,
+  validTimeLevels: string[]
+): string | null {
+  for (const g of goals) {
+    if (!validTimeLevels.includes(g.timeLevel)) {
+      return `Invalid timeLevel: ${g.timeLevel}`;
+    }
+    if (typeof g.targetValue !== 'number' || !isFinite(g.targetValue)) {
+      return 'Goal targetValue must be a finite number';
+    }
+  }
+  return null;
 }
 
 /**

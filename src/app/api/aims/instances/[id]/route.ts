@@ -9,6 +9,13 @@ import {
   type AimPhase,
 } from '@/lib/aim-phases';
 
+const INSTANCE_INCLUDE = {
+  aimCategory: true,
+  tasks: { select: { id: true, title: true, status: true } },
+} as const;
+
+const VALID_STATUSES = ['SCHEDULED', 'COMPLETED', 'SKIPPED'] as const;
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -18,7 +25,6 @@ export async function PATCH(
 
   const { id } = await params;
 
-  // Verify instance exists and belongs to user
   const existing = await prisma.aimInstance.findUnique({ where: { id } });
   if (!existing) {
     return Response.json({ error: 'AimInstance not found' }, { status: 404 });
@@ -29,8 +35,7 @@ export async function PATCH(
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { status, timeBlockStart, timeBlockEnd, isGroupOpen, activityNote, selectedActivity, taskIds } = body;
+  const { status, timeBlockStart, timeBlockEnd, isGroupOpen, activityNote, selectedActivity, taskIds } = parsed.data;
 
   // Handle task assignment (Deep Work as task container)
   if (taskIds !== undefined) {
@@ -38,32 +43,27 @@ export async function PATCH(
       return Response.json({ error: 'taskIds must be an array' }, { status: 400 });
     }
 
-    // Clear previously assigned tasks that are no longer in the list
     await prisma.task.updateMany({
-      where: {
-        aimInstanceId: id,
-        id: { notIn: taskIds },
-      },
+      where: { aimInstanceId: id, id: { notIn: taskIds } },
       data: { aimInstanceId: null },
     });
 
-    // Assign new tasks to this instance
     if (taskIds.length > 0) {
       await prisma.task.updateMany({
-        where: {
-          id: { in: taskIds },
-          ownerId: auth.userId,
-        },
+        where: { id: { in: taskIds }, ownerId: auth.userId },
         data: { aimInstanceId: id },
       });
     }
 
-    // If only taskIds was sent, return the updated instance with tasks
-    if (status === undefined && timeBlockStart === undefined && timeBlockEnd === undefined
-        && isGroupOpen === undefined && activityNote === undefined && selectedActivity === undefined) {
+    // If only taskIds was sent, return early
+    const hasOtherFields = status !== undefined || timeBlockStart !== undefined
+      || timeBlockEnd !== undefined || isGroupOpen !== undefined
+      || activityNote !== undefined || selectedActivity !== undefined;
+
+    if (!hasOtherFields) {
       const instance = await prisma.aimInstance.findUnique({
         where: { id },
-        include: { aimCategory: true, tasks: { select: { id: true, title: true, status: true } } },
+        include: INSTANCE_INCLUDE,
       });
       return Response.json(instance);
     }
@@ -72,37 +72,22 @@ export async function PATCH(
   const updateData: Record<string, any> = {};
 
   if (status !== undefined) {
-    const validStatuses = ['SCHEDULED', 'COMPLETED', 'SKIPPED'];
-    if (!validStatuses.includes(status)) {
-      return Response.json({ error: `status must be one of: ${validStatuses.join(', ')}` }, { status: 400 });
+    if (!VALID_STATUSES.includes(status)) {
+      return Response.json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` }, { status: 400 });
     }
     updateData.status = status;
-    if (status === 'COMPLETED') {
-      updateData.completedAt = new Date();
-    } else {
-      updateData.completedAt = null;
-    }
+    updateData.completedAt = status === 'COMPLETED' ? new Date() : null;
   }
 
   if (timeBlockStart !== undefined) {
     updateData.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
   }
-
   if (timeBlockEnd !== undefined) {
     updateData.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
   }
-
-  if (isGroupOpen !== undefined) {
-    updateData.isGroupOpen = isGroupOpen;
-  }
-
-  if (activityNote !== undefined) {
-    updateData.activityNote = activityNote;
-  }
-
-  if (selectedActivity !== undefined) {
-    updateData.selectedActivity = selectedActivity;
-  }
+  if (isGroupOpen !== undefined) updateData.isGroupOpen = isGroupOpen;
+  if (activityNote !== undefined) updateData.activityNote = activityNote;
+  if (selectedActivity !== undefined) updateData.selectedActivity = selectedActivity;
 
   // Handle phase progression and scoring when completing an aim
   if (status === 'COMPLETED' && existing.status !== 'COMPLETED') {
@@ -118,20 +103,15 @@ export async function PATCH(
 
     if (userAim) {
       const phase = (userAim.currentPhase || 'SEED') as AimPhase;
-
-      // Calculate points
-      const points = getPointsPerCompletion(phase);
-      updateData.pointsEarned = points;
+      updateData.pointsEarned = getPointsPerCompletion(phase);
       updateData.phaseAtCompletion = phase;
 
-      // Update streak
       const { newStreak } = calculateAimStreak(
         userAim.currentStreak,
         userAim.lastCompletedAt,
         phase,
       );
 
-      // Get recent instances for phase graduation evaluation
       const sixWeeksAgo = new Date(Date.now() - 6 * 7 * 24 * 60 * 60 * 1000);
       const recentInstances = await prisma.aimInstance.findMany({
         where: {
@@ -142,7 +122,6 @@ export async function PATCH(
         select: { status: true, scheduledDate: true },
       });
 
-      // Check phase graduation
       const newPhase = evaluatePhaseGraduation(
         phase,
         userAim.phaseStartedAt,
@@ -150,7 +129,6 @@ export async function PATCH(
         recentInstances,
       );
 
-      // Update UserAim
       await prisma.userAim.update({
         where: { id: userAim.id },
         data: {
@@ -158,10 +136,7 @@ export async function PATCH(
           currentStreak: newStreak,
           bestStreak: Math.max(userAim.bestStreak, newStreak),
           lastCompletedAt: new Date(),
-          ...(newPhase ? {
-            currentPhase: newPhase,
-            phaseStartedAt: new Date(),
-          } : {}),
+          ...(newPhase ? { currentPhase: newPhase, phaseStartedAt: new Date() } : {}),
         },
       });
     }
@@ -170,7 +145,7 @@ export async function PATCH(
   const updated = await prisma.aimInstance.update({
     where: { id },
     data: updateData,
-    include: { aimCategory: true, tasks: { select: { id: true, title: true, status: true } } },
+    include: INSTANCE_INCLUDE,
   });
 
   return Response.json(updated);

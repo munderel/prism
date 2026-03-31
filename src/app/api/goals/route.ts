@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { Prisma, GoalLevel, GoalStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { cacheHeaders } from '@/lib/api-helpers';
+import { cacheHeaders, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
 import { parseBody, createGoalSchema } from '@/lib/schemas';
 import {
   requireAuth,
@@ -66,12 +66,10 @@ export async function GET(request: NextRequest) {
   }
 
   const stack = await prisma.goalStack.findUnique({ where: { id: stackId } });
-  if (!stack) {
-    return Response.json({ error: 'Stack not found' }, { status: 404 });
-  }
+  if (!stack) return notFoundResponse('Stack');
 
   if (!stack.isCompany && stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
   const goals = await prisma.goal.findMany({
@@ -97,9 +95,7 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return new Response(JSON.stringify(goals), {
-    headers: cacheHeaders(10, 60),
-  });
+  return Response.json(goals, { headers: cacheHeaders(10, 60) });
 }
 
 export async function POST(request: NextRequest) {
@@ -108,19 +104,16 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, createGoalSchema);
   if ('error' in parsed) return parsed.error;
-  const { stackId, parentId, level, title, description, dueDate, startDate, endDate, autoGenerate } = parsed.data;
+  const { stackId, parentId, level, title, description, startDate, endDate, autoGenerate } = parsed.data;
 
-  // Verify stack access
   const stack = await prisma.goalStack.findUnique({ where: { id: stackId } });
-  if (!stack) {
-    return Response.json({ error: 'Stack not found' }, { status: 404 });
-  }
+  if (!stack) return notFoundResponse('Stack');
 
   if (stack.isCompany) {
     const adminAuth = await requireAdmin();
     if ('error' in adminAuth) return authError(adminAuth);
   } else if (stack.ownerId !== auth.userId && !auth.session.user.isAdmin) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
   // Validate level hierarchy
@@ -206,8 +199,6 @@ export async function POST(request: NextRequest) {
         sortOrder: number;
       }[] = [];
 
-      const yearGoalIds = yearGoals.map((yg) => yg.id);
-
       for (const { id: yearGoalId, year } of yearGoals) {
         const firstMonth = year === startYear ? hhgStart.getMonth() : 0;
         const lastMonth = year === endYear ? hhgEnd.getMonth() : 11;
@@ -230,6 +221,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Single query to get ALL monthly goals for this HHG
+      const yearGoalIds = yearGoals.map((yg) => yg.id);
       const allMonthlyGoals = await tx.goal.findMany({
         where: {
           stackId,
@@ -297,7 +289,6 @@ export async function POST(request: NextRequest) {
           });
 
           weekNum++;
-          // Move cursor to next week start
           cursor.setDate(cursor.getDate() + 7);
         }
       }

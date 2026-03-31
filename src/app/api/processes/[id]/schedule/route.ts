@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { notFoundResponse, safeParseJson } from '@/lib/api-helpers';
 import { computeNextDueDate } from '@/lib/process-scheduler';
 import {
   setHours,
@@ -16,18 +16,6 @@ import {
   isBefore,
 } from 'date-fns';
 
-/**
- * POST /api/processes/[id]/schedule
- *
- * Body:
- *   time: string          – "HH:mm"
- *   dayOfWeek?: number    – 0=Sun..6=Sat  (for WEEKLY / BIWEEKLY)
- *   dayOfMonth?: number   – 1..31         (for MONTHLY / QUARTERLY)
- *   month?: number        – 0..11         (for YEARLY)
- *   date?: string         – "YYYY-MM-DD"  (for YEARLY or ONE_TIME)
- *
- * Creates a ProcessExecution + Task with time blocks for the next occurrence.
- */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -51,38 +39,16 @@ export async function POST(
     return Response.json({ error: 'Invalid time' }, { status: 400 });
   }
 
-  // Fetch the process
-  const process = await prisma.process.findUnique({
-    where: { id },
-    include: {
-      assignee: { select: { id: true } },
-      delegate: { select: { id: true } },
-    },
-  });
+  const process = await prisma.process.findUnique({ where: { id } });
 
-  if (!process) {
-    return Response.json({ error: 'Process not found' }, { status: 404 });
-  }
+  if (!process) return notFoundResponse('Process');
 
-  // Determine responsible user
   const now = new Date();
   const today = startOfDay(now);
-  let responsibleUserId: string | null = null;
 
-  if (
-    process.delegateId &&
-    process.delegateUntil &&
-    process.delegateUntil >= today
-  ) {
-    responsibleUserId = process.delegateId;
-  } else if (process.assigneeId) {
-    responsibleUserId = process.assigneeId;
-  }
-
-  // Fall back to the requesting user
-  if (!responsibleUserId) {
-    responsibleUserId = auth.userId;
-  }
+  // Determine responsible user: active delegate > assignee > requesting user
+  const hasDelegation = process.delegateId && process.delegateUntil && process.delegateUntil >= today;
+  const responsibleUserId = (hasDelegation ? process.delegateId : process.assigneeId) ?? auth.userId;
 
   // Compute the next occurrence based on cadence + user inputs
   let scheduledStart = computeScheduledDate(
@@ -103,11 +69,10 @@ export async function POST(
 
   const scheduledEnd = addMinutes(scheduledStart, process.defaultDurationMinutes);
 
-  // Create Task + ProcessExecution in a transaction
   const { task, execution } = await prisma.$transaction(async (tx) => {
     const task = await tx.task.create({
       data: {
-        ownerId: responsibleUserId!,
+        ownerId: responsibleUserId,
         taskType: 'MAINTENANCE',
         title: process.title,
         description: process.description,
@@ -130,12 +95,9 @@ export async function POST(
       },
     });
 
-    // Update process nextDueAt
     await tx.process.update({
       where: { id: process.id },
-      data: {
-        nextDueAt: scheduledStart,
-      },
+      data: { nextDueAt: scheduledStart },
     });
 
     return { task, execution };
@@ -144,9 +106,6 @@ export async function POST(
   return Response.json({ task, execution }, { status: 201 });
 }
 
-/**
- * Compute the concrete scheduled datetime based on cadence and user selections.
- */
 function computeScheduledDate(
   cadence: string,
   now: Date,
@@ -158,23 +117,28 @@ function computeScheduledDate(
 ): Date {
   let base: Date;
 
+  function atTime(day: Date): Date {
+    return setHours(setMinutes(startOfDay(day), minutes), hours);
+  }
+
+  function parseDateStr(): Date {
+    const [y, m, d] = dateStr!.split('-').map(Number);
+    return new Date(y, m - 1, d, hours, minutes);
+  }
+
   switch (cadence) {
     case 'DAILY': {
-      // Next occurrence: today or tomorrow at the specified time
-      base = setHours(setMinutes(startOfDay(now), minutes), hours);
-      if (isBefore(base, now)) {
-        base = setHours(setMinutes(startOfDay(new Date(now.getTime() + 86400000)), minutes), hours);
-      }
+      base = atTime(now);
+      if (isBefore(base, now)) base = atTime(new Date(now.getTime() + 86400000));
       return base;
     }
 
     case 'WEEKLY':
     case 'BIWEEKLY': {
-      // dayOfWeek: 0=Sun..6=Sat
-      const dow = dayOfWeek !== undefined ? dayOfWeek : now.getDay();
+      const dow = dayOfWeek ?? now.getDay();
       base = setHours(setMinutes(setDay(startOfDay(now), dow, { weekStartsOn: 0 }), minutes), hours);
       if (isBefore(base, now)) {
-        base = cadence === 'BIWEEKLY' ? addWeeks(base, 2) : addWeeks(base, 1);
+        base = addWeeks(base, cadence === 'BIWEEKLY' ? 2 : 1);
       }
       return base;
     }
@@ -184,37 +148,25 @@ function computeScheduledDate(
       const dom = dayOfMonth !== undefined ? Math.min(dayOfMonth, 28) : now.getDate();
       base = setHours(setMinutes(setDate(startOfDay(now), dom), minutes), hours);
       if (isBefore(base, now)) {
-        base = cadence === 'QUARTERLY' ? addMonths(base, 3) : addMonths(base, 1);
+        base = addMonths(base, cadence === 'QUARTERLY' ? 3 : 1);
       }
       return base;
     }
 
     case 'YEARLY': {
       if (dateStr) {
-        const [y, m, d] = dateStr.split('-').map(Number);
-        base = new Date(y, m - 1, d, hours, minutes);
-        if (isBefore(base, now)) {
-          base = addYears(base, 1);
-        }
-        return base;
+        base = parseDateStr();
+        return isBefore(base, now) ? addYears(base, 1) : base;
       }
-      // Fallback: one year from now at selected time
-      base = setHours(setMinutes(startOfDay(addYears(now, 1)), minutes), hours);
-      return base;
+      return atTime(addYears(now, 1));
     }
 
     case 'ONE_TIME': {
-      if (dateStr) {
-        const [y, m, d] = dateStr.split('-').map(Number);
-        return new Date(y, m - 1, d, hours, minutes);
-      }
-      return setHours(setMinutes(startOfDay(now), minutes), hours);
+      return dateStr ? parseDateStr() : atTime(now);
     }
 
     default: {
-      // Fallback: tomorrow at selected time
-      base = setHours(setMinutes(startOfDay(new Date(now.getTime() + 86400000)), minutes), hours);
-      return base;
+      return atTime(new Date(now.getTime() + 86400000));
     }
   }
 }
