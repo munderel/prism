@@ -33,7 +33,7 @@ const navSections = [
       { href: '/goals', label: 'Goal Stack', icon: Target },
       { href: '/training', label: 'Training', icon: BookOpen },
       { href: '/tasks', label: 'Tasks', icon: CheckSquare },
-      { href: '/reactive-tasks/new', label: 'Reactive Tasks', icon: Zap },
+      { href: '/reactive-tasks', label: 'Reactive Tasks', icon: Zap },
       { href: '/ideas', label: 'Ideas', icon: Lightbulb },
     ],
   },
