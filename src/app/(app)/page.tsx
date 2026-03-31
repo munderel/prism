@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Focus, AlertTriangle, Lightbulb, Moon } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { getLocalDateString, toLocalDateKey, formatDisplayDate } from '@/lib/date-utils';
@@ -88,6 +89,7 @@ const FOCUS_MODE_KEY = 'prism-focus-mode';
 
 export default function DashboardPage() {
   const toast = useToast();
+  const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
   const [today, setToday] = useState(() => getLocalDateString());
   const [editingTask, setEditingTask] = useState<DashboardTask | 'new' | null>(null);
@@ -422,7 +424,7 @@ export default function DashboardPage() {
                           onToggle={(t: any) => handleFocusStatusChange(t.id, t.status === 'DONE' ? 'TODO' : 'DONE')}
                           onEdit={handleEdit}
                           onDelete={handleDelete}
-                          onClick={(t: any) => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
+                          onClick={(t: any) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } setExpandedTaskId(expandedTaskId === t.id ? null : t.id); }}
                           onStatusChange={handleFocusStatusChange}
                         />
                       ))}
@@ -531,7 +533,7 @@ export default function DashboardPage() {
                             onToggle={(t: any) => handleFocusStatusChange(t.id, t.status === 'DONE' ? 'TODO' : 'DONE')}
                             onEdit={handleEdit}
                             onDelete={handleDelete}
-                            onClick={(t: any) => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
+                            onClick={(t: any) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } setExpandedTaskId(expandedTaskId === t.id ? null : t.id); }}
                             onStatusChange={handleFocusStatusChange}
                           />
                           {expandedTaskId === task.id && (

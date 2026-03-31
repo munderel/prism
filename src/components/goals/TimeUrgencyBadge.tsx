@@ -3,12 +3,11 @@
 interface TimeUrgencyBadgeProps {
   startDate?: string | Date | null;
   endDate?: string | Date | null;
-  dueDate?: string | Date | null;
 }
 
-function getTimeInfo(startDate?: string | Date | null, endDate?: string | Date | null, dueDate?: string | Date | null) {
+function getTimeInfo(startDate?: string | Date | null, endDate?: string | Date | null) {
   const now = new Date();
-  const target = dueDate ? new Date(dueDate) : endDate ? new Date(endDate) : null;
+  const target = endDate ? new Date(endDate) : null;
   if (!target) return null;
 
   const start = startDate ? new Date(startDate) : null;
@@ -57,8 +56,8 @@ function getTimeInfo(startDate?: string | Date | null, endDate?: string | Date |
   return { label, colorClass };
 }
 
-export function TimeUrgencyBadge({ startDate, endDate, dueDate }: TimeUrgencyBadgeProps) {
-  const info = getTimeInfo(startDate, endDate, dueDate);
+export function TimeUrgencyBadge({ startDate, endDate }: TimeUrgencyBadgeProps) {
+  const info = getTimeInfo(startDate, endDate);
   if (!info) return null;
 
   return (

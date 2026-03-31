@@ -205,6 +205,15 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       return;
     }
 
+    // If this is a stored review event (already in DB), navigate to its completion wizard
+    if (info.event.id?.startsWith('review-')) {
+      const reviewId = props.reviewId;
+      if (reviewId) {
+        router.push(`/reviews/${reviewId}/complete`);
+        return;
+      }
+    }
+
     // If this is a process event, navigate to processes page
     if (info.event.id?.startsWith('process-')) {
       router.push('/processes');

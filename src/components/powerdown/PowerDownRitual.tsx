@@ -299,10 +299,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const fetchWeeklyGoals = useCallback(async () => {
     setWeeklyGoalsLoading(true);
     try {
-      const res = await fetch('/api/goals?level=WEEKLY&status=IN_PROGRESS');
+      // Fetch all weekly goals (not just IN_PROGRESS) so NOT_STARTED goals also appear
+      const res = await fetch('/api/goals?level=WEEKLY');
       if (res.ok) {
         const goalsRaw = await res.json();
-        const goals = Array.isArray(goalsRaw) ? goalsRaw : [];
+        const allGoals = Array.isArray(goalsRaw) ? goalsRaw : [];
+        // Exclude completed/abandoned goals
+        const goals = allGoals.filter((g: any) => g.status !== 'COMPLETED' && g.status !== 'ABANDONED');
         // Fetch child tasks for each goal
         const goalsWithTasks = await Promise.all(
           goals.map(async (g: any) => {
@@ -1038,8 +1041,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
                 {/* Full-screen calendar modal — rendered via portal to escape stacking contexts */}
                 {calendarModalOpen && createPortal(
-                  <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center">
-                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+                  <div className="fixed inset-0 z-[200] bg-black/80 flex items-start justify-center pt-[72px]">
+                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
                       <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
                         <h3 className="text-lg font-semibold text-[var(--text-primary)]">Tomorrow&apos;s Calendar</h3>
                         <button

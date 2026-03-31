@@ -376,6 +376,99 @@ function DefaultCurrentGoalsStep({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Read-only child goals review (for review-weekly/review-monthly)     */
+/* ------------------------------------------------------------------ */
+
+function ChildGoalsReviewStep({
+  childGoals,
+  parentGoals,
+  childGoalLabel,
+  goalLevelLabel,
+}: {
+  childGoals: Goal[];
+  parentGoals: Goal[];
+  childGoalLabel: string;
+  goalLevelLabel: string;
+}) {
+  const parentIds = new Set(parentGoals.map((p) => p.id));
+  const grouped = parentGoals.map((parent) => ({
+    parent,
+    children: childGoals.filter((c) => c.parentId === parent.id),
+  }));
+  const orphans = childGoals.filter((c) => !c.parentId || !parentIds.has(c.parentId));
+
+  if (childGoals.length === 0) {
+    return <p className="text-[var(--text-muted)] text-sm italic">No {childGoalLabel} goals found for review.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {grouped.map(({ parent, children }) => (
+        <div key={parent.id} className="space-y-3">
+          <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-3">
+            <p className="text-xs text-indigo-400 uppercase tracking-wide font-medium mb-0.5">{goalLevelLabel} Goal</p>
+            <p className="text-sm font-medium text-[var(--text-primary)]">{parent.title}</p>
+            {parent.startDate && (
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                {new Date(parent.startDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </p>
+            )}
+          </div>
+          {children.length > 0 ? (
+            <div className="ml-4 space-y-2">
+              {children.map((child) => (
+                <div key={child.id} className="flex items-start gap-3 rounded-lg border border-[var(--border-color)] px-4 py-3">
+                  <Target className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-[var(--text-primary)]">{child.title}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        child.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
+                        child.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
+                        child.status === 'ABANDONED' ? 'bg-red-500/20 text-red-400' :
+                        'bg-[var(--surface-raised)] text-[var(--text-muted)]'
+                      }`}>
+                        {child.status.replace('_', ' ')}
+                      </span>
+                      <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-raised)]">
+                        <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${child.progressPct}%` }} />
+                      </div>
+                      <span className="text-xs text-[var(--text-muted)]">{Math.round(child.progressPct)}%</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="ml-4 text-xs text-[var(--text-muted)] italic">No {childGoalLabel} goals linked</p>
+          )}
+        </div>
+      ))}
+      {orphans.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">Other {childGoalLabel} goals</p>
+          {orphans.map((child) => (
+            <div key={child.id} className="flex items-start gap-3 rounded-lg border border-[var(--border-color)] px-4 py-3">
+              <Target className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-[var(--text-primary)]">{child.title}</p>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  child.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
+                  child.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
+                  'bg-[var(--surface-raised)] text-[var(--text-muted)]'
+                }`}>
+                  {child.status.replace('_', ' ')}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Plan-next-period sub-component (with parent hierarchy)              */
 /* ------------------------------------------------------------------ */
 
@@ -667,24 +760,41 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
       });
       setEditingGoals(editState);
 
-      // Fetch KPIs for all filtered primary goals (F1: KPIs are already editable)
+      // Fetch KPIs for all filtered goals in parallel
       const kpiGoals = getKpiGoals ? getKpiGoals(primary, fetchedGoals) : primary;
-      const allKpis: Kpi[] = [];
-      for (const goal of kpiGoals) {
-        const kpiRes = await fetch(`/api/goals/${goal.id}/kpis`);
-        if (kpiRes.ok) {
-          const kpiData = await kpiRes.json();
-          allKpis.push(...(kpiData.kpis ?? kpiData ?? []));
-        }
-      }
-      setKpis(allKpis);
+      const kpiResults = await Promise.all(
+        kpiGoals.map(async (goal) => {
+          try {
+            const kpiRes = await fetch(`/api/goals/${goal.id}/kpis`);
+            if (kpiRes.ok) {
+              const kpiData = await kpiRes.json();
+              return (kpiData.kpis ?? kpiData ?? []) as Kpi[];
+            }
+          } catch { /* ignore */ }
+          return [] as Kpi[];
+        })
+      );
+      setKpis(kpiResults.flat());
 
-      // Child goals for "plan next period" - also filtered by period
+      // Child goals for "plan next period" and "review" steps
       const allChildren = fetchedGoals.filter((g: Goal) => g.level === childGoalLevel);
       // For monthly review: show weekly goals belonging to current + next month's monthly goals
       // For yearly review: show monthly goals belonging to current + next year's strategic goals
       const primaryIds = new Set(primary.map((g) => g.id));
-      const filteredChildren = allChildren.filter((g) => g.parentId && primaryIds.has(g.parentId));
+      // Pre-parse primary goal date ranges for overlap checks
+      const primaryRanges = primary
+        .filter((p) => p.startDate && p.endDate)
+        .map((p) => ({ start: new Date(p.startDate!), end: new Date(p.endDate!) }));
+      // Match by parentId OR by date range overlap with primary goals
+      const filteredChildren = allChildren.filter((g) => {
+        if (g.parentId && primaryIds.has(g.parentId)) return true;
+        if (g.startDate && g.endDate) {
+          const childStart = new Date(g.startDate);
+          const childEnd = new Date(g.endDate);
+          return primaryRanges.some((r) => childStart <= r.end && childEnd >= r.start);
+        }
+        return false;
+      });
       setChildGoals(filteredChildren.length > 0 ? filteredChildren : allChildren);
 
       // Determine next period parent
@@ -1025,11 +1135,11 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
               </div>
             )}
             {(step.key === 'review-weekly' || step.key === 'review-monthly') && (
-              <DefaultCurrentGoalsStep
-                goals={primaryGoals}
-                hierarchy={hierarchy}
-                goalLevel={goalLevel}
-                emptyMessage={`No ${childGoalLabel} goals found for review.`}
+              <ChildGoalsReviewStep
+                childGoals={childGoals}
+                parentGoals={primaryGoals}
+                childGoalLabel={childGoalLabel}
+                goalLevelLabel={goalLevelLabel}
               />
             )}
             {step.key === 'kpi-progress' && (
@@ -1080,6 +1190,8 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
                     onNewGoalTitleChange={setNewGoalTitle}
                     onAddGoal={addNewGoal}
                     goalLevelLabel={goalLevelLabel}
+                    showKpis={goalLevel === 'MONTHLY'}
+                    childGoals={childGoals}
                   />
             )}
             {planStepKey && step.key === planStepKey && (

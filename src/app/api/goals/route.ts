@@ -161,7 +161,6 @@ export async function POST(request: NextRequest) {
           level,
           title,
           description: description ?? null,
-          dueDate: dueDate ? new Date(dueDate) : null,
           startDate: hhgStart,
           endDate: hhgEnd,
           sortOrder: siblingCount,
@@ -253,14 +252,15 @@ export async function POST(request: NextRequest) {
         sortOrder: number;
       }[] = [];
 
-      for (const monthGoal of allMonthlyGoals) {
+      for (let mi = 0; mi < allMonthlyGoals.length; mi++) {
+        const monthGoal = allMonthlyGoals[mi];
         if (!monthGoal.startDate || !monthGoal.endDate) continue;
 
         const monthStart = new Date(monthGoal.startDate);
         const monthEnd = new Date(monthGoal.endDate);
         let weekNum = 1;
 
-        // Find the first week start day on or before the 1st of the month
+        // Find the first week-start day on or before the 1st of the month
         let cursor = new Date(monthStart);
         const cursorDay = cursor.getDay(); // 0=Sun..6=Sat
         // Rewind to the previous week start day (or stay if already on it)
@@ -268,9 +268,14 @@ export async function POST(request: NextRequest) {
         if (diff > 0) {
           cursor.setDate(cursor.getDate() - diff);
         }
-        // Clamp to month start (first week begins no earlier than the 1st)
-        if (cursor < monthStart) {
-          cursor = new Date(monthStart);
+        // For the very first month the week may start before the month
+        // boundary (e.g. month starts Wednesday, first week starts the
+        // prior Monday) so every week is a full 7 days aligned to
+        // weekStartDay.  For subsequent months the previous month
+        // already owns the straddling week, so advance to the next
+        // aligned start to avoid duplicates.
+        if (cursor < monthStart && mi > 0) {
+          cursor.setDate(cursor.getDate() + 7);
         }
 
         while (cursor <= monthEnd) {
@@ -314,7 +319,6 @@ export async function POST(request: NextRequest) {
       level,
       title,
       description: description ?? null,
-      dueDate: dueDate ? new Date(dueDate) : null,
       startDate: startDate ? new Date(startDate) : null,
       endDate: endDate ? new Date(endDate) : null,
       sortOrder: siblingCount,

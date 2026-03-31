@@ -174,7 +174,7 @@ export const GoalCard = React.memo(function GoalCard({
         {/* Urgency badge based on end date */}
         {goal.endDate && (
           <div className="flex items-center gap-2 shrink-0">
-            <TimeUrgencyBadge startDate={goal.startDate} endDate={goal.endDate} dueDate={goal.endDate} />
+            <TimeUrgencyBadge startDate={goal.startDate} endDate={goal.endDate} />
           </div>
         )}
 
