@@ -294,4 +294,15 @@ export const authOptions: NextAuthOptions = {
     maxAge: 30 * 24 * 60 * 60, // 30 days — persistent sessions
   },
   debug: process.env.NEXTAUTH_DEBUG === 'true',
+  logger: {
+    error(code: string, metadata: any) {
+      console.error('[nextauth][error]', code, JSON.stringify(metadata, null, 2));
+    },
+    warn(code: string) {
+      console.warn('[nextauth][warn]', code);
+    },
+    debug(code: string, metadata: any) {
+      console.log('[nextauth][debug]', code, JSON.stringify(metadata, null, 2));
+    },
+  },
 };
