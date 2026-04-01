@@ -3,24 +3,29 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 import { listGoogleEvents, createGoogleEvent } from '@/lib/calendar';
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 const MAX_DAYS = 366;
+const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** Iterate day-by-day through a date range, calling `onDay` for each day. */
+/** Iterate day-by-day through a date range, calling `onDay` for each day.
+ *  The callback receives a zoned cursor (local day/date/month values) and a YYYY-MM-DD dateKey. */
 function forEachDayInRange(
   rangeStart: Date,
   rangeEnd: Date,
-  onDay: (cursor: Date, dateKey: string) => void,
+  timezone: string,
+  onDay: (zonedCursor: Date, dateKey: string) => void,
 ): void {
   const cursor = new Date(rangeStart);
-  cursor.setHours(0, 0, 0, 0);
+  cursor.setUTCHours(0, 0, 0, 0);
   let dayCount = 0;
 
   while (cursor <= rangeEnd && dayCount < MAX_DAYS) {
     dayCount++;
-    const dateKey = cursor.toISOString().split('T')[0];
-    onDay(cursor, dateKey);
-    cursor.setDate(cursor.getDate() + 1);
+    const zoned = toZonedTime(cursor, timezone);
+    const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+    onDay(zoned, dateKey);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 }
 
@@ -29,16 +34,15 @@ function pushTimedEvent(
   events: any[],
   rangeStart: Date,
   rangeEnd: Date,
-  cursor: Date,
+  dateKey: string,
   hours: number,
   minutes: number,
   duration: number,
+  timezone: string,
   eventData: Record<string, any>,
 ): void {
-  const evStart = new Date(cursor);
-  evStart.setHours(hours, minutes, 0, 0);
-  const evEnd = new Date(evStart);
-  evEnd.setMinutes(evEnd.getMinutes() + duration);
+  const evStart = fromZonedTime(`${dateKey}T${pad2(hours)}:${pad2(minutes)}:00`, timezone);
+  const evEnd = new Date(evStart.getTime() + duration * 60_000);
 
   if (evStart >= rangeStart && evStart <= rangeEnd) {
     events.push({
@@ -138,8 +142,9 @@ export async function GET(request: NextRequest) {
 
   const userSettings = await prisma.user.findUnique({
     where: { id: auth.userId },
-    select: { selectedCalendarIds: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
+    select: { timezone: true, selectedCalendarIds: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
   });
+  const userTz = userSettings?.timezone ?? 'America/New_York';
   const calendarIds = parseCalendarIds(userSettings?.selectedCalendarIds);
 
   // Availability mode: return busy slots from all sources
@@ -180,7 +185,7 @@ export async function GET(request: NextRequest) {
 
     for (const meeting of meetings) {
       if (!isUserInMeeting(meeting, auth.userId)) continue;
-      for (const inst of generateMeetingInstances(meeting, rangeStart, rangeEnd)) {
+      for (const inst of generateMeetingInstances(meeting, rangeStart, rangeEnd, userTz)) {
         busySlots.push({
           start: inst.start.toISOString(),
           end: inst.end.toISOString(),
@@ -297,7 +302,7 @@ export async function GET(request: NextRequest) {
 
   for (const meeting of meetings) {
     if (!isUserInMeeting(meeting, auth.userId)) continue;
-    for (const instance of generateMeetingInstances(meeting, rangeStart, rangeEnd)) {
+    for (const instance of generateMeetingInstances(meeting, rangeStart, rangeEnd, userTz)) {
       events.push({
         id: `meeting-${meeting.id}-${instance.start.toISOString()}`,
         title: meeting.title,
@@ -373,7 +378,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    forEachDayInRange(rangeStart, rangeEnd, (cursor, dateKey) => {
+    forEachDayInRange(rangeStart, rangeEnd, userTz, (_zonedCursor, dateKey) => {
       const override = pdOverrides.get(dateKey);
 
       let pdStart: Date;
@@ -382,10 +387,8 @@ export async function GET(request: NextRequest) {
         pdStart = override.start;
         pdEnd = override.end;
       } else {
-        pdStart = new Date(cursor);
-        pdStart.setHours(pdH, pdM, 0, 0);
-        pdEnd = new Date(cursor);
-        pdEnd.setHours(pdH, pdM + 30, 0, 0);
+        pdStart = fromZonedTime(`${dateKey}T${pad2(pdH)}:${pad2(pdM)}:00`, userTz);
+        pdEnd = new Date(pdStart.getTime() + 30 * 60_000);
       }
 
       if (pdStart >= rangeStart && pdStart <= rangeEnd) {
@@ -451,9 +454,9 @@ export async function GET(request: NextRequest) {
 
     for (const config of reviewConfigs) {
       const [h, m] = config.time.split(':').map(Number);
-      forEachDayInRange(rangeStart, rangeEnd, (cursor, dateKey) => {
-        if (config.matchFn(cursor)) {
-          pushTimedEvent(events, rangeStart, rangeEnd, cursor, h, m, config.duration, {
+      forEachDayInRange(rangeStart, rangeEnd, userTz, (zonedCursor, dateKey) => {
+        if (config.matchFn(zonedCursor)) {
+          pushTimedEvent(events, rangeStart, rangeEnd, dateKey, h, m, config.duration, userTz, {
             id: `${config.idPrefix}-${dateKey}`,
             title: config.title,
             source: 'reviews',
@@ -490,9 +493,9 @@ export async function GET(request: NextRequest) {
         return false;
       };
 
-      forEachDayInRange(rangeStart, rangeEnd, (cursor, dateKey) => {
-        if (matchFn(cursor)) {
-          pushTimedEvent(events, rangeStart, rangeEnd, cursor, trH, trM, tr.duration, {
+      forEachDayInRange(rangeStart, rangeEnd, userTz, (zonedCursor, dateKey) => {
+        if (matchFn(zonedCursor)) {
+          pushTimedEvent(events, rangeStart, rangeEnd, dateKey, trH, trM, tr.duration, userTz, {
             id: `team-review-${tr.id}-${dateKey}`,
             title: `TEAM ${tr.reviewType} REVIEW`,
             source: 'reviews',
@@ -551,8 +554,8 @@ export async function GET(request: NextRequest) {
       const [procH, procM] = proc.scheduledTime!.split(':').map(Number);
       const duration = proc.defaultDurationMinutes;
 
-      forEachDayInRange(rangeStart, rangeEnd, (cursor, dateKey) => {
-        const dow = cursor.getDay();
+      forEachDayInRange(rangeStart, rangeEnd, userTz, (zonedCursor, dateKey) => {
+        const dow = zonedCursor.getDay();
         let matches = false;
 
         switch (proc.cadence) {
@@ -565,21 +568,21 @@ export async function GET(request: NextRequest) {
           case 'BIWEEKLY': {
             const targetDow = proc.scheduledDayOfWeek ?? 1;
             if (dow === targetDow) {
-              const weekNum = Math.floor(cursor.getTime() / (7 * 24 * 60 * 60 * 1000));
+              const weekNum = Math.floor(new Date(`${dateKey}T00:00:00Z`).getTime() / (7 * 24 * 60 * 60 * 1000));
               matches = weekNum % 2 === 0;
             }
             break;
           }
           case 'MONTHLY':
-            matches = cursor.getDate() === (proc.scheduledDayOfMonth ?? 1);
+            matches = zonedCursor.getDate() === (proc.scheduledDayOfMonth ?? 1);
             break;
           case 'QUARTERLY':
-            if ([0, 3, 6, 9].includes(cursor.getMonth())) {
-              matches = cursor.getDate() === (proc.scheduledDayOfMonth ?? 1);
+            if ([0, 3, 6, 9].includes(zonedCursor.getMonth())) {
+              matches = zonedCursor.getDate() === (proc.scheduledDayOfMonth ?? 1);
             }
             break;
           case 'YEARLY':
-            matches = cursor.getMonth() === 0 && cursor.getDate() === 1;
+            matches = zonedCursor.getMonth() === 0 && zonedCursor.getDate() === 1;
             break;
         }
 
@@ -594,10 +597,8 @@ export async function GET(request: NextRequest) {
           evStart = override.start;
           evEnd = override.end;
         } else {
-          evStart = new Date(cursor);
-          evStart.setHours(procH, procM, 0, 0);
-          evEnd = new Date(evStart);
-          evEnd.setMinutes(evEnd.getMinutes() + duration);
+          evStart = fromZonedTime(`${dateKey}T${pad2(procH)}:${pad2(procM)}:00`, userTz);
+          evEnd = new Date(evStart.getTime() + duration * 60_000);
         }
 
         if (evStart >= rangeStart && evStart <= rangeEnd) {
@@ -652,21 +653,18 @@ export async function POST(request: NextRequest) {
 function generateMeetingInstances(
   meeting: { cadence: string; dayOfWeek: number | null; occurDate?: Date | null; timeStart: string; timeEnd: string },
   rangeStart: Date,
-  rangeEnd: Date
+  rangeEnd: Date,
+  timezone: string,
 ): { start: Date; end: Date }[] {
   const instances: { start: Date; end: Date }[] = [];
-  const [startH, startM] = meeting.timeStart.split(':').map(Number);
-  const [endH, endM] = meeting.timeEnd.split(':').map(Number);
 
   // One-time meetings: just check if the specific date falls in range
   if (meeting.cadence === 'ONE_TIME' && meeting.occurDate) {
-    const d = new Date(meeting.occurDate);
-    d.setHours(0, 0, 0, 0);
-    if (d >= rangeStart && d <= rangeEnd) {
-      const s = new Date(d);
-      s.setHours(startH, startM, 0, 0);
-      const e = new Date(d);
-      e.setHours(endH, endM, 0, 0);
+    const zoned = toZonedTime(new Date(meeting.occurDate), timezone);
+    const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+    const s = fromZonedTime(`${dateKey}T${meeting.timeStart}:00`, timezone);
+    const e = fromZonedTime(`${dateKey}T${meeting.timeEnd}:00`, timezone);
+    if (s >= rangeStart && s <= rangeEnd) {
       instances.push({ start: s, end: e });
     }
     return instances;
@@ -674,13 +672,14 @@ function generateMeetingInstances(
 
   // Iterate day-by-day through range (capped at 366 days for safety)
   const cursor = new Date(rangeStart);
-  cursor.setHours(0, 0, 0, 0);
+  cursor.setUTCHours(0, 0, 0, 0);
   const maxIterations = 366;
   let iterations = 0;
 
   while (cursor <= rangeEnd && iterations < maxIterations) {
     iterations++;
-    const dow = cursor.getDay(); // 0=Sun ... 6=Sat
+    const zoned = toZonedTime(cursor, timezone);
+    const dow = zoned.getDay(); // 0=Sun ... 6=Sat
     let matches = false;
 
     switch (meeting.cadence) {
@@ -703,45 +702,44 @@ function generateMeetingInstances(
       case 'MONTHLY':
         // First occurrence of the specified day in the month
         if (meeting.dayOfWeek !== null) {
-          matches = dow === meeting.dayOfWeek && cursor.getDate() <= 7;
+          matches = dow === meeting.dayOfWeek && zoned.getDate() <= 7;
         } else {
-          matches = cursor.getDate() === 1; // first of month
+          matches = zoned.getDate() === 1; // first of month
         }
         break;
       case 'QUARTERLY':
         // First occurrence of the day in quarter months (Jan, Apr, Jul, Oct)
-        if ([0, 3, 6, 9].includes(cursor.getMonth())) {
+        if ([0, 3, 6, 9].includes(zoned.getMonth())) {
           if (meeting.dayOfWeek !== null) {
-            matches = dow === meeting.dayOfWeek && cursor.getDate() <= 7;
+            matches = dow === meeting.dayOfWeek && zoned.getDate() <= 7;
           } else {
-            matches = cursor.getDate() === 1;
+            matches = zoned.getDate() === 1;
           }
         }
         break;
       case 'YEARLY':
         // Jan 1st or first occurrence of the day in January
-        if (cursor.getMonth() === 0) {
+        if (zoned.getMonth() === 0) {
           if (meeting.dayOfWeek !== null) {
-            matches = dow === meeting.dayOfWeek && cursor.getDate() <= 7;
+            matches = dow === meeting.dayOfWeek && zoned.getDate() <= 7;
           } else {
-            matches = cursor.getDate() === 1;
+            matches = zoned.getDate() === 1;
           }
         }
         break;
     }
 
     if (matches) {
-      const eventStart = new Date(cursor);
-      eventStart.setHours(startH, startM, 0, 0);
-      const eventEnd = new Date(cursor);
-      eventEnd.setHours(endH, endM, 0, 0);
+      const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+      const eventStart = fromZonedTime(`${dateKey}T${meeting.timeStart}:00`, timezone);
+      const eventEnd = fromZonedTime(`${dateKey}T${meeting.timeEnd}:00`, timezone);
 
       if (eventStart >= rangeStart && eventStart <= rangeEnd) {
         instances.push({ start: eventStart, end: eventEnd });
       }
     }
 
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
   return instances;
