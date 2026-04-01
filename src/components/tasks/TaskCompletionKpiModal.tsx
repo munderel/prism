@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { m, AnimatePresence } from 'framer-motion';
-import { fetcher } from '@/lib/fetcher';
 import { useToast } from '@/components/ui/ToastProvider';
 import { getLocalDateString } from '@/lib/date-utils';
 
@@ -31,8 +30,7 @@ export function TaskCompletionKpiModal({
 }: TaskCompletionKpiModalProps) {
   const toast = useToast();
   const { data, isLoading } = useSWR<ProcessKpi[]>(
-    `/api/processes/${processId}/kpis`,
-    fetcher
+    `/api/processes/${processId}/kpis`
   );
   const kpis: ProcessKpi[] = data ?? [];
 

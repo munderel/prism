@@ -3,7 +3,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import { Plus, Pencil, Trash2, Save, X, Loader2 } from 'lucide-react';
-import { fetcher } from '@/lib/fetcher';
 
 const TASK_TYPES = ['IMPROVE', 'REACT', 'MAINTENANCE'] as const;
 const PRIORITIES = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
@@ -53,12 +52,12 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
   const tasksUrl = isTeamReview
     ? '/api/tasks?includeUnscheduled=true&scope=company'
     : '/api/tasks?includeUnscheduled=true';
-  const { data: tasks, mutate } = useSWR<Task[]>(tasksUrl, fetcher);
+  const { data: tasks, mutate } = useSWR<Task[]>(tasksUrl);
 
   const goalsUrl = isTeamReview
     ? '/api/goals?isCompany=true&level=WEEKLY&status=IN_PROGRESS'
     : null;
-  const { data: stacks } = useSWR<Stack[]>(isTeamReview ? null : '/api/stacks', fetcher);
+  const { data: stacks } = useSWR<Stack[]>(isTeamReview ? null : '/api/stacks');
   const personalStackId = useMemo(() => {
     if (isTeamReview) return null;
     const arr = Array.isArray(stacks) ? stacks : [];
@@ -66,8 +65,7 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
   }, [stacks, isTeamReview]);
   const personalGoalsUrl = personalStackId ? `/api/goals?stackId=${personalStackId}` : null;
   const { data: goalsData } = useSWR(
-    isTeamReview ? goalsUrl : personalGoalsUrl,
-    fetcher
+    isTeamReview ? goalsUrl : personalGoalsUrl
   );
   const weeklyGoals = useMemo(() => {
     const arr = Array.isArray(goalsData) ? goalsData : [];

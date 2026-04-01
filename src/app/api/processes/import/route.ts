@@ -19,7 +19,8 @@ export async function POST(request: NextRequest) {
   const result = await prisma.$transaction(async (tx) => {
     const created = [];
 
-    for (const [fi, fnData] of functions.entries()) {
+    for (let fi = 0; fi < functions.length; fi++) {
+      const fnData = functions[fi];
       if (!fnData.name) continue;
 
       const fn = await tx.businessFunction.create({
@@ -31,7 +32,9 @@ export async function POST(request: NextRequest) {
       });
 
       const processes = [];
-      for (const [pi, procData] of (fnData.processes ?? []).entries()) {
+      const procList = fnData.processes ?? [];
+      for (let pi = 0; pi < procList.length; pi++) {
+        const procData = procList[pi];
         if (!procData.title) continue;
 
         const proc = await tx.process.create({
@@ -45,7 +48,9 @@ export async function POST(request: NextRequest) {
         });
 
         const steps = [];
-        for (const [si, stepData] of (procData.steps ?? []).entries()) {
+        const stepList = procData.steps ?? [];
+        for (let si = 0; si < stepList.length; si++) {
+          const stepData = stepList[si];
           if (!stepData.title) continue;
 
           const step = await tx.processStep.create({

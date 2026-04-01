@@ -390,8 +390,6 @@ export function GoalStackTree({
                         onAddTask={handleAddTask}
                         onStatusChange={handleStatusChange}
                         onKpiClick={handleKpiClick}
-                        isCompanyStack={isCompanyStack}
-                        isAdmin={isAdmin}
                       />
                     ) : (
                       <TaskCardInline

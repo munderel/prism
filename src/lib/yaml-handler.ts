@@ -287,23 +287,23 @@ function diffKpis(currentKpis: KpiNode[], incomingKpis: KpiNode[]): Omit<KpiDiff
   const removed: KpiDiffEntry['removed'] = [];
   const modified: KpiDiffEntry['modified'] = [];
 
-  for (const [name, kpi] of incomingByName) {
+  incomingByName.forEach((kpi, name) => {
     const currentKpi = currentByName.get(name);
     if (!currentKpi) {
       added.push({ name, type: kpi.type });
-      continue;
+      return;
     }
     const changes = diffFields(currentKpi, kpi, KPI_DIFF_FIELDS);
     if (Object.keys(changes).length > 0) {
       modified.push({ name, changes });
     }
-  }
+  });
 
-  for (const [name, kpi] of currentByName) {
+  currentByName.forEach((kpi, name) => {
     if (!incomingByName.has(name)) {
       removed.push({ name, type: kpi.type });
     }
-  }
+  });
 
   if (added.length === 0 && removed.length === 0 && modified.length === 0) return null;
   return { added, removed, modified };
@@ -316,18 +316,18 @@ export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
   const added = collectNewGoals(incoming);
 
   const deleted: GoalDiff['deleted'] = [];
-  for (const [id, node] of currentMap) {
+  currentMap.forEach((node, id) => {
     if (!incomingMap.has(id)) {
       deleted.push({ id, title: node.title });
     }
-  }
+  });
 
   const modified: GoalDiff['modified'] = [];
   const kpiChanges: KpiDiffEntry[] = [];
 
-  for (const [id, incomingNode] of incomingMap) {
+  incomingMap.forEach((incomingNode, id) => {
     const currentNode = currentMap.get(id);
-    if (!currentNode) continue;
+    if (!currentNode) return;
 
     const changes = diffFields(currentNode, incomingNode, DIFF_FIELDS);
     if (Object.keys(changes).length > 0) {
@@ -338,7 +338,7 @@ export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
     if (kpiDiff) {
       kpiChanges.push({ goalTitle: incomingNode.title, ...kpiDiff });
     }
-  }
+  });
 
   return { added, deleted, modified, kpiChanges };
 }

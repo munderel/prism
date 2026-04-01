@@ -6,7 +6,6 @@ import { X, Plus, BarChart3 } from 'lucide-react';
 import useSWR from 'swr';
 import { KpiCard } from './KpiCard';
 import { KpiEditor } from './KpiEditor';
-import { fetcher } from '@/lib/fetcher';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
 
 interface KpiSidebarProps {
@@ -27,9 +26,8 @@ export function KpiSidebar({
   const [showEditor, setShowEditor] = useState(false);
   const [editingKpi, setEditingKpi] = useState<any>(null);
 
-  const { data, mutate } = useSWR(
-    `/api/goals/${goalId}/kpis`,
-    fetcher
+  const { data, mutate } = useSWR<{ kpis: any[] }>(
+    `/api/goals/${goalId}/kpis`
   );
   const kpis = data?.kpis;
 

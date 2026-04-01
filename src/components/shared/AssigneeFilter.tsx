@@ -2,7 +2,6 @@
 
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { fetcher } from '@/lib/fetcher';
 
 interface AssigneeFilterProps {
   value: string; // userId or '' for all
@@ -13,7 +12,7 @@ interface AssigneeFilterProps {
 export function AssigneeFilter({ value, onChange, className = '' }: AssigneeFilterProps) {
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
-  const { data: users = [] } = useSWR('/api/users', fetcher);
+  const { data: users = [] } = useSWR('/api/users');
 
   return (
     <select

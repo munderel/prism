@@ -36,7 +36,7 @@ export async function checkDerailingTasks(): Promise<void> {
     );
     if (derailingTasks.length === 0) return;
 
-    const ownerIds = [...new Set(derailingTasks.map((t) => t.owner.id))];
+    const ownerIds = Array.from(new Set(derailingTasks.map((t) => t.owner.id)));
     const prefs = await prisma.notificationPreference.findMany({
       where: { userId: { in: ownerIds } },
     });

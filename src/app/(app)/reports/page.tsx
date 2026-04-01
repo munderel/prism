@@ -12,7 +12,7 @@ import {
   Target,
   CheckSquare,
 } from 'lucide-react';
-import { fetcher } from '@/lib/fetcher';
+
 import { getLocalDateString, formatDisplayDate } from '@/lib/date-utils';
 
 type Tab = 'reviews' | 'tasks' | 'aims' | 'goals';
@@ -161,7 +161,6 @@ export default function ReportsExportPage() {
 function ReviewsTab({ from, to }: { from: string; to: string }) {
   const { data, error, isLoading } = useSWR<Review[]>(
     `/api/reviews?userId=me&from=${from}&to=${to}`,
-    fetcher,
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -290,7 +289,6 @@ function ReviewsTab({ from, to }: { from: string; to: string }) {
 function TasksTab({ from, to }: { from: string; to: string }) {
   const { data, error, isLoading } = useSWR<Task[]>(
     `/api/tasks?startDate=${from}&endDate=${to}`,
-    fetcher,
   );
 
   if (isLoading) return <LoadingSpinner />;
