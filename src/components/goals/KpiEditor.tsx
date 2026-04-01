@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import useSWR from 'swr';
-import { fetcher } from '@/lib/fetcher';
+
 
 interface KpiEditorProps {
   goalId: string;
@@ -42,9 +42,8 @@ export function KpiEditor({
     STRATEGIC: 'High Hard Goal',
   };
 
-  const { data: parentKpis } = useSWR(
+  const { data: parentKpis } = useSWR<{ kpis: any[] }>(
     showLinkDropdown ? `/api/goals/${parentGoalId}/kpis` : null,
-    fetcher
   );
 
   const matchingParentKpis = parentKpis?.kpis?.filter?.(

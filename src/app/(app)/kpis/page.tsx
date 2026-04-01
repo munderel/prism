@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
 import { TrendingUp } from 'lucide-react';
-import { fetcher } from '@/lib/fetcher';
+
 import {
   getWeekBoundaries,
   getMonthBoundaries,
@@ -121,7 +121,6 @@ export default function KpiDashboardPage() {
 
   const { data, isLoading } = useSWR<AggregationResponse>(
     `/api/kpis/aggregation?${queryParams}`,
-    fetcher,
   );
 
   const processes = data?.processes ?? [];

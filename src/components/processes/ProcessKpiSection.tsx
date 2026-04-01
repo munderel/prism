@@ -4,7 +4,6 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { m, AnimatePresence } from 'framer-motion';
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
-import { fetcher } from '@/lib/fetcher';
 import { useToast } from '@/components/ui/ToastProvider';
 import { KpiProgressBar } from '@/components/goals/KpiProgressBar';
 import { ProcessKpiEditor } from './ProcessKpiEditor';
@@ -30,7 +29,7 @@ export function ProcessKpiSection({ processId, isAdmin }: ProcessKpiSectionProps
     data,
     isLoading,
     mutate,
-  } = useSWR(`/api/processes/${processId}/kpis`, fetcher);
+  } = useSWR(`/api/processes/${processId}/kpis`);
 
   const kpis: any[] = data ?? [];
 

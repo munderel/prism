@@ -104,13 +104,10 @@ export async function DELETE(
 
   const taskIds = existing.trainingTasks.map((tt) => tt.taskId);
 
-  const operations = [
+  await prisma.$transaction([
+    ...(taskIds.length > 0 ? [prisma.task.deleteMany({ where: { id: { in: taskIds } } })] : []),
     prisma.trainingItem.delete({ where: { id } }),
-  ];
-  if (taskIds.length > 0) {
-    operations.push(prisma.task.deleteMany({ where: { id: { in: taskIds } } }));
-  }
-  await prisma.$transaction(operations);
+  ]);
 
   return Response.json({ ok: true }, NO_STORE);
 }

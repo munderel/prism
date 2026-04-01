@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import useSWR, { mutate } from 'swr';
 import { Check, Plus, Trash2, Pencil, X } from 'lucide-react';
-import { fetcher } from '@/lib/fetcher';
 
 interface ClearGoal {
   id: string;
@@ -23,7 +22,7 @@ export function ClearGoalsDisplay({
   compact = false,
 }: ClearGoalsDisplayProps) {
   const apiUrl = `/api/tasks/${taskId}/clear-goals`;
-  const { data, error, isLoading } = useSWR<ClearGoal[]>(apiUrl, fetcher);
+  const { data, error, isLoading } = useSWR<ClearGoal[]>(apiUrl);
 
   const [newGoalText, setNewGoalText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
