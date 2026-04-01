@@ -223,66 +223,66 @@ export const authOptions: NextAuthOptions = {
     // events.signIn fires AFTER the PrismaAdapter creates the user,
     // so user.id is always a valid DB record ID.
     async signIn({ user, account }) {
-      console.log('[auth] events.signIn fired:', { userId: user.id, email: user.email, provider: account?.provider });
       if (account?.provider !== 'google') return;
 
-      // Store Google refresh token (encrypted)
-      if (account.refresh_token) {
-        if (!process.env.TOKEN_ENCRYPTION_KEY) {
-          if (process.env.NODE_ENV === 'production') {
-            throw new Error('[auth] TOKEN_ENCRYPTION_KEY is required in production. Refusing to store unencrypted refresh tokens.');
-          }
-          console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — tokens stored unencrypted (dev only)');
-        }
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            googleRefreshToken: process.env.TOKEN_ENCRYPTION_KEY
-              ? encryptToken(account.refresh_token)
-              : account.refresh_token,
-            googleTokenExpiresAt: account.expires_at
-              ? new Date(account.expires_at * 1000)
-              : null,
-          },
-        });
-      }
-
-      // Auto-promote first user to admin
-      await prisma.$transaction(async (tx) => {
-        const userCount = await tx.user.count();
-        if (userCount <= 1) {
-          await tx.user.update({
-            where: { id: user.id },
-            data: { isAdmin: true },
-          });
-        }
-      });
-
-      // Check for pending invitation and apply role
-      if (user.email) {
-        const invitation = await prisma.invitation.findFirst({
-          where: {
-            email: user.email.toLowerCase(),
-            status: 'PENDING',
-          },
-        });
-
-        if (invitation) {
-          if (invitation.role === 'admin') {
+      try {
+        // Store Google refresh token (encrypted)
+        if (account.refresh_token) {
+          if (!process.env.TOKEN_ENCRYPTION_KEY) {
+            console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — skipping refresh token storage');
+          } else {
             await prisma.user.update({
+              where: { id: user.id },
+              data: {
+                googleRefreshToken: encryptToken(account.refresh_token),
+                googleTokenExpiresAt: account.expires_at
+                  ? new Date(account.expires_at * 1000)
+                  : null,
+              },
+            });
+          }
+        }
+
+        // Auto-promote first user to admin
+        await prisma.$transaction(async (tx) => {
+          const userCount = await tx.user.count();
+          if (userCount <= 1) {
+            await tx.user.update({
               where: { id: user.id },
               data: { isAdmin: true },
             });
           }
+        });
 
-          await prisma.invitation.update({
-            where: { id: invitation.id },
-            data: {
-              status: 'ACCEPTED',
-              acceptedAt: new Date(),
+        // Check for pending invitation and apply role
+        if (user.email) {
+          const invitation = await prisma.invitation.findFirst({
+            where: {
+              email: user.email.toLowerCase(),
+              status: 'PENDING',
             },
           });
+
+          if (invitation) {
+            if (invitation.role === 'admin') {
+              await prisma.user.update({
+                where: { id: user.id },
+                data: { isAdmin: true },
+              });
+            }
+
+            await prisma.invitation.update({
+              where: { id: invitation.id },
+              data: {
+                status: 'ACCEPTED',
+                acceptedAt: new Date(),
+              },
+            });
+          }
         }
+      } catch (error: any) {
+        // Log but don't throw — failing here should not block login
+        console.error('[auth] events.signIn error (non-fatal):', error.message);
       }
     },
   },
