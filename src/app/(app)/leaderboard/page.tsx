@@ -1,16 +1,19 @@
 'use client';
 
-import { useMemo } from 'react';
 import { Trophy, Flame, CheckCircle2, Star, Target } from 'lucide-react';
 import { m } from 'framer-motion';
 import useSWR from 'swr';
 
+const RANK_COLORS = ['text-yellow-400', 'text-gray-400', 'text-orange-400'] as const;
+
+function getRankColor(index: number): string {
+  return RANK_COLORS[index] ?? 'text-[var(--text-secondary)]';
+}
+
 export default function LeaderboardPage() {
   const { data: raw, isLoading } = useSWR('/api/leaderboard');
-  const data = useMemo(() => ({
-    leaderboard: raw?.leaderboard ?? [],
-    publicWins: raw?.publicWins ?? [],
-  }), [raw]);
+  const leaderboard = raw?.leaderboard ?? [];
+  const publicWins = raw?.publicWins ?? [];
 
   if (isLoading) return <div className="text-[var(--text-muted)] py-12 text-center">Loading...</div>;
 
@@ -26,7 +29,7 @@ export default function LeaderboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Rankings */}
         <div className="lg:col-span-2 space-y-3">
-          {data.leaderboard.map((user: any, i: number) => (
+          {leaderboard.map((user: any, i: number) => (
             <m.div
               key={user.id}
               initial={{ opacity: 0, x: -20 }}
@@ -34,9 +37,7 @@ export default function LeaderboardPage() {
               transition={{ delay: i * 0.05 }}
               className="flex items-center gap-4 glass-panel px-5 py-4"
             >
-              <span className={`text-2xl font-bold ${
-                i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-orange-400' : 'text-[var(--text-secondary)]'
-              }`}>
+              <span className={`text-2xl font-bold ${getRankColor(i)}`}>
                 #{i + 1}
               </span>
 
@@ -83,7 +84,7 @@ export default function LeaderboardPage() {
               Recent Wins
             </h3>
             <div className="space-y-3">
-              {data.publicWins.map((win: any) => (
+              {publicWins.map((win: any) => (
                 <m.div
                   key={win.id}
                   initial={{ opacity: 0, x: 20 }}
@@ -107,7 +108,7 @@ export default function LeaderboardPage() {
                   </p>
                 </m.div>
               ))}
-              {data.publicWins.length === 0 && (
+              {publicWins.length === 0 && (
                 <p className="text-xs text-[var(--text-muted)]">No wins yet. Complete tasks to earn them!</p>
               )}
             </div>

@@ -288,9 +288,33 @@ export default function DashboardPage() {
     });
   }, [mutate, toast]);
 
+  const toggleAimStatus = useCallback((aimId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED';
+    mutateAims(
+      async (currentData: DashboardAimInstance[] | undefined) => {
+        await fetch(`/api/aims/instances/${aimId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        return (Array.isArray(currentData) ? currentData : []).map((a) =>
+          a.id === aimId ? { ...a, status: newStatus } : a
+        );
+      },
+      {
+        optimisticData: (currentData: DashboardAimInstance[] | undefined) =>
+          (Array.isArray(currentData) ? currentData : []).map((a) =>
+            a.id === aimId ? { ...a, status: newStatus } : a
+          ),
+        rollbackOnError: true,
+      }
+    );
+  }, [mutateAims]);
+
   const handleBlockMove = useCallback((blockId: string, type: string, newStart: Date, newEnd: Date) => {
     const startISO = newStart.toISOString();
     const endISO = newEnd.toISOString();
+    const payload = { timeBlockStart: startISO, timeBlockEnd: endISO };
 
     if (type === 'AIM') {
       mutateAims(
@@ -298,16 +322,16 @@ export default function DashboardPage() {
           await fetch(`/api/aims/instances/${blockId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
+            body: JSON.stringify(payload),
           });
           return (Array.isArray(currentData) ? currentData : []).map((a) =>
-            a.id === blockId ? { ...a, timeBlockStart: startISO, timeBlockEnd: endISO } : a
+            a.id === blockId ? { ...a, ...payload } : a
           );
         },
         {
           optimisticData: (currentData: DashboardAimInstance[] | undefined) =>
             (Array.isArray(currentData) ? currentData : []).map((a) =>
-              a.id === blockId ? { ...a, timeBlockStart: startISO, timeBlockEnd: endISO } : a
+              a.id === blockId ? { ...a, ...payload } : a
             ),
           rollbackOnError: true,
         }
@@ -318,22 +342,34 @@ export default function DashboardPage() {
           await fetch(`/api/tasks/${blockId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO }),
+            body: JSON.stringify(payload),
           });
           return (Array.isArray(currentData) ? currentData : []).map((t) =>
-            t.id === blockId ? { ...t, timeBlockStart: startISO, timeBlockEnd: endISO } : t
+            t.id === blockId ? { ...t, ...payload } : t
           );
         },
         {
           optimisticData: (currentData: DashboardTask[] | undefined) =>
             (Array.isArray(currentData) ? currentData : []).map((t) =>
-              t.id === blockId ? { ...t, timeBlockStart: startISO, timeBlockEnd: endISO } : t
+              t.id === blockId ? { ...t, ...payload } : t
             ),
           rollbackOnError: true,
         }
       );
     }
   }, [mutate, mutateAims]);
+
+  const handleTaskClick = useCallback((t: DashboardTask) => {
+    if (t.taskType === 'REVIEW') {
+      router.push('/reviews');
+      return;
+    }
+    setExpandedTaskId((prev) => (prev === t.id ? null : t.id));
+  }, [router]);
+
+  const handleTaskToggle = useCallback((t: DashboardTask) => {
+    handleFocusStatusChange(t.id, t.status === 'DONE' ? 'TODO' : 'DONE');
+  }, [handleFocusStatusChange]);
 
   const isLoading = sessionStatus === 'loading' || tasksLoading;
   const userName = session?.user?.name?.split(' ')[0] || (sessionStatus === 'loading' ? '...' : 'there');
@@ -421,14 +457,13 @@ export default function DashboardPage() {
                         <TaskCard
                           key={task.id}
                           task={task}
-                          onToggle={(t: any) => handleFocusStatusChange(t.id, t.status === 'DONE' ? 'TODO' : 'DONE')}
+                          onToggle={handleTaskToggle}
                           onEdit={handleEdit}
                           onDelete={handleDelete}
-                          onClick={(t: any) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } setExpandedTaskId(expandedTaskId === t.id ? null : t.id); }}
+                          onClick={handleTaskClick}
                           onStatusChange={handleFocusStatusChange}
                         />
                       ))}
-                      {/* AIMs for this day */}
                       {aimList
                         .filter((a: any) => toLocalDateKey(a.scheduledDate) === dateKey)
                         .map((aim: any) => (
@@ -436,28 +471,7 @@ export default function DashboardPage() {
                             <input
                               type="checkbox"
                               checked={aim.status === 'COMPLETED'}
-                              onChange={() => {
-                                const newStatus = aim.status === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED';
-                                mutateAims(
-                                  async (currentData: DashboardAimInstance[] | undefined) => {
-                                    await fetch(`/api/aims/instances/${aim.id}`, {
-                                      method: 'PATCH',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ status: newStatus }),
-                                    });
-                                    return (Array.isArray(currentData) ? currentData : []).map((a) =>
-                                      a.id === aim.id ? { ...a, status: newStatus } : a
-                                    );
-                                  },
-                                  {
-                                    optimisticData: (currentData: DashboardAimInstance[] | undefined) =>
-                                      (Array.isArray(currentData) ? currentData : []).map((a) =>
-                                        a.id === aim.id ? { ...a, status: newStatus } : a
-                                      ),
-                                    rollbackOnError: true,
-                                  }
-                                );
-                              }}
+                              onChange={() => toggleAimStatus(aim.id, aim.status)}
                               className="h-5 w-5 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-teal-600 focus:ring-teal-500"
                             />
                             <span className="text-teal-400 text-xs">💪</span>
@@ -530,10 +544,10 @@ export default function DashboardPage() {
                         <div key={task.id}>
                           <TaskCard
                             task={task}
-                            onToggle={(t: any) => handleFocusStatusChange(t.id, t.status === 'DONE' ? 'TODO' : 'DONE')}
+                            onToggle={handleTaskToggle}
                             onEdit={handleEdit}
                             onDelete={handleDelete}
-                            onClick={(t: any) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } setExpandedTaskId(expandedTaskId === t.id ? null : t.id); }}
+                            onClick={handleTaskClick}
                             onStatusChange={handleFocusStatusChange}
                           />
                           {expandedTaskId === task.id && (
@@ -570,28 +584,7 @@ export default function DashboardPage() {
                       className={`glass-panel px-4 py-3 flex items-center gap-3 hover:border-[var(--glass-border)] transition-colors ${isDerailing ? 'border-red-500/30' : ''}`}
                     >
                       <button
-                        onClick={async () => {
-                          const newStatus = isCompleted ? 'SCHEDULED' : 'COMPLETED';
-                          mutateAims(
-                            async (currentData: any) => {
-                              await fetch(`/api/aims/instances/${aim.id}`, {
-                                method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ status: newStatus }),
-                              });
-                              return (Array.isArray(currentData) ? currentData : []).map((a: any) =>
-                                a.id === aim.id ? { ...a, status: newStatus } : a
-                              );
-                            },
-                            {
-                              optimisticData: (currentData: any) =>
-                                (Array.isArray(currentData) ? currentData : []).map((a: any) =>
-                                  a.id === aim.id ? { ...a, status: newStatus } : a
-                                ),
-                              rollbackOnError: true,
-                            }
-                          );
-                        }}
+                        onClick={() => toggleAimStatus(aim.id, aim.status)}
                         className={`flex-shrink-0 h-5 w-5 rounded border-2 transition-colors ${
                           isCompleted
                             ? 'bg-green-600 border-green-600'
@@ -671,6 +664,12 @@ function DerailAlertBanner({ derailBatch }: { derailBatch: DerailBatchResponse }
 
   if (needsAttention.length === 0) return null;
 
+  const derailingCount = needsAttention.filter((d) => d.status === 'derailing').length;
+  const cautionCount = needsAttention.filter((d) => d.status === 'caution').length;
+  const parts: string[] = [];
+  if (derailingCount > 0) parts.push(`${derailingCount} derailing`);
+  if (cautionCount > 0) parts.push(`${cautionCount} needs caution`);
+
   return (
     <Link
       href="/aims"
@@ -679,14 +678,7 @@ function DerailAlertBanner({ derailBatch }: { derailBatch: DerailBatchResponse }
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span>
         {needsAttention.length} aim{needsAttention.length !== 1 ? 's' : ''} need{needsAttention.length === 1 ? 's' : ''} attention
-        {(() => {
-          const derailingCount = needsAttention.filter((d) => d.status === 'derailing').length;
-          const cautionCount = needsAttention.filter((d) => d.status === 'caution').length;
-          const parts: string[] = [];
-          if (derailingCount > 0) parts.push(`${derailingCount} derailing`);
-          if (cautionCount > 0) parts.push(`${cautionCount} needs caution`);
-          return parts.length > 0 ? <span className="text-red-500/70"> ({parts.join(', ')})</span> : null;
-        })()}
+        {parts.length > 0 && <span className="text-red-500/70"> ({parts.join(', ')})</span>}
       </span>
     </Link>
   );

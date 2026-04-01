@@ -122,17 +122,17 @@ function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
   }
 
   // -- metadata row --
+  const priority = item.priority || 'MEDIUM';
+  const priorityLabel = priority.charAt(0) + priority.slice(1).toLowerCase();
+
   const renderMeta = () => {
     if (item.itemType === 'task') {
-      const priorityLabel =
-        (item.priority || 'MEDIUM').charAt(0) +
-        (item.priority || 'MEDIUM').slice(1).toLowerCase();
       return (
         <>
           <div className="flex items-center gap-2 mt-1">
             <span
               className={`h-1.5 w-1.5 rounded-full ${
-                PRIORITY_DOT_COLORS[item.priority || ''] || 'bg-gray-500'
+                PRIORITY_DOT_COLORS[priority] || 'bg-gray-500'
               }`}
             />
             <span className="text-xs text-[var(--text-muted)]">{priorityLabel}</span>
@@ -149,7 +149,6 @@ function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
       );
     }
 
-    // aim
     return (
       <div className="flex items-center gap-2 mt-1">
         {cfg.icon}
@@ -323,10 +322,6 @@ export default function CalendarPage() {
 
   const isLoading = loadingTasks || loadingAims;
 
-  const renderItem = (item: UnscheduledItem) => (
-    <UnscheduledItemCard key={item.id} item={item} />
-  );
-
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -376,7 +371,9 @@ export default function CalendarPage() {
                   <p className="text-[var(--text-muted)] text-sm">Everything is scheduled!</p>
                 </div>
               ) : (
-                allUnscheduledItems.map(renderItem)
+                allUnscheduledItems.map((item) => (
+                  <UnscheduledItemCard key={item.id} item={item} />
+                ))
               )}
             </div>
           </div>

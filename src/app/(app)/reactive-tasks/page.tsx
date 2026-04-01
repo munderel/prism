@@ -47,11 +47,10 @@ const STATUS_BADGE: Record<string, { classes: string; label: string }> = {
 
 function formatRelativeDate(dateStr: string): string {
   const today = getLocalDateString();
-  const tomorrow = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return getLocalDateString(d);
-  })();
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrow = getLocalDateString(tomorrowDate);
+
   const taskDate = dateStr.split('T')[0];
   const display = new Date(taskDate + 'T00:00:00').toLocaleDateString('en-US', {
     month: 'short',
@@ -63,11 +62,13 @@ function formatRelativeDate(dateStr: string): string {
 
   const now = new Date();
   const due = new Date(taskDate + 'T23:59:59');
+  const msPerDay = 1000 * 60 * 60 * 24;
+
   if (due < now) {
-    const daysAgo = Math.ceil((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+    const daysAgo = Math.ceil((now.getTime() - due.getTime()) / msPerDay);
     return `${display} — ${daysAgo}d overdue`;
   }
-  const daysLeft = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const daysLeft = Math.ceil((due.getTime() - now.getTime()) / msPerDay);
   return `${display} — ${daysLeft}d left`;
 }
 
@@ -249,8 +250,11 @@ export default function ReactiveTasksPage() {
               >
                 {/* Main Row */}
                 <div className="flex items-center gap-3 px-4 py-3">
-                  {/* Quick Complete */}
-                  {!isDone && (
+                  {isDone ? (
+                    <div className="flex-shrink-0 h-5 w-5 rounded bg-green-600/20 border border-green-600/40 flex items-center justify-center">
+                      <Check className="h-3 w-3 text-green-400" />
+                    </div>
+                  ) : (
                     <button
                       onClick={() => handleComplete(task)}
                       className="flex-shrink-0 h-5 w-5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:border-green-500 hover:text-green-400 transition-colors flex items-center justify-center"
@@ -258,11 +262,6 @@ export default function ReactiveTasksPage() {
                     >
                       <Check className="h-3 w-3" />
                     </button>
-                  )}
-                  {isDone && (
-                    <div className="flex-shrink-0 h-5 w-5 rounded bg-green-600/20 border border-green-600/40 flex items-center justify-center">
-                      <Check className="h-3 w-3 text-green-400" />
-                    </div>
                   )}
 
                   {/* Priority Badge */}

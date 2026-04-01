@@ -54,8 +54,7 @@ export default function IdeasPage() {
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Build SWR key
-  const sortParam = sortBy === 'oldest' ? 'createdAt' : sortBy === 'newest' ? 'createdAt' : 'iceScore';
+  const sortParam = sortBy === 'iceScore' ? 'iceScore' : 'createdAt';
   const swrKey = `/api/ideas?status=${statusFilter}&sort=${sortParam}&search=${encodeURIComponent(search)}&page=${page}&limit=20`;
 
   const { data, isLoading, mutate } = useSWR(swrKey);
@@ -79,14 +78,8 @@ export default function IdeasPage() {
 
   const convertToTask = useCallback(
     async (id: string) => {
-      const res = await fetch(`/api/ideas/${id}/convert`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      if (res.ok) {
-        router.push('/tasks');
-      }
+      const res = await fetch(`/api/ideas/${id}/convert`, { method: 'POST' });
+      if (res.ok) router.push('/tasks');
     },
     [router]
   );

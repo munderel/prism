@@ -2,10 +2,10 @@
 
 import { SessionProvider } from 'next-auth/react';
 
-export default function AuthLayout({
-  children,
-}: {
+interface AuthLayoutProps {
   children: React.ReactNode;
-}) {
+}
+
+export default function AuthLayout({ children }: AuthLayoutProps) {
   return <SessionProvider>{children}</SessionProvider>;
 }
