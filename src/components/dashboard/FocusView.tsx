@@ -11,11 +11,7 @@ interface FocusViewProps {
 const PRIORITY_ORDER: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
 export function FocusView({ tasks, onStatusChange }: FocusViewProps) {
-
   const focusTasks = useMemo(() => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-
     return tasks
       .filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED')
       .sort((a, b) => {

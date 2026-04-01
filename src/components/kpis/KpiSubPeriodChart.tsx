@@ -22,12 +22,19 @@ interface KpiSubPeriodChartProps {
   kpiName: string;
 }
 
-function CustomTooltip({ active, payload, label, unit }: any) {
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; color: string }>;
+  label?: string;
+  unit: string | null;
+}
+
+function CustomTooltip({ active, payload, label, unit }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 shadow-lg text-xs">
       <p className="font-semibold text-[var(--text-primary)] mb-1">{label}</p>
-      {payload.map((entry: any) => (
+      {payload.map((entry) => (
         <p key={entry.name} style={{ color: entry.color }}>
           {entry.value}
           {unit ? ` ${unit}` : ''}

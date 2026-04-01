@@ -3,23 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
-import { X, Sun, Moon as MoonIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import {
-  LayoutDashboard,
-  Target,
-  CheckSquare,
-  Lightbulb,
-  BookOpen,
-  Flame,
-  Calendar,
-  ClipboardCheck,
-  Moon,
-  Trophy,
-  BarChart3,
-  ListChecks,
-  Settings,
-  Zap,
-  TrendingUp,
+  X, Sun, Moon as MoonIcon, PanelLeftClose, PanelLeftOpen,
+  LayoutDashboard, Target, CheckSquare, Lightbulb, BookOpen,
+  Flame, Calendar, ClipboardCheck, Moon, Trophy, BarChart3,
+  ListChecks, Settings, Zap, TrendingUp,
 } from 'lucide-react';
 import { StreakCounter } from '@/components/dopamine/StreakCounter';
 import { useEffect, useState, useMemo } from 'react';
@@ -78,10 +66,10 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
     revalidateOnFocus: false,
     dedupingInterval: 60000,
   });
-  const hiddenFeatures: string[] = useMemo(() => {
-    if (settings && Array.isArray(settings.hiddenFeatures)) return settings.hiddenFeatures;
-    return [];
-  }, [settings]);
+  const hiddenFeatures: string[] = useMemo(
+    () => (Array.isArray(settings?.hiddenFeatures) ? settings.hiddenFeatures : []),
+    [settings],
+  );
 
   const filteredNavSections = useMemo(() =>
     navSections.map((section) => ({

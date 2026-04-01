@@ -52,15 +52,10 @@ export function ProcessKpiSection({ processId, isAdmin }: ProcessKpiSectionProps
     setShowEditor(true);
   };
 
-  const handleEditorSave = () => {
+  const closeEditor = (shouldRefresh = false) => {
     setShowEditor(false);
     setEditingKpi(null);
-    mutate();
-  };
-
-  const handleEditorClose = () => {
-    setShowEditor(false);
-    setEditingKpi(null);
+    if (shouldRefresh) mutate();
   };
 
   const handleDelete = async (kpiId: string) => {
@@ -113,8 +108,6 @@ export function ProcessKpiSection({ processId, isAdmin }: ProcessKpiSectionProps
           const isExpanded = expandedKpiId === kpi.id;
           const entries: any[] = kpi.entries ?? [];
           const lastEntry = entries[0];
-
-          // Compute a simple progress for the latest entry vs. the default target
           const hasTarget = kpi.targetValue != null && kpi.targetValue > 0;
           const lastValue = lastEntry?.value ?? null;
 
@@ -264,8 +257,8 @@ export function ProcessKpiSection({ processId, isAdmin }: ProcessKpiSectionProps
         <ProcessKpiEditor
           processId={processId}
           kpi={editingKpi}
-          onSave={handleEditorSave}
-          onClose={handleEditorClose}
+          onSave={() => closeEditor(true)}
+          onClose={() => closeEditor()}
         />
       )}
     </div>

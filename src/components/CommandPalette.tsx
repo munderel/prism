@@ -52,31 +52,27 @@ export function CommandPalette() {
   const search = useCallback(async (q: string) => {
     if (q.length < 2) { setResults([]); return; }
     setLoading(true);
+
+    const endpoints: { endpoint: string; type: SearchResult['type']; url: string }[] = [
+      { endpoint: '/api/tasks', type: 'task', url: '/tasks' },
+      { endpoint: '/api/goals', type: 'goal', url: '/goals' },
+      { endpoint: '/api/ideas', type: 'idea', url: '/ideas' },
+    ];
+
+    const responses = await Promise.all(
+      endpoints.map(({ endpoint }) =>
+        fetch(`${endpoint}?search=${encodeURIComponent(q)}`).catch(() => null),
+      ),
+    );
+
     const searchResults: SearchResult[] = [];
-
-    // Search tasks, goals, ideas in parallel
-    const [tasksRes, goalsRes, ideasRes] = await Promise.all([
-      fetch(`/api/tasks?search=${encodeURIComponent(q)}`).catch(() => null),
-      fetch(`/api/goals?search=${encodeURIComponent(q)}`).catch(() => null),
-      fetch(`/api/ideas?search=${encodeURIComponent(q)}`).catch(() => null),
-    ]);
-
-    if (tasksRes?.ok) {
-      const tasks = await tasksRes.json();
-      for (const t of (Array.isArray(tasks) ? tasks : []).slice(0, 5)) {
-        searchResults.push({ id: t.id, title: t.title, type: 'task', url: '/tasks' });
-      }
-    }
-    if (goalsRes?.ok) {
-      const goals = await goalsRes.json();
-      for (const g of (Array.isArray(goals) ? goals : []).slice(0, 5)) {
-        searchResults.push({ id: g.id, title: g.title, type: 'goal', url: '/goals' });
-      }
-    }
-    if (ideasRes?.ok) {
-      const ideas = await ideasRes.json();
-      for (const i of (Array.isArray(ideas) ? ideas : []).slice(0, 5)) {
-        searchResults.push({ id: i.id, title: i.title, type: 'idea', url: '/ideas' });
+    for (let i = 0; i < responses.length; i++) {
+      const res = responses[i];
+      if (!res?.ok) continue;
+      const data = await res.json();
+      const items = (Array.isArray(data) ? data : []).slice(0, 5);
+      for (const item of items) {
+        searchResults.push({ id: item.id, title: item.title, type: endpoints[i].type, url: endpoints[i].url });
       }
     }
 
@@ -96,18 +92,22 @@ export function CommandPalette() {
     router.push(result.url);
   };
 
-  // Arrow key navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      setOpen(false);
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelected((s) => Math.min(s + 1, results.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelected((s) => Math.max(s - 1, 0));
-    } else if (e.key === 'Enter' && results[selected]) {
-      handleSelect(results[selected]);
+    switch (e.key) {
+      case 'Escape':
+        setOpen(false);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelected((s) => Math.min(s + 1, results.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelected((s) => Math.max(s - 1, 0));
+        break;
+      case 'Enter':
+        if (results[selected]) handleSelect(results[selected]);
+        break;
     }
   };
 

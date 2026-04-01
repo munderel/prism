@@ -23,14 +23,20 @@ const TIMELINE_END = 20;   // 8pm
 const TIMELINE_HOURS = TIMELINE_END - TIMELINE_START; // 14 hours
 const SNAP_MINUTES = 15;
 
+const HOUR_LABELS: number[] = [];
+for (let h = TIMELINE_START; h <= TIMELINE_END; h += 2) {
+  HOUR_LABELS.push(h);
+}
+
 function getHourPosition(date: Date): number {
   const hours = date.getHours() + date.getMinutes() / 60;
   return ((hours - TIMELINE_START) / TIMELINE_HOURS) * 100;
 }
 
 function formatHourLabel(hour: number): string {
-  if (hour === 0 || hour === 12) return '12' + (hour === 0 ? 'am' : 'pm');
+  if (hour === 0) return '12am';
   if (hour < 12) return hour + 'am';
+  if (hour === 12) return '12pm';
   return (hour - 12) + 'pm';
 }
 
@@ -121,14 +127,6 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
     return () => clearInterval(interval);
   }, []);
 
-  const hourLabels = useMemo(() => {
-    const labels: number[] = [];
-    for (let h = TIMELINE_START; h <= TIMELINE_END; h += 2) {
-      labels.push(h);
-    }
-    return labels;
-  }, []);
-
   const positionedBlocks = useMemo(() => {
     return blocks.map((block) => {
       const start = new Date(block.start);
@@ -178,7 +176,6 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
     newStart.setHours(Math.floor(newStartHour), Math.round((newStartHour % 1) * 60), 0, 0);
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    // Don't move if end goes past timeline
     if (newEnd.getHours() + newEnd.getMinutes() / 60 > TIMELINE_END) return;
 
     onBlockMove(block.id, block.type, newStart, newEnd);
@@ -197,14 +194,12 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
     <div
       className={`rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40 ${className}`}
     >
-      {/* Header */}
       <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
         Today&apos;s Schedule
       </p>
 
-      {/* Hour labels */}
       <div className="relative mb-1 flex h-5 select-none">
-        {hourLabels.map((hour) => {
+        {HOUR_LABELS.map((hour) => {
           const left = ((hour - TIMELINE_START) / TIMELINE_HOURS) * 100;
           return (
             <span
@@ -218,15 +213,12 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
         })}
       </div>
 
-      {/* Track */}
       <DndContext sensors={sensors} onDragEnd={handleDragEnd} modifiers={[restrictToHorizontalAxis]}>
         <div ref={trackRef} className="relative h-[50px] w-full overflow-visible rounded-lg bg-zinc-100 dark:bg-zinc-800/60">
-          {/* Blocks */}
           {positionedBlocks.map((block) => (
             <DraggableBlock key={block.id} block={block} canDrag={!!onBlockMove} />
           ))}
 
-          {/* Now indicator */}
           {nowPosition !== null && (
             <div
               className="pointer-events-none absolute top-0 bottom-0 z-10"

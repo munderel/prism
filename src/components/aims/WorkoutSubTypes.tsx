@@ -50,17 +50,8 @@ export function WorkoutSubTypes({ subTypes, onChange, editable = true }: Workout
     }
   };
 
-  if (subTypes.length === 0 && !editable) {
-    return (
-      <p className="text-sm text-gray-400 dark:text-gray-500">
-        No specific workout types set
-      </p>
-    );
-  }
-
   return (
     <div className="space-y-2">
-      {/* Sub-type list */}
       {subTypes.length === 0 && !isAdding && (
         <p className="text-sm text-gray-400 dark:text-gray-500">
           No specific workout types set

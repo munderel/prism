@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { Toast, type ToastVariant } from './Toast';
 
 interface ToastItem {
@@ -33,11 +33,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const toast = {
+  const toast = useMemo(() => ({
     success: (message: string) => addToast(message, 'success'),
     error: (message: string) => addToast(message, 'error'),
     info: (message: string) => addToast(message, 'info'),
-  };
+  }), [addToast]);
 
   return (
     <ToastContext.Provider value={{ toast }}>
