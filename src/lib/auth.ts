@@ -196,21 +196,26 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ account, user }) {
-      // For credentials provider, lockout was already checked in authorize()
-      if (account?.provider === 'password-login') return true;
+      try {
+        // For credentials provider, lockout was already checked in authorize()
+        if (account?.provider === 'password-login') return true;
 
-      // Check lockout status for OAuth providers.
-      // Look up by email (not id) because for new OAuth users, user.id is
-      // a temporary Google profile ID that doesn't exist in the DB yet.
-      if (user.email) {
-        const dbUser = await prisma.user.findUnique({
-          where: { email: user.email },
-          select: { isLockedOut: true },
-        });
-        if (dbUser?.isLockedOut) return false;
+        // Check lockout status for OAuth providers.
+        // Look up by email (not id) because for new OAuth users, user.id is
+        // a temporary Google profile ID that doesn't exist in the DB yet.
+        if (user.email) {
+          const dbUser = await prisma.user.findUnique({
+            where: { email: user.email },
+            select: { isLockedOut: true },
+          });
+          if (dbUser?.isLockedOut) return false;
+        }
+
+        return true;
+      } catch (error: any) {
+        console.error('[auth] signIn callback error:', error.message, error.stack);
+        return false;
       }
-
-      return true;
     },
   },
   events: {
@@ -218,6 +223,7 @@ export const authOptions: NextAuthOptions = {
     // events.signIn fires AFTER the PrismaAdapter creates the user,
     // so user.id is always a valid DB record ID.
     async signIn({ user, account }) {
+      console.log('[auth] events.signIn fired:', { userId: user.id, email: user.email, provider: account?.provider });
       if (account?.provider !== 'google') return;
 
       // Store Google refresh token (encrypted)
