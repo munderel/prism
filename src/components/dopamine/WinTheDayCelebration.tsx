@@ -4,12 +4,12 @@ import { useEffect } from 'react';
 import { Trophy } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-interface Props {
+interface WinTheDayCelebrationProps {
   show: boolean;
   onComplete?: () => void;
 }
 
-export function WinTheDayCelebration({ show, onComplete }: Props) {
+export function WinTheDayCelebration({ show, onComplete }: WinTheDayCelebrationProps) {
   useEffect(() => {
     if (show) {
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#f59e0b', '#fbbf24', '#fcd34d', '#f97316', '#ffffff'] });

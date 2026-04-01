@@ -10,6 +10,16 @@ interface StreakCounterProps {
   atRisk?: boolean;
 }
 
+function getStreakStyle(atRisk: boolean, count: number): { container: string; flame: string } {
+  if (atRisk) {
+    return { container: 'border-orange-600/30 bg-orange-600/10', flame: 'text-orange-400' };
+  }
+  if (count > 0) {
+    return { container: 'border-yellow-600/30 bg-yellow-600/10', flame: 'text-yellow-400' };
+  }
+  return { container: 'border-[var(--border-color)] bg-[var(--surface)]', flame: 'text-[var(--text-muted)]' };
+}
+
 export function StreakCounter({ streakType = 'daily_completion', atRisk = false }: StreakCounterProps) {
   const { data: streaks } = useSWR('/api/streaks');
   const streak = useMemo(
@@ -18,16 +28,11 @@ export function StreakCounter({ streakType = 'daily_completion', atRisk = false 
   );
 
   const count = streak?.currentCount ?? 0;
+  const style = getStreakStyle(atRisk, count);
 
   return (
     <m.div
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
-        atRisk
-          ? 'border-orange-600/30 bg-orange-600/10'
-          : count > 0
-          ? 'border-yellow-600/30 bg-yellow-600/10'
-          : 'border-[var(--border-color)] bg-[var(--surface)]'
-      }`}
+      className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${style.container}`}
       animate={atRisk ? { scale: [1, 1.02, 1] } : {}}
       transition={atRisk ? { repeat: Infinity, duration: 1.5 } : {}}
     >
@@ -35,7 +40,7 @@ export function StreakCounter({ streakType = 'daily_completion', atRisk = false 
         animate={count > 0 ? { rotate: [-5, 5, -5] } : {}}
         transition={{ repeat: Infinity, duration: 2.5, repeatType: 'mirror' }}
       >
-        <Flame className={`h-5 w-5 ${atRisk ? 'text-orange-400' : count > 0 ? 'text-yellow-400' : 'text-[var(--text-muted)]'}`} />
+        <Flame className={`h-5 w-5 ${style.flame}`} />
       </m.div>
       <div>
         <m.span

@@ -100,6 +100,36 @@ function ListCaptureStep({ items, setItems, icon, placeholder, emptyText, prompt
   );
 }
 
+interface InlineTaskEditProps {
+  editTitle: string;
+  editDescription: string;
+  onTitleChange: (v: string) => void;
+  onDescriptionChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  size?: 'sm' | 'md';
+}
+
+function InlineTaskEdit({
+  editTitle, editDescription, onTitleChange, onDescriptionChange, onSave, onCancel, size = 'md',
+}: InlineTaskEditProps) {
+  const inputClass = size === 'sm'
+    ? 'w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none'
+    : 'w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none';
+  const btnPadding = size === 'sm' ? 'px-2 py-1' : 'px-3 py-1';
+
+  return (
+    <div className={size === 'sm' ? 'space-y-1' : 'space-y-2'}>
+      <input type="text" value={editTitle} onChange={(e) => onTitleChange(e.target.value)} placeholder="Task title" className={inputClass} />
+      <input type="text" value={editDescription} onChange={(e) => onDescriptionChange(e.target.value)} placeholder="Description (optional)" className={inputClass} />
+      <div className="flex gap-2">
+        <button onClick={onSave} className={`text-xs rounded bg-indigo-600 ${btnPadding} text-white hover:bg-indigo-500`}>Save</button>
+        <button onClick={onCancel} className={`text-xs rounded bg-[var(--surface)] ${btnPadding} text-[var(--text-secondary)] hover:bg-[var(--surface-raised)]`}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 interface PowerDownRitualProps {
   onComplete: () => void;
 }
@@ -139,8 +169,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   // Calendar modal state
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
 
-  // Inline calendar state (now using CalendarSplitView)
-  const [_userSettings, setUserSettings] = useState<{ workingHoursStart: string; workingHoursEnd: string } | null>(null);
   const [unscheduledTomorrowItems, setUnscheduledTomorrowItems] = useState<any[]>([]);
 
   // Reschedule step state
@@ -182,7 +210,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchTodayTasks();
     fetchTomorrowTasks();
     fetchPowerdownStreak();
-    fetchUserSettings();
     fetchUnscheduledTomorrow();
     fetchAimInstances();
     fetchWeeklyGoals();
@@ -220,8 +247,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   };
 
   const fetchTomorrowTasks = useCallback(async () => {
-    const tomorrow = sessionTomorrow;
-    const res = await fetch(`/api/tasks?date=${tomorrow}`);
+    const res = await fetch(`/api/tasks?date=${sessionTomorrow}`);
     if (res.ok) setTomorrowTasks(await res.json());
   }, [sessionTomorrow]);
 
@@ -237,21 +263,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       // Streak display is non-critical
     }
   };
-
-  const fetchUserSettings = useCallback(async () => {
-    try {
-      const res = await fetch('/api/settings?scope=user');
-      if (res.ok) {
-        const data = await res.json();
-        setUserSettings({
-          workingHoursStart: data.workingHoursStart ?? '09:00',
-          workingHoursEnd: data.workingHoursEnd ?? '21:00',
-        });
-      }
-    } catch {
-      // Non-critical — defaults will be used
-    }
-  }, []);
 
   const fetchUnscheduledTomorrow = useCallback(async () => {
     try {
@@ -458,22 +469,19 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         // Streak update is non-critical
       }
       // Auto-save captured ideas to /api/ideas
-      if (ideas && ideas.length > 0) {
-        for (const idea of ideas) {
-          if (idea.trim()) {
-            await fetch('/api/ideas', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                title: idea.trim(),
-                description: idea.trim(),
-                confidenceScore: 0,
-                easeScore: 0,
-                impactScore: 0,
-              }),
-            }).catch((err) => console.error('Failed to save idea:', err));
-          }
-        }
+      for (const idea of ideas) {
+        if (!idea.trim()) continue;
+        await fetch('/api/ideas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: idea.trim(),
+            description: idea.trim(),
+            confidenceScore: 0,
+            easeScore: 0,
+            impactScore: 0,
+          }),
+        }).catch((err) => console.error('Failed to save idea:', err));
       }
       setCompleted(true);
       return;
@@ -498,25 +506,14 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     }
   };
 
-  const toggleTaskCompletion = async (task: any) => {
+  const toggleTaskStatus = async (task: any, ...refetchFns: (() => void)[]) => {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
     await fetch(`/api/tasks/${task.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
     });
-    fetchTodayTasks();
-  };
-
-  const toggleWeeklyTaskCompletion = async (task: any) => {
-    const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
-    await fetch(`/api/tasks/${task.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    fetchWeeklyGoals();
-    fetchTodayTasks();
+    for (const refetch of refetchFns) refetch();
   };
 
   const rescheduleTask = async (taskId: string, date: string) => {
@@ -713,7 +710,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                   {todayTasks.map((t) => (
                     <button
                       key={t.id}
-                      onClick={() => toggleTaskCompletion(t)}
+                      onClick={() => toggleTaskStatus(t, fetchTodayTasks)}
                       className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
                     >
                       {t.status === 'DONE' ? (
@@ -796,40 +793,19 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                         {goal.tasks.map((t: any) => (
                           <div key={t.id} className="rounded-lg px-2 py-1 space-y-1">
                             {editingTask === t.id ? (
-                              <div className="space-y-1">
-                                <input
-                                  type="text"
-                                  value={editTitle}
-                                  onChange={(e) => setEditTitle(e.target.value)}
-                                  placeholder="Task title"
-                                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                                />
-                                <input
-                                  type="text"
-                                  value={editDescription}
-                                  onChange={(e) => setEditDescription(e.target.value)}
-                                  placeholder="Description (optional)"
-                                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                                />
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => saveTaskEdit(t.id)}
-                                    className="text-xs rounded bg-indigo-600 px-2 py-1 text-white hover:bg-indigo-500"
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingTask(null)}
-                                    className="text-xs rounded bg-[var(--surface)] px-2 py-1 text-[var(--text-secondary)] hover:bg-[var(--surface-raised)]"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
+                              <InlineTaskEdit
+                                editTitle={editTitle}
+                                editDescription={editDescription}
+                                onTitleChange={setEditTitle}
+                                onDescriptionChange={setEditDescription}
+                                onSave={() => saveTaskEdit(t.id)}
+                                onCancel={() => setEditingTask(null)}
+                                size="sm"
+                              />
                             ) : (
                               <div className="flex items-center gap-2 text-sm">
                                 <button
-                                  onClick={() => toggleWeeklyTaskCompletion(t)}
+                                  onClick={() => toggleTaskStatus(t, fetchWeeklyGoals, fetchTodayTasks)}
                                   className="flex-shrink-0 hover:scale-110 transition-transform"
                                 >
                                   {t.status === 'DONE' ? (
@@ -895,36 +871,14 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     {incompleteTasks.map((t) => (
                       <div key={t.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-2 space-y-2">
                         {editingTask === t.id ? (
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              value={editTitle}
-                              onChange={(e) => setEditTitle(e.target.value)}
-                              placeholder="Task title"
-                              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                            />
-                            <input
-                              type="text"
-                              value={editDescription}
-                              onChange={(e) => setEditDescription(e.target.value)}
-                              placeholder="Description (optional)"
-                              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                            />
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => saveTaskEdit(t.id)}
-                                className="text-xs rounded bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => setEditingTask(null)}
-                                className="text-xs rounded bg-[var(--surface)] px-3 py-1 text-[var(--text-secondary)] hover:bg-[var(--surface-raised)]"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
+                          <InlineTaskEdit
+                            editTitle={editTitle}
+                            editDescription={editDescription}
+                            onTitleChange={setEditTitle}
+                            onDescriptionChange={setEditDescription}
+                            onSave={() => saveTaskEdit(t.id)}
+                            onCancel={() => setEditingTask(null)}
+                          />
                         ) : (
                           <>
                             <div className="flex items-center justify-between">

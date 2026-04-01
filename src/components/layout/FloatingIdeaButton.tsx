@@ -8,6 +8,7 @@ export function FloatingIdeaButton() {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
 
@@ -26,11 +27,6 @@ export function FloatingIdeaButton() {
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
-
-  // Hide on ideas page (already has creation UI)
-  const hidden = pathname === '/ideas' || pathname === '/ideas/new';
-
-  const [error, setError] = useState('');
 
   const handleSubmit = async () => {
     if (!title.trim()) return;
@@ -52,7 +48,7 @@ export function FloatingIdeaButton() {
     }
   };
 
-  if (hidden) return null;
+  if (pathname === '/ideas' || pathname === '/ideas/new') return null;
 
   return (
     <>

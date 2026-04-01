@@ -29,7 +29,6 @@ export function ProgressRing({ progress, size = 48, strokeWidth = 4 }: ProgressR
           <stop offset="100%" stopColor="#06b6d4" />
         </linearGradient>
       </defs>
-      {/* Background circle */}
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -38,7 +37,6 @@ export function ProgressRing({ progress, size = 48, strokeWidth = 4 }: ProgressR
         stroke="rgba(255, 255, 255, 0.06)"
         strokeWidth={strokeWidth}
       />
-      {/* Progress arc */}
       <m.circle
         cx={size / 2}
         cy={size / 2}
@@ -52,7 +50,6 @@ export function ProgressRing({ progress, size = 48, strokeWidth = 4 }: ProgressR
         animate={{ strokeDashoffset: offset }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
       />
-      {/* Percentage text */}
       <text
         x={size / 2}
         y={size / 2}

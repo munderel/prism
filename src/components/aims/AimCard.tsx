@@ -35,15 +35,9 @@ const phaseConfig: Record<string, { label: string; bg: string; text: string }> =
 
 function formatTime(isoOrTime?: string): string | null {
   if (!isoOrTime) return null;
-  try {
-    const date = new Date(isoOrTime);
-    if (!isNaN(date.getTime())) {
-      return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    }
-    return isoOrTime;
-  } catch {
-    return isoOrTime;
-  }
+  const date = new Date(isoOrTime);
+  if (isNaN(date.getTime())) return isoOrTime;
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 export function AimCard({ aim, todayInstance, onComplete, onExpand }: AimCardProps) {

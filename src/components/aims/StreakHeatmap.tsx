@@ -48,35 +48,46 @@ export default function StreakHeatmap({ aimCategoryId }: StreakHeatmapProps) {
     lastWeek.push(null);
   }
 
-  const getCellColor = (entry: DayEntry | null): string => {
-    if (!entry) return 'bg-transparent';
-    if (!entry.scheduled) return 'bg-[var(--surface-raised)] opacity-30';
-    if (entry.completed) return 'bg-emerald-500';
-    // Scheduled but not completed -- only show as missed if the date is in the past
+  function isDateInPast(dateStr: string): boolean {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const entryDate = new Date(entry.date + 'T00:00:00');
-    if (entryDate < today) return 'bg-red-400/60';
-    // Future scheduled: neutral
-    return 'bg-[var(--surface-raised)] ring-1 ring-[var(--border-color)]';
+    return new Date(dateStr + 'T00:00:00') < today;
+  }
+
+  function getEntryStatus(entry: DayEntry): 'completed' | 'missed' | 'scheduled' | 'off' {
+    if (!entry.scheduled) return 'off';
+    if (entry.completed) return 'completed';
+    return isDateInPast(entry.date) ? 'missed' : 'scheduled';
+  }
+
+  const CELL_COLORS: Record<ReturnType<typeof getEntryStatus>, string> = {
+    completed: 'bg-emerald-500',
+    missed: 'bg-red-400/60',
+    scheduled: 'bg-[var(--surface-raised)] ring-1 ring-[var(--border-color)]',
+    off: 'bg-[var(--surface-raised)] opacity-30',
   };
 
-  const getTooltipText = (entry: DayEntry | null): string => {
+  function getCellColor(entry: DayEntry | null): string {
+    if (!entry) return 'bg-transparent';
+    return CELL_COLORS[getEntryStatus(entry)];
+  }
+
+  const STATUS_LABELS: Record<ReturnType<typeof getEntryStatus>, string> = {
+    completed: 'Completed',
+    missed: 'Missed',
+    scheduled: 'Scheduled',
+    off: 'Not scheduled',
+  };
+
+  function getTooltipText(entry: DayEntry | null): string {
     if (!entry) return '';
-    const date = new Date(entry.date + 'T00:00:00');
-    const formatted = date.toLocaleDateString('en-US', {
+    const formatted = new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
     });
-    if (!entry.scheduled) return `${formatted} - Not scheduled`;
-    if (entry.completed) return `${formatted} - Completed`;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const entryDate = new Date(entry.date + 'T00:00:00');
-    if (entryDate < today) return `${formatted} - Missed`;
-    return `${formatted} - Scheduled`;
-  };
+    return `${formatted} - ${STATUS_LABELS[getEntryStatus(entry)]}`;
+  }
 
   const handleMouseEnter = (
     e: React.MouseEvent<HTMLDivElement>,

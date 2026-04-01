@@ -47,12 +47,16 @@ function StatCard({ label, value, colorClass, icon, index }: StatCardProps) {
 export function KpiDashboardSummary({ processes }: KpiDashboardSummaryProps) {
   const allKpis = processes.flatMap((p) => p.kpis);
   const total = allKpis.length;
-  const onTrack = allKpis.filter((k) => (k.progressPct ?? 0) >= 70).length;
-  const atRisk = allKpis.filter((k) => {
+
+  let onTrack = 0;
+  let atRisk = 0;
+  let behind = 0;
+  for (const k of allKpis) {
     const pct = k.progressPct ?? 0;
-    return pct >= 40 && pct < 70;
-  }).length;
-  const behind = allKpis.filter((k) => (k.progressPct ?? 0) < 40).length;
+    if (pct >= 70) onTrack++;
+    else if (pct >= 40) atRisk++;
+    else behind++;
+  }
 
   const cards = [
     {

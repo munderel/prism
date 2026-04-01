@@ -4,7 +4,24 @@ import { useMemo } from 'react';
 import useSWR from 'swr';
 import dynamic from 'next/dynamic';
 
-// ---- Dynamic Recharts import (avoids SSR issues, same pattern as reports page) ----
+interface ChartPoint {
+  date: string;
+  completed: number;
+  cumulative: number;
+  expectedMin: number;
+  expectedMax: number;
+}
+
+interface HistoryEntry {
+  date: string;
+  completed: boolean;
+  status: string;
+}
+
+interface Props {
+  aimCategoryId: string;
+  days?: number;
+}
 
 const AimChart = dynamic(
   () =>
@@ -117,30 +134,6 @@ const AimChart = dynamic(
     }),
   { ssr: false, loading: () => <div className="h-[220px] flex items-center justify-center text-[var(--text-muted)] text-sm">Loading chart...</div> },
 );
-
-// ---- Types ----
-
-interface ChartPoint {
-  date: string;
-  completed: number;
-  cumulative: number;
-  expectedMin: number;
-  expectedMax: number;
-}
-
-interface HistoryEntry {
-  date: string;
-  completed: boolean;
-  status: string;
-}
-
-interface Props {
-  aimCategoryId: string;
-  userId?: string;
-  days?: number;
-}
-
-// ---- Component ----
 
 export function AimProgressChart({ aimCategoryId, days = 30 }: Props) {
   const { data, isLoading } = useSWR<{

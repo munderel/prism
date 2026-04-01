@@ -30,6 +30,12 @@ function formatTimeRange(start?: string, end?: string): string | null {
   return `${fmt(start)}–${fmt(end)}`;
 }
 
+function TimeRangeLabel({ start, end }: { start?: string; end?: string }): React.ReactNode {
+  const text = formatTimeRange(start, end);
+  if (!text) return null;
+  return <span className="text-xs text-[var(--text-muted)] flex-shrink-0">{text}</span>;
+}
+
 export function WinTheDayCard({ tasks }: WinTheDayCardProps) {
   if (!tasks || tasks.length === 0) {
     return (
@@ -47,7 +53,6 @@ export function WinTheDayCard({ tasks }: WinTheDayCardProps) {
 
   return (
     <div className="mb-6 space-y-2">
-      {/* Primary: #1 Most Important */}
       <div className="glass-panel border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)] p-4">
         <div className="flex items-center gap-2 mb-2">
           <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
@@ -69,17 +74,13 @@ export function WinTheDayCard({ tasks }: WinTheDayCardProps) {
           {topTask.clearGoal && (
             <span className="text-xs text-[var(--text-muted)] truncate max-w-[200px]">{topTask.clearGoal}</span>
           )}
-          {(() => {
-            const tr = formatTimeRange(topTask.timeBlockStart, topTask.timeBlockEnd);
-            return tr ? <span className="text-xs text-[var(--text-muted)] flex-shrink-0">{tr}</span> : null;
-          })()}
+          <TimeRangeLabel start={topTask.timeBlockStart} end={topTask.timeBlockEnd} />
         </div>
         <p className="text-xs text-[var(--text-muted)] mt-1.5">
           This is your highest-leverage task. Everything else is bonus.
         </p>
       </div>
 
-      {/* Secondary: #2 and #3 */}
       {tasks.slice(1).map((task, i) => {
         const rank = i + 2;
         const isDone = task.status === 'DONE';
@@ -94,10 +95,7 @@ export function WinTheDayCard({ tasks }: WinTheDayCardProps) {
             {task.clearGoal && (
               <span className="text-xs text-[var(--text-muted)] truncate max-w-[180px]">{task.clearGoal}</span>
             )}
-            {(() => {
-              const tr = formatTimeRange(task.timeBlockStart, task.timeBlockEnd);
-              return tr ? <span className="text-xs text-[var(--text-muted)] flex-shrink-0">{tr}</span> : null;
-            })()}
+            <TimeRangeLabel start={task.timeBlockStart} end={task.timeBlockEnd} />
             {isDone && <span className="text-xs text-green-400">Done</span>}
           </div>
         );
