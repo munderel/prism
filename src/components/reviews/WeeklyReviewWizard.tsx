@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -72,7 +72,6 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
-  const _scope = isTeamReview ? 'company' : 'personal';
   // URL step param is 1-based for user-friendliness; internal state is 0-based
   const urlStep = searchParams.get('step');
   const initialStep = urlStep ? Math.max(0, Math.min(parseInt(urlStep, 10) - 1, TOTAL_STEPS - 1)) : 0;
@@ -93,8 +92,6 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const [taskBlockAssignments, setTaskBlockAssignments] = useState<Record<string, string>>({});
   const [finalNotes, setFinalNotes] = useState('');
 
-  // Answers map for hydration
-  const [_answers, setAnswers] = useState<Record<string, ReviewAnswerData>>({});
 
   // Upcoming week boundaries (Mon-Sun)
   const upcomingWeekStart = useMemo(() => {
@@ -229,47 +226,42 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       const answersRes = await fetch(`/api/reviews/${reviewId}/answers`);
       if (answersRes.ok) {
         const answersData: ReviewAnswerData[] = await answersRes.json();
-        const answersMap: Record<string, ReviewAnswerData> = {};
 
         for (const ans of answersData) {
-          answersMap[ans.stepKey] = ans;
-
           // Hydrate step state from saved answers
           switch (ans.stepKey) {
             case 'successes_difficulties':
-              setSuccesses((ans.answerData as any)?.successes ?? []);
-              setDifficulties((ans.answerData as any)?.difficulties ?? []);
+              setSuccesses(ans.answerData?.successes ?? []);
+              setDifficulties(ans.answerData?.difficulties ?? []);
               break;
             case 'difficulties':
               // Legacy support
-              setDifficulties(typeof (ans.answerData as any)?.text === 'string'
-                ? [(ans.answerData as any).text]
-                : (ans.answerData as any)?.difficulties ?? []);
+              setDifficulties(typeof ans.answerData?.text === 'string'
+                ? [ans.answerData.text]
+                : ans.answerData?.difficulties ?? []);
               break;
             // Support both legacy 'top3' key and new 'mit' key
             case 'top3':
             case 'mit':
-              setMitTaskIds((ans.answerData as any)?.taskIds ?? []);
+              setMitTaskIds(ans.answerData?.taskIds ?? []);
               break;
             case 'work_blocks':
-              setWorkBlocks((ans.answerData as any)?.blocks ?? []);
+              setWorkBlocks(ans.answerData?.blocks ?? []);
               break;
             case 'maintenance':
-              setMaintenanceDecisions((ans.answerData as any)?.decisions ?? {});
+              setMaintenanceDecisions(ans.answerData?.decisions ?? {});
               break;
             case 'kpi_progress':
-              setKpiNotes((ans.answerData as any)?.notes ?? '');
+              setKpiNotes(ans.answerData?.notes ?? '');
               break;
             case 'schedule_tasks':
-              setTaskBlockAssignments((ans.answerData as any)?.assignments ?? {});
+              setTaskBlockAssignments(ans.answerData?.assignments ?? {});
               break;
             case 'notes_completion':
-              setFinalNotes((ans.answerData as any)?.notes ?? '');
+              setFinalNotes(ans.answerData?.notes ?? '');
               break;
           }
         }
-
-        setAnswers(answersMap);
 
         // Resume from first unanswered step (unless URL step was specified)
         if (!urlStep) {
@@ -307,6 +299,24 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       toast.error('Failed to create work block.');
     }
   }, [toast]);
+
+  const handleScheduleItem = useCallback(async (itemId: string, itemType: string, start: Date, end: Date) => {
+    const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
+    await fetch(endpoint, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
+    });
+  }, []);
+
+  const handleUnscheduleItem = useCallback(async (itemId: string, itemType: string) => {
+    const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
+    await fetch(endpoint, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
+    });
+  }, []);
 
   const persistAnswer = useCallback(async (stepKey: string, answerType: string, answerData: any) => {
     try {
@@ -562,127 +572,26 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 isTeamReview={isTeamReview}
               />
             )}
-            {step.key === 'work_blocks' && (
-              isTeamReview ? (
-                <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
-                  <p className="text-sm text-[var(--text-muted)]">Calendar scheduling is done individually.</p>
-                </div>
-              ) : (
-              <>
-                <div className="text-center py-4">
-                  <p className="text-sm text-[var(--text-secondary)] mb-4">
-                    Create Deep Work, Normal Work, and AIM blocks on your weekly calendar.
-                  </p>
-                  <button
-                    onClick={() => setCalendarModalOpen(true)}
-                    className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-                  >
-                    Open Calendar
-                  </button>
-                </div>
-                {calendarModalOpen && (
-                  <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-[72px] px-2 pb-2">
-                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
-                      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
-                        <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
-                        <button
-                          onClick={() => setCalendarModalOpen(false)}
-                          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-                        >
-                          Done
-                        </button>
-                      </div>
-                      <div className="flex-1 min-h-0 overflow-hidden p-2">
-                        <CalendarSplitView
-                          mode="work_blocks"
-                          viewMode="week"
-                          dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${upcomingWeekEndStr}T23:59:59` }}
-                          unscheduledItems={unscheduledForCalendar}
-                          aimBlockDuration={aimBlockDuration}
-                          onCreateWorkBlock={handleCreateWorkBlock}
-                          onSchedule={async (itemId, itemType, start, end) => {
-                            const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
-                            await fetch(endpoint, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
-                            });
-                          }}
-                          onUnschedule={async (itemId, itemType) => {
-                            const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
-                            await fetch(endpoint, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
-                            });
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-              )
-            )}
-            {step.key === 'schedule_tasks' && (
-              isTeamReview ? (
-                <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
-                  <p className="text-sm text-[var(--text-muted)]">Calendar scheduling is done individually.</p>
-                </div>
-              ) : (
-              <>
-                <div className="text-center py-4">
-                  <p className="text-sm text-[var(--text-secondary)] mb-4">
-                    Drag your tasks and AIMs into the work blocks you created.
-                  </p>
-                  <button
-                    onClick={() => setCalendarModalOpen(true)}
-                    className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-                  >
-                    Open Calendar
-                  </button>
-                </div>
-                {calendarModalOpen && (
-                  <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-[72px] px-2 pb-2">
-                    <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
-                      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
-                        <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
-                        <button
-                          onClick={() => setCalendarModalOpen(false)}
-                          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-                        >
-                          Done
-                        </button>
-                      </div>
-                      <div className="flex-1 min-h-0 overflow-hidden p-2">
-                        <CalendarSplitView
-                          mode="schedule_tasks"
-                          viewMode="week"
-                          dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${upcomingWeekEndStr}T23:59:59` }}
-                          unscheduledItems={unscheduledForCalendar}
-                          onSchedule={async (itemId, itemType, start, end) => {
-                            const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
-                            await fetch(endpoint, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
-                            });
-                          }}
-                          onUnschedule={async (itemId, itemType) => {
-                            const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
-                            await fetch(endpoint, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
-                            });
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-              )
+            {(step.key === 'work_blocks' || step.key === 'schedule_tasks') && (
+              <CalendarStepContent
+                isTeamReview={isTeamReview}
+                mode={step.key === 'work_blocks' ? 'work_blocks' : 'schedule_tasks'}
+                description={
+                  step.key === 'work_blocks'
+                    ? 'Create Deep Work, Normal Work, and AIM blocks on your weekly calendar.'
+                    : 'Drag your tasks and AIMs into the work blocks you created.'
+                }
+                stepTitle={step.title}
+                calendarModalOpen={calendarModalOpen}
+                onOpenModal={() => setCalendarModalOpen(true)}
+                onCloseModal={() => setCalendarModalOpen(false)}
+                dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${upcomingWeekEndStr}T23:59:59` }}
+                unscheduledItems={unscheduledForCalendar}
+                aimBlockDuration={step.key === 'work_blocks' ? aimBlockDuration : undefined}
+                onCreateWorkBlock={step.key === 'work_blocks' ? handleCreateWorkBlock : undefined}
+                onSchedule={handleScheduleItem}
+                onUnschedule={handleUnscheduleItem}
+              />
             )}
             {step.key === 'maintenance' && (
               <StepMaintenanceReview
@@ -724,5 +633,88 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         </m.div>
       </AnimatePresence>
     </div>
+  );
+}
+
+/* ===== Extracted calendar step to eliminate duplication between work_blocks and schedule_tasks ===== */
+
+interface CalendarStepContentProps {
+  isTeamReview?: boolean;
+  mode: 'work_blocks' | 'schedule_tasks';
+  description: string;
+  stepTitle: string;
+  calendarModalOpen: boolean;
+  onOpenModal: () => void;
+  onCloseModal: () => void;
+  dateRange: { start: string; end: string };
+  unscheduledItems: any[];
+  aimBlockDuration?: number;
+  onCreateWorkBlock?: (start: Date, end: Date) => Promise<void>;
+  onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => Promise<void>;
+  onUnschedule: (itemId: string, itemType: string) => Promise<void>;
+}
+
+function CalendarStepContent({
+  isTeamReview,
+  mode,
+  description,
+  stepTitle,
+  calendarModalOpen,
+  onOpenModal,
+  onCloseModal,
+  dateRange,
+  unscheduledItems,
+  aimBlockDuration,
+  onCreateWorkBlock,
+  onSchedule,
+  onUnschedule,
+}: CalendarStepContentProps): ReactNode {
+  if (isTeamReview) {
+    return (
+      <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
+        <p className="text-sm text-[var(--text-muted)]">Calendar scheduling is done individually.</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="text-center py-4">
+        <p className="text-sm text-[var(--text-secondary)] mb-4">{description}</p>
+        <button
+          onClick={onOpenModal}
+          className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+        >
+          Open Calendar
+        </button>
+      </div>
+      {calendarModalOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-[72px] px-2 pb-2">
+          <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">{stepTitle}</h3>
+              <button
+                onClick={onCloseModal}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+              >
+                Done
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden p-2">
+              <CalendarSplitView
+                mode={mode}
+                viewMode="week"
+                dateRange={dateRange}
+                unscheduledItems={unscheduledItems}
+                aimBlockDuration={aimBlockDuration}
+                onCreateWorkBlock={onCreateWorkBlock}
+                onSchedule={onSchedule}
+                onUnschedule={onUnschedule}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

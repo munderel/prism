@@ -37,6 +37,108 @@ interface StepWeeklyGoalsProps {
   isTeamReview?: boolean;
 }
 
+function getMonday(date: Date): Date {
+  const d = new Date(date);
+  const dayOfWeek = d.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  d.setDate(d.getDate() + mondayOffset);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function getWeekBoundaries(now: Date) {
+  const thisMonday = getMonday(now);
+
+  const lastMonday = new Date(thisMonday);
+  lastMonday.setDate(thisMonday.getDate() - 7);
+
+  const lastSunday = new Date(thisMonday);
+  lastSunday.setDate(thisMonday.getDate() - 1);
+  lastSunday.setHours(23, 59, 59, 999);
+
+  const upcomingWeekEnd = new Date(thisMonday);
+  upcomingWeekEnd.setDate(thisMonday.getDate() + 6);
+  upcomingWeekEnd.setHours(23, 59, 59, 999);
+
+  return { thisMonday, lastMonday, lastSunday, upcomingWeekStart: thisMonday, upcomingWeekEnd };
+}
+
+function categorizeGoal(
+  g: any,
+  bounds: ReturnType<typeof getWeekBoundaries>
+): 'last' | 'upcoming' | null {
+  if (!g.startDate || !g.endDate) return null;
+  const gs = new Date(g.startDate);
+  const ge = new Date(g.endDate);
+  const isLastWeek = gs <= bounds.lastSunday && ge >= bounds.lastMonday;
+  const isUpcomingWeek = gs <= bounds.upcomingWeekEnd && ge >= bounds.upcomingWeekStart;
+  if (isUpcomingWeek) return 'upcoming';
+  if (isLastWeek) return 'last';
+  return null;
+}
+
+async function fetchGoalDetails(goalId: string): Promise<{ kpis: Kpi[]; parentTitle: string; parentId: string }> {
+  let kpis: Kpi[] = [];
+  let parentTitle = '';
+  let parentId = '';
+
+  try {
+    const kpisRes = await fetch(`/api/goals/${goalId}/kpis`);
+    if (kpisRes.ok) { const kpiData = await kpisRes.json(); kpis = kpiData.kpis ?? kpiData; }
+  } catch { /* ignore */ }
+
+  try {
+    const detailRes = await fetch(`/api/goals/${goalId}?includeParents=true`);
+    if (detailRes.ok) {
+      const detail = await detailRes.json();
+      if (detail.parent) { parentTitle = detail.parent.title; parentId = detail.parent.id; }
+    }
+  } catch { /* ignore */ }
+
+  return { kpis, parentTitle, parentId };
+}
+
+interface GoalSet {
+  goals: any[];
+  isPersonalStack: boolean;
+  stackId: string;
+}
+
+async function fetchGoalSets(isTeamReview?: boolean): Promise<GoalSet[] | null> {
+  if (isTeamReview) {
+    const res = await fetch('/api/goals?isCompany=true&level=WEEKLY');
+    if (!res.ok) return null;
+    const raw = await res.json();
+    return [{ goals: Array.isArray(raw) ? raw : [], isPersonalStack: false, stackId: '' }];
+  }
+
+  const stacksRes = await fetch('/api/stacks');
+  if (!stacksRes.ok) return null;
+  const stacks = await stacksRes.json();
+
+  const results: GoalSet[] = [];
+  for (const stack of stacks) {
+    const res = await fetch(`/api/goals?stackId=${stack.id}`);
+    if (!res.ok) continue;
+    const raw = await res.json();
+    results.push({
+      goals: Array.isArray(raw) ? raw : [],
+      isPersonalStack: !stack.isCompany,
+      stackId: stack.id,
+    });
+  }
+  return results;
+}
+
+function getStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'COMPLETED': return 'bg-green-500/20 text-green-400';
+    case 'IN_PROGRESS': return 'bg-blue-500/20 text-blue-400';
+    case 'ABANDONED': return 'bg-red-500/20 text-red-400';
+    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
+  }
+}
+
 export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamReview }: StepWeeklyGoalsProps) {
   const [goals, setGoals] = useState<WeeklyGoal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,102 +174,20 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
   const fetchWeeklyGoals = async () => {
     try {
       const now = new Date();
-
-      if (isTeamReview) {
-        // Fetch company weekly goals directly
-        const goalsRes = await fetch('/api/goals?isCompany=true&level=WEEKLY');
-        if (!goalsRes.ok) { setLoading(false); return; }
-        const goalsRaw = await goalsRes.json();
-        const allGoals = Array.isArray(goalsRaw) ? goalsRaw : [];
-
-        // Week boundaries: show last week + upcoming week
-        const dayOfWeek = now.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        const thisMonday = new Date(now);
-        thisMonday.setDate(now.getDate() + mondayOffset);
-        thisMonday.setHours(0, 0, 0, 0);
-
-        const lastMonday = new Date(thisMonday);
-        lastMonday.setDate(thisMonday.getDate() - 7);
-        const lastSunday = new Date(thisMonday);
-        lastSunday.setDate(thisMonday.getDate() - 1);
-        lastSunday.setHours(23, 59, 59, 999);
-
-        const upcomingWeekStart = thisMonday;
-        const upcomingWeekEnd = new Date(thisMonday);
-        upcomingWeekEnd.setDate(thisMonday.getDate() + 6);
-        upcomingWeekEnd.setHours(23, 59, 59, 999);
-
-        const result: WeeklyGoal[] = [];
-        for (const g of allGoals) {
-          if (!g.startDate || !g.endDate) continue;
-          const gs = new Date(g.startDate);
-          const ge = new Date(g.endDate);
-          const isLastWeek = gs <= lastSunday && ge >= lastMonday;
-          const isUpcomingWeek = gs <= upcomingWeekEnd && ge >= upcomingWeekStart;
-          if (!isLastWeek && !isUpcomingWeek) continue;
-
-          const weekCategory: 'last' | 'upcoming' = isUpcomingWeek ? 'upcoming' : 'last';
-
-          let kpis: Kpi[] = [];
-          try {
-            const kpisRes = await fetch(`/api/goals/${g.id}/kpis`);
-            if (kpisRes.ok) { const kpiData = await kpisRes.json(); kpis = kpiData.kpis ?? kpiData; }
-          } catch { /* ignore */ }
-
-          let parentTitle = '';
-          let parentId = '';
-          try {
-            const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
-            if (detailRes.ok) {
-              const detail = await detailRes.json();
-              if (detail.parent) { parentTitle = detail.parent.title; parentId = detail.parent.id; }
-            }
-          } catch { /* ignore */ }
-
-          result.push({ id: g.id, title: g.title, description: g.description ?? null, status: g.status, level: g.level, startDate: g.startDate, endDate: g.endDate, parentTitle, parentId, kpis, weekCategory });
-        }
-        setGoals(result);
-        setLoading(false);
-        return;
-      }
-
-      const stacksRes = await fetch('/api/stacks');
-      if (!stacksRes.ok) { setLoading(false); return; }
-      const stacks = await stacksRes.json();
-      // Week boundaries: show last week + upcoming week
-      const dayOfWeek = now.getDay();
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const thisMonday = new Date(now);
-      thisMonday.setDate(now.getDate() + mondayOffset);
-      thisMonday.setHours(0, 0, 0, 0);
-
-      const lastMonday = new Date(thisMonday);
-      lastMonday.setDate(thisMonday.getDate() - 7);
-      const lastSunday = new Date(thisMonday);
-      lastSunday.setDate(thisMonday.getDate() - 1);
-      lastSunday.setHours(23, 59, 59, 999);
-
-      const upcomingWeekStart = thisMonday;
-      const upcomingWeekEnd = new Date(thisMonday);
-      upcomingWeekEnd.setDate(thisMonday.getDate() + 6);
-      upcomingWeekEnd.setHours(23, 59, 59, 999);
-
+      const bounds = getWeekBoundaries(now);
       const result: WeeklyGoal[] = [];
 
-      for (const stack of stacks) {
-        if (!stackId && !stack.isCompany) {
-          setStackId(stack.id);
-        }
+      // Gather all goals from either company or personal stacks
+      const allGoalSets = await fetchGoalSets(isTeamReview);
+      if (!allGoalSets) { setLoading(false); return; }
 
-        const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
-        if (!goalsRes.ok) continue;
-        const allGoalsRaw = await goalsRes.json();
-        const allGoals = Array.isArray(allGoalsRaw) ? allGoalsRaw : [];
+      for (const { goals: allGoals, isPersonalStack, stackId: sId } of allGoalSets) {
+        // Track personal stack ID for goal creation
+        if (isPersonalStack && !stackId) setStackId(sId);
 
         for (const g of allGoals) {
           // Find monthly goals for the current month to use as parent for new weekly goals
-          if (g.level === 'MONTHLY' && !monthlyParentId && !stack.isCompany) {
+          if (!isTeamReview && g.level === 'MONTHLY' && !monthlyParentId && isPersonalStack) {
             const gs = g.startDate ? new Date(g.startDate) : null;
             const ge = g.endDate ? new Date(g.endDate) : null;
             if (gs && ge && gs <= now && ge >= now) {
@@ -176,43 +196,10 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
           }
 
           if (g.level !== 'WEEKLY') continue;
-          if (!g.startDate || !g.endDate) continue;
+          const weekCategory = categorizeGoal(g, bounds);
+          if (!weekCategory) continue;
 
-          const gs = new Date(g.startDate);
-          const ge = new Date(g.endDate);
-
-          // Show last week and upcoming week goals
-          const isLastWeek = gs <= lastSunday && ge >= lastMonday;
-          const isUpcomingWeek = gs <= upcomingWeekEnd && ge >= upcomingWeekStart;
-          if (!isLastWeek && !isUpcomingWeek) continue;
-
-          const weekCategory: 'last' | 'upcoming' = isUpcomingWeek ? 'upcoming' : 'last';
-
-          // Fetch KPIs
-          let kpis: Kpi[] = [];
-          try {
-            const kpisRes = await fetch(`/api/goals/${g.id}/kpis`);
-            if (kpisRes.ok) {
-              const kpiData = await kpisRes.json();
-              kpis = kpiData.kpis ?? kpiData;
-            }
-          } catch {
-            // ignore
-          }
-
-          // Get parent title and id
-          let parentTitle = '';
-          let parentId = '';
-          try {
-            const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
-            if (detailRes.ok) {
-              const detail = await detailRes.json();
-              if (detail.parent) { parentTitle = detail.parent.title; parentId = detail.parent.id; }
-            }
-          } catch {
-            // ignore
-          }
-
+          const details = await fetchGoalDetails(g.id);
           result.push({
             id: g.id,
             title: g.title,
@@ -221,9 +208,8 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
             level: g.level,
             startDate: g.startDate,
             endDate: g.endDate,
-            parentTitle,
-            parentId,
-            kpis,
+            ...details,
+            kpis: details.kpis,
             weekCategory,
           });
         }
@@ -303,12 +289,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       if (monthlyParentId) body.parentId = monthlyParentId;
 
       // Set dates for current week
-      const now = new Date();
-      const weekStart = new Date(now);
-      const dayOfWeek = weekStart.getDay();
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      weekStart.setDate(weekStart.getDate() + mondayOffset);
-      weekStart.setHours(0, 0, 0, 0);
+      const weekStart = getMonday(new Date());
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
       weekEnd.setHours(23, 59, 59, 999);
@@ -371,12 +352,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
         nextWeekStart.setHours(0, 0, 0, 0);
       } else {
         // No existing goals -- use the current week's Monday
-        const now = new Date();
-        nextWeekStart = new Date(now);
-        const dayOfWeek = nextWeekStart.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        nextWeekStart.setDate(nextWeekStart.getDate() + mondayOffset);
-        nextWeekStart.setHours(0, 0, 0, 0);
+        nextWeekStart = getMonday(new Date());
       }
 
       const nextWeekEnd = new Date(nextWeekStart);
@@ -566,12 +542,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
                 <button
                   onClick={() => setEditingStatusGoalId(goal.id)}
                   title="Click to change status"
-                  className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity cursor-pointer ${
-                    goal.status === 'COMPLETED'   ? 'bg-green-500/20 text-green-400' :
-                    goal.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
-                    goal.status === 'ABANDONED'   ? 'bg-red-500/20 text-red-400' :
-                    'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-                  }`}
+                  className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity cursor-pointer ${getStatusBadgeClass(goal.status)}`}
                 >
                   {goal.status.replace(/_/g, ' ')}
                   <ChevronDown className="h-3 w-3 opacity-50" />
@@ -691,6 +662,23 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
     );
   };
 
+  const renderGoalSection = (
+    sectionGoals: WeeklyGoal[],
+    title: string,
+    titleColor: string,
+    renderCard: (goal: WeeklyGoal) => JSX.Element
+  ) => {
+    if (sectionGoals.length === 0) return null;
+    return (
+      <div className="space-y-3">
+        <h4 className={`text-xs font-bold ${titleColor} uppercase tracking-wider`}>
+          {title}
+        </h4>
+        {sectionGoals.map((goal) => renderCard(goal))}
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="text-[var(--text-muted)] text-sm py-4">Loading weekly goals...</div>;
   }
@@ -719,25 +707,18 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       {/* Existing goals — split by week */}
       {goals.length > 0 ? (
         <div className="space-y-5">
-          {/* Upcoming Week Section */}
-          {goals.filter((g) => g.weekCategory === 'upcoming').length > 0 && (
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
-                Upcoming Week&apos;s Goals
-              </h4>
-              {goals.filter((g) => g.weekCategory === 'upcoming').map((goal) => renderGoalCard(goal))}
-            </div>
+          {renderGoalSection(
+            goals.filter((g) => g.weekCategory === 'upcoming'),
+            "Upcoming Week's Goals",
+            'text-indigo-400',
+            renderGoalCard
           )}
-          {/* Last Week Section */}
-          {goals.filter((g) => g.weekCategory === 'last').length > 0 && (
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">
-                Last Week&apos;s Goals
-              </h4>
-              {goals.filter((g) => g.weekCategory === 'last').map((goal) => renderGoalCard(goal))}
-            </div>
+          {renderGoalSection(
+            goals.filter((g) => g.weekCategory === 'last'),
+            "Last Week's Goals",
+            'text-[var(--text-muted)]',
+            renderGoalCard
           )}
-          {/* Goals without category (fallback) */}
           {goals.filter((g) => !g.weekCategory).map((goal) => renderGoalCard(goal))}
         </div>
       ) : (

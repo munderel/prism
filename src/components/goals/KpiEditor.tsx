@@ -66,26 +66,16 @@ export function KpiEditor({
         body.linkedKpiId = linkedMonthlyKpiId;
       }
 
-      if (isEditing) {
-        const res = await fetch(`/api/kpis/${kpi.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || 'Failed to update KPI');
-        }
-      } else {
-        const res = await fetch(`/api/goals/${goalId}/kpis`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || 'Failed to create KPI');
-        }
+      const url = isEditing ? `/api/kpis/${kpi.id}` : `/api/goals/${goalId}/kpis`;
+      const method = isEditing ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || `Failed to ${isEditing ? 'update' : 'create'} KPI`);
       }
 
       onSave();

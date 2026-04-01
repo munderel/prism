@@ -34,6 +34,97 @@ interface StepCurrentGoalsProps {
 }
 
 /**
+ * Get Monday (start of week) for a given date.
+ */
+function getMonday(date: Date): Date {
+  const d = new Date(date);
+  const dayOfWeek = d.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  d.setDate(d.getDate() + mondayOffset);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Fetch all goals from either company endpoint or personal stacks.
+ * Returns null if the initial fetch fails.
+ */
+async function fetchAllGoals(isTeamReview?: boolean): Promise<Goal[] | null> {
+  if (isTeamReview) {
+    const res = await fetch('/api/goals?isCompany=true');
+    if (!res.ok) return null;
+    const raw = await res.json();
+    return Array.isArray(raw) ? raw : [];
+  }
+
+  const stacksRes = await fetch('/api/stacks');
+  if (!stacksRes.ok) return null;
+  const stacks = await stacksRes.json();
+
+  const allGoals: Goal[] = [];
+  for (const stack of stacks) {
+    const res = await fetch(`/api/goals?stackId=${stack.id}`);
+    if (!res.ok) continue;
+    const raw = await res.json();
+    const goals: Goal[] = Array.isArray(raw) ? raw : [];
+    allGoals.push(...goals);
+  }
+  return allGoals;
+}
+
+/**
+ * Enrich a goal with its parent hierarchy from the API.
+ */
+async function fetchGoalWithParent(goal: Goal): Promise<Goal> {
+  const detailRes = await fetch(`/api/goals/${goal.id}?includeParents=true`);
+  if (detailRes.ok) {
+    const detail = await detailRes.json();
+    return { ...goal, parent: detail.parent ?? null };
+  }
+  return goal;
+}
+
+/**
+ * Group goals into hierarchy nodes keyed by HHG > Yearly.
+ */
+function buildHierarchy(goals: Goal[]): HierarchyNode[] {
+  const hierarchyMap = new Map<string, HierarchyNode>();
+
+  for (const goal of goals) {
+    const path = getHierarchyPath(goal);
+    const key = `${path.hhg}::${path.yearly}`;
+
+    if (!hierarchyMap.has(key)) {
+      hierarchyMap.set(key, {
+        hhgTitle: path.hhg,
+        yearlyTitle: path.yearly,
+        monthlyGoals: [],
+        weeklyGoals: [],
+      });
+    }
+
+    const node = hierarchyMap.get(key)!;
+    if (goal.level === 'MONTHLY' && !node.monthlyGoals.find((g) => g.id === goal.id)) {
+      node.monthlyGoals.push(goal);
+    }
+    if (goal.level === 'WEEKLY' && !node.weeklyGoals.find((g) => g.id === goal.id)) {
+      node.weeklyGoals.push(goal);
+    }
+  }
+
+  return Array.from(hierarchyMap.values());
+}
+
+function getStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'COMPLETED': return 'bg-green-500/20 text-green-400';
+    case 'IN_PROGRESS': return 'bg-blue-500/20 text-blue-400';
+    case 'ABANDONED': return 'bg-red-500/20 text-red-400';
+    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
+  }
+}
+
+/**
  * Check if a date range overlaps with a reference range.
  */
 function rangesOverlap(
@@ -88,164 +179,38 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
 
   const fetchFilteredGoals = async () => {
     try {
-      // When isTeamReview, fetch company goals directly instead of iterating stacks
-      if (isTeamReview) {
-        const goalsRes = await fetch('/api/goals?isCompany=true');
-        if (!goalsRes.ok) { setLoading(false); return; }
-        const goalsRaw = await goalsRes.json();
-        const goals: Goal[] = Array.isArray(goalsRaw) ? goalsRaw : [];
-
-        const now = new Date();
-        const weekStart = new Date(now);
-        const dayOfWeek = weekStart.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        weekStart.setDate(weekStart.getDate() + mondayOffset);
-        weekStart.setHours(0, 0, 0, 0);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekEnd.getDate() + 6);
-        weekEnd.setHours(23, 59, 59, 999);
-        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-        const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-        const nextMonthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59, 999);
-
-        const filteredWeekly: Goal[] = [];
-        const filteredMonthly: Goal[] = [];
-
-        for (const g of goals) {
-          if (g.level === 'WEEKLY' && rangesOverlap(g.startDate, g.endDate, weekStart, weekEnd)) {
-            const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
-            if (detailRes.ok) {
-              const detail = await detailRes.json();
-              filteredWeekly.push({ ...g, parent: detail.parent ?? null });
-            } else {
-              filteredWeekly.push(g);
-            }
-          }
-          if (g.level === 'MONTHLY') {
-            const isCurrentMonth = rangesOverlap(g.startDate, g.endDate, currentMonthStart, currentMonthEnd);
-            const isNextMonth = rangesOverlap(g.startDate, g.endDate, nextMonthStart, nextMonthEnd);
-            if (isCurrentMonth || isNextMonth) {
-              const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
-              if (detailRes.ok) {
-                const detail = await detailRes.json();
-                filteredMonthly.push({ ...g, parent: detail.parent ?? null });
-              } else {
-                filteredMonthly.push(g);
-              }
-            }
-          }
-        }
-
-        const hierarchyMap = new Map<string, HierarchyNode>();
-        for (const goal of [...filteredMonthly, ...filteredWeekly]) {
-          const path = getHierarchyPath(goal);
-          const key = `${path.hhg}::${path.yearly}`;
-          if (!hierarchyMap.has(key)) {
-            hierarchyMap.set(key, { hhgTitle: path.hhg, yearlyTitle: path.yearly, monthlyGoals: [], weeklyGoals: [] });
-          }
-          const node = hierarchyMap.get(key)!;
-          if (goal.level === 'MONTHLY' && !node.monthlyGoals.find((gg) => gg.id === goal.id)) node.monthlyGoals.push(goal);
-          if (goal.level === 'WEEKLY' && !node.weeklyGoals.find((gg) => gg.id === goal.id)) node.weeklyGoals.push(goal);
-        }
-        setHierarchy(Array.from(hierarchyMap.values()));
-        setLoading(false);
-        return;
-      }
-
-      const stacksRes = await fetch('/api/stacks');
-      if (!stacksRes.ok) {
-        setLoading(false);
-        return;
-      }
-      const stacks = await stacksRes.json();
+      // Gather all goals from either company or personal stacks
+      const allGoals = await fetchAllGoals(isTeamReview);
+      if (!allGoals) { setLoading(false); return; }
 
       const now = new Date();
-
-      // Current week boundaries (Mon-Sun)
-      const weekStart = new Date(now);
-      const dayOfWeek = weekStart.getDay();
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      weekStart.setDate(weekStart.getDate() + mondayOffset);
-      weekStart.setHours(0, 0, 0, 0);
+      const weekStart = getMonday(now);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
       weekEnd.setHours(23, 59, 59, 999);
 
-      // Current month boundaries
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-      // Next month boundaries
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
       const nextMonthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59, 999);
 
       const filteredWeekly: Goal[] = [];
       const filteredMonthly: Goal[] = [];
 
-      for (const stack of stacks) {
-        const res = await fetch(`/api/goals?stackId=${stack.id}`);
-        if (!res.ok) continue;
-        const goalsRaw = await res.json();
-        const goals: Goal[] = Array.isArray(goalsRaw) ? goalsRaw : [];
-
-        for (const g of goals) {
-          if (g.level === 'WEEKLY') {
-            // Only show weekly goals that overlap with the current week
-            if (rangesOverlap(g.startDate, g.endDate, weekStart, weekEnd)) {
-              // Fetch with full parent chain
-              const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
-              if (detailRes.ok) {
-                const detail = await detailRes.json();
-                filteredWeekly.push({ ...g, parent: detail.parent ?? null });
-              } else {
-                filteredWeekly.push(g);
-              }
-            }
-          }
-          if (g.level === 'MONTHLY') {
-            // Only current month and next month
-            const isCurrentMonth = rangesOverlap(g.startDate, g.endDate, currentMonthStart, currentMonthEnd);
-            const isNextMonth = rangesOverlap(g.startDate, g.endDate, nextMonthStart, nextMonthEnd);
-            if (isCurrentMonth || isNextMonth) {
-              const detailRes = await fetch(`/api/goals/${g.id}?includeParents=true`);
-              if (detailRes.ok) {
-                const detail = await detailRes.json();
-                filteredMonthly.push({ ...g, parent: detail.parent ?? null });
-              } else {
-                filteredMonthly.push(g);
-              }
-            }
+      for (const g of allGoals) {
+        if (g.level === 'WEEKLY' && rangesOverlap(g.startDate, g.endDate, weekStart, weekEnd)) {
+          filteredWeekly.push(await fetchGoalWithParent(g));
+        }
+        if (g.level === 'MONTHLY') {
+          const inCurrentMonth = rangesOverlap(g.startDate, g.endDate, currentMonthStart, currentMonthEnd);
+          const inNextMonth = rangesOverlap(g.startDate, g.endDate, nextMonthStart, nextMonthEnd);
+          if (inCurrentMonth || inNextMonth) {
+            filteredMonthly.push(await fetchGoalWithParent(g));
           }
         }
       }
 
-      // Build hierarchy: group by HHG > Yearly
-      const hierarchyMap = new Map<string, HierarchyNode>();
-
-      for (const goal of [...filteredMonthly, ...filteredWeekly]) {
-        const path = getHierarchyPath(goal);
-        const key = `${path.hhg}::${path.yearly}`;
-
-        if (!hierarchyMap.has(key)) {
-          hierarchyMap.set(key, {
-            hhgTitle: path.hhg,
-            yearlyTitle: path.yearly,
-            monthlyGoals: [],
-            weeklyGoals: [],
-          });
-        }
-
-        const node = hierarchyMap.get(key)!;
-        if (goal.level === 'MONTHLY' && !node.monthlyGoals.find((g) => g.id === goal.id)) {
-          node.monthlyGoals.push(goal);
-        }
-        if (goal.level === 'WEEKLY' && !node.weeklyGoals.find((g) => g.id === goal.id)) {
-          node.weeklyGoals.push(goal);
-        }
-      }
-
-      setHierarchy(Array.from(hierarchyMap.values()));
+      setHierarchy(buildHierarchy([...filteredMonthly, ...filteredWeekly]));
     } catch (err) {
       console.error('Failed to fetch current goals:', err);
     }
@@ -266,12 +231,7 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-[var(--text-primary)] truncate">{goal.title}</p>
         <div className="flex items-center gap-2 mt-1">
-          <span className={`text-xs px-1.5 py-0.5 rounded ${
-            goal.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
-            goal.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
-            goal.status === 'ABANDONED' ? 'bg-red-500/20 text-red-400' :
-            'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-          }`}>
+          <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusBadgeClass(goal.status)}`}>
             {goal.status.replace('_', ' ')}
           </span>
           <span className="text-xs text-[var(--text-muted)]">{goal.level}</span>

@@ -53,6 +53,8 @@ export function GoalCreationCoach({
   );
 
   const guidance = LEVEL_GUIDANCE[goalLevel];
+  const checkedCount = checkedItems.filter(Boolean).length;
+  const progressPct = (checkedCount / CHECKLIST_ITEMS.length) * 100;
 
   const toggleCheck = (index: number) => {
     setCheckedItems((prev) => {
@@ -147,24 +149,17 @@ export function GoalCreationCoach({
               ))}
             </div>
 
-            {/* Progress indicator */}
             <div className="mt-6 rounded-lg bg-gray-50 p-3">
               <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
                 <span>Quality Score</span>
                 <span>
-                  {checkedItems.filter(Boolean).length}/{CHECKLIST_ITEMS.length}
+                  {checkedCount}/{CHECKLIST_ITEMS.length}
                 </span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-gray-200">
                 <div
                   className="h-full rounded-full bg-green-500 transition-all duration-300"
-                  style={{
-                    width: `${
-                      (checkedItems.filter(Boolean).length /
-                        CHECKLIST_ITEMS.length) *
-                      100
-                    }%`,
-                  }}
+                  style={{ width: `${progressPct}%` }}
                 />
               </div>
             </div>

@@ -64,26 +64,31 @@ export function TopNTaskSelector({
             ? tasks.find((t) => t.id === selectedIds[i])
             : null;
 
+          let stepClass: string;
+          if (isCurrent) {
+            stepClass = 'border-blue-400 bg-blue-50 ring-1 ring-blue-200';
+          } else if (isCompleted) {
+            stepClass = 'border-gray-200 bg-white';
+          } else {
+            stepClass = 'border-gray-100 bg-gray-50 opacity-60';
+          }
+
+          let badgeClass: string;
+          if (isCompleted) {
+            badgeClass = 'bg-blue-600 text-white';
+          } else if (isCurrent) {
+            badgeClass = 'border-2 border-blue-400 bg-white text-blue-600';
+          } else {
+            badgeClass = 'border border-gray-300 bg-white text-gray-400';
+          }
+
           return (
             <div
               key={i}
-              className={`flex items-center gap-3 rounded-lg border p-3 transition-all ${
-                isCurrent
-                  ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-200'
-                  : isCompleted
-                  ? 'border-gray-200 bg-white'
-                  : 'border-gray-100 bg-gray-50 opacity-60'
-              }`}
+              className={`flex items-center gap-3 rounded-lg border p-3 transition-all ${stepClass}`}
             >
-              {/* Rank badge */}
               <div
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                  isCompleted
-                    ? 'bg-blue-600 text-white'
-                    : isCurrent
-                    ? 'border-2 border-blue-400 bg-white text-blue-600'
-                    : 'border border-gray-300 bg-white text-gray-400'
-                }`}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${badgeClass}`}
               >
                 {i === 0 && isCompleted ? (
                   <Star className="h-4 w-4 fill-current" />

@@ -11,6 +11,15 @@ interface Task {
   goal?: { id: string; title: string } | null;
 }
 
+function getPriorityBadgeClass(priority: string): string {
+  switch (priority) {
+    case 'URGENT': return 'bg-red-500/20 text-red-400';
+    case 'HIGH': return 'bg-orange-500/20 text-orange-400';
+    case 'MEDIUM': return 'bg-blue-500/20 text-blue-400';
+    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
+  }
+}
+
 interface WorkBlock {
   id: string;
   name: string;
@@ -164,7 +173,6 @@ export function StepScheduleTasks({
       <div className="space-y-2">
         {tasks.map((task) => {
           const assignedBlockId = assignments[task.id];
-          const _assignedBlock = workBlocks.find((b) => b.id === assignedBlockId);
 
           return (
             <div
@@ -180,12 +188,7 @@ export function StepScheduleTasks({
                     </p>
                   )}
                 </div>
-                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-                  task.priority === 'URGENT' ? 'bg-red-500/20 text-red-400' :
-                  task.priority === 'HIGH' ? 'bg-orange-500/20 text-orange-400' :
-                  task.priority === 'MEDIUM' ? 'bg-blue-500/20 text-blue-400' :
-                  'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-                }`}>
+                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${getPriorityBadgeClass(task.priority)}`}>
                   {task.priority}
                 </span>
               </div>

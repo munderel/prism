@@ -71,8 +71,6 @@ export function ReviewWizard({ reviewId }: ReviewWizardProps) {
     const type = item.type ?? 'checkbox';
     const value = state[item.title];
     switch (type) {
-      case 'checkbox':
-        return value === true;
       case 'text':
         return typeof value === 'string' && value.trim().length > 0;
       case 'text_list':
@@ -80,19 +78,19 @@ export function ReviewWizard({ reviewId }: ReviewWizardProps) {
       case 'auto_tasks':
       case 'auto_goals':
         return true;
+      case 'checkbox':
       default:
         return value === true;
     }
   };
 
   const persistState = useCallback(async (state: ChecklistState, notesVal?: string) => {
+    const body: Record<string, unknown> = { checklistState: state };
+    if (notesVal !== undefined) body.notes = notesVal;
     await fetch(`/api/reviews/${reviewId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        checklistState: state,
-        ...(notesVal !== undefined ? { notes: notesVal } : {}),
-      }),
+      body: JSON.stringify(body),
     });
   }, [reviewId]);
 
@@ -379,26 +377,19 @@ function StepContent({
     }
 
     case 'auto_tasks':
+    case 'auto_goals': {
+      const isTaskType = type === 'auto_tasks';
+      const Icon = isTaskType ? ListTodo : Target;
       return (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-6 text-center">
-          <ListTodo className="h-8 w-8 text-amber-400 mx-auto mb-2" />
+          <Icon className={`h-8 w-8 mx-auto mb-2 ${isTaskType ? 'text-amber-400' : 'text-blue-400'}`} />
           <p className="text-sm text-[var(--text-primary)]">{item.title}</p>
           <p className="text-xs text-[var(--text-muted)] mt-1 italic">
-            Auto-loaded tasks will appear here. (Coming soon)
+            {isTaskType ? 'Auto-loaded tasks' : 'Goal progress'} will appear here. (Coming soon)
           </p>
         </div>
       );
-
-    case 'auto_goals':
-      return (
-        <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-6 text-center">
-          <Target className="h-8 w-8 text-blue-400 mx-auto mb-2" />
-          <p className="text-sm text-[var(--text-primary)]">{item.title}</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1 italic">
-            Goal progress will be auto-loaded here. (Coming soon)
-          </p>
-        </div>
-      );
+    }
 
     default:
       return null;

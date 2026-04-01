@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Trash2, Link, Plus } from 'lucide-react';
 
 interface GoalLinkManagerProps {
@@ -15,23 +15,16 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
   const [weight, setWeight] = useState(1.0);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchLinks();
-    fetchAvailableGoals();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyGoalId]);
-
-  const fetchLinks = async () => {
+  const fetchLinks = useCallback(async () => {
     const res = await fetch(`/api/goals/${companyGoalId}`);
     if (res.ok) {
       const data = await res.json();
       setLinks(data.companyGoalLinks ?? []);
     }
     setLoading(false);
-  };
+  }, [companyGoalId]);
 
-  const fetchAvailableGoals = async () => {
-    // Fetch all stacks, then get goals from personal stacks
+  const fetchAvailableGoals = useCallback(async () => {
     const res = await fetch('/api/stacks');
     if (!res.ok) return;
     const stacks = await res.json();
@@ -46,9 +39,13 @@ export function GoalLinkManager({ companyGoalId, onUpdate }: GoalLinkManagerProp
         return goals.map((g: any) => ({ ...g, ownerName: stack.owner?.name ?? 'Unknown' }));
       })
     );
-    const allGoals = results.flat();
-    setAvailableGoals(allGoals);
-  };
+    setAvailableGoals(results.flat());
+  }, []);
+
+  useEffect(() => {
+    fetchLinks();
+    fetchAvailableGoals();
+  }, [fetchLinks, fetchAvailableGoals]);
 
   const handleAddLink = async () => {
     if (!selectedGoalId) return;

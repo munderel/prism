@@ -4,6 +4,30 @@ import { useState, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { Download, Upload, X, Check } from 'lucide-react';
 
+interface DiffSectionProps {
+  items: any[];
+  prefix: string;
+  label: string;
+  colorClass: string;
+  textColorClass: string;
+}
+
+function DiffSection({ items, prefix, label, colorClass, textColorClass }: DiffSectionProps) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-2">
+      <span className={`text-xs font-medium ${colorClass}`}>
+        {prefix} {items.length} {label}{items.length !== 1 ? 's' : ''}
+      </span>
+      {items.map((g: any, i: number) => (
+        <div key={i} className={`text-xs ${textColorClass} ml-4`}>
+          {g.title}{g.changes ? `: ${Object.keys(g.changes).join(', ')}` : ''}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 interface YamlImportExportProps {
   stackId: string;
   stackName: string;
@@ -110,44 +134,9 @@ export function YamlImportExport({
           >
             <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Import Preview</h3>
 
-            {diff.added.length > 0 && (
-              <div className="mb-2">
-                <span className="text-xs font-medium text-green-400">
-                  + {diff.added.length} new goal{diff.added.length !== 1 ? 's' : ''}
-                </span>
-                {diff.added.map((g: any, i: number) => (
-                  <div key={i} className="text-xs text-green-300/70 ml-4">
-                    {g.title}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {diff.deleted.length > 0 && (
-              <div className="mb-2">
-                <span className="text-xs font-medium text-red-400">
-                  - {diff.deleted.length} removed goal{diff.deleted.length !== 1 ? 's' : ''}
-                </span>
-                {diff.deleted.map((g: any, i: number) => (
-                  <div key={i} className="text-xs text-red-300/70 ml-4">
-                    {g.title}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {diff.modified.length > 0 && (
-              <div className="mb-2">
-                <span className="text-xs font-medium text-yellow-400">
-                  ~ {diff.modified.length} modified goal{diff.modified.length !== 1 ? 's' : ''}
-                </span>
-                {diff.modified.map((g: any, i: number) => (
-                  <div key={i} className="text-xs text-yellow-300/70 ml-4">
-                    {g.title}: {Object.keys(g.changes).join(', ')}
-                  </div>
-                ))}
-              </div>
-            )}
+            <DiffSection items={diff.added} prefix="+" label="new goal" colorClass="text-green-400" textColorClass="text-green-300/70" />
+            <DiffSection items={diff.deleted} prefix="-" label="removed goal" colorClass="text-red-400" textColorClass="text-red-300/70" />
+            <DiffSection items={diff.modified} prefix="~" label="modified goal" colorClass="text-yellow-400" textColorClass="text-yellow-300/70" />
 
             {diff.kpiChanges?.length > 0 && (
               <div className="mb-2">
@@ -177,10 +166,8 @@ export function YamlImportExport({
               </div>
             )}
 
-            {diff.added.length === 0 &&
-              diff.deleted.length === 0 &&
-              diff.modified.length === 0 &&
-              (!diff.kpiChanges || diff.kpiChanges.length === 0) && (
+            {diff.added.length === 0 && diff.deleted.length === 0 &&
+              diff.modified.length === 0 && !diff.kpiChanges?.length && (
                 <p className="text-xs text-[var(--text-muted)]">No changes detected.</p>
               )}
 
