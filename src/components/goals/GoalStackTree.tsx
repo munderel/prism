@@ -102,8 +102,6 @@ const SortableGoalCard = React.memo(function SortableGoalCard({
   onAddTask,
   onStatusChange,
   onKpiClick,
-  isCompanyStack: _isCompanyStack,
-  isAdmin: _isAdmin,
 }: {
   item: FlatItem;
   onEdit: (goal: GoalTreeItem) => void;
@@ -112,8 +110,6 @@ const SortableGoalCard = React.memo(function SortableGoalCard({
   onAddTask: (goalId: string) => void;
   onStatusChange: (goalId: string, status: string) => void;
   onKpiClick: (goal: GoalTreeItem) => void;
-  isCompanyStack: boolean;
-  isAdmin: boolean;
 }) {
   const {
     attributes,

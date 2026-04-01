@@ -7,6 +7,7 @@ import { ChevronRight, ChevronLeft, PartyPopper, Target, Plus, Star } from 'luci
 import { useToast } from '@/components/ui/ToastProvider';
 
 import type { Goal, Kpi, ReviewAnswer, StepConfig, HhgGroup } from './shared/review-types';
+import { getStatusBadgeClass } from './shared/review-types';
 import { DifficultiesStep } from './shared/DifficultiesStep';
 import { KpiProgressStep } from './shared/KpiProgressStep';
 import { OnTrackStep } from './shared/OnTrackStep';
@@ -209,7 +210,7 @@ function GoalHierarchyDisplay({
               {/* Yearly subheader */}
               <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-2">
                 <p className="text-xs text-indigo-400 uppercase tracking-wide font-medium mb-0.5">
-                  {goalLevel === 'STRATEGIC' ? 'Yearly Goal' : 'Yearly Goal'}
+                  Yearly Goal
                 </p>
                 <p className="text-sm font-medium text-[var(--text-primary)]">{yearlyGroup.yearly.title}</p>
                 {yearlyGroup.yearly.startDate && (

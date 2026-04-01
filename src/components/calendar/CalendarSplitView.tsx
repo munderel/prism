@@ -149,30 +149,33 @@ function formatDuration(minutes: number) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+const DEFAULT_EVENT_COLOR = { bg: '#e0e7ff', border: '#6366f1', text: '#4338ca' };
+
+function colorFromDef(c: { bg: string; border: string; color: string }) {
+  return { bg: c.bg, border: c.border, text: c.color };
+}
+
 function getEventColor(event: any): { bg: string; border: string; text: string } {
-  if (event.extendedProps?.source === 'google') {
-    return {
-      bg: PRISM_COLORS.GOOGLE_CAL?.bg ?? '#f3e8ff',
-      border: PRISM_COLORS.GOOGLE_CAL?.border ?? '#a855f7',
-      text: PRISM_COLORS.GOOGLE_CAL?.color ?? '#7c3aed',
-    };
+  const props = event.extendedProps ?? {};
+
+  if (props.source === 'google') {
+    return colorFromDef(PRISM_COLORS.GOOGLE_CAL);
   }
 
-  const taskType = event.extendedProps?.taskType;
-  if (taskType && PRISM_COLORS[taskType as keyof typeof PRISM_COLORS]) {
-    const c = PRISM_COLORS[taskType as keyof typeof PRISM_COLORS];
-    return { bg: c.bg, border: c.border, text: c.color };
+  // Match by task type (IMPROVE, REACT, MAINTENANCE)
+  const taskType = props.taskType as keyof typeof PRISM_COLORS | undefined;
+  if (taskType && PRISM_COLORS[taskType]) {
+    return colorFromDef(PRISM_COLORS[taskType]);
   }
 
-  const itemType = event.extendedProps?.itemType;
-  if (itemType === 'aim') {
-    return { bg: PRISM_COLORS.AIM.bg, border: PRISM_COLORS.AIM.border, text: PRISM_COLORS.AIM.color };
-  }
-  if (itemType === 'review') {
-    return { bg: PRISM_COLORS.REVIEW.bg, border: PRISM_COLORS.REVIEW.border, text: PRISM_COLORS.REVIEW.color };
+  // Match by item type (aim, review)
+  const ITEM_TYPE_MAP: Record<string, keyof typeof PRISM_COLORS> = { aim: 'AIM', review: 'REVIEW' };
+  const colorKey = ITEM_TYPE_MAP[props.itemType];
+  if (colorKey) {
+    return colorFromDef(PRISM_COLORS[colorKey]);
   }
 
-  return { bg: '#e0e7ff', border: '#6366f1', text: '#4338ca' };
+  return DEFAULT_EVENT_COLOR;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,20 +225,21 @@ function UnscheduledCard({
 
 function WeeklyHourBar({ scheduledMinutes }: { scheduledMinutes: number }) {
   const scheduledHours = scheduledMinutes / 60;
-  const targetHours = WEEKLY_HOUR_TARGET ?? 35;
-  const warningThreshold = WEEKLY_HOUR_WARNING ?? 20;
-  const pct = Math.min((scheduledHours / targetHours) * 100, 100);
+  const pct = Math.min((scheduledHours / WEEKLY_HOUR_TARGET) * 100, 100);
 
   let barColor = 'bg-red-500';
-  if (scheduledHours >= targetHours) barColor = 'bg-green-500';
-  else if (scheduledHours >= warningThreshold) barColor = 'bg-yellow-500';
+  if (scheduledHours >= WEEKLY_HOUR_TARGET) {
+    barColor = 'bg-green-500';
+  } else if (scheduledHours >= WEEKLY_HOUR_WARNING) {
+    barColor = 'bg-yellow-500';
+  }
 
   return (
     <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
       <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
         <span className="font-medium">Weekly Target</span>
         <span>
-          {scheduledHours.toFixed(1)}h / {targetHours}h scheduled
+          {scheduledHours.toFixed(1)}h / {WEEKLY_HOUR_TARGET}h scheduled
         </span>
       </div>
       <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
@@ -356,21 +360,8 @@ export function CalendarSplitView({
     [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh],
   );
 
-  // Event resize handler
-  const handleEventResize = useCallback(
-    (info: any) => {
-      const { itemId, itemType } = info.event.extendedProps ?? {};
-      if (!itemId || !itemType) return;
-      const start = info.event.start as Date;
-      const end = info.event.end as Date;
-      onSchedule(itemId, itemType, start, end);
-      mutateEvents();
-    },
-    [onSchedule, mutateEvents],
-  );
-
-  // Event drop (move) handler
-  const handleEventDrop = useCallback(
+  // Shared handler for event resize and internal drag-move
+  const handleEventUpdate = useCallback(
     (info: any) => {
       const { itemId, itemType } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
@@ -524,8 +515,8 @@ export function CalendarSplitView({
             eventResizableFromStart
             eventDurationEditable
             eventReceive={handleEventReceive}
-            eventResize={handleEventResize}
-            eventDrop={handleEventDrop}
+            eventResize={handleEventUpdate}
+            eventDrop={handleEventUpdate}
             eventContent={renderEventContent}
             slotMinTime="06:00:00"
             slotMaxTime="22:00:00"
