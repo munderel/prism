@@ -61,3 +61,17 @@ export interface StepConfig {
 
 export const STATUS_OPTIONS = ['On Track', 'Behind', 'At Risk', 'Completed'] as const;
 export const GOAL_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED'] as const;
+
+/** Returns Tailwind classes for a goal status badge */
+export function getStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'COMPLETED':
+      return 'bg-green-500/20 text-green-400';
+    case 'IN_PROGRESS':
+      return 'bg-blue-500/20 text-blue-400';
+    case 'ABANDONED':
+      return 'bg-red-500/20 text-red-400';
+    default:
+      return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
+  }
+}

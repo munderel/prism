@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
-import { LEVEL_LABELS } from '@/lib/goal-constants';
+import { LEVEL_LABELS, formatGoalDateRange } from '@/lib/goal-constants';
 import { GoalCreationCoach } from '@/components/reviews/shared/GoalCreationCoach';
 import { getLocalDateString } from '@/lib/date-utils';
 
@@ -44,15 +44,9 @@ export function GoalEditor({
   const [error, setError] = useState('');
   const [showCoach, setShowCoach] = useState(false);
 
-  const hhgDurationLabel = useMemo(() => {
-    if (!startDate || !endDate) return '';
-    const s = new Date(startDate);
-    const e = new Date(endDate);
-    if (isNaN(s.getTime()) || isNaN(e.getTime()) || e <= s) return '';
-    const years = e.getFullYear() - s.getFullYear();
-    const label = years <= 1 ? '1-Year' : `${years}-Year`;
-    return `${label} High Hard Goal (${s.getFullYear()}\u2013${e.getFullYear()})`;
-  }, [startDate, endDate]);
+  const hhgDurationLabel = isRootHHG
+    ? formatGoalDateRange('HIGH_HARD', startDate || null, endDate || null)
+    : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,27 +177,31 @@ export function GoalEditor({
               </div>
             )}
 
-            {/* HHG start/end date pickers */}
-            {isRootHHG && (
+            {/* Date pickers: required for HHG roots, optional for editing goals with existing dates */}
+            {(isRootHHG || (isEditing && (goal?.startDate || goal?.endDate))) && (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm text-[var(--text-secondary)] mb-1">Start Date <span className="text-red-400">*</span></label>
+                    <label className="block text-sm text-[var(--text-secondary)] mb-1">
+                      Start Date {isRootHHG && <span className="text-red-400">*</span>}
+                    </label>
                     <input
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      required
+                      required={isRootHHG}
                       className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-[var(--text-secondary)] mb-1">End Date <span className="text-red-400">*</span></label>
+                    <label className="block text-sm text-[var(--text-secondary)] mb-1">
+                      End Date {isRootHHG && <span className="text-red-400">*</span>}
+                    </label>
                     <input
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      required
+                      required={isRootHHG}
                       className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
@@ -211,7 +209,7 @@ export function GoalEditor({
                 {hhgDurationLabel && (
                   <p className="text-xs text-purple-400/80 -mt-2">{hhgDurationLabel}</p>
                 )}
-                {!isEditing && (
+                {isRootHHG && !isEditing && (
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -225,30 +223,6 @@ export function GoalEditor({
                   </label>
                 )}
               </>
-            )}
-
-            {/* Existing start/end dates on non-HHG editing */}
-            {!isRootHHG && isEditing && (goal?.startDate || goal?.endDate) && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm text-[var(--text-secondary)] mb-1">Start Date</label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-[var(--text-secondary)] mb-1">End Date</label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-              </div>
             )}
 
             <GoalCreationCoach

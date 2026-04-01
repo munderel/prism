@@ -84,6 +84,7 @@ export const GoalCard = React.memo(function GoalCard({
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const statusRef = useRef<HTMLDivElement>(null);
   const styles = getLevelCardStyles(goal.level);
+  const dateLabel = formatGoalDateRange(goal.level, goal.startDate, goal.endDate);
 
   useClickOutside(statusRef, useCallback(() => setShowStatusMenu(false), []), showStatusMenu);
 
@@ -109,12 +110,11 @@ export const GoalCard = React.memo(function GoalCard({
         >
           {LEVEL_LABELS[goal.level] ?? goal.level}
         </span>
-        {(() => {
-          const dateLabel = formatGoalDateRange(goal.level, goal.startDate, goal.endDate);
-          if (!dateLabel) return null;
-          const colorClass = goal.level === 'HIGH_HARD' ? 'text-purple-400/60 italic' : 'text-[var(--text-muted)]';
-          return <span className={`text-xs ${colorClass} shrink-0`}>{dateLabel}</span>;
-        })()}
+        {dateLabel && (
+          <span className={`text-xs shrink-0 ${goal.level === 'HIGH_HARD' ? 'text-purple-400/60 italic' : 'text-[var(--text-muted)]'}`}>
+            {dateLabel}
+          </span>
+        )}
 
         {/* Title and status */}
         <div className="flex-1 min-w-0">

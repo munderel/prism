@@ -67,6 +67,19 @@ const SOURCE_FILTERS = [
   { key: 'processes', label: 'Processes', color: 'bg-cyan-500' },
 ];
 
+const TASK_TYPE_BADGE_STYLES: Record<string, string> = {
+  IMPROVE: 'bg-indigo-500/15 text-indigo-400',
+  REACT: 'bg-yellow-500/15 text-yellow-400',
+  MAINTENANCE: 'bg-cyan-500/15 text-cyan-400',
+};
+
+const TASK_STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
+  DONE: { dot: 'bg-emerald-400', label: 'Done' },
+  IN_PROGRESS: { dot: 'bg-blue-400', label: 'In Progress' },
+};
+
+const DEFAULT_TASK_STATUS = { dot: 'bg-gray-400', label: 'To Do' };
+
 function scheduleItem(
   itemType: string,
   itemId: string,
@@ -125,10 +138,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [savingTasks, setSavingTasks] = useState(false);
 
-  const refreshCalendar = () => {
-    refreshEvents();
-  };
-
   const handleDatesSet = (info: any) => {
     setDateRange({ start: info.startStr, end: info.endStr });
   };
@@ -142,50 +151,42 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     });
   };
 
-  // --- Completion handlers ---
-  const handleCompleteAim = useCallback(async (aimInstanceId: string) => {
+  // --- Completion handler (shared for aims and tasks) ---
+  const handleComplete = useCallback(async (
+    endpoint: string,
+    status: string,
+    label: string,
+  ) => {
     setCompletingEvent(true);
     try {
-      const res = await fetch(`/api/aims/instances/${aimInstanceId}`, {
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'COMPLETED' }),
+        body: JSON.stringify({ status }),
       });
       if (res.ok) {
-        toast.success('Aim completed!');
+        toast.success(`${label} completed!`);
         setSelectedEventPopover(null);
-        refreshCalendar();
+        refreshEvents();
       } else {
-        toast.error('Failed to complete aim');
+        toast.error(`Failed to complete ${label.toLowerCase()}`);
       }
     } catch {
-      toast.error('Failed to complete aim');
+      toast.error(`Failed to complete ${label.toLowerCase()}`);
     } finally {
       setCompletingEvent(false);
     }
-  }, [toast]);
+  }, [toast, refreshEvents]);
 
-  const handleCompleteTask = useCallback(async (taskId: string) => {
-    setCompletingEvent(true);
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'DONE' }),
-      });
-      if (res.ok) {
-        toast.success('Task completed!');
-        setSelectedEventPopover(null);
-        refreshCalendar();
-      } else {
-        toast.error('Failed to complete task');
-      }
-    } catch {
-      toast.error('Failed to complete task');
-    } finally {
-      setCompletingEvent(false);
-    }
-  }, [toast]);
+  const handleCompleteAim = useCallback(
+    (aimInstanceId: string) => handleComplete(`/api/aims/instances/${aimInstanceId}`, 'COMPLETED', 'Aim'),
+    [handleComplete],
+  );
+
+  const handleCompleteTask = useCallback(
+    (taskId: string) => handleComplete(`/api/tasks/${taskId}`, 'DONE', 'Task'),
+    [handleComplete],
+  );
 
   // --- Task assignment handlers ---
   const handleEventClick = (info: any) => {
@@ -299,7 +300,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       });
       if (res.ok) {
         handleCloseTaskAssignment();
-        refreshCalendar();
+        refreshEvents();
       }
     } finally {
       setSavingTasks(false);
@@ -355,7 +356,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         });
       }
 
-      refreshCalendar();
+      refreshEvents();
       onExternalDrop?.(info.event.id, start, end, 'aim');
     } else {
       const taskId = props.taskId || info.event.id?.replace('task-', '');
@@ -363,7 +364,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
       await scheduleItem('task', taskId, startISO, endISO, { dueDate: startISO });
 
-      refreshCalendar();
+      refreshEvents();
       onExternalDrop?.(taskId, start, end, 'task');
     }
   };
@@ -413,7 +414,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       return;
     }
 
-    refreshCalendar();
+    refreshEvents();
   };
 
   // Auto-schedule feature removed — users schedule manually via drag-and-drop
@@ -470,7 +471,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
     setGhostEvents([]);
     setShowGhosts(false);
-    refreshCalendar();
+    refreshEvents();
   };
 
   const handleDismissGhosts = () => {
@@ -513,7 +514,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     setPendingAimDrop(null);
     setPendingActivities([]);
     setPendingAimName('');
-    refreshCalendar();
+    refreshEvents();
     onExternalDrop?.(info.event.id, start, end, 'aim');
   };
 
@@ -667,11 +668,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                 <div className="flex items-center gap-2 flex-wrap">
                   {selectedEventPopover.taskType && (
                     <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                      selectedEventPopover.taskType === 'IMPROVE'
-                        ? 'bg-indigo-500/15 text-indigo-400'
-                        : selectedEventPopover.taskType === 'REACT'
-                          ? 'bg-yellow-500/15 text-yellow-400'
-                          : 'bg-cyan-500/15 text-cyan-400'
+                      TASK_TYPE_BADGE_STYLES[selectedEventPopover.taskType] ?? 'bg-cyan-500/15 text-cyan-400'
                     }`}>
                       {selectedEventPopover.taskType}
                     </span>
@@ -687,18 +684,17 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                     <span className="font-medium">Goal:</span> {selectedEventPopover.goalTitle}
                   </div>
                 )}
-                <div className="flex items-center gap-1.5">
-                  <span className={`h-2 w-2 rounded-full ${
-                    selectedEventPopover.status === 'DONE' ? 'bg-emerald-400'
-                      : selectedEventPopover.status === 'IN_PROGRESS' ? 'bg-blue-400'
-                        : 'bg-gray-400'
-                  }`} />
-                  <span className="text-xs font-medium text-[var(--text-secondary)]">
-                    {selectedEventPopover.status === 'DONE' ? 'Done'
-                      : selectedEventPopover.status === 'IN_PROGRESS' ? 'In Progress'
-                        : 'To Do'}
-                  </span>
-                </div>
+                {(() => {
+                  const statusConfig = TASK_STATUS_CONFIG[selectedEventPopover.status] ?? DEFAULT_TASK_STATUS;
+                  return (
+                    <div className="flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${statusConfig.dot}`} />
+                      <span className="text-xs font-medium text-[var(--text-secondary)]">
+                        {statusConfig.label}
+                      </span>
+                    </div>
+                  );
+                })()}
               </>
             )}
 

@@ -55,26 +55,24 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
     });
   }, [reviewId]);
 
-  const toggleItem = async (title: string) => {
+  const toggleItem = (title: string) => {
     const updated = { ...checklist, [title]: !checklist[title] };
     setChecklist(updated);
-    await persistState(updated);
+    persistState(updated);
   };
 
-  const updateTextItem = async (title: string, value: string) => {
-    const updated = { ...checklist, [title]: value };
-    setChecklist(updated);
-    // Debounce persistence is handled by the component; persist on blur
+  const updateTextItem = (title: string, value: string) => {
+    setChecklist((prev) => ({ ...prev, [title]: value }));
   };
 
-  const persistTextItem = async (_title: string) => {
-    await persistState(checklist);
+  const persistTextItem = () => {
+    persistState(checklist);
   };
 
-  const updateTextListItem = async (title: string, entries: string[]) => {
+  const updateTextListItem = (title: string, entries: string[]) => {
     const updated = { ...checklist, [title]: entries };
     setChecklist(updated);
-    await persistState(updated);
+    persistState(updated);
   };
 
   const handleComplete = async () => {
@@ -163,7 +161,7 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
                     item={item}
                     value={(checklist[item.title] as string) ?? ''}
                     onChange={(val) => updateTextItem(item.title, val)}
-                    onBlur={() => persistTextItem(item.title)}
+                    onBlur={persistTextItem}
                   />
                 );
 

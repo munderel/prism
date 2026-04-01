@@ -10,12 +10,12 @@ interface WeeklyHourTargetProps {
 export function WeeklyHourTarget({ scheduledHours, className = '' }: WeeklyHourTargetProps) {
   const percentage = Math.min(100, (scheduledHours / WEEKLY_HOUR_TARGET) * 100);
 
-  const barColor =
-    scheduledHours >= WEEKLY_HOUR_TARGET
-      ? '#10b981'
-      : scheduledHours >= WEEKLY_HOUR_WARNING
-        ? '#fbbf24'
-        : '#ef4444';
+  let barColor = '#ef4444';
+  if (scheduledHours >= WEEKLY_HOUR_TARGET) {
+    barColor = '#10b981';
+  } else if (scheduledHours >= WEEKLY_HOUR_WARNING) {
+    barColor = '#fbbf24';
+  }
 
   return (
     <div className={`space-y-1 ${className}`}>
