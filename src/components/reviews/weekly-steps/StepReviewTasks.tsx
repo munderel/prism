@@ -14,6 +14,27 @@ interface Task {
   goal?: { id: string; title: string } | null;
 }
 
+async function getWeekStartDay(): Promise<number> {
+  try {
+    const res = await fetch('/api/stacks');
+    if (res.ok) {
+      const stacks = await res.json();
+      const personal = stacks.find((s: any) => !s.isCompany);
+      if (personal?.weekStartDay !== undefined) return personal.weekStartDay;
+    }
+  } catch { /* use default */ }
+  return 1; // Default: Monday
+}
+
+function getPriorityBadgeClass(priority: string): string {
+  switch (priority) {
+    case 'URGENT': return 'bg-red-500/20 text-red-400';
+    case 'HIGH': return 'bg-orange-500/20 text-orange-400';
+    case 'MEDIUM': return 'bg-blue-500/20 text-blue-400';
+    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
+  }
+}
+
 interface StepReviewTasksProps {
   reviewId: string;
 }
@@ -32,21 +53,9 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
 
   const fetchLastWeekTasks = async () => {
     try {
-      // Fetch personal stack to get weekStartDay setting
-      let weekStartDay = 1; // Default Monday
-      try {
-        const stacksRes = await fetch('/api/stacks');
-        if (stacksRes.ok) {
-          const stacks = await stacksRes.json();
-          const personal = stacks.find((s: any) => !s.isCompany);
-          if (personal?.weekStartDay !== undefined) {
-            weekStartDay = personal.weekStartDay;
-          }
-        }
-      } catch { /* use default */ }
+      const weekStartDay = await getWeekStartDay();
 
       const now = new Date();
-      // Align to week boundaries using stack's weekStartDay (0=Sun, 1=Mon, etc.)
       const dayOfWeek = now.getDay();
       const diff = (dayOfWeek - weekStartDay + 7) % 7;
       const thisWeekStart = new Date(now);
@@ -188,12 +197,7 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={`text-xs px-1.5 py-0.5 rounded ${
-                  task.priority === 'URGENT' ? 'bg-red-500/20 text-red-400' :
-                  task.priority === 'HIGH' ? 'bg-orange-500/20 text-orange-400' :
-                  task.priority === 'MEDIUM' ? 'bg-blue-500/20 text-blue-400' :
-                  'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-                }`}>
+                <span className={`text-xs px-1.5 py-0.5 rounded ${getPriorityBadgeClass(task.priority)}`}>
                   {task.priority}
                 </span>
 

@@ -49,9 +49,13 @@ export function KpiSidebar({
     mutate();
   };
 
-  const handleEditorSave = () => {
+  const closeEditor = () => {
     setShowEditor(false);
     setEditingKpi(null);
+  };
+
+  const handleEditorSave = () => {
+    closeEditor();
     mutate();
   };
 
@@ -139,10 +143,7 @@ export function KpiSidebar({
           parentGoalId={parentGoalId}
           kpi={editingKpi}
           onSave={handleEditorSave}
-          onClose={() => {
-            setShowEditor(false);
-            setEditingKpi(null);
-          }}
+          onClose={closeEditor}
         />
       )}
     </>

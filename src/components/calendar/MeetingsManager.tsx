@@ -34,6 +34,10 @@ const CADENCE_OPTIONS = [
   { value: 'YEARLY', label: 'Yearly' },
 ];
 
+const CADENCE_LABEL: Record<string, string> = Object.fromEntries(
+  CADENCE_OPTIONS.map((o) => [o.value, o.label])
+);
+
 const DAY_OPTIONS = [
   { value: 0, label: 'Sunday' },
   { value: 1, label: 'Monday' },
@@ -43,16 +47,6 @@ const DAY_OPTIONS = [
   { value: 5, label: 'Friday' },
   { value: 6, label: 'Saturday' },
 ];
-
-const CADENCE_LABEL: Record<string, string> = {
-  ONE_TIME: 'One-Time',
-  DAILY: 'Daily',
-  WEEKLY: 'Weekly',
-  BIWEEKLY: 'Biweekly',
-  MONTHLY: 'Monthly',
-  QUARTERLY: 'Quarterly',
-  YEARLY: 'Yearly',
-};
 
 interface TeamReview {
   id: string;
@@ -177,19 +171,15 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
     e.preventDefault();
     setSavingTeamReview(true);
     const payload = { reviewType: trReviewType, dayOfWeek: trDayOfWeek, time: trTime, duration: trDuration };
-    if (editingTeamReviewId) {
-      await fetch(`/api/team-reviews/${editingTeamReviewId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await fetch('/api/team-reviews', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    }
+    const url = editingTeamReviewId
+      ? `/api/team-reviews/${editingTeamReviewId}`
+      : '/api/team-reviews';
+    const method = editingTeamReviewId ? 'PATCH' : 'POST';
+    await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
     setSavingTeamReview(false);
     resetTeamReviewForm();
     fetchTeamReviews();
@@ -251,19 +241,13 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
       attendeeIds: selectedAttendees.map((a) => a.id),
     };
 
-    if (editingId) {
-      await fetch(`/api/meetings/${editingId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await fetch('/api/meetings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    }
+    const url = editingId ? `/api/meetings/${editingId}` : '/api/meetings';
+    const method = editingId ? 'PATCH' : 'POST';
+    await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
     setSaving(false);
     resetForm();
@@ -484,8 +468,7 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
                       <span>{DAY_OPTIONS.find((d) => d.value === m.dayOfWeek)?.label}</span>
                     )}
                     <span>
-                      {(m.attendeeIds as string[])?.length || 0} attendee
-                      {((m.attendeeIds as string[])?.length || 0) !== 1 ? 's' : ''}
+                      {m.attendeeIds?.length ?? 0} attendee{m.attendeeIds?.length === 1 ? '' : 's'}
                     </span>
                   </div>
                 </div>

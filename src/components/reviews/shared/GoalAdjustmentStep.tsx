@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Goal } from './review-types';
-import { GOAL_STATUSES } from './review-types';
+import { GOAL_STATUSES, getStatusBadgeClass } from './review-types';
 
 interface KpiLocal {
   id: string;
@@ -26,6 +26,9 @@ interface GoalAdjustmentStepProps {
   childGoals?: Goal[];
 }
 
+const KPI_INPUT_CLASS =
+  'rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none';
+
 export function GoalAdjustmentStep({
   goals,
   editingGoals,
@@ -46,7 +49,6 @@ export function GoalAdjustmentStep({
   const [newKpiTarget, setNewKpiTarget] = useState('');
   const [newKpiUnit, setNewKpiUnit] = useState('');
 
-  // Memoize child grouping
   const childrenByParent = useMemo(() => {
     return childGoals.reduce<Record<string, Goal[]>>((acc, child) => {
       const pid = child.parentId ?? '__orphan__';
@@ -56,7 +58,6 @@ export function GoalAdjustmentStep({
     }, {});
   }, [childGoals]);
 
-  // Collect all goal IDs that need KPIs (parents + children)
   const allKpiGoalIds = useMemo(() => {
     if (!showKpis) return [];
     const ids = goals.map((g) => g.id);
@@ -66,7 +67,6 @@ export function GoalAdjustmentStep({
     return ids;
   }, [showKpis, goals, childrenByParent]);
 
-  // Batch-load KPIs via useEffect (not during render)
   useEffect(() => {
     if (allKpiGoalIds.length === 0) return;
     let cancelled = false;
@@ -101,7 +101,6 @@ export function GoalAdjustmentStep({
     });
   }, []);
 
-  // Reset form state when switching which goal gets a new KPI
   const startAddingKpi = useCallback((goalId: string) => {
     setAddingKpiFor(goalId);
     setNewKpiName('');
@@ -124,10 +123,10 @@ export function GoalAdjustmentStep({
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        const created = await res.json();
+        const { id, name, type, targetValue, unit } = await res.json();
         setGoalKpis((prev) => ({
           ...prev,
-          [goalId]: [...(prev[goalId] ?? []), { id: created.id, name: created.name, type: created.type, targetValue: created.targetValue, unit: created.unit }],
+          [goalId]: [...(prev[goalId] ?? []), { id, name, type, targetValue, unit }],
         }));
         setAddingKpiFor(null);
       }
@@ -163,19 +162,19 @@ export function GoalAdjustmentStep({
         {isAdding ? (
           <div className="space-y-2 rounded border border-[var(--border-color)] bg-[var(--surface)] p-3">
             <input type="text" value={newKpiName} onChange={(e) => setNewKpiName(e.target.value)} placeholder="KPI name"
-              className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none" />
+              className={`w-full ${KPI_INPUT_CLASS}`} />
             <div className="flex gap-2">
               <select value={newKpiType} onChange={(e) => setNewKpiType(e.target.value as 'NUMERIC' | 'BOOLEAN')}
-                className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none">
+                className={KPI_INPUT_CLASS}>
                 <option value="NUMERIC">Numeric</option>
                 <option value="BOOLEAN">Yes/No</option>
               </select>
               {newKpiType === 'NUMERIC' && (
                 <>
                   <input type="number" value={newKpiTarget} onChange={(e) => setNewKpiTarget(e.target.value)} placeholder="Target"
-                    className="w-20 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none" />
+                    className={`w-20 ${KPI_INPUT_CLASS}`} />
                   <input type="text" value={newKpiUnit} onChange={(e) => setNewKpiUnit(e.target.value)} placeholder="Unit"
-                    className="w-16 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none" />
+                    className={`w-16 ${KPI_INPUT_CLASS}`} />
                 </>
               )}
             </div>
@@ -254,11 +253,7 @@ export function GoalAdjustmentStep({
                 {children.map((child) => (
                   <div key={child.id} className="rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 space-y-1">
                     <p className="text-sm text-[var(--text-primary)]">{child.title}</p>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                      child.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
-                      child.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
-                      'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-                    }`}>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${getStatusBadgeClass(child.status)}`}>
                       {child.status.replace('_', ' ')}
                     </span>
                     {renderKpiSection(child.id)}

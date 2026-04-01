@@ -2,6 +2,13 @@
 
 import type { Kpi } from './review-types';
 
+function getProgressBarColor(progress: number): string {
+  if (progress >= 100) return 'bg-green-500';
+  if (progress >= 70) return 'bg-indigo-500';
+  if (progress >= 40) return 'bg-yellow-500';
+  return 'bg-red-500';
+}
+
 interface KpiProgressStepProps {
   kpis: Kpi[];
   onUpdate: (id: string, value: number) => void;
@@ -44,9 +51,7 @@ export function KpiProgressStep({
               {kpi.unit && <span className="text-xs text-[var(--text-muted)]">{kpi.unit}</span>}
               <div className="flex-1 h-2 rounded-full bg-[var(--surface-raised)]">
                 <div
-                  className={`h-full rounded-full transition-all ${
-                    progress >= 100 ? 'bg-green-500' : progress >= 70 ? 'bg-indigo-500' : progress >= 40 ? 'bg-yellow-500' : 'bg-red-500'
-                  }`}
+                  className={`h-full rounded-full transition-all ${getProgressBarColor(progress)}`}
                   style={{ width: `${progress}%` }}
                 />
               </div>

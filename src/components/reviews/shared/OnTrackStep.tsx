@@ -3,6 +3,19 @@
 import type { Goal } from './review-types';
 import { STATUS_OPTIONS } from './review-types';
 
+function getSelectedStatusClass(status: string): string {
+  switch (status) {
+    case 'On Track':
+      return 'bg-green-500/20 text-green-400 ring-1 ring-green-500/50';
+    case 'Behind':
+      return 'bg-yellow-500/20 text-yellow-400 ring-1 ring-yellow-500/50';
+    case 'At Risk':
+      return 'bg-red-500/20 text-red-400 ring-1 ring-red-500/50';
+    default:
+      return 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/50';
+  }
+}
+
 interface OnTrackStepProps {
   goals: Goal[];
   assessments: Record<string, string>;
@@ -32,10 +45,7 @@ export function OnTrackStep({
                 onClick={() => onAssess(goal.id, opt)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   assessments[goal.id] === opt
-                    ? opt === 'On Track' ? 'bg-green-500/20 text-green-400 ring-1 ring-green-500/50'
-                    : opt === 'Behind' ? 'bg-yellow-500/20 text-yellow-400 ring-1 ring-yellow-500/50'
-                    : opt === 'At Risk' ? 'bg-red-500/20 text-red-400 ring-1 ring-red-500/50'
-                    : 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/50'
+                    ? getSelectedStatusClass(opt)
                     : 'bg-[var(--surface-raised)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                 }`}
               >

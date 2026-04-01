@@ -28,6 +28,23 @@ interface Stack {
   isCompany: boolean;
 }
 
+function getTaskTypeBadgeClass(taskType: string): string {
+  switch (taskType) {
+    case 'IMPROVE': return 'bg-blue-500/20 text-blue-400';
+    case 'REACT': return 'bg-orange-500/20 text-orange-400';
+    default: return 'bg-gray-500/20 text-gray-400';
+  }
+}
+
+function getPriorityBadgeClass(priority: string): string {
+  switch (priority) {
+    case 'URGENT': return 'bg-red-500/20 text-red-400';
+    case 'HIGH': return 'bg-orange-500/20 text-orange-400';
+    case 'MEDIUM': return 'bg-blue-500/20 text-blue-400';
+    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
+  }
+}
+
 interface InlineTaskCreatorProps {
   isTeamReview?: boolean;
 }
@@ -243,19 +260,10 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
         <div className="flex-1 min-w-0">
           <p className="text-sm text-[var(--text-primary)] truncate">{task.title}</p>
         </div>
-        <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-          task.taskType === 'IMPROVE' ? 'bg-blue-500/20 text-blue-400' :
-          task.taskType === 'REACT' ? 'bg-orange-500/20 text-orange-400' :
-          'bg-gray-500/20 text-gray-400'
-        }`}>
+        <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${getTaskTypeBadgeClass(task.taskType)}`}>
           {task.taskType}
         </span>
-        <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-          task.priority === 'URGENT' ? 'bg-red-500/20 text-red-400' :
-          task.priority === 'HIGH' ? 'bg-orange-500/20 text-orange-400' :
-          task.priority === 'MEDIUM' ? 'bg-blue-500/20 text-blue-400' :
-          'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-        }`}>
+        <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${getPriorityBadgeClass(task.priority)}`}>
           {task.priority}
         </span>
         <button

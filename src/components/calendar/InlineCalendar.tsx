@@ -149,35 +149,30 @@ export function InlineCalendar({
     }
 
     const eventId = info.event.id;
-    const newStart = info.event.start?.toISOString();
-    const newEnd = info.event.end?.toISOString();
+    const timeBlock = {
+      timeBlockStart: info.event.start?.toISOString(),
+      timeBlockEnd: info.event.end?.toISOString(),
+    };
+
+    let endpoint: string | null = null;
+    let body: Record<string, any> = timeBlock;
 
     if (eventId.startsWith('task-')) {
-      const taskId = eventId.replace('task-', '');
-      await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          timeBlockStart: newStart,
-          timeBlockEnd: newEnd,
-          isPinned: true,
-        }),
-      });
+      endpoint = `/api/tasks/${eventId.replace('task-', '')}`;
+      body = { ...timeBlock, isPinned: true };
     } else if (eventId.startsWith('aim-instance-')) {
       const aimInstanceId = info.event.extendedProps?.aimInstanceId;
-      if (aimInstanceId) {
-        await fetch(`/api/aims/instances/${aimInstanceId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ timeBlockStart: newStart, timeBlockEnd: newEnd }),
-        });
-      }
+      if (aimInstanceId) endpoint = `/api/aims/instances/${aimInstanceId}`;
     } else if (eventId.startsWith('review-')) {
       const reviewId = info.event.extendedProps?.reviewId || eventId.replace('review-', '');
-      await fetch(`/api/reviews/${reviewId}`, {
+      endpoint = `/api/reviews/${reviewId}`;
+    }
+
+    if (endpoint) {
+      await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ timeBlockStart: newStart, timeBlockEnd: newEnd }),
+        body: JSON.stringify(body),
       });
     }
 

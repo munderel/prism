@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X, BookOpen } from 'lucide-react';
 
 interface ReviewStartupGuideProps {
@@ -70,49 +70,43 @@ const REVIEW_CONTENT: Record<
 
 const STORAGE_KEY_PREFIX = 'prism-review-guide-dismissed-';
 
+function readDismissed(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeDismissed(key: string, dismissed: boolean): void {
+  try {
+    if (dismissed) {
+      localStorage.setItem(key, 'true');
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // localStorage unavailable
+  }
+}
+
 export function ReviewStartupGuide({
   reviewType,
   isOpen,
   onClose,
 }: ReviewStartupGuideProps) {
-  const [dontShowAgain, setDontShowAgain] = useState(false);
-
   const storageKey = `${STORAGE_KEY_PREFIX}${reviewType}`;
-
-  useEffect(() => {
-    try {
-      const dismissed = localStorage.getItem(storageKey);
-      if (dismissed === 'true') {
-        setDontShowAgain(true);
-      }
-    } catch {
-      // localStorage unavailable
-    }
-  }, [storageKey]);
+  const [dontShowAgain, setDontShowAgain] = useState(() => readDismissed(storageKey));
 
   const handleClose = () => {
-    if (dontShowAgain) {
-      try {
-        localStorage.setItem(storageKey, 'true');
-      } catch {
-        // localStorage unavailable
-      }
-    }
+    writeDismissed(storageKey, dontShowAgain);
     onClose();
   };
 
   const handleToggleDismiss = () => {
     const next = !dontShowAgain;
     setDontShowAgain(next);
-    try {
-      if (next) {
-        localStorage.setItem(storageKey, 'true');
-      } else {
-        localStorage.removeItem(storageKey);
-      }
-    } catch {
-      // localStorage unavailable
-    }
+    writeDismissed(storageKey, next);
   };
 
   if (!isOpen) return null;

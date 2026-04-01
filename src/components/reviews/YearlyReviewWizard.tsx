@@ -3,11 +3,11 @@
 import { useState } from 'react';
 import {
   Target, Edit3, Calendar, FileText, Star, Trophy, Eye, CheckCircle2,
-  ChevronDown, ChevronRight, Plus, Save, BarChart3, Pencil,
+  ChevronDown, ChevronRight, Plus, Save, BarChart3,
 } from 'lucide-react';
 import { PeriodReviewWizard } from './PeriodReviewWizard';
 import type { Goal, HhgGroup, StepConfig } from './shared/review-types';
-import { GOAL_STATUSES } from './shared/review-types';
+import { GOAL_STATUSES, getStatusBadgeClass } from './shared/review-types';
 
 // Yearly review steps — updated 2026-03-30
 // Removed: Review Monthly Goals, Monthly KPI Progress
@@ -89,12 +89,7 @@ function YearlyCurrentGoalsHierarchy({ groups }: { groups: HhgGroup[] }) {
                     <p className="text-xs text-[var(--text-muted)] mt-1">{yearlyGroup.yearly.description}</p>
                   )}
                   <div className="flex items-center gap-3 mt-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      yearlyGroup.yearly.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
-                      yearlyGroup.yearly.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
-                      yearlyGroup.yearly.status === 'ABANDONED' ? 'bg-red-500/20 text-red-400' :
-                      'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-                    }`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusBadgeClass(yearlyGroup.yearly.status)}`}>
                       {yearlyGroup.yearly.status.replace('_', ' ')}
                     </span>
                     {yearlyGroup.yearly.startDate && (
@@ -196,12 +191,7 @@ function YearlyCurrentGoals({ strategicGoals, hhgGoal }: { strategicGoals: Goal[
                     <p className="text-xs text-[var(--text-muted)] mt-1">{goal.description}</p>
                   )}
                   <div className="flex items-center gap-3 mt-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      goal.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
-                      goal.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
-                      goal.status === 'ABANDONED' ? 'bg-red-500/20 text-red-400' :
-                      'bg-[var(--surface-raised)] text-[var(--text-muted)]'
-                    }`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusBadgeClass(goal.status)}`}>
                       {goal.status.replace('_', ' ')}
                     </span>
                     <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-raised)]">
@@ -254,9 +244,11 @@ function YearlyGoalAdjustmentStep(ctx: GoalAdjustmentContext) {
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set(primaryGoals.map((g) => g.id)));
   const [localMonthly, setLocalMonthly] = useState<Goal[]>(childGoals);
   const [monthlyEdits, setMonthlyEdits] = useState<Record<string, { title: string; description: string; status: string }>>(() => {
-    const m: Record<string, { title: string; description: string; status: string }> = {};
-    childGoals.forEach((g) => { m[g.id] = { title: g.title, description: g.description ?? '', status: g.status }; });
-    return m;
+    const edits: Record<string, { title: string; description: string; status: string }> = {};
+    for (const g of childGoals) {
+      edits[g.id] = { title: g.title, description: g.description ?? '', status: g.status };
+    }
+    return edits;
   });
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -337,6 +329,14 @@ function YearlyGoalAdjustmentStep(ctx: GoalAdjustmentContext) {
     setSavingId(null);
   };
 
+  const resetKpiForm = () => {
+    setAddingKpiFor(null);
+    setNewKpiName('');
+    setNewKpiTarget('');
+    setNewKpiUnit('');
+    setNewKpiType('NUMERIC');
+  };
+
   const addKpi = async (goalId: string) => {
     if (!newKpiName.trim()) return;
     setSavingId(goalId);
@@ -357,11 +357,7 @@ function YearlyGoalAdjustmentStep(ctx: GoalAdjustmentContext) {
           ...prev,
           [goalId]: [...(prev[goalId] ?? []), { id: created.id, name: created.name, type: created.type, targetValue: created.targetValue, unit: created.unit }],
         }));
-        setAddingKpiFor(null);
-        setNewKpiName('');
-        setNewKpiTarget('');
-        setNewKpiUnit('');
-        setNewKpiType('NUMERIC');
+        resetKpiForm();
       }
     } catch (err) {
       console.error('Failed to add KPI:', err);
@@ -446,7 +442,7 @@ function YearlyGoalAdjustmentStep(ctx: GoalAdjustmentContext) {
                 Add KPI
               </button>
               <button
-                onClick={() => { setAddingKpiFor(null); setNewKpiName(''); setNewKpiTarget(''); setNewKpiUnit(''); }}
+                onClick={resetKpiForm}
                 className="text-xs text-[var(--text-muted)] px-2 py-1 hover:text-[var(--text-secondary)]"
               >
                 Cancel

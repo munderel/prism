@@ -30,6 +30,33 @@ interface StepKpiProgressProps {
   isTeamReview?: boolean;
 }
 
+/**
+ * Fetch all goals from either company endpoint or personal stacks.
+ * Returns null if the initial fetch fails.
+ */
+async function fetchAllGoalsForKpis(isTeamReview?: boolean): Promise<any[] | null> {
+  if (isTeamReview) {
+    const res = await fetch('/api/goals?isCompany=true');
+    if (!res.ok) return null;
+    const raw = await res.json();
+    return Array.isArray(raw) ? raw : [];
+  }
+
+  const stacksRes = await fetch('/api/stacks');
+  if (!stacksRes.ok) return null;
+  const stacks = await stacksRes.json();
+
+  const allGoals: any[] = [];
+  for (const stack of stacks) {
+    const res = await fetch(`/api/goals?stackId=${stack.id}`);
+    if (!res.ok) continue;
+    const raw = await res.json();
+    const goals = Array.isArray(raw) ? raw : [];
+    allGoals.push(...goals);
+  }
+  return allGoals;
+}
+
 export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChange, isTeamReview }: StepKpiProgressProps) {
   const [goalsWithKpis, setGoalsWithKpis] = useState<GoalWithKpis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,48 +77,19 @@ export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChan
 
   const fetchGoalsWithKpis = async () => {
     try {
+      const allGoals = await fetchAllGoalsForKpis(isTeamReview);
+      if (!allGoals) { setLoading(false); return; }
+
       const result: GoalWithKpis[] = [];
-
-      if (isTeamReview) {
-        // Fetch company goals directly
-        const goalsRes = await fetch('/api/goals?isCompany=true');
-        if (!goalsRes.ok) { setLoading(false); return; }
-        const goalsRaw = await goalsRes.json();
-        const goals = Array.isArray(goalsRaw) ? goalsRaw : [];
-
-        for (const goal of goals) {
-          if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') continue;
-          if (goal._count?.kpis === 0) continue;
-          const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
-          if (!kpisRes.ok) continue;
-          const kpisData = await kpisRes.json();
-          const kpis = kpisData.kpis ?? kpisData;
-          if (kpis.length > 0) {
-            result.push({ id: goal.id, title: goal.title, level: goal.level, status: goal.status, progressPct: goal.progressPct, kpis });
-          }
-        }
-      } else {
-        const stacksRes = await fetch('/api/stacks');
-        if (!stacksRes.ok) { setLoading(false); return; }
-        const stacks = await stacksRes.json();
-
-        for (const stack of stacks) {
-          const goalsRes = await fetch(`/api/goals?stackId=${stack.id}`);
-          if (!goalsRes.ok) continue;
-          const goalsRaw = await goalsRes.json();
-          const goals = Array.isArray(goalsRaw) ? goalsRaw : [];
-
-          for (const goal of goals) {
-            if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') continue;
-            if (goal._count?.kpis === 0) continue;
-            const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
-            if (!kpisRes.ok) continue;
-            const kpisData = await kpisRes.json();
-            const kpis = kpisData.kpis ?? kpisData;
-            if (kpis.length > 0) {
-              result.push({ id: goal.id, title: goal.title, level: goal.level, status: goal.status, progressPct: goal.progressPct, kpis });
-            }
-          }
+      for (const goal of allGoals) {
+        if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') continue;
+        if (goal._count?.kpis === 0) continue;
+        const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
+        if (!kpisRes.ok) continue;
+        const kpisData = await kpisRes.json();
+        const kpis = kpisData.kpis ?? kpisData;
+        if (kpis.length > 0) {
+          result.push({ id: goal.id, title: goal.title, level: goal.level, status: goal.status, progressPct: goal.progressPct, kpis });
         }
       }
 
@@ -149,6 +147,11 @@ export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChan
     }, 600);
   };
 
+  const handleNotesBlur = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    onNotesChange(notes);
+  };
+
   if (loading) {
     return <div className="text-[var(--text-muted)] text-sm py-4">Loading KPI progress...</div>;
   }
@@ -169,10 +172,7 @@ export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChan
           <textarea
             value={notes}
             onChange={(e) => handleNotesChange(e.target.value)}
-            onBlur={() => {
-              if (debounceRef.current) clearTimeout(debounceRef.current);
-              onNotesChange(notes);
-            }}
+            onBlur={handleNotesBlur}
             rows={3}
             className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none resize-none"
             placeholder="Any notes about your progress this week..."
@@ -280,10 +280,7 @@ export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChan
         <textarea
           value={notes}
           onChange={(e) => handleNotesChange(e.target.value)}
-          onBlur={() => {
-            if (debounceRef.current) clearTimeout(debounceRef.current);
-            onNotesChange(notes);
-          }}
+          onBlur={handleNotesBlur}
           rows={3}
           className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none resize-none"
           placeholder="Any notes about your progress this week..."

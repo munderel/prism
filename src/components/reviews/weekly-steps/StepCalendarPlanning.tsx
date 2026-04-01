@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Brain, ListTodo, Target, Plus, Trash2, Clock } from 'lucide-react';
 
 type BlockType = 'deep_work' | 'normal' | 'aim';
@@ -54,6 +54,24 @@ const DURATION_OPTIONS = [
   { label: '4 hr', value: 240 },
 ];
 
+const BLOCK_COLORS: Record<BlockType, { border: string; bg: string; text: string }> = {
+  deep_work: { border: 'border-purple-500/30', bg: 'bg-purple-500/10', text: 'text-purple-400' },
+  normal: { border: 'border-blue-500/30', bg: 'bg-blue-500/10', text: 'text-blue-400' },
+  aim: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
+};
+
+function getHoursColor(total: number, min: number, max: number): string {
+  if (total >= min && total <= max) return 'text-green-400';
+  if (total > max) return 'text-amber-400';
+  return 'text-[var(--text-muted)]';
+}
+
+function getBarColor(total: number, min: number, max: number): string {
+  if (total >= min && total <= max) return 'bg-green-500';
+  if (total > max) return 'bg-amber-500';
+  return 'bg-indigo-500';
+}
+
 interface StepCalendarPlanningProps {
   reviewId: string;
   initialBlocks?: WorkBlock[];
@@ -77,9 +95,10 @@ export function StepCalendarPlanning({ reviewId: _reviewId, initialBlocks, onBlo
   const targetMinHours = 20;
   const targetMaxHours = 30;
 
-  const notifyParent = useCallback((updated: WorkBlock[]) => {
+  const updateBlocks = (updated: WorkBlock[]) => {
+    setBlocks(updated);
     onBlocksChange(updated);
-  }, [onBlocksChange]);
+  };
 
   const addBlock = () => {
     if (!newBlockName.trim()) return;
@@ -90,25 +109,13 @@ export function StepCalendarPlanning({ reviewId: _reviewId, initialBlocks, onBlo
       durationMinutes: newBlockDuration,
       preferredTime: newBlockTime,
     };
-    const updated = [...blocks, block];
-    setBlocks(updated);
-    notifyParent(updated);
+    updateBlocks([...blocks, block]);
     setNewBlockName('');
     setShowAddForm(false);
   };
 
   const removeBlock = (id: string) => {
-    const updated = blocks.filter((b) => b.id !== id);
-    setBlocks(updated);
-    notifyParent(updated);
-  };
-
-  const getBlockColor = (type: BlockType) => {
-    switch (type) {
-      case 'deep_work': return { border: 'border-purple-500/30', bg: 'bg-purple-500/10', text: 'text-purple-400' };
-      case 'normal': return { border: 'border-blue-500/30', bg: 'bg-blue-500/10', text: 'text-blue-400' };
-      case 'aim': return { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-400' };
-    }
+    updateBlocks(blocks.filter((b) => b.id !== id));
   };
 
   return (
@@ -124,13 +131,7 @@ export function StepCalendarPlanning({ reviewId: _reviewId, initialBlocks, onBlo
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">
           <span className="text-[var(--text-secondary)]">Hours scheduled</span>
-          <span className={`font-bold ${
-            totalHours >= targetMinHours && totalHours <= targetMaxHours
-              ? 'text-green-400'
-              : totalHours > targetMaxHours
-              ? 'text-amber-400'
-              : 'text-[var(--text-muted)]'
-          }`}>
+          <span className={`font-bold ${getHoursColor(totalHours, targetMinHours, targetMaxHours)}`}>
             {totalHours.toFixed(1)} / {targetMinHours}-{targetMaxHours} hours
           </span>
         </div>
@@ -144,13 +145,7 @@ export function StepCalendarPlanning({ reviewId: _reviewId, initialBlocks, onBlo
             }}
           />
           <div
-            className={`h-full rounded-full transition-all ${
-              totalHours >= targetMinHours && totalHours <= targetMaxHours
-                ? 'bg-green-500'
-                : totalHours > targetMaxHours
-                ? 'bg-amber-500'
-                : 'bg-indigo-500'
-            }`}
+            className={`h-full rounded-full transition-all ${getBarColor(totalHours, targetMinHours, targetMaxHours)}`}
             style={{ width: `${Math.min(100, (totalHours / targetMaxHours) * 100)}%` }}
           />
         </div>
@@ -161,7 +156,7 @@ export function StepCalendarPlanning({ reviewId: _reviewId, initialBlocks, onBlo
         {(Object.entries(BLOCK_TYPE_META) as [BlockType, typeof BLOCK_TYPE_META['deep_work']][]).map(([type, meta]) => {
           const Icon = meta.icon;
           const count = blocks.filter((b) => b.type === type).length;
-          const colors = getBlockColor(type);
+          const colors = BLOCK_COLORS[type];
           return (
             <div
               key={type}
@@ -179,7 +174,7 @@ export function StepCalendarPlanning({ reviewId: _reviewId, initialBlocks, onBlo
       {blocks.length > 0 && (
         <div className="space-y-2">
           {blocks.map((block) => {
-            const colors = getBlockColor(block.type);
+            const colors = BLOCK_COLORS[block.type];
             const meta = BLOCK_TYPE_META[block.type];
             const Icon = meta.icon;
             return (
@@ -220,7 +215,7 @@ export function StepCalendarPlanning({ reviewId: _reviewId, initialBlocks, onBlo
           {/* Block type selector */}
           <div className="flex gap-2">
             {(Object.entries(BLOCK_TYPE_META) as [BlockType, typeof BLOCK_TYPE_META['deep_work']][]).map(([type, meta]) => {
-              const colors = getBlockColor(type);
+              const colors = BLOCK_COLORS[type];
               return (
                 <button
                   key={type}
