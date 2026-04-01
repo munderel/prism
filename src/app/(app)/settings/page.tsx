@@ -8,6 +8,22 @@ import { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
+function DurationInput({ value, onChange, inputClasses }: { value: number; onChange: (v: number) => void; inputClasses: string }) {
+  return (
+    <div>
+      <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
+      <input
+        type="number"
+        min={15}
+        max={480}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className={`${inputClasses} w-32`}
+      />
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
@@ -318,6 +334,9 @@ export default function SettingsPage() {
     }
   };
 
+  const pendingInvitations = invitations.filter((inv: any) => inv.status === 'PENDING');
+  const historyInvitations = invitations.filter((inv: any) => inv.status !== 'PENDING');
+
   const themeOptions = [
     { value: 'light', label: 'Light', icon: Sun },
     { value: 'dark', label: 'Dark', icon: MoonIcon },
@@ -325,6 +344,18 @@ export default function SettingsPage() {
   ];
 
   const inputClasses = 'w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none';
+
+  function SaveButton({ onClick, label = 'Save', className: extraClass }: { onClick: () => void; label?: string; className?: string }) {
+    return (
+      <button
+        onClick={onClick}
+        disabled={saving}
+        className={`rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors ${extraClass ?? ''}`}
+      >
+        {saving ? 'Saving...' : label}
+      </button>
+    );
+  }
 
   return (
     <div>
@@ -403,10 +434,7 @@ export default function SettingsPage() {
               </label>
             ))}
           </div>
-          <button onClick={saveUserSettings} disabled={saving}
-            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-            Save
-          </button>
+          <SaveButton onClick={saveUserSettings} className="mt-4" />
         </section>
 
         {/* MTP */}
@@ -422,10 +450,7 @@ export default function SettingsPage() {
             placeholder="What is your MTP? e.g., 'Democratize access to quality education for every child on earth'"
             className={`${inputClasses} resize-none mb-3`}
           />
-          <button onClick={saveUserSettings} disabled={saving}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-            {saving ? 'Saving...' : 'Save'}
-          </button>
+          <SaveButton onClick={saveUserSettings} />
         </section>
 
         {/* Timezone */}
@@ -470,10 +495,7 @@ export default function SettingsPage() {
               </label>
             ))}
           </div>
-          <button onClick={saveUserSettings} disabled={saving}
-            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-            Save Preferences
-          </button>
+          <SaveButton onClick={saveUserSettings} label="Save Preferences" className="mt-4" />
         </section>
 
         {/* Scheduling */}
@@ -536,10 +558,7 @@ export default function SettingsPage() {
               </select>
             </div>
           </div>
-          <button onClick={saveUserSettings} disabled={saving}
-            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-            Save
-          </button>
+          <SaveButton onClick={saveUserSettings} className="mt-4" />
         </section>
 
         {/* Connected Calendars */}
@@ -581,10 +600,7 @@ export default function SettingsPage() {
               ))}
             </div>
           )}
-          <button onClick={saveUserSettings} disabled={saving}
-            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-            Save
-          </button>
+          <SaveButton onClick={saveUserSettings} className="mt-4" />
         </section>
 
         {/* Powerdown Time */}
@@ -600,10 +616,7 @@ export default function SettingsPage() {
             onChange={(e) => setPowerdownTime(e.target.value)}
             className={inputClasses}
           />
-          <button onClick={saveUserSettings} disabled={saving}
-            className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-            Save
-          </button>
+          <SaveButton onClick={saveUserSettings} className="mt-4" />
         </section>
 
         {/* Review Schedule */}
@@ -632,25 +645,10 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="block text-xs text-[var(--text-secondary)] mb-1">Time</label>
-                <input
-                  type="time"
-                  value={weeklyReviewTime}
-                  onChange={(e) => setWeeklyReviewTime(e.target.value)}
-                  className={inputClasses}
-                />
+                <input type="time" value={weeklyReviewTime} onChange={(e) => setWeeklyReviewTime(e.target.value)} className={inputClasses} />
               </div>
             </div>
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
-              <input
-                type="number"
-                min={15}
-                max={480}
-                value={weeklyReviewDuration}
-                onChange={(e) => setWeeklyReviewDuration(Number(e.target.value))}
-                className={`${inputClasses} w-32`}
-              />
-            </div>
+            <DurationInput value={weeklyReviewDuration} onChange={setWeeklyReviewDuration} inputClasses={inputClasses} />
           </div>
 
           {/* Monthly Review */}
@@ -674,25 +672,10 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="block text-xs text-[var(--text-secondary)] mb-1">Time</label>
-                <input
-                  type="time"
-                  value={monthlyReviewTime}
-                  onChange={(e) => setMonthlyReviewTime(e.target.value)}
-                  className={inputClasses}
-                />
+                <input type="time" value={monthlyReviewTime} onChange={(e) => setMonthlyReviewTime(e.target.value)} className={inputClasses} />
               </div>
             </div>
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
-              <input
-                type="number"
-                min={15}
-                max={480}
-                value={monthlyReviewDuration}
-                onChange={(e) => setMonthlyReviewDuration(Number(e.target.value))}
-                className={`${inputClasses} w-32`}
-              />
-            </div>
+            <DurationInput value={monthlyReviewDuration} onChange={setMonthlyReviewDuration} inputClasses={inputClasses} />
           </div>
 
           {/* Yearly Review */}
@@ -765,23 +748,10 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Duration (minutes)</label>
-              <input
-                type="number"
-                min={15}
-                max={480}
-                value={yearlyReviewDuration}
-                onChange={(e) => setYearlyReviewDuration(Number(e.target.value))}
-                className={`${inputClasses} w-32`}
-              />
-            </div>
+            <DurationInput value={yearlyReviewDuration} onChange={setYearlyReviewDuration} inputClasses={inputClasses} />
           </div>
 
-          <button onClick={saveUserSettings} disabled={saving}
-            className="mt-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-            Save
-          </button>
+          <SaveButton onClick={saveUserSettings} className="mt-2" />
         </section>
 
         {/* Onboarding */}
@@ -934,13 +904,11 @@ export default function SettingsPage() {
             </div>
 
             {/* Pending Invitations */}
-            {invitations.filter((inv: any) => inv.status === 'PENDING').length > 0 && (
+            {pendingInvitations.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">Pending Invitations</h3>
                 <div className="space-y-2">
-                  {invitations
-                    .filter((inv: any) => inv.status === 'PENDING')
-                    .map((inv: any) => (
+                  {pendingInvitations.map((inv: any) => (
                       <div key={inv.id} className="rounded-lg bg-[var(--surface)] px-4 py-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center flex-wrap gap-1">
@@ -999,15 +967,13 @@ export default function SettingsPage() {
             )}
 
             {/* Invitation History */}
-            {invitations.filter((inv: any) => inv.status !== 'PENDING').length > 0 && (
+            {historyInvitations.length > 0 && (
               <details className="mt-4">
                 <summary className="text-xs text-[var(--text-muted)] cursor-pointer hover:text-[var(--text-secondary)]">
-                  Invitation History ({invitations.filter((inv: any) => inv.status !== 'PENDING').length})
+                  Invitation History ({historyInvitations.length})
                 </summary>
                 <div className="space-y-2 mt-2">
-                  {invitations
-                    .filter((inv: any) => inv.status !== 'PENDING')
-                    .map((inv: any) => (
+                  {historyInvitations.map((inv: any) => (
                       <div key={inv.id} className="rounded-lg bg-[var(--surface)] px-4 py-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center flex-wrap gap-1">

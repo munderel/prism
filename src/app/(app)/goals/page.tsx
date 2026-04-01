@@ -55,10 +55,6 @@ export default function GoalsPage() {
 
   const selectedStack = stacks.find((s) => s.id === selectedStackId);
 
-  const handleCreateStack = () => {
-    setShowCreateForm(true);
-  };
-
   const handleSubmitCreate = async () => {
     const name = newStackName.trim();
     if (!name) return;
@@ -151,9 +147,7 @@ export default function GoalsPage() {
           <YamlImportExport
             stackId={selectedStack.id}
             stackName={selectedStack.name}
-            onImportComplete={() => {
-              mutateStacks();
-            }}
+            onImportComplete={mutateStacks}
           />
         )}
       </div>
@@ -209,7 +203,12 @@ export default function GoalsPage() {
       <>
       {/* Stack tabs */}
       <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2">
-        {stacks.map((stack) => (
+        {stacks.map((stack) => {
+          const isCompany = stack.visibility === 'company' || stack.isCompany;
+          const isGroup = stack.visibility === 'group';
+          const VisibilityIcon = isCompany ? Building2 : isGroup ? Users : User;
+
+          return (
           <div key={stack.id} className="relative flex items-center group">
             <button
               onClick={() => setSelectedStackId(stack.id)}
@@ -219,18 +218,12 @@ export default function GoalsPage() {
                   : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1] hover:text-[var(--text-primary)]'
               }`}
             >
-              {stack.visibility === 'company' || stack.isCompany ? (
-                <Building2 className="h-4 w-4" />
-              ) : stack.visibility === 'group' ? (
-                <Users className="h-4 w-4" />
-              ) : (
-                <User className="h-4 w-4" />
-              )}
+              <VisibilityIcon className="h-4 w-4" />
               {stack.name}
-              {(stack.visibility === 'group') && (
+              {isGroup && (
                 <span className="text-[9px] bg-teal-500/20 text-teal-400 rounded px-1">Group</span>
               )}
-              {(stack.visibility === 'company' || stack.isCompany) && (
+              {isCompany && (
                 <span className="text-[9px] bg-indigo-500/20 text-indigo-400 rounded px-1">Company</span>
               )}
               <span className="text-xs text-[var(--text-muted)]">({stack._count?.goals ?? 0})</span>
@@ -247,9 +240,10 @@ export default function GoalsPage() {
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
-        ))}
+          );
+        })}
         <button
-          onClick={handleCreateStack}
+          onClick={() => setShowCreateForm(true)}
           className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-muted)] hover:border-[var(--glass-border)] hover:text-[var(--text-secondary)] transition-colors"
         >
           + New Stack
@@ -368,7 +362,7 @@ export default function GoalsPage() {
             No goal stacks yet. Create one to get started!
           </p>
           <button
-            onClick={handleCreateStack}
+            onClick={() => setShowCreateForm(true)}
             className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
           >
             Create Your First Stack

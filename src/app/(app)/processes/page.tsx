@@ -69,6 +69,127 @@ const CADENCE_COLORS: Record<string, string> = {
   YEARLY: 'bg-green-900/50 text-green-300 border-green-800',
 };
 
+const CADENCE_FALLBACK = 'bg-[var(--surface-raised)] text-[var(--text-secondary)] border-[var(--border-color)]';
+
+const CADENCE_OPTIONS = [
+  { value: 'DAILY', label: 'Daily' },
+  { value: 'WEEKLY', label: 'Weekly' },
+  { value: 'BIWEEKLY', label: 'Biweekly' },
+  { value: 'MONTHLY', label: 'Monthly' },
+  { value: 'QUARTERLY', label: 'Quarterly' },
+  { value: 'YEARLY', label: 'Yearly' },
+] as const;
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240] as const;
+
+function formatDurationLabel(mins: number): string {
+  return mins < 60 ? `${mins}m` : `${mins / 60}h`;
+}
+
+function formatDurationDisplay(mins: number): string {
+  if (mins < 60) return `${mins} min`;
+  if (mins % 60 === 0) return `${mins / 60}h`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+function cadenceNeedsDayOfWeek(cadence: string): boolean {
+  return cadence === 'WEEKLY' || cadence === 'BIWEEKLY';
+}
+
+function cadenceNeedsDayOfMonth(cadence: string): boolean {
+  return cadence === 'MONTHLY' || cadence === 'QUARTERLY';
+}
+
+function cadenceNeedsDate(cadence: string): boolean {
+  return cadence === 'YEARLY' || cadence === 'ONE_TIME';
+}
+
+const inputClasses = 'rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none';
+
+interface DurationPickerProps {
+  selected: number;
+  onChange: (mins: number) => void;
+}
+
+function DurationPicker({ selected, onChange }: DurationPickerProps) {
+  return (
+    <div>
+      <label className="block text-xs text-[var(--text-secondary)] mb-1">Default Duration</label>
+      <div className="flex flex-wrap gap-1.5">
+        {DURATION_OPTIONS.map((mins) => (
+          <button
+            key={mins}
+            type="button"
+            onClick={() => onChange(mins)}
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+              selected === mins
+                ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+            }`}
+          >
+            {formatDurationLabel(mins)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface ScheduleFieldsProps {
+  cadence: string;
+  scheduledTime: string;
+  dayOfWeek: number;
+  dayOfMonth: number;
+  onTimeChange: (v: string) => void;
+  onDayOfWeekChange: (v: number) => void;
+  onDayOfMonthChange: (v: number) => void;
+  label: string;
+}
+
+function ScheduleFields({ cadence, scheduledTime, dayOfWeek, dayOfMonth, onTimeChange, onDayOfWeekChange, onDayOfMonthChange, label }: ScheduleFieldsProps) {
+  return (
+    <div>
+      <label className="block text-xs text-[var(--text-secondary)] mb-1">{label}</label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="time"
+          value={scheduledTime}
+          onChange={(e) => onTimeChange(e.target.value)}
+          className={inputClasses}
+          placeholder="Time"
+        />
+        {cadenceNeedsDayOfWeek(cadence) && (
+          <select
+            value={dayOfWeek}
+            onChange={(e) => onDayOfWeekChange(Number(e.target.value))}
+            className={inputClasses}
+          >
+            {DAY_NAMES.map((d, i) => (
+              <option key={i} value={i}>{d}</option>
+            ))}
+          </select>
+        )}
+        {cadenceNeedsDayOfMonth(cadence) && (
+          <select
+            value={dayOfMonth}
+            onChange={(e) => onDayOfMonthChange(Number(e.target.value))}
+            className={inputClasses}
+          >
+            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+              <option key={d} value={d}>Day {d}</option>
+            ))}
+          </select>
+        )}
+      </div>
+      {scheduledTime && (
+        <p className="text-xs text-cyan-400 mt-1">Will appear on calendar at {scheduledTime}</p>
+      )}
+    </div>
+  );
+}
+
 export default function ProcessesPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
@@ -226,8 +347,8 @@ export default function ProcessesPage() {
         assigneeId: newProcAssignee || null,
         defaultDurationMinutes: newProcDuration,
         scheduledTime: newProcScheduledTime || null,
-        scheduledDayOfWeek: ['WEEKLY', 'BIWEEKLY'].includes(newProcCadence) ? newProcDayOfWeek : null,
-        scheduledDayOfMonth: ['MONTHLY', 'QUARTERLY'].includes(newProcCadence) ? newProcDayOfMonth : null,
+        scheduledDayOfWeek: cadenceNeedsDayOfWeek(newProcCadence) ? newProcDayOfWeek : null,
+        scheduledDayOfMonth: cadenceNeedsDayOfMonth(newProcCadence) ? newProcDayOfMonth : null,
       }),
     });
     if (res.ok) {
@@ -258,8 +379,8 @@ export default function ProcessesPage() {
         assigneeId: editProcAssignee || null,
         defaultDurationMinutes: editProcDuration,
         scheduledTime: editProcScheduledTime || null,
-        scheduledDayOfWeek: ['WEEKLY', 'BIWEEKLY'].includes(editProcCadence) ? editProcDayOfWeek : null,
-        scheduledDayOfMonth: ['MONTHLY', 'QUARTERLY'].includes(editProcCadence) ? editProcDayOfMonth : null,
+        scheduledDayOfWeek: cadenceNeedsDayOfWeek(editProcCadence) ? editProcDayOfWeek : null,
+        scheduledDayOfMonth: cadenceNeedsDayOfMonth(editProcCadence) ? editProcDayOfMonth : null,
       }),
     });
     if (res.ok) {
@@ -378,15 +499,9 @@ export default function ProcessesPage() {
     const payload: Record<string, unknown> = { time: schedTime };
     const cadence = schedulingProcess.cadence;
 
-    if (cadence === 'WEEKLY' || cadence === 'BIWEEKLY') {
-      payload.dayOfWeek = schedDayOfWeek;
-    }
-    if (cadence === 'MONTHLY' || cadence === 'QUARTERLY') {
-      payload.dayOfMonth = schedDayOfMonth;
-    }
-    if (cadence === 'YEARLY' || cadence === 'ONE_TIME') {
-      payload.date = schedDate;
-    }
+    if (cadenceNeedsDayOfWeek(cadence)) payload.dayOfWeek = schedDayOfWeek;
+    if (cadenceNeedsDayOfMonth(cadence)) payload.dayOfMonth = schedDayOfMonth;
+    if (cadenceNeedsDate(cadence)) payload.date = schedDate;
 
     const res = await fetch(`/api/processes/${schedulingProcess.id}/schedule`, {
       method: 'POST',
@@ -403,8 +518,8 @@ export default function ProcessesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scheduledTime: schedTime,
-          scheduledDayOfWeek: (cadence === 'WEEKLY' || cadence === 'BIWEEKLY') ? schedDayOfWeek : null,
-          scheduledDayOfMonth: (cadence === 'MONTHLY' || cadence === 'QUARTERLY') ? schedDayOfMonth : null,
+          scheduledDayOfWeek: cadenceNeedsDayOfWeek(cadence) ? schedDayOfWeek : null,
+          scheduledDayOfMonth: cadenceNeedsDayOfMonth(cadence) ? schedDayOfMonth : null,
         }),
       });
       toast.success(`Scheduled "${schedulingProcess.title}" on the calendar`);
@@ -650,19 +765,16 @@ export default function ProcessesPage() {
                     <select
                       value={newProcCadence}
                       onChange={(e) => setNewProcCadence(e.target.value)}
-                      className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                      className={inputClasses}
                     >
-                      <option value="DAILY">Daily</option>
-                      <option value="WEEKLY">Weekly</option>
-                      <option value="BIWEEKLY">Biweekly</option>
-                      <option value="MONTHLY">Monthly</option>
-                      <option value="QUARTERLY">Quarterly</option>
-                      <option value="YEARLY">Yearly</option>
+                      {CADENCE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
                     </select>
                     <select
                       value={newProcAssignee}
                       onChange={(e) => setNewProcAssignee(e.target.value)}
-                      className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                      className={inputClasses}
                     >
                       <option value="">Unassigned</option>
                       {users.map((u) => (
@@ -670,62 +782,17 @@ export default function ProcessesPage() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Default Duration</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[15, 30, 45, 60, 90, 120, 180, 240].map((mins) => (
-                        <button
-                          key={mins}
-                          type="button"
-                          onClick={() => setNewProcDuration(mins)}
-                          className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                            newProcDuration === mins
-                              ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
-                              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                          }`}
-                        >
-                          {mins < 60 ? `${mins}m` : `${mins / 60}h`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Calendar Schedule (optional)</label>
-                    <div className="flex flex-wrap gap-2">
-                      <input
-                        type="time"
-                        value={newProcScheduledTime}
-                        onChange={(e) => setNewProcScheduledTime(e.target.value)}
-                        className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                        placeholder="Time"
-                      />
-                      {['WEEKLY', 'BIWEEKLY'].includes(newProcCadence) && (
-                        <select
-                          value={newProcDayOfWeek}
-                          onChange={(e) => setNewProcDayOfWeek(Number(e.target.value))}
-                          className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                        >
-                          {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => (
-                            <option key={i} value={i}>{d}</option>
-                          ))}
-                        </select>
-                      )}
-                      {['MONTHLY', 'QUARTERLY'].includes(newProcCadence) && (
-                        <select
-                          value={newProcDayOfMonth}
-                          onChange={(e) => setNewProcDayOfMonth(Number(e.target.value))}
-                          className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                        >
-                          {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                            <option key={d} value={d}>Day {d}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                    {newProcScheduledTime && (
-                      <p className="text-xs text-cyan-400 mt-1">Will appear on calendar at {newProcScheduledTime}</p>
-                    )}
-                  </div>
+                  <DurationPicker selected={newProcDuration} onChange={setNewProcDuration} />
+                  <ScheduleFields
+                    cadence={newProcCadence}
+                    scheduledTime={newProcScheduledTime}
+                    dayOfWeek={newProcDayOfWeek}
+                    dayOfMonth={newProcDayOfMonth}
+                    onTimeChange={setNewProcScheduledTime}
+                    onDayOfWeekChange={setNewProcDayOfWeek}
+                    onDayOfMonthChange={setNewProcDayOfMonth}
+                    label="Calendar Schedule (optional)"
+                  />
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => handleAddProcess(fn.id)} disabled={!newProcTitle.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
                       Create
@@ -776,7 +843,7 @@ export default function ProcessesPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[proc.cadence] || 'bg-[var(--surface-raised)] text-[var(--text-secondary)] border-[var(--border-color)]'}`}>
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[proc.cadence] || CADENCE_FALLBACK}`}>
                         {proc.cadence}
                       </span>
                       {proc.scheduledTime && (
@@ -846,19 +913,16 @@ export default function ProcessesPage() {
                           <select
                             value={editProcCadence}
                             onChange={(e) => setEditProcCadence(e.target.value)}
-                            className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                            className={inputClasses}
                           >
-                            <option value="DAILY">Daily</option>
-                            <option value="WEEKLY">Weekly</option>
-                            <option value="BIWEEKLY">Biweekly</option>
-                            <option value="MONTHLY">Monthly</option>
-                            <option value="QUARTERLY">Quarterly</option>
-                            <option value="YEARLY">Yearly</option>
+                            {CADENCE_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
                           </select>
                           <select
                             value={editProcAssignee}
                             onChange={(e) => setEditProcAssignee(e.target.value)}
-                            className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                            className={inputClasses}
                           >
                             <option value="">Unassigned</option>
                             {users.map((u) => (
@@ -866,62 +930,17 @@ export default function ProcessesPage() {
                             ))}
                           </select>
                         </div>
-                        <div>
-                          <label className="block text-xs text-[var(--text-secondary)] mb-1">Default Duration</label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {[15, 30, 45, 60, 90, 120, 180, 240].map((mins) => (
-                              <button
-                                key={mins}
-                                type="button"
-                                onClick={() => setEditProcDuration(mins)}
-                                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                                  editProcDuration === mins
-                                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
-                                    : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                                }`}
-                              >
-                                {mins < 60 ? `${mins}m` : `${mins / 60}h`}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[var(--text-secondary)] mb-1">Calendar Schedule</label>
-                          <div className="flex flex-wrap gap-2">
-                            <input
-                              type="time"
-                              value={editProcScheduledTime}
-                              onChange={(e) => setEditProcScheduledTime(e.target.value)}
-                              className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                              placeholder="Time"
-                            />
-                            {['WEEKLY', 'BIWEEKLY'].includes(editProcCadence) && (
-                              <select
-                                value={editProcDayOfWeek}
-                                onChange={(e) => setEditProcDayOfWeek(Number(e.target.value))}
-                                className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                              >
-                                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => (
-                                  <option key={i} value={i}>{d}</option>
-                                ))}
-                              </select>
-                            )}
-                            {['MONTHLY', 'QUARTERLY'].includes(editProcCadence) && (
-                              <select
-                                value={editProcDayOfMonth}
-                                onChange={(e) => setEditProcDayOfMonth(Number(e.target.value))}
-                                className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                              >
-                                {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                                  <option key={d} value={d}>Day {d}</option>
-                                ))}
-                              </select>
-                            )}
-                          </div>
-                          {editProcScheduledTime && (
-                            <p className="text-xs text-cyan-400 mt-1">Will appear on calendar at {editProcScheduledTime}</p>
-                          )}
-                        </div>
+                        <DurationPicker selected={editProcDuration} onChange={setEditProcDuration} />
+                        <ScheduleFields
+                          cadence={editProcCadence}
+                          scheduledTime={editProcScheduledTime}
+                          dayOfWeek={editProcDayOfWeek}
+                          dayOfMonth={editProcDayOfMonth}
+                          onTimeChange={setEditProcScheduledTime}
+                          onDayOfWeekChange={setEditProcDayOfWeek}
+                          onDayOfMonthChange={setEditProcDayOfMonth}
+                          label="Calendar Schedule"
+                        />
                         <div className="flex gap-2 pt-1">
                           <button onClick={() => handleEditProcess(proc.id)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors">
                             Save
@@ -1157,7 +1176,7 @@ export default function ProcessesPage() {
             <div className="mb-4">
               <p className="text-sm font-medium text-[var(--text-primary)]">{schedulingProcess.title}</p>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[schedulingProcess.cadence] || 'bg-[var(--surface-raised)] text-[var(--text-secondary)] border-[var(--border-color)]'}`}>
+                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[schedulingProcess.cadence] || CADENCE_FALLBACK}`}>
                   {schedulingProcess.cadence}
                 </span>
                 <span className="text-xs text-[var(--text-muted)]">{schedulingProcess.defaultDurationMinutes} min</span>
@@ -1166,7 +1185,7 @@ export default function ProcessesPage() {
 
             <div className="space-y-4">
               {/* Day-of-week picker for WEEKLY / BIWEEKLY */}
-              {(schedulingProcess.cadence === 'WEEKLY' || schedulingProcess.cadence === 'BIWEEKLY') && (
+              {cadenceNeedsDayOfWeek(schedulingProcess.cadence) && (
                 <div>
                   <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Day of Week</label>
                   <div className="flex gap-1">
@@ -1189,7 +1208,7 @@ export default function ProcessesPage() {
               )}
 
               {/* Day-of-month picker for MONTHLY / QUARTERLY */}
-              {(schedulingProcess.cadence === 'MONTHLY' || schedulingProcess.cadence === 'QUARTERLY') && (
+              {cadenceNeedsDayOfMonth(schedulingProcess.cadence) && (
                 <div>
                   <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Day of Month</label>
                   <div className="flex flex-wrap gap-1">
@@ -1212,26 +1231,26 @@ export default function ProcessesPage() {
               )}
 
               {/* Date picker for YEARLY / ONE_TIME */}
-              {(schedulingProcess.cadence === 'YEARLY' || schedulingProcess.cadence === 'ONE_TIME') && (
+              {cadenceNeedsDate(schedulingProcess.cadence) && (
                 <div>
                   <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Date</label>
                   <input
                     type="date"
                     value={schedDate}
                     onChange={(e) => setSchedDate(e.target.value)}
-                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                    className={`w-full ${inputClasses}`}
                   />
                 </div>
               )}
 
-              {/* Time picker — always shown */}
+              {/* Time picker -- always shown */}
               <div>
                 <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Time</label>
                 <input
                   type="time"
                   value={schedTime}
                   onChange={(e) => setSchedTime(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                  className={`w-full ${inputClasses}`}
                 />
               </div>
 
@@ -1240,11 +1259,7 @@ export default function ProcessesPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-[var(--text-secondary)]">Duration</span>
                   <span className="text-[var(--text-primary)] font-medium">
-                    {schedulingProcess.defaultDurationMinutes < 60
-                      ? `${schedulingProcess.defaultDurationMinutes} min`
-                      : schedulingProcess.defaultDurationMinutes % 60 === 0
-                        ? `${schedulingProcess.defaultDurationMinutes / 60}h`
-                        : `${Math.floor(schedulingProcess.defaultDurationMinutes / 60)}h ${schedulingProcess.defaultDurationMinutes % 60}m`}
+                    {formatDurationDisplay(schedulingProcess.defaultDurationMinutes)}
                   </span>
                 </div>
               </div>
@@ -1253,7 +1268,7 @@ export default function ProcessesPage() {
             <div className="flex gap-2 mt-6">
               <button
                 onClick={handleScheduleProcess}
-                disabled={schedSaving || ((schedulingProcess.cadence === 'YEARLY' || schedulingProcess.cadence === 'ONE_TIME') && !schedDate)}
+                disabled={schedSaving || (cadenceNeedsDate(schedulingProcess.cadence) && !schedDate)}
                 className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
               >
                 <Calendar className="h-4 w-4" />

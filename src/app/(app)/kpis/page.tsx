@@ -64,17 +64,16 @@ interface AggregationResponse {
 }
 
 function formatDateRangeLabel(timeLevel: string, start: string, end: string): string {
-  if (timeLevel === 'WEEKLY') {
-    return `Week of ${formatDisplayDate(start)} – ${formatDisplayDate(end)}`;
+  switch (timeLevel) {
+    case 'WEEKLY':
+      return `Week of ${formatDisplayDate(start)} – ${formatDisplayDate(end)}`;
+    case 'MONTHLY':
+      return `Month of ${formatDisplayDate(start)} – ${formatDisplayDate(end)}`;
+    case 'YEARLY':
+      return `Year ${start.split('-')[0]}`;
+    default:
+      return `${formatDisplayDate(start)} – ${formatDisplayDate(end)}`;
   }
-  if (timeLevel === 'MONTHLY') {
-    return `Month of ${formatDisplayDate(start)} – ${formatDisplayDate(end)}`;
-  }
-  if (timeLevel === 'YEARLY') {
-    const year = start.split('-')[0];
-    return `Year ${year}`;
-  }
-  return `${formatDisplayDate(start)} – ${formatDisplayDate(end)}`;
 }
 
 function computeDaysElapsed(startDate: string): number {

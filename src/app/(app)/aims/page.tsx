@@ -19,7 +19,6 @@ import {
   ChevronDown,
   ChevronUp,
   AlertTriangle,
-  CalendarPlus,
   RotateCcw,
 } from 'lucide-react';
 import StreakHeatmap from '@/components/aims/StreakHeatmap';
@@ -86,7 +85,17 @@ interface DerailBatchResponse {
   };
 }
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function getStreakColor(streak: number): string {
+  if (streak === 0) return 'text-gray-400';
+  if (streak < 7) return 'text-orange-400';
+  if (streak < 14) return 'text-orange-500';
+  return 'text-red-500';
+}
+
+function getStreakColorOrMuted(streak: number): string {
+  if (streak === 0) return 'text-[var(--text-muted)]';
+  return getStreakColor(streak);
+}
 
 export default function AimsPage() {
   const { data: categories, isLoading: catsLoading } = useSWR<AimCategory[]>('/api/aims/categories');
@@ -302,6 +311,50 @@ export default function AimsPage() {
     return `${freq}x / week`;
   };
 
+  const completeInstance = async (instanceId: string) => {
+    await fetch(`/api/aims/instances/${instanceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'COMPLETED' }),
+    });
+    await Promise.all([mutateAims(), mutateTodayInstances()]);
+  };
+
+  function renderSimplifiedSection(title: string, cats: AimCategory[]) {
+    const activeCats = cats.filter((cat) => isActive(cat.id));
+    if (activeCats.length === 0) return null;
+
+    return (
+      <section>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">{title}</h2>
+        <div className="space-y-2">
+          {activeCats.map((cat) => {
+            const ua = userAimMap.get(cat.id);
+            if (!ua) return null;
+            const inst = todayInstanceMap.get(cat.id);
+            return (
+              <AimCardSimplified
+                key={cat.id}
+                aim={{
+                  id: ua.id,
+                  aimCategory: { name: cat.name, description: cat.description ?? undefined },
+                  isActive: ua.isActive,
+                  currentPhase: ua.currentPhase,
+                  currentStreak: ua.currentStreak,
+                  bestStreak: ua.bestStreak,
+                  customDuration: ua.customDuration ?? undefined,
+                  customFrequency: ua.customFrequency ?? undefined,
+                }}
+                todayInstance={inst ? { id: inst.id, status: inst.status } : undefined}
+                onComplete={completeInstance}
+              />
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -349,85 +402,8 @@ export default function AimsPage() {
 
       {viewMode === 'simplified' ? (
         <>
-          {/* Simplified: AimCardSimplified per active aim */}
-          {dailyCategories.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Daily Aims</h2>
-              <div className="space-y-2">
-                {dailyCategories.filter((cat) => isActive(cat.id)).map((cat) => {
-                  const ua = userAimMap.get(cat.id);
-                  if (!ua) return null;
-                  const inst = todayInstanceMap.get(cat.id);
-                  return (
-                    <AimCardSimplified
-                      key={cat.id}
-                      aim={{
-                        id: ua.id,
-                        aimCategory: { name: cat.name, description: cat.description ?? undefined },
-                        isActive: ua.isActive,
-                        currentPhase: ua.currentPhase,
-                        currentStreak: ua.currentStreak,
-                        bestStreak: ua.bestStreak,
-                        customDuration: ua.customDuration ?? undefined,
-                        customFrequency: ua.customFrequency ?? undefined,
-                      }}
-                      todayInstance={inst ? {
-                        id: inst.id,
-                        status: inst.status,
-                      } : undefined}
-                      onComplete={async (instanceId) => {
-                        await fetch(`/api/aims/instances/${instanceId}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ status: 'COMPLETED' }),
-                        });
-                        await Promise.all([mutateAims(), mutateTodayInstances()]);
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          )}
-          {weeklyCategories.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Weekly Aims</h2>
-              <div className="space-y-2">
-                {weeklyCategories.filter((cat) => isActive(cat.id)).map((cat) => {
-                  const ua = userAimMap.get(cat.id);
-                  if (!ua) return null;
-                  const inst = todayInstanceMap.get(cat.id);
-                  return (
-                    <AimCardSimplified
-                      key={cat.id}
-                      aim={{
-                        id: ua.id,
-                        aimCategory: { name: cat.name, description: cat.description ?? undefined },
-                        isActive: ua.isActive,
-                        currentPhase: ua.currentPhase,
-                        currentStreak: ua.currentStreak,
-                        bestStreak: ua.bestStreak,
-                        customDuration: ua.customDuration ?? undefined,
-                        customFrequency: ua.customFrequency ?? undefined,
-                      }}
-                      todayInstance={inst ? {
-                        id: inst.id,
-                        status: inst.status,
-                      } : undefined}
-                      onComplete={async (instanceId) => {
-                        await fetch(`/api/aims/instances/${instanceId}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ status: 'COMPLETED' }),
-                        });
-                        await Promise.all([mutateAims(), mutateTodayInstances()]);
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          )}
+          {renderSimplifiedSection('Daily Aims', dailyCategories)}
+          {renderSimplifiedSection('Weekly Aims', weeklyCategories)}
         </>
       ) : (
         <>
@@ -702,29 +678,11 @@ function AimCard({
         <div className="mt-2 flex items-center gap-3 rounded-lg bg-[var(--surface-raised)] px-3 py-2">
           {/* C3: Tooltip on flame/streak icon */}
           <span title={`Current streak: ${streak} days`}>
-            <Flame
-              className={`h-5 w-5 shrink-0 ${
-                streak === 0
-                  ? 'text-gray-400'
-                  : streak < 7
-                    ? 'text-orange-400'
-                    : streak < 14
-                      ? 'text-orange-500'
-                      : 'text-red-500'
-              }`}
-            />
+            <Flame className={`h-5 w-5 shrink-0 ${getStreakColor(streak)}`} />
           </span>
           <div className="flex-1 min-w-0">
             <span
-              className={`text-sm font-semibold ${
-                streak === 0
-                  ? 'text-[var(--text-muted)]'
-                  : streak < 7
-                    ? 'text-orange-400'
-                    : streak < 14
-                      ? 'text-orange-500'
-                      : 'text-red-500'
-              }`}
+              className={`text-sm font-semibold ${getStreakColorOrMuted(streak)}`}
               title={`Current streak: ${streak} days`}
             >
               {streak === 0
@@ -962,166 +920,6 @@ function AimCard({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ---- C4: Aim Scheduler Modal ----
-
-interface AimSchedulerModalProps {
-  category: AimCategory;
-  effectiveDuration: number;
-  effectiveFrequency: number;
-  onClose: () => void;
-  onMutateAims: () => void;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function AimSchedulerModal({
-  category,
-  effectiveDuration,
-  effectiveFrequency,
-  onClose,
-  onMutateAims,
-}: AimSchedulerModalProps) {
-  const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
-  const [dayTimes, setDayTimes] = useState<Record<number, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const toggleDay = (day: number) => {
-    const next = new Set(selectedDays);
-    if (next.has(day)) {
-      next.delete(day);
-      const nextTimes = { ...dayTimes };
-      delete nextTimes[day];
-      setDayTimes(nextTimes);
-    } else {
-      if (next.size >= effectiveFrequency) {
-        // Limit selection to effective frequency
-        return;
-      }
-      next.add(day);
-      setDayTimes({ ...dayTimes, [day]: '09:00' });
-    }
-    setSelectedDays(next);
-  };
-
-  const updateTime = (day: number, time: string) => {
-    setDayTimes({ ...dayTimes, [day]: time });
-  };
-
-  const handleSave = async () => {
-    if (selectedDays.size === 0) {
-      setError('Select at least one day.');
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const days = Array.from(selectedDays).map((d) => ({
-        dayOfWeek: d,
-        timeStart: dayTimes[d] || '09:00',
-      }));
-      const res = await fetch('/api/aims/schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aimCategoryId: category.id, days }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || 'Failed to schedule.');
-        return;
-      }
-      onMutateAims();
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div
-        className="glass-panel rounded-xl p-5 w-full max-w-sm mx-4 space-y-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-            Schedule: {category.name}
-          </h3>
-          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <p className="text-xs text-[var(--text-secondary)]">
-          Pick {effectiveFrequency} day{effectiveFrequency !== 1 ? 's' : ''} per week.
-          Each session: {effectiveDuration} min.
-        </p>
-
-        {/* Day-of-week checkboxes */}
-        <div className="grid grid-cols-7 gap-1">
-          {DAY_LABELS.map((label, idx) => {
-            const isSelected = selectedDays.has(idx);
-            const canSelect = isSelected || selectedDays.size < effectiveFrequency;
-            return (
-              <button
-                key={idx}
-                onClick={() => canSelect && toggleDay(idx)}
-                className={`rounded-lg py-2 text-[10px] font-medium transition-colors ${
-                  isSelected
-                    ? 'bg-teal-600 text-white'
-                    : canSelect
-                      ? 'bg-[var(--surface-raised)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
-                      : 'bg-[var(--surface-raised)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Time pickers for selected days */}
-        {selectedDays.size > 0 && (
-          <div className="space-y-2">
-            {Array.from(selectedDays)
-              .sort()
-              .map((day) => (
-                <div key={day} className="flex items-center gap-2">
-                  <span className="text-xs text-[var(--text-secondary)] w-10">{DAY_LABELS[day]}</span>
-                  <input
-                    type="time"
-                    value={dayTimes[day] || '09:00'}
-                    onChange={(e) => updateTime(day, e.target.value)}
-                    className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)]"
-                  />
-                  <span className="text-[10px] text-[var(--text-muted)]">{effectiveDuration} min</span>
-                </div>
-              ))}
-          </div>
-        )}
-
-        {error && <p className="text-xs text-red-500">{error}</p>}
-
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || selectedDays.size === 0}
-            className="flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CalendarPlus className="h-3 w-3" />}
-            {saving ? 'Scheduling...' : 'Schedule 4 weeks'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

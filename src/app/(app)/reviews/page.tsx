@@ -63,6 +63,16 @@ const typeColors: Record<string, string> = {
 
 const COLLAPSED_HISTORY_COUNT = 5;
 
+function formatScheduleLabel(tr: TeamReviewConfig): string {
+  if (tr.reviewType === 'WEEKLY' && tr.dayOfWeek != null) {
+    return `${DAY_NAMES[tr.dayOfWeek]}s at ${tr.time}`;
+  }
+  if (tr.recurrenceRule) {
+    return `${tr.recurrenceRule} at ${tr.time}`;
+  }
+  return `at ${tr.time}`;
+}
+
 export default function ReviewsPage() {
   return (
     <Suspense fallback={<div className="p-8 text-center text-gray-400">Loading reviews...</div>}>
@@ -243,10 +253,8 @@ function ReviewsPageInner() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
 
-          {/* Schedule Reviews — primary section */}
-          <>
-            {/* Active Team Review Schedules */}
-            {Array.isArray(teamReviewConfigs) && teamReviewConfigs.length > 0 && (
+          {/* Active Team Review Schedules */}
+          {Array.isArray(teamReviewConfigs) && teamReviewConfigs.length > 0 && (
               <div className="glass-panel p-4">
                 <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
                   <Users className="h-4 w-4 text-orange-400" />
@@ -270,13 +278,7 @@ function ReviewsPageInner() {
                         )}
                       </div>
                       <p className="text-xs text-[var(--text-muted)]">
-                        {tr.reviewType === 'WEEKLY' && tr.dayOfWeek != null
-                          ? `${DAY_NAMES[tr.dayOfWeek]}s at ${tr.time}`
-                          : tr.recurrenceRule
-                            ? `${tr.recurrenceRule} at ${tr.time}`
-                            : `at ${tr.time}`
-                        }
-                        {' · '}{tr.duration}min
+                        {formatScheduleLabel(tr)} · {tr.duration}min
                       </p>
                       <p className="text-xs text-[var(--text-muted)] mt-1">
                         {tr.members.length} member{tr.members.length !== 1 ? 's' : ''}
@@ -441,7 +443,6 @@ function ReviewsPageInner() {
                 <p className="text-xs text-[var(--text-muted)]">No team reviews scheduled yet. Ask an admin to create one.</p>
               </div>
             )}
-          </>
 
           {/* Pending reviews */}
           {pendingReviews.length > 0 && (
@@ -496,8 +497,8 @@ function ReviewsPageInner() {
               </h3>
               {hasMoreHistory && (
                 historyExpanded
-                  ? <ChevronUp className="h-4 w-4 text-[var(--text-muted)]" />
-                  : <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+                  ? <ChevronUp className="h-4 w-4 text-[var(--text-muted)]" aria-label="Collapse" />
+                  : <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" aria-label="Expand" />
               )}
             </button>
             {completedReviews.length === 0 ? (
@@ -537,47 +538,65 @@ function ReviewsPageInner() {
 
         {/* Review detail */}
         <div className="lg:col-span-2">
-          {selectedReview ? (() => {
-            const selected = allReviews.find((r: ReviewData) => r.id === selectedReview);
-            const isPending = selected && !selected.completedAt;
-
-            if (isPending) {
-              return (
-                <div className="glass-panel p-8 text-center space-y-4">
-                  <ClipboardCheck className="h-12 w-12 text-amber-400 mx-auto" />
-                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">
-                    {selected.reviewType} Review
-                  </h3>
-                  <p className="text-sm text-[var(--text-muted)]">
-                    Scheduled for {new Date(selected.scheduledDate).toLocaleDateString()}
-                  </p>
-                  <button
-                    onClick={() => router.push(`/reviews/${selectedReview}/complete`)}
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-                  >
-                    <PlayCircle className="h-5 w-5" />
-                    Start Review
-                  </button>
-                </div>
-              );
-            }
-
-            return (
-              <ReviewChecklist
-                reviewId={selectedReview}
-                onComplete={() => {
-                  setSelectedReview(null);
-                  mutateReviews();
-                }}
-              />
-            );
-          })() : (
-            <div className="glass-panel p-12 text-center">
-              <p className="text-[var(--text-muted)]">Select a review to view details</p>
-            </div>
-          )}
+          <ReviewDetailPanel
+            selectedReview={selectedReview}
+            allReviews={allReviews}
+            onStartReview={(id) => router.push(`/reviews/${id}/complete`)}
+            onComplete={() => {
+              setSelectedReview(null);
+              mutateReviews();
+            }}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+interface ReviewDetailPanelProps {
+  selectedReview: string | null;
+  allReviews: ReviewData[];
+  onStartReview: (id: string) => void;
+  onComplete: () => void;
+}
+
+function ReviewDetailPanel({ selectedReview, allReviews, onStartReview, onComplete }: ReviewDetailPanelProps) {
+  if (!selectedReview) {
+    return (
+      <div className="glass-panel p-12 text-center">
+        <p className="text-[var(--text-muted)]">Select a review to view details</p>
+      </div>
+    );
+  }
+
+  const selected = allReviews.find((r) => r.id === selectedReview);
+  const isPending = selected && !selected.completedAt;
+
+  if (isPending) {
+    return (
+      <div className="glass-panel p-8 text-center space-y-4">
+        <ClipboardCheck className="h-12 w-12 text-amber-400 mx-auto" />
+        <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+          {selected.reviewType} Review
+        </h3>
+        <p className="text-sm text-[var(--text-muted)]">
+          Scheduled for {new Date(selected.scheduledDate).toLocaleDateString()}
+        </p>
+        <button
+          onClick={() => onStartReview(selectedReview)}
+          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+        >
+          <PlayCircle className="h-5 w-5" />
+          Start Review
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <ReviewChecklist
+      reviewId={selectedReview}
+      onComplete={onComplete}
+    />
   );
 }

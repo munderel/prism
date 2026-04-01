@@ -35,9 +35,6 @@ function getLastOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0);
 }
 
-// Use getLocalDateString directly from date-utils
-const toDateStr = getLocalDateString;
-
 function formatDateLabel(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -68,11 +65,11 @@ export default function TasksPage() {
     let rangeStart: Date;
     let rangeEnd: Date;
     if (viewMode === 'week') {
-      rangeStart = new Date(toDateStr(getWeekStart(d)) + 'T00:00:00');
-      rangeEnd = new Date(toDateStr(getWeekEnd(d)) + 'T23:59:59.999');
+      rangeStart = new Date(getLocalDateString(getWeekStart(d)) + 'T00:00:00');
+      rangeEnd = new Date(getLocalDateString(getWeekEnd(d)) + 'T23:59:59.999');
     } else if (viewMode === 'month') {
-      rangeStart = new Date(toDateStr(getFirstOfMonth(d)) + 'T00:00:00');
-      rangeEnd = new Date(toDateStr(getLastOfMonth(d)) + 'T23:59:59.999');
+      rangeStart = new Date(getLocalDateString(getFirstOfMonth(d)) + 'T00:00:00');
+      rangeEnd = new Date(getLocalDateString(getLastOfMonth(d)) + 'T23:59:59.999');
     } else {
       // day + agenda fallback
       rangeStart = new Date(date + 'T00:00:00');
@@ -83,27 +80,23 @@ export default function TasksPage() {
   const { data: aimInstancesData, mutate: mutateAims } = useSWR(aimRangeKey);
   const aimInstances = useMemo(() => (Array.isArray(aimInstancesData) ? aimInstancesData : []), [aimInstancesData]);
 
-  // Compute date range for current view
-  const currentDate = new Date(date + 'T00:00:00');
-
   const getRange = useCallback((): { start: string; end: string } | null => {
     const d = new Date(date + 'T00:00:00');
     if (viewMode === 'week') {
-      return { start: toDateStr(getWeekStart(d)), end: toDateStr(getWeekEnd(d)) };
+      return { start: getLocalDateString(getWeekStart(d)), end: getLocalDateString(getWeekEnd(d)) };
     }
     if (viewMode === 'month') {
-      return { start: toDateStr(getFirstOfMonth(d)), end: toDateStr(getLastOfMonth(d)) };
+      return { start: getLocalDateString(getFirstOfMonth(d)), end: getLocalDateString(getLastOfMonth(d)) };
     }
     return null;
   }, [date, viewMode]);
 
   // SWR key for range tasks (week/month views)
   const rangeKey = useMemo(() => {
-    if (viewMode === 'day') return null;
     const range = getRange();
     if (!range) return null;
     return `/api/tasks?startDate=${range.start}&endDate=${range.end}`;
-  }, [viewMode, getRange]);
+  }, [getRange]);
 
   const { data: rangeData, isLoading: rangeLoading, mutate: mutateRange } = useSWR(rangeKey);
   const rangeTasks = useMemo(() => (Array.isArray(rangeData) ? rangeData : []), [rangeData]);
@@ -178,16 +171,19 @@ export default function TasksPage() {
     } else {
       d.setMonth(d.getMonth() + direction);
     }
-    setDate(toDateStr(d));
+    setDate(getLocalDateString(d));
   };
 
   const goToToday = () => setDate(today);
 
   // Label for current period
   const periodLabel = (): string => {
-    if (viewMode === 'day') return formatDateLabel(date);
-    if (viewMode === 'week') return formatWeekLabel(currentDate);
-    return formatMonthLabel(currentDate);
+    const d = new Date(date + 'T00:00:00');
+    switch (viewMode) {
+      case 'day': return formatDateLabel(date);
+      case 'week': return formatWeekLabel(d);
+      default: return formatMonthLabel(d);
+    }
   };
 
   const VIEW_TABS: { key: ViewMode; label: string; icon?: React.ReactNode }[] = [

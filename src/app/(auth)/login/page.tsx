@@ -68,37 +68,7 @@ export default function LoginPage() {
         setError('');
         return;
       }
-      setError('Invalid email or password');
-      return;
-    }
-
-    if (result?.ok) {
-      window.location.href = '/';
-    }
-  };
-
-  const handle2FASubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    const result = await signIn('password-login', {
-      email,
-      password,
-      totpCode,
-      callbackUrl: '/',
-      redirect: false,
-    });
-
-    setLoading(false);
-
-    if (result?.error) {
-      if (result.error.includes('INVALID_2FA_CODE')) {
-        setError('Invalid 2FA code. Please try again.');
-        setTotpCode('');
-        return;
-      }
-      setError('Authentication failed');
+      setError(step === '2fa' ? 'Authentication failed' : 'Invalid email or password');
       return;
     }
 
@@ -150,7 +120,7 @@ export default function LoginPage() {
 
         {/* 2FA Step */}
         {step === '2fa' && (
-          <form onSubmit={handle2FASubmit} className="mb-6 space-y-3">
+          <form onSubmit={handlePasswordLogin} className="mb-6 space-y-3">
             <div className="text-left mb-2">
               <button
                 type="button"

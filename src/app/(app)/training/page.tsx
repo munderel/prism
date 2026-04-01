@@ -38,6 +38,12 @@ const typeBadge: Record<TrainingType, { label: string; cls: string; icon: any }>
   },
 };
 
+function quizScoreClass(score: number): string {
+  if (score >= 80) return 'text-green-400 bg-green-600/20 border-green-600/30';
+  if (score >= 60) return 'text-yellow-400 bg-yellow-600/20 border-yellow-600/30';
+  return 'text-red-400 bg-red-600/20 border-red-600/30';
+}
+
 export default function TrainingPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addModal, setAddModal] = useState<AddModalState>({ open: false, type: 'BOOK' });
@@ -81,23 +87,16 @@ export default function TrainingPage() {
     setFormError(null);
 
     try {
-      const endpoint = addModal.type === 'BOOK' ? '/api/training/books' : '/api/training/courses';
+      const isBook = addModal.type === 'BOOK';
+      const endpoint = isBook ? '/api/training/books' : '/api/training/courses';
       const payload: any = {
         title: formTitle.trim(),
+        ...(formDescription.trim() && {
+          [isBook ? 'description' : 'syllabus']: formDescription.trim(),
+        }),
+        ...(formTargetDate && { targetCompletionDate: formTargetDate }),
+        ...(formGoalId && { goalId: formGoalId }),
       };
-
-      if (addModal.type === 'BOOK' && formDescription.trim()) {
-        payload.description = formDescription.trim();
-      }
-      if (addModal.type === 'COURSE' && formDescription.trim()) {
-        payload.syllabus = formDescription.trim();
-      }
-      if (formTargetDate) {
-        payload.targetCompletionDate = formTargetDate;
-      }
-      if (formGoalId) {
-        payload.goalId = formGoalId;
-      }
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -136,9 +135,7 @@ export default function TrainingPage() {
     [mutate, expandedId]
   );
 
-  const inputClass =
-    'w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none';
-  const selectClass =
+  const fieldClass =
     'w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none';
 
   return (
@@ -314,13 +311,7 @@ export default function TrainingPage() {
                             .map((qa: any) => (
                               <span
                                 key={qa.id}
-                                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${
-                                  qa.score >= 80
-                                    ? 'text-green-400 bg-green-600/20 border-green-600/30'
-                                    : qa.score >= 60
-                                    ? 'text-yellow-400 bg-yellow-600/20 border-yellow-600/30'
-                                    : 'text-red-400 bg-red-600/20 border-red-600/30'
-                                }`}
+                                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${quizScoreClass(qa.score)}`}
                               >
                                 {Math.round(qa.score)}%
                               </span>
@@ -398,7 +389,7 @@ export default function TrainingPage() {
                       ? 'e.g. "Thinking, Fast and Slow"'
                       : 'e.g. "AWS Solutions Architect"'
                   }
-                  className={inputClass}
+                  className={fieldClass}
                   autoFocus
                 />
               </div>
@@ -417,7 +408,7 @@ export default function TrainingPage() {
                       : 'Paste syllabus or course outline...'
                   }
                   rows={3}
-                  className={inputClass}
+                  className={fieldClass}
                 />
               </div>
 
@@ -430,7 +421,7 @@ export default function TrainingPage() {
                   type="date"
                   value={formTargetDate}
                   onChange={(e) => setFormTargetDate(e.target.value)}
-                  className={inputClass}
+                  className={fieldClass}
                 />
               </div>
 
@@ -442,7 +433,7 @@ export default function TrainingPage() {
                 <select
                   value={formGoalId}
                   onChange={(e) => setFormGoalId(e.target.value)}
-                  className={selectClass}
+                  className={fieldClass}
                 >
                   <option value="">None</option>
                   {goalList.map((g: any) => (

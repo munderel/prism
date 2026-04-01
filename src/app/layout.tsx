@@ -19,11 +19,11 @@ export const metadata: Metadata = {
   description: 'Dopaminergic goal management for teams',
 };
 
-export default function RootLayout({
-  children,
-}: {
+interface RootLayoutProps {
   children: React.ReactNode;
-}) {
+}
+
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en" className={`${inter.variable} ${plusJakartaSans.variable}`} suppressHydrationWarning>
       <body className={`${inter.className} bg-background text-foreground`}>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import { Fragment, useState, useMemo, type ReactNode } from 'react';
 import useSWR from 'swr';
 import {
   FileText,
@@ -34,8 +34,6 @@ interface Task {
   priority: string;
   completedAt: string | null;
 }
-
-const formatDate = getLocalDateString;
 
 function downloadFile(filename: string, content: string, mimeType: string) {
   const blob = new Blob([content], { type: mimeType });
@@ -77,17 +75,29 @@ const PRIORITY_LABELS: Record<string, string> = {
   URGENT: 'Urgent',
 };
 
+function statusBadgeClass(status: string): string {
+  if (status === 'DONE') return 'bg-green-500/15 text-green-400';
+  if (status === 'IN_PROGRESS') return 'bg-indigo-500/15 text-indigo-400';
+  return 'bg-[var(--hover-bg)] text-[var(--text-secondary)]';
+}
+
+function priorityBadgeClass(priority: string): string {
+  if (priority === 'URGENT' || priority === 'HIGH') return 'bg-red-500/15 text-red-400';
+  if (priority === 'MEDIUM') return 'bg-yellow-500/15 text-yellow-400';
+  return 'bg-[var(--hover-bg)] text-[var(--text-secondary)]';
+}
+
 export default function ReportsExportPage() {
   const [activeTab, setActiveTab] = useState<Tab>('reviews');
   const thirtyDaysAgo = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return formatDate(d);
+    return getLocalDateString(d);
   }, []);
   const [from, setFrom] = useState(thirtyDaysAgo);
-  const [to, setTo] = useState(formatDate(new Date()));
+  const [to, setTo] = useState(getLocalDateString(new Date()));
 
-  const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
+  const tabs: { key: Tab; label: string; icon: ReactNode }[] = [
     { key: 'reviews', label: 'Reviews', icon: <FileText className="h-4 w-4" /> },
     { key: 'tasks', label: 'Tasks', icon: <CheckSquare className="h-4 w-4" /> },
     { key: 'aims', label: 'AIMs', icon: <Target className="h-4 w-4" /> },
@@ -214,7 +224,7 @@ function ReviewsTab({ from, to }: { from: string; to: string }) {
               </tr>
             )}
             {reviews.map((review) => (
-              <React.Fragment key={review.id}>
+              <Fragment key={review.id}>
                 <tr
                   className="cursor-pointer hover:bg-[var(--hover-bg)]"
                   onClick={() =>
@@ -262,7 +272,7 @@ function ReviewsTab({ from, to }: { from: string; to: string }) {
                     </td>
                   </tr>
                 )}
-              </React.Fragment>
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -358,28 +368,12 @@ function TasksTab({ from, to }: { from: string; to: string }) {
                 <td className="px-4 py-3 text-sm text-[var(--text-primary)]">{task.title}</td>
                 <td className="px-4 py-3 text-sm text-[var(--text-secondary)]">{task.taskType}</td>
                 <td className="px-4 py-3 text-sm">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      task.status === 'DONE'
-                        ? 'bg-green-500/15 text-green-400'
-                        : task.status === 'IN_PROGRESS'
-                          ? 'bg-indigo-500/15 text-indigo-400'
-                          : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'
-                    }`}
-                  >
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(task.status)}`}>
                     {STATUS_LABELS[task.status] ?? task.status}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      task.priority === 'URGENT' || task.priority === 'HIGH'
-                        ? 'bg-red-500/15 text-red-400'
-                        : task.priority === 'MEDIUM'
-                          ? 'bg-yellow-500/15 text-yellow-400'
-                          : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'
-                    }`}
-                  >
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${priorityBadgeClass(task.priority)}`}>
                     {PRIORITY_LABELS[task.priority] ?? task.priority}
                   </span>
                 </td>
