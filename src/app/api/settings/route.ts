@@ -98,10 +98,9 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  const user = await prisma.user.update({
+  await prisma.user.update({
     where: { id: auth.userId },
     data,
-    select: { mtp: true, timezone: true, hasCompletedOnboarding: true, hiddenFeatures: true },
   });
 
   // Update notification preferences (whitelist valid boolean fields only)
@@ -121,5 +120,10 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  return Response.json(user, NO_STORE);
+  const updatedUser = await prisma.user.findUnique({
+    where: { id: auth.userId },
+    select: USER_SETTINGS_SELECT,
+  });
+
+  return Response.json(updatedUser, NO_STORE);
 }
