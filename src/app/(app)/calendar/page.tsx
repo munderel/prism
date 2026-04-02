@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import dynamic from 'next/dynamic';
 import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw } from 'lucide-react';
 import { useSession } from 'next-auth/react';
@@ -9,6 +9,7 @@ import { Draggable } from '@fullcalendar/interaction';
 import { MeetingsManager } from '@/components/calendar/MeetingsManager';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useToast } from '@/components/ui/ToastProvider';
+import { freshFetcher } from '@/lib/fetcher';
 
 // FullCalendar needs dynamic import (no SSR)
 const CalendarView = dynamic(
@@ -182,9 +183,9 @@ export default function CalendarPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
   const toast = useToast();
+  const { mutate: globalMutate } = useSWRConfig();
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [syncing, setSyncing] = useState(false);
-  const calendarViewRef = useRef<{ refreshEvents: () => void } | null>(null);
   const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?status=TODO');
   const { data: aimsData, isLoading: loadingAims, mutate: mutateAims } = useSWR<UnscheduledAim[]>('/api/aims/unscheduled');
   const { data: settingsData } = useSWR('/api/settings?scope=user');
@@ -341,7 +342,13 @@ export default function CalendarPage() {
         const data = await res.json();
         const count = data.updates?.length ?? 0;
         toast.success(count > 0 ? `Synced ${count} change${count === 1 ? '' : 's'} from Google Calendar` : 'Calendar is up to date');
-        mutateTasks();
+        // Invalidate all calendar SWR caches (any date range) so CalendarView refreshes
+        globalMutate(
+          (key: unknown) => typeof key === 'string' && key.startsWith('/api/calendar'),
+          undefined,
+          { revalidate: true }
+        );
+        mutateTasks(freshFetcher('/api/tasks?status=TODO'));
         mutateAims();
       } else {
         toast.error('Sync failed');

@@ -101,17 +101,25 @@ export async function POST(request: NextRequest) {
 
   // === PHASE 1: PULL (GCal → Prism) ===
 
-  // Sync tasks: if GCal event moved/deleted, update Prism
+  // Sync tasks: if GCal event moved/cancelled, update Prism
   for (const task of tasks) {
     if (!task.calendarEventId) continue;
     const gcalEvent = gcalMap.get(task.calendarEventId);
 
-    if (!gcalEvent || gcalEvent.status === 'cancelled') {
+    // Only clear scheduling when event is explicitly cancelled in GCal
+    if (gcalEvent?.status === 'cancelled') {
       await prisma.task.update({
         where: { id: task.id },
         data: { timeBlockStart: null, timeBlockEnd: null, calendarEventId: null },
       });
-      updates.push(`Unscheduled task: ${task.title}`);
+      updates.push(`Unscheduled task (cancelled in GCal): ${task.title}`);
+      continue;
+    }
+
+    // Event not found in batch results -- could be pagination, rate limit, or wrong calendar.
+    // Do NOT clear scheduling to prevent data loss.
+    if (!gcalEvent) {
+      console.warn(`[sync] GCal event ${task.calendarEventId} for task "${task.title}" not found in batch -- skipping`);
       continue;
     }
 
@@ -126,17 +134,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Sync reviews: if GCal event moved/deleted, update Prism
+  // Sync reviews: if GCal event moved/cancelled, update Prism
   for (const review of reviews) {
     if (!review.calendarEventId) continue;
     const gcalEvent = gcalMap.get(review.calendarEventId);
 
-    if (!gcalEvent || gcalEvent.status === 'cancelled') {
+    if (gcalEvent?.status === 'cancelled') {
       await prisma.review.update({
         where: { id: review.id },
         data: { timeBlockStart: null, timeBlockEnd: null, calendarEventId: null },
       });
-      updates.push(`Unscheduled review`);
+      updates.push(`Unscheduled review (cancelled in GCal)`);
+      continue;
+    }
+
+    if (!gcalEvent) {
+      console.warn(`[sync] GCal event ${review.calendarEventId} for review not found in batch -- skipping`);
       continue;
     }
 
@@ -151,17 +164,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Sync aim instances: if GCal event moved/deleted, update Prism
+  // Sync aim instances: if GCal event moved/cancelled, update Prism
   for (const aim of aimInstances) {
     if (!aim.calendarEventId) continue;
     const gcalEvent = gcalMap.get(aim.calendarEventId);
 
-    if (!gcalEvent || gcalEvent.status === 'cancelled') {
+    if (gcalEvent?.status === 'cancelled') {
       await prisma.aimInstance.update({
         where: { id: aim.id },
         data: { timeBlockStart: null, timeBlockEnd: null, calendarEventId: null },
       });
-      updates.push(`Unscheduled aim: ${aim.aimCategory.name}`);
+      updates.push(`Unscheduled aim (cancelled in GCal): ${aim.aimCategory.name}`);
+      continue;
+    }
+
+    if (!gcalEvent) {
+      console.warn(`[sync] GCal event ${aim.calendarEventId} for aim "${aim.aimCategory.name}" not found in batch -- skipping`);
       continue;
     }
 

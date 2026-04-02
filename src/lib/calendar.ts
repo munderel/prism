@@ -174,18 +174,28 @@ export async function listGoogleEvents(
   const results = await Promise.all(
     ids.map(async (calendarId) => {
       try {
-        const response = await calendar.events.list({
-          calendarId,
-          timeMin,
-          timeMax,
-          singleEvents: true,
-          orderBy: 'startTime',
-          maxResults: 100,
-        });
-        return (response.data.items ?? []).map((ev) => ({
-          ...ev,
-          _sourceCalendarId: calendarId,
-        }));
+        const allEvents: any[] = [];
+        let pageToken: string | undefined;
+
+        do {
+          const response = await calendar.events.list({
+            calendarId,
+            timeMin,
+            timeMax,
+            singleEvents: true,
+            orderBy: 'startTime',
+            maxResults: 250,
+            pageToken,
+          });
+          const items = (response.data.items ?? []).map((ev) => ({
+            ...ev,
+            _sourceCalendarId: calendarId,
+          }));
+          allEvents.push(...items);
+          pageToken = response.data.nextPageToken ?? undefined;
+        } while (pageToken);
+
+        return allEvents;
       } catch (err) {
         console.error(`[calendar] Failed to fetch events from calendar ${calendarId}:`, err);
         return [];
