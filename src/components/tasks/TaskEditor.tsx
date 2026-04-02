@@ -172,7 +172,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             {/* Task Type (create only) */}
             {!isEditing && (
               <div>
-                <label className="block text-sm text-[var(--text-secondary)] mb-1">Task Type</label>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Task Type <span className="text-red-400">*</span></label>
                 <div className="flex gap-2">
                   {['IMPROVE', 'REACT', 'MAINTENANCE'].map((t) => (
                     <button
@@ -193,7 +193,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             )}
 
             <div>
-              <label className="block text-sm text-[var(--text-secondary)] mb-1">Title</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Title <span className="text-red-400">*</span></label>
               <input
                 type="text"
                 value={title}
@@ -228,7 +228,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
 
             {/* Estimated Duration */}
             <div>
-              <label className="block text-sm text-[var(--text-secondary)] mb-1">Estimated Duration</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Estimated Duration <span className="text-red-400">*</span></label>
               <div className="flex flex-wrap gap-2 mb-2">
                 {[15, 30, 45, 60, 90, 120, 180, 240].map((mins) => (
                   <button

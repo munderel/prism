@@ -1,12 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
 import { LEVEL_LABELS, formatGoalDateRange } from '@/lib/goal-constants';
 import { GoalCreationCoach } from '@/components/reviews/shared/GoalCreationCoach';
 import { getLocalDateString } from '@/lib/date-utils';
+
+/** Compute the appropriate root goal level based on the date range duration. */
+function computeRootLevel(startDate: string, endDate: string): string {
+  if (!startDate || !endDate) return 'HIGH_HARD';
+  const s = new Date(startDate);
+  const e = new Date(endDate);
+  const durationDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
+  if (durationDays <= 14) return 'WEEKLY';
+  if (s.getFullYear() === e.getFullYear()) return 'MONTHLY';
+  return 'HIGH_HARD';
+}
 
 interface GoalEditorProps {
   stackId: string;
@@ -24,11 +35,6 @@ export function GoalEditor({
   onClose,
 }: GoalEditorProps) {
   const isEditing = !!goal;
-  const derivedLevel = parentGoal
-    ? getChildLevel(parentGoal.level)
-    : 'HIGH_HARD';
-
-  const isRootHHG = derivedLevel === 'HIGH_HARD' && !parentGoal;
 
   const [title, setTitle] = useState(goal?.title ?? '');
   const [description, setDescription] = useState(goal?.description ?? '');
@@ -44,9 +50,21 @@ export function GoalEditor({
   const [error, setError] = useState('');
   const [showCoach, setShowCoach] = useState(false);
 
-  const hhgDurationLabel = isRootHHG
-    ? formatGoalDateRange('HIGH_HARD', startDate || null, endDate || null)
-    : null;
+  // For child goals, derive from parent; for root goals, compute from date range
+  const derivedLevel = parentGoal
+    ? getChildLevel(parentGoal.level)
+    : isEditing
+      ? goal?.level ?? 'HIGH_HARD'
+      : computeRootLevel(startDate, endDate);
+
+  const isRootGoal = !parentGoal && !isEditing;
+  const showDates = isRootGoal || (isEditing && (goal?.startDate || goal?.endDate));
+  const canAutoGenerate = isRootGoal && derivedLevel !== 'WEEKLY';
+
+  const durationLabel = useMemo(() => {
+    if (!showDates || !startDate || !endDate) return null;
+    return formatGoalDateRange(derivedLevel, startDate, endDate);
+  }, [showDates, startDate, endDate, derivedLevel]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +75,7 @@ export function GoalEditor({
       const body: Record<string, any> = { title, description, status };
 
       if (isEditing) {
-        if (goal.startDate || goal.endDate || isRootHHG) {
+        if (goal.startDate || goal.endDate) {
           if (startDate) body.startDate = startDate;
           if (endDate) body.endDate = endDate;
         }
@@ -74,10 +92,12 @@ export function GoalEditor({
         body.stackId = stackId;
         body.level = derivedLevel;
         if (parentGoal) body.parentId = parentGoal.id;
-        if (isRootHHG) {
+        if (isRootGoal) {
           if (startDate) body.startDate = startDate;
           if (endDate) body.endDate = endDate;
-          if (autoGenerate && startDate && endDate) body.autoGenerate = true;
+          if (autoGenerate && startDate && endDate && derivedLevel !== 'WEEKLY') {
+            body.autoGenerate = true;
+          }
         }
 
         const res = await fetch('/api/goals', {
@@ -139,7 +159,7 @@ export function GoalEditor({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-[var(--text-secondary)] mb-1">Title</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Title <span className="text-red-400">*</span></label>
               <input
                 type="text"
                 value={title}
@@ -177,39 +197,39 @@ export function GoalEditor({
               </div>
             )}
 
-            {/* Date pickers: required for HHG roots, optional for editing goals with existing dates */}
-            {(isRootHHG || (isEditing && (goal?.startDate || goal?.endDate))) && (
+            {/* Date pickers: required for new root goals, optional for editing goals with existing dates */}
+            {showDates && (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm text-[var(--text-secondary)] mb-1">
-                      Start Date {isRootHHG && <span className="text-red-400">*</span>}
+                      Start Date {isRootGoal && <span className="text-red-400">*</span>}
                     </label>
                     <input
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      required={isRootHHG}
+                      required={isRootGoal}
                       className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
                   <div>
                     <label className="block text-sm text-[var(--text-secondary)] mb-1">
-                      End Date {isRootHHG && <span className="text-red-400">*</span>}
+                      End Date {isRootGoal && <span className="text-red-400">*</span>}
                     </label>
                     <input
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      required={isRootHHG}
+                      required={isRootGoal}
                       className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
                 </div>
-                {hhgDurationLabel && (
-                  <p className="text-xs text-purple-400/80 -mt-2">{hhgDurationLabel}</p>
+                {durationLabel && (
+                  <p className="text-xs text-purple-400/80 -mt-2">{durationLabel}</p>
                 )}
-                {isRootHHG && !isEditing && (
+                {canAutoGenerate && (
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -218,7 +238,7 @@ export function GoalEditor({
                       className="rounded border-white/20 bg-[var(--hover-bg)] text-indigo-600 focus:ring-indigo-500"
                     />
                     <span className="text-sm text-[var(--text-secondary)]">
-                      Auto-generate yearly and monthly goals
+                      Auto-generate sub-goals
                     </span>
                   </label>
                 )}

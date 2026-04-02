@@ -17,6 +17,8 @@ const USER_SETTINGS_SELECT = {
   casualHoursEnd: true,
   taskSchedulePeriod: true,
   selectedCalendarIds: true,
+  syncTargetCalendarId: true,
+  calendarColorOverrides: true,
   powerdownTime: true,
   weeklyReviewDayOfWeek: true,
   weeklyReviewTime: true,
@@ -33,7 +35,7 @@ const USER_SETTINGS_SELECT = {
 const USER_UPDATABLE_FIELDS = [
   'mtp', 'hasCompletedOnboarding', 'hiddenFeatures',
   'workingHoursStart', 'workingHoursEnd', 'casualHoursStart', 'casualHoursEnd',
-  'taskSchedulePeriod', 'selectedCalendarIds', 'powerdownTime',
+  'taskSchedulePeriod', 'selectedCalendarIds', 'syncTargetCalendarId', 'calendarColorOverrides', 'powerdownTime',
   'weeklyReviewDayOfWeek', 'weeklyReviewTime', 'weeklyReviewDuration',
   'monthlyReviewRecurrenceRule', 'monthlyReviewTime', 'monthlyReviewDuration',
   'yearlyReviewRecurrenceRule', 'yearlyReviewTime', 'yearlyReviewDuration',

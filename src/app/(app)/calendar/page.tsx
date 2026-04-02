@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR from 'swr';
 import dynamic from 'next/dynamic';
-import { CalendarDays, Video, GripVertical, Clock, Users, Flame } from 'lucide-react';
+import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { Draggable } from '@fullcalendar/interaction';
 import { MeetingsManager } from '@/components/calendar/MeetingsManager';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useToast } from '@/components/ui/ToastProvider';
 
 // FullCalendar needs dynamic import (no SSR)
 const CalendarView = dynamic(
@@ -180,7 +181,10 @@ function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
 export default function CalendarPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
+  const toast = useToast();
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [syncing, setSyncing] = useState(false);
+  const calendarViewRef = useRef<{ refreshEvents: () => void } | null>(null);
   const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?status=TODO');
   const { data: aimsData, isLoading: loadingAims, mutate: mutateAims } = useSWR<UnscheduledAim[]>('/api/aims/unscheduled');
   const { data: settingsData } = useSWR('/api/settings?scope=user');
@@ -267,6 +271,8 @@ export default function CalendarPage() {
         const colors: Record<string, { bg: string; border: string }> = {
           task: { bg: '#6366f1', border: '#4f46e5' },
           aim: { bg: '#14b8a6', border: '#0d9488' },
+          work_block: { bg: '#6366f1', border: '#4f46e5' },
+          deep_work: { bg: '#14b8a6', border: '#0d9488' },
         };
 
         const { bg, border } = colors[itemType] || colors.task;
@@ -320,6 +326,33 @@ export default function CalendarPage() {
     }
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).toISOString();
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30).toISOString();
+      const res = await fetch('/api/calendar/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start, end }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const count = data.updates?.length ?? 0;
+        toast.success(count > 0 ? `Synced ${count} change${count === 1 ? '' : 's'} from Google Calendar` : 'Calendar is up to date');
+        mutateTasks();
+        mutateAims();
+      } else {
+        toast.error('Sync failed');
+      }
+    } catch {
+      toast.error('Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const isLoading = loadingTasks || loadingAims;
 
   return (
@@ -329,6 +362,15 @@ export default function CalendarPage() {
           <CalendarDays className="h-6 w-6 text-prism-indigo" />
           Calendar
         </h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-2 rounded-lg bg-[var(--surface-raised)] border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync'}
+          </button>
         {isAdmin && (
           <button
             onClick={() => setShowMeetings(true)}
@@ -338,13 +380,14 @@ export default function CalendarPage() {
             Manage Meetings
           </button>
         )}
+        </div>
       </div>
 
       <MeetingsManager open={showMeetings} onClose={() => setShowMeetings(false)} isAdmin={isAdmin} />
 
       <div className="flex gap-6">
         {/* Unscheduled Items Sidebar */}
-        <div className="w-72 flex-shrink-0">
+        <div className="w-72 flex-shrink-0" ref={sidebarRef}>
           <div className="glass-panel p-4 sticky top-4">
             <div className="flex items-center gap-2 mb-4">
               <Clock className="h-4 w-4 text-indigo-400" />
@@ -359,8 +402,7 @@ export default function CalendarPage() {
             </p>
 
             <div
-              ref={sidebarRef}
-              className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto pr-1"
+              className="space-y-2 max-h-[calc(100vh-380px)] overflow-y-auto pr-1"
             >
               {isLoading ? (
                 <div className="text-center py-8">
@@ -375,6 +417,47 @@ export default function CalendarPage() {
                   <UnscheduledItemCard key={item.id} item={item} />
                 ))
               )}
+            </div>
+
+            {/* Work Block Templates */}
+            <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+              <div className="flex items-center gap-2 mb-3">
+                <Briefcase className="h-4 w-4 text-indigo-400" />
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Work Blocks</h3>
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mb-2">Drag onto calendar to create blocks.</p>
+              <div className="space-y-2">
+                <div
+                  className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-indigo-500/30 border-l-4 border-l-indigo-500 bg-indigo-500/10 p-3 hover:bg-indigo-500/20 transition-colors"
+                  data-item-type="work_block"
+                  data-item-id="__work_block_template__"
+                  data-item-title="Work Block"
+                  data-duration="60"
+                >
+                  <div className="flex items-start gap-2">
+                    <Briefcase className="h-4 w-4 text-indigo-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-[var(--text-primary)] font-medium">Normal Work Block</p>
+                      <p className="text-xs text-[var(--text-muted)] mt-0.5">60min</p>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors"
+                  data-item-type="deep_work"
+                  data-item-id="__deep_work_template__"
+                  data-item-title="Deep Work Block"
+                  data-duration="120"
+                >
+                  <div className="flex items-start gap-2">
+                    <Brain className="h-4 w-4 text-teal-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-[var(--text-primary)] font-medium">Deep Work Block</p>
+                      <p className="text-xs text-[var(--text-muted)] mt-0.5">120min</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -80,6 +80,18 @@ export function formatGoalDateRange(
 
   switch (level) {
     case 'HIGH_HARD': {
+      const diffDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 14) {
+        const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `${start} \u2013 ${end}`;
+      }
+      const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+      if (months < 12) {
+        const start = s.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        const end = e.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        return `${months}-Month Goal (${start} \u2013 ${end})`;
+      }
       const years = e.getFullYear() - s.getFullYear();
       const label = years <= 1 ? '1-Year' : `${years}-Year`;
       return `${label} High Hard Goal (${s.getFullYear()}\u2013${e.getFullYear()})`;
@@ -87,6 +99,7 @@ export function formatGoalDateRange(
     case 'STRATEGIC':
       return String(s.getFullYear());
     case 'MONTHLY':
+      return s.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     case 'WEEKLY': {
       const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });

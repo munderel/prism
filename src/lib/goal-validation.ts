@@ -8,33 +8,38 @@ export const LEVEL_ORDER: GoalLevel[] = [
   'DAILY',
 ];
 
-const VALID_PARENT: Record<GoalLevel, GoalLevel | null> = {
-  HIGH_HARD: null,
-  STRATEGIC: 'HIGH_HARD',
-  MONTHLY: 'STRATEGIC',
-  WEEKLY: 'MONTHLY',
-  DAILY: 'WEEKLY',
+// Parent rules: each level lists which parent levels are valid.
+// null means "can be a standalone root goal".
+const VALID_PARENTS: Record<GoalLevel, (GoalLevel | null)[]> = {
+  HIGH_HARD: [null],
+  STRATEGIC: ['HIGH_HARD'],
+  MONTHLY: ['STRATEGIC', null],   // standalone root for short-duration goals
+  WEEKLY: ['MONTHLY', null],      // standalone root for very short goals
+  DAILY: ['WEEKLY'],
 };
 
-const VALID_CHILD: Record<GoalLevel, GoalLevel | null> = {
-  HIGH_HARD: 'STRATEGIC',
-  STRATEGIC: 'MONTHLY',
-  MONTHLY: 'WEEKLY',
-  WEEKLY: null, // WEEKLY is now leaf — daily items are tasks, not goals
-  DAILY: null,
+const VALID_CHILDREN: Record<GoalLevel, GoalLevel[]> = {
+  HIGH_HARD: ['STRATEGIC'],
+  STRATEGIC: ['MONTHLY'],
+  MONTHLY: ['WEEKLY'],
+  WEEKLY: [],  // WEEKLY is leaf — daily items are tasks, not goals
+  DAILY: [],
 };
 
 export function validateGoalLevel(
   level: GoalLevel | string,
   parentLevel: GoalLevel | string | null
 ): boolean {
-  return VALID_PARENT[level as GoalLevel] === parentLevel;
+  const allowed = VALID_PARENTS[level as GoalLevel];
+  if (!allowed) return false;
+  return allowed.includes(parentLevel as GoalLevel | null);
 }
 
 export function getChildLevel(
   parentLevel: GoalLevel | string
 ): GoalLevel | null {
-  return VALID_CHILD[parentLevel as GoalLevel] ?? null;
+  const children = VALID_CHILDREN[parentLevel as GoalLevel];
+  return children?.[0] ?? null;
 }
 
 // KPI validation
@@ -53,8 +58,9 @@ export function validateKpiLink(
   childKpiType: string,
   parentKpiType: string
 ): boolean {
+  const allowed = VALID_PARENTS[childGoalLevel as GoalLevel];
   return (
-    VALID_PARENT[childGoalLevel as GoalLevel] === parentKpiGoalLevel &&
+    allowed?.includes(parentKpiGoalLevel as GoalLevel) === true &&
     childGoalParentId === parentKpiGoalId &&
     childKpiType === parentKpiType
   );

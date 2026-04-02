@@ -19,10 +19,11 @@ interface StepTop3TasksProps {
   reviewId: string;
   selectedTaskIds: string[];
   onSelectionChange: (taskIds: string[]) => void;
+  onTaskCountChange?: (count: number) => void;
   isTeamReview?: boolean;
 }
 
-export function StepTop3Tasks({ reviewId: _reviewId, selectedTaskIds, onSelectionChange, isTeamReview }: StepTop3TasksProps) {
+export function StepTop3Tasks({ reviewId: _reviewId, selectedTaskIds, onSelectionChange, onTaskCountChange, isTeamReview }: StepTop3TasksProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -40,14 +41,20 @@ export function StepTop3Tasks({ reviewId: _reviewId, selectedTaskIds, onSelectio
 
       const scopeParam = isTeamReview ? '&scope=company' : '';
       const res = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO${scopeParam}`
+        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO&includeUnscheduled=true${scopeParam}`,
+        { cache: 'no-store' }
       );
       if (res.ok) {
         const data = await res.json();
-        setTasks(data.filter((t: Task) => t.status !== 'DONE' && t.status !== 'DROPPED'));
+        const filtered = data.filter((t: Task) => t.status !== 'DONE' && t.status !== 'DROPPED');
+        setTasks(filtered);
+        onTaskCountChange?.(filtered.length);
+      } else {
+        onTaskCountChange?.(0);
       }
     } catch (err) {
       console.error('Failed to fetch upcoming tasks:', err);
+      onTaskCountChange?.(0);
     }
     setLoading(false);
   };

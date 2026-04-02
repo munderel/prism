@@ -5,7 +5,7 @@ import { pickDefined, notFoundResponse, hasAccess, forbiddenResponse, USER_SUMMA
 import { parseBody, updateTaskSchema } from '@/lib/schemas';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
-import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount } from '@/lib/calendar';
+import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 
 export async function GET(
@@ -121,11 +121,12 @@ export async function PATCH(
     const syncCalendar = async () => {
       const hasGoogle = await hasGoogleAccount(task.ownerId);
       if (!hasGoogle) return;
+      const targetCalendarId = await getUserSyncCalendarId(task.ownerId);
       const newStart = data.timeBlockStart ?? task.timeBlockStart;
       const newEnd = data.timeBlockEnd ?? task.timeBlockEnd;
 
       if ((status === 'DONE' || status === 'DROPPED') && task.calendarEventId) {
-        await deleteGoogleEvent(task.ownerId, task.calendarEventId);
+        await deleteGoogleEvent(task.ownerId, task.calendarEventId, targetCalendarId);
         await prisma.task.update({ where: { id }, data: { calendarEventId: null } });
       } else if (task.calendarEventId && (timeBlockStart !== undefined || timeBlockEnd !== undefined)) {
         await updateGoogleEvent(task.ownerId, task.calendarEventId, {
@@ -133,14 +134,14 @@ export async function PATCH(
           description: data.description ?? task.description ?? undefined,
           start: newStart ? new Date(newStart).toISOString() : undefined,
           end: newEnd ? new Date(newEnd).toISOString() : undefined,
-        });
+        }, targetCalendarId);
       } else if (!task.calendarEventId && newStart && newEnd && status !== 'DONE' && status !== 'DROPPED') {
         const gcalEvent = await createGoogleEvent(task.ownerId, {
           summary: data.title ?? task.title,
           description: data.description ?? task.description ?? undefined,
           start: new Date(newStart).toISOString(),
           end: new Date(newEnd).toISOString(),
-        });
+        }, targetCalendarId);
         if (gcalEvent?.id) {
           await prisma.task.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });
         }

@@ -316,56 +316,87 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
-    if (itemType === 'aim') {
-      const aimInstanceId = props.aimInstanceId;
-      const aimCategoryId = props.aimCategoryId;
+    try {
+      if (itemType === 'aim') {
+        const aimInstanceId = props.aimInstanceId;
+        const aimCategoryId = props.aimCategoryId;
 
-      // Check if this aim has activities that need selection
-      let activities: string[] = [];
-      try {
-        const activitiesRaw = props.activities;
-        if (activitiesRaw) {
-          activities = JSON.parse(activitiesRaw);
+        // Check if this aim has activities that need selection
+        let activities: string[] = [];
+        try {
+          const activitiesRaw = props.activities;
+          if (activitiesRaw) {
+            activities = JSON.parse(activitiesRaw);
+          }
+        } catch {
+          // ignore parse errors
         }
-      } catch {
-        // ignore parse errors
-      }
 
-      if (activities.length > 0) {
-        // Store the drop info and show the activity selection modal
-        setPendingAimDrop({ info, startISO, endISO });
-        setPendingActivities(activities);
-        setPendingAimName(info.event.title);
-        setShowActivityModal(true);
-        return;
-      }
+        if (activities.length > 0) {
+          // Store the drop info and show the activity selection modal
+          setPendingAimDrop({ info, startISO, endISO });
+          setPendingActivities(activities);
+          setPendingAimName(info.event.title);
+          setShowActivityModal(true);
+          return;
+        }
 
-      if (aimInstanceId) {
-        await scheduleItem('aim', aimInstanceId, startISO, endISO);
-      } else if (aimCategoryId) {
-        // Create new instance with time block
-        await fetch('/api/aims/instances', {
+        if (aimInstanceId) {
+          const res = await scheduleItem('aim', aimInstanceId, startISO, endISO);
+          if (!res.ok) throw new Error('Failed to schedule aim');
+        } else if (aimCategoryId) {
+          // Create new instance with time block
+          const res = await fetch('/api/aims/instances', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              aimCategoryId,
+              scheduledDate: startISO,
+              timeBlockStart: startISO,
+              timeBlockEnd: endISO,
+            }),
+          });
+          if (!res.ok) throw new Error('Failed to create aim instance');
+        }
+
+        refreshEvents();
+        onExternalDrop?.(info.event.id, start, end, 'aim');
+      } else if (itemType === 'work_block') {
+        // Create a Google Calendar event for a normal work block
+        const res = await fetch('/api/calendar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ summary: 'Work Block', start: startISO, end: endISO }),
+        });
+        if (!res.ok) throw new Error('Failed to create work block');
+        refreshEvents();
+      } else if (itemType === 'deep_work') {
+        // Create an AIM instance for a deep work block
+        const res = await fetch('/api/aims/instances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            aimCategoryId,
+            aimCategoryId: props.aimCategoryId || undefined,
             scheduledDate: startISO,
             timeBlockStart: startISO,
             timeBlockEnd: endISO,
           }),
         });
+        if (!res.ok) throw new Error('Failed to create deep work block');
+        refreshEvents();
+      } else {
+        const taskId = props.taskId || info.event.id?.replace('task-', '');
+        if (!taskId) return;
+
+        const res = await scheduleItem('task', taskId, startISO, endISO, { dueDate: startISO });
+        if (!res.ok) throw new Error('Failed to schedule task');
+
+        refreshEvents();
+        onExternalDrop?.(taskId, start, end, 'task');
       }
-
-      refreshEvents();
-      onExternalDrop?.(info.event.id, start, end, 'aim');
-    } else {
-      const taskId = props.taskId || info.event.id?.replace('task-', '');
-      if (!taskId) return;
-
-      await scheduleItem('task', taskId, startISO, endISO, { dueDate: startISO });
-
-      refreshEvents();
-      onExternalDrop?.(taskId, start, end, 'task');
+    } catch {
+      info.event.remove();
+      toast.error('Failed to schedule item. Please try again.');
     }
   };
 

@@ -8,6 +8,7 @@ import {
   calculateAimStreak,
   type AimPhase,
 } from '@/lib/aim-phases';
+import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
 
 const INSTANCE_INCLUDE = {
   aimCategory: true,
@@ -147,6 +148,42 @@ export async function PATCH(
     data: updateData,
     include: INSTANCE_INCLUDE,
   });
+
+  // Google Calendar sync — fire-and-forget
+  const calendarFieldsChanged = status !== undefined || timeBlockStart !== undefined || timeBlockEnd !== undefined;
+  if (calendarFieldsChanged) {
+    const syncToGcal = async () => {
+      const hasGoogle = await hasGoogleAccount(existing.userId);
+      if (!hasGoogle) return;
+      const targetCalendarId = await getUserSyncCalendarId(existing.userId);
+      const newStart = updated.timeBlockStart;
+      const newEnd = updated.timeBlockEnd;
+      const title = updated.selectedActivity
+        ? `${updated.aimCategory.name}: ${updated.selectedActivity}`
+        : updated.aimCategory.name;
+
+      if ((status === 'COMPLETED' || status === 'SKIPPED') && existing.calendarEventId) {
+        await deleteGoogleEvent(existing.userId, existing.calendarEventId, targetCalendarId);
+        await prisma.aimInstance.update({ where: { id }, data: { calendarEventId: null } });
+      } else if (existing.calendarEventId && (timeBlockStart !== undefined || timeBlockEnd !== undefined)) {
+        await updateGoogleEvent(existing.userId, existing.calendarEventId, {
+          summary: title,
+          start: newStart ? newStart.toISOString() : undefined,
+          end: newEnd ? newEnd.toISOString() : undefined,
+        }, targetCalendarId);
+      } else if (!existing.calendarEventId && newStart && newEnd && status !== 'COMPLETED' && status !== 'SKIPPED') {
+        const gcalEvent = await createGoogleEvent(existing.userId, {
+          summary: title,
+          start: newStart.toISOString(),
+          end: newEnd.toISOString(),
+        }, targetCalendarId);
+        if (gcalEvent?.id) {
+          await prisma.aimInstance.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });
+        }
+      }
+    };
+    syncToGcal().catch((err) => console.warn('[aims] Google Calendar sync failed:', err));
+  }
 
   return Response.json(updated);
 }

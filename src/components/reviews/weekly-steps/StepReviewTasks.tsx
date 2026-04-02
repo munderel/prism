@@ -14,6 +14,10 @@ interface Task {
   goal?: { id: string; title: string } | null;
 }
 
+interface CategorizedTask extends Task {
+  category: 'last_week' | 'overdue' | 'unscheduled';
+}
+
 async function getWeekStartDay(): Promise<number> {
   try {
     const res = await fetch('/api/stacks');
@@ -40,7 +44,7 @@ interface StepReviewTasksProps {
 }
 
 export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<CategorizedTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [rescheduleTaskId, setRescheduleTaskId] = useState<string | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
@@ -48,10 +52,10 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchLastWeekTasks();
+    fetchAllReviewTasks();
   }, []);
 
-  const fetchLastWeekTasks = async () => {
+  const fetchAllReviewTasks = async () => {
     try {
       const weekStartDay = await getWeekStartDay();
 
@@ -69,13 +73,49 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
       lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
       lastWeekEnd.setHours(23, 59, 59, 999);
 
-      const res = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}`
+      const seen = new Set<string>();
+      const allTasks: CategorizedTask[] = [];
+
+      // Fetch 1: Last week's tasks
+      const lastWeekRes = await fetch(
+        `/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}`,
+        { cache: 'no-store' }
       );
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data);
+      if (lastWeekRes.ok) {
+        const data: Task[] = await lastWeekRes.json();
+        for (const t of data) {
+          if (!seen.has(t.id)) {
+            seen.add(t.id);
+            allTasks.push({ ...t, category: 'last_week' });
+          }
+        }
       }
+
+      // Fetch 2: All tasks including unscheduled — filter for overdue + unscheduled
+      const allRes = await fetch('/api/tasks?includeUnscheduled=true', { cache: 'no-store' });
+      if (allRes.ok) {
+        const data: Task[] = await allRes.json();
+        const todayStr = getLocalDateString(new Date());
+        for (const t of data) {
+          if (seen.has(t.id)) continue;
+          if (t.status === 'DONE' || t.status === 'DROPPED') continue;
+
+          // Overdue: has a past due date, not completed
+          if (t.dueDate && t.dueDate < todayStr) {
+            seen.add(t.id);
+            allTasks.push({ ...t, category: 'overdue' });
+            continue;
+          }
+
+          // Unscheduled: no due date at all, status is TODO or IN_PROGRESS
+          if (!t.dueDate && (t.status === 'TODO' || t.status === 'IN_PROGRESS')) {
+            seen.add(t.id);
+            allTasks.push({ ...t, category: 'unscheduled' });
+          }
+        }
+      }
+
+      setTasks(allTasks);
     } catch (err) {
       console.error('Failed during task review operation:', err);
     }
@@ -139,33 +179,56 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
   };
 
   if (loading) {
-    return <div className="text-[var(--text-muted)] text-sm py-4">Loading last week&apos;s tasks...</div>;
+    return <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>;
   }
 
   if (tasks.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
         <ListTodo className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-2" />
-        <p className="text-sm text-[var(--text-muted)]">No tasks found from last week.</p>
+        <p className="text-sm text-[var(--text-muted)]">No tasks found from last week, no overdue tasks, and no unscheduled tasks.</p>
       </div>
     );
   }
 
   const completedCount = tasks.filter((t) => t.status === 'DONE').length;
+  const overdueTasks = tasks.filter((t) => t.category === 'overdue');
+  const lastWeekTasks = tasks.filter((t) => t.category === 'last_week');
+  const unscheduledTasks = tasks.filter((t) => t.category === 'unscheduled');
+
+  const renderTaskSection = (sectionTasks: CategorizedTask[], title: string, titleColor: string) => {
+    if (sectionTasks.length === 0) return null;
+    return (
+      <div className="space-y-2">
+        <h4 className={`text-xs font-bold ${titleColor} uppercase tracking-wider`}>
+          {title} ({sectionTasks.length})
+        </h4>
+        {sectionTasks.map((task) => renderTaskCard(task))}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-[var(--text-secondary)]">
-          Review your tasks from last week. Mark complete or reschedule.
+          Review your tasks. Mark complete or reschedule incomplete items.
         </p>
         <span className="text-xs text-[var(--text-muted)]">
           {completedCount}/{tasks.length} done
         </span>
       </div>
 
-      <div className="space-y-2">
-        {tasks.map((task) => (
+      <div className="space-y-4">
+        {renderTaskSection(overdueTasks, 'Overdue Tasks', 'text-red-400')}
+        {renderTaskSection(lastWeekTasks, "Last Week's Tasks", 'text-[var(--text-muted)]')}
+        {renderTaskSection(unscheduledTasks, 'Unscheduled Tasks', 'text-amber-400')}
+      </div>
+    </div>
+  );
+
+  function renderTaskCard(task: CategorizedTask) {
+    return (
           <div key={task.id} className="space-y-0">
             <div
               className="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3"
@@ -262,8 +325,6 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
               </div>
             )}
           </div>
-        ))}
-      </div>
-    </div>
-  );
+    );
+  }
 }

@@ -20,6 +20,10 @@ export async function POST(
     return Response.json({ error: 'title is required' }, { status: 400 });
   }
 
+  if (!scheduledTime || typeof scheduledTime !== 'string' || !/^\d{2}:\d{2}$/.test(scheduledTime)) {
+    return Response.json({ error: 'scheduledTime is required in HH:mm format' }, { status: 400 });
+  }
+
   if (defaultDurationMinutes !== undefined && (typeof defaultDurationMinutes !== 'number' || defaultDurationMinutes <= 0)) {
     return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
   }

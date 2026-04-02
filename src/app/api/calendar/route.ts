@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
-import { listGoogleEvents, createGoogleEvent } from '@/lib/calendar';
+import { listGoogleEvents, createGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 const MAX_DAYS = 366;
@@ -106,7 +106,12 @@ function matchesYearlyRule(d: Date, rule: string): boolean {
 
 /** Check if a user is an attendee or creator of a meeting. */
 function isUserInMeeting(meeting: { attendeeIds: unknown; createdById: string }, userId: string): boolean {
-  const attendees = (meeting.attendeeIds as string[]) || [];
+  let attendees: string[] = [];
+  if (Array.isArray(meeting.attendeeIds)) {
+    attendees = meeting.attendeeIds;
+  } else if (typeof meeting.attendeeIds === 'string') {
+    try { attendees = JSON.parse(meeting.attendeeIds); } catch { /* ignore */ }
+  }
   return attendees.includes(userId) || meeting.createdById === userId;
 }
 
@@ -142,10 +147,13 @@ export async function GET(request: NextRequest) {
 
   const userSettings = await prisma.user.findUnique({
     where: { id: auth.userId },
-    select: { timezone: true, selectedCalendarIds: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
+    select: { timezone: true, selectedCalendarIds: true, calendarColorOverrides: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
   });
   const userTz = userSettings?.timezone ?? 'America/New_York';
   const calendarIds = parseCalendarIds(userSettings?.selectedCalendarIds);
+  const colorOverrides = (userSettings?.calendarColorOverrides && typeof userSettings.calendarColorOverrides === 'object' && !Array.isArray(userSettings.calendarColorOverrides))
+    ? (userSettings.calendarColorOverrides as Record<string, string>)
+    : {};
 
   // Availability mode: return busy slots from all sources
   if (searchParams.get('availability') === 'true') {
@@ -277,7 +285,7 @@ export async function GET(request: NextRequest) {
       start: task.timeBlockStart?.toISOString() ?? task.dueDate?.toISOString(),
       end: task.timeBlockEnd?.toISOString() ?? undefined,
       allDay: !task.timeBlockStart,
-      source: 'task',
+      source: 'tasks',
       taskId: task.id,
       status: task.status,
       taskType: task.taskType,
@@ -320,6 +328,8 @@ export async function GET(request: NextRequest) {
   }
 
   for (const ge of googleEvents) {
+    const sourceCalId = (ge as any)._sourceCalendarId;
+    const eventColor = colorOverrides[sourceCalId] || (ge as any).colorId || '#9333ea';
     events.push({
       id: `google-${ge.id}`,
       title: ge.summary,
@@ -328,7 +338,8 @@ export async function GET(request: NextRequest) {
       allDay: !ge.start?.dateTime,
       source: 'google',
       meetLink: ge.hangoutLink,
-      color: '#9333ea',
+      calendarId: sourceCalId,
+      color: eventColor,
     });
   }
 
@@ -514,6 +525,7 @@ export async function GET(request: NextRequest) {
       OR: [
         { assigneeId: auth.userId },
         { delegateId: auth.userId },
+        { assigneeId: null },
       ],
     },
     select: {
@@ -634,13 +646,14 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'summary, start, and end are required' }, { status: 400 });
   }
 
+  const targetCalendarId = await getUserSyncCalendarId(auth.userId);
   const event = await createGoogleEvent(auth.userId, {
     summary,
     description,
     start,
     end,
     addMeetLink,
-  });
+  }, targetCalendarId);
 
   if (!event) {
     return Response.json({ error: 'Failed to create event. Google Calendar may not be connected.' }, { status: 400 });
