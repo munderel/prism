@@ -111,13 +111,18 @@ export async function getCalendarClient(userId: string) {
 
   if (!user?.googleRefreshToken || !account) return null;
 
-  // Decrypt the token if encryption is enabled, falling back to plaintext for pre-migration tokens
+  // Decrypt the token if encryption is enabled
   let refreshToken = user.googleRefreshToken;
   if (process.env.TOKEN_ENCRYPTION_KEY) {
-    refreshToken = decryptToken(user.googleRefreshToken) ?? refreshToken;
-    if (refreshToken === user.googleRefreshToken) {
-      console.warn(`[calendar] Failed to decrypt refresh token for user ${userId} — using as plaintext (pre-migration token?)`);
+    const decrypted = decryptToken(user.googleRefreshToken);
+    if (decrypted) {
+      refreshToken = decrypted;
+    } else if (user.googleRefreshToken.includes(':')) {
+      // Token looks encrypted (iv:authTag:ciphertext) but can't be decrypted — key rotated or corrupted
+      console.error(`[calendar] Cannot decrypt refresh token for user ${userId} — re-auth required`);
+      return null;
     }
+    // else: no colons → genuinely a pre-migration plaintext token, use as-is
   }
 
   const oauth2Client = new google.auth.OAuth2(
@@ -177,8 +182,8 @@ export async function listGoogleEvents(
           ...ev,
           _sourceCalendarId: calendarId,
         }));
-      } catch {
-        console.warn(`[calendar] Failed to fetch events from calendar ${calendarId}`);
+      } catch (err) {
+        console.error(`[calendar] Failed to fetch events from calendar ${calendarId}:`, err);
         return [];
       }
     })

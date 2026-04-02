@@ -104,7 +104,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const calendarRef = useRef<any>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
-  const { events, refreshEvents } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
+  const { events, refreshEvents, googleStatus, googleError } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
   const { resolvedTheme } = useTheme();
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown', 'processes']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
@@ -593,6 +593,19 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
   return (
     <div className="relative">
+      {/* Google Calendar connection warning */}
+      {googleStatus === 'error' && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+          <span>Google Calendar events could not be loaded{googleError ? `: ${googleError}` : '.'}</span>
+          <a href="/settings" className="ml-auto whitespace-nowrap text-amber-400 underline hover:text-amber-300">Reconnect in Settings</a>
+        </div>
+      )}
+      {googleStatus === 'not_connected' && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-300">
+          <span>Google Calendar is not connected.</span>
+          <a href="/settings" className="ml-auto whitespace-nowrap text-blue-400 underline hover:text-blue-300">Connect in Settings</a>
+        </div>
+      )}
       {/* Filter toggles */}
       <div className="flex items-center gap-3 mb-4">
         {SOURCE_FILTERS.map(({ key, label, color }) => (
