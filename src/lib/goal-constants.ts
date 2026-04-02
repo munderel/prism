@@ -15,16 +15,16 @@ export const LEVEL_COLORS: Record<string, string> = {
 };
 
 export const REVIEW_LEVEL_COLORS: Record<string, string> = {
-  WEEKLY: 'bg-green-600 text-white border-transparent',
+  WEEKLY: 'bg-green-600 text-slate-950 dark:text-white border-transparent',
   MONTHLY: 'bg-blue-600 text-white border-transparent',
-  YEARLY: 'bg-amber-600 text-white border-transparent',
+  YEARLY: 'bg-amber-600 text-slate-950 dark:text-white border-transparent',
 };
 
 export const GOAL_STATUS_COLORS: Record<string, string> = {
   NOT_STARTED: 'text-gray-500',
-  IN_PROGRESS: 'text-yellow-400',
-  COMPLETED: 'text-green-400',
-  ABANDONED: 'text-red-400',
+  IN_PROGRESS: 'text-yellow-700 dark:text-yellow-400',
+  COMPLETED: 'text-green-700 dark:text-green-400',
+  ABANDONED: 'text-red-700 dark:text-red-400',
 };
 
 export const GOAL_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED'] as const;
@@ -44,10 +44,10 @@ export const PRIORITY_DOT_COLORS: Record<string, string> = {
 };
 
 export const TASK_STATUS_COLORS: Record<string, string> = {
-  TODO: 'text-gray-400',
-  IN_PROGRESS: 'text-yellow-400',
-  DONE: 'text-green-400',
-  DROPPED: 'text-red-400',
+  TODO: 'text-gray-600 dark:text-gray-400',
+  IN_PROGRESS: 'text-yellow-700 dark:text-yellow-400',
+  DONE: 'text-green-700 dark:text-green-400',
+  DROPPED: 'text-red-700 dark:text-red-400',
 };
 
 export const TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'DONE', 'DROPPED'] as const;
