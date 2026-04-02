@@ -178,9 +178,6 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
   const [editPriority, setEditPriority] = useState('');
   const [editSaving, setEditSaving] = useState(false);
 
-  // Error state for task creation
-  const [addError, setAddError] = useState<string | null>(null);
-
   const handleAdd = useCallback(async () => {
     if (!newTitle.trim()) return;
     if (newTaskType === 'IMPROVE' && !newGoalId) {
