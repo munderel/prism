@@ -29,6 +29,17 @@ export default function LeaderboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Rankings */}
         <div className="lg:col-span-2 space-y-3">
+          {leaderboard.length === 0 && (
+            <div className="glass-panel px-6 py-10 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--surface)]">
+                <Trophy className="h-7 w-7 text-yellow-400" />
+              </div>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">No leaderboard entries yet</h2>
+              <p className="mt-2 text-sm text-[var(--text-muted)]">
+                Team members will appear here once leaderboard visibility is enabled in settings.
+              </p>
+            </div>
+          )}
           {leaderboard.map((user: any, i: number) => (
             <m.div
               key={user.id}

@@ -100,11 +100,12 @@ async function main() {
   // Seed default admin user
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@upwhiten.com' },
-    update: { isAdmin: true },
+    update: { isAdmin: true, isPublicOnLeaderboard: true },
     create: {
       email: 'admin@upwhiten.com',
       name: 'Munder (Admin)',
       isAdmin: true,
+      isPublicOnLeaderboard: true,
     },
   });
 
@@ -224,21 +225,23 @@ async function main() {
   // ============================================================
   const sarah = await prisma.user.upsert({
     where: { email: 'sarah@upwhiten.com' },
-    update: { name: 'Sarah Chen' },
+    update: { name: 'Sarah Chen', isPublicOnLeaderboard: true },
     create: {
       email: 'sarah@upwhiten.com',
       name: 'Sarah Chen',
       isAdmin: false,
+      isPublicOnLeaderboard: true,
     },
   });
 
   const james = await prisma.user.upsert({
     where: { email: 'james@upwhiten.com' },
-    update: { name: 'James Wilson' },
+    update: { name: 'James Wilson', isPublicOnLeaderboard: true },
     create: {
       email: 'james@upwhiten.com',
       name: 'James Wilson',
       isAdmin: false,
+      isPublicOnLeaderboard: true,
     },
   });
 

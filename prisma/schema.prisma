@@ -52,7 +52,7 @@ model User {
   totpSecret            String?   @db.Text
   is2FAEnabled          Boolean   @default(false)
   isLockedOut           Boolean   @default(false)
-  isPublicOnLeaderboard Boolean   @default(false)
+  isPublicOnLeaderboard Boolean   @default(true)
   taskSchedulePeriod    String?   // "working" | "casual" | "both"
   selectedCalendarIds   Json      @default("[]") // String[] of Google Calendar IDs to sync
   syncTargetCalendarId  String?   // Google Calendar ID to push events to (null = 'primary')
