@@ -351,7 +351,6 @@ export function CalendarSplitView({
         return;
       }
 
-      await onSchedule(itemId, itemType, start, end);
       // Remove the auto-added event — the parent will re-render with updated data
       info.event.remove();
       const tempEvent = {

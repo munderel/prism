@@ -5,34 +5,35 @@ import { decryptToken } from './crypto';
 import { getCompletionUrl } from './completion-token';
 
 /**
- * Check if a user has a Google account linked (for graceful degradation).
+ * Single query to get Google sync info for a user.
+ * Returns whether they have a linked Google account and their target calendar ID.
  */
-export async function hasGoogleAccount(userId: string): Promise<boolean> {
+export async function getGoogleSyncInfo(userId: string): Promise<{ hasGoogle: boolean; calendarId: string }> {
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { googleRefreshToken: true },
+      select: { googleRefreshToken: true, syncTargetCalendarId: true },
     });
-    return !!user?.googleRefreshToken;
+    return {
+      hasGoogle: !!user?.googleRefreshToken,
+      calendarId: user?.syncTargetCalendarId || 'primary',
+    };
   } catch (err) {
-    console.warn('[calendar] hasGoogleAccount check failed:', err);
-    return false;
+    console.warn('[calendar] getGoogleSyncInfo check failed:', err);
+    return { hasGoogle: false, calendarId: 'primary' };
   }
 }
 
-/**
- * Get the user's configured sync target calendar ID (defaults to 'primary').
- */
+/** @deprecated Use getGoogleSyncInfo instead */
+export async function hasGoogleAccount(userId: string): Promise<boolean> {
+  const { hasGoogle } = await getGoogleSyncInfo(userId);
+  return hasGoogle;
+}
+
+/** @deprecated Use getGoogleSyncInfo instead */
 export async function getUserSyncCalendarId(userId: string): Promise<string> {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { syncTargetCalendarId: true },
-    });
-    return user?.syncTargetCalendarId || 'primary';
-  } catch {
-    return 'primary';
-  }
+  const { calendarId } = await getGoogleSyncInfo(userId);
+  return calendarId;
 }
 
 /**

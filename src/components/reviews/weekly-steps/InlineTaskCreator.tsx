@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import useSWR from 'swr';
 import { Plus, Pencil, Trash2, Save, X, Loader2, BarChart3 } from 'lucide-react';
 import { formatGoalDateRange } from '@/lib/goal-constants';
+import { getPriorityBadgeClass } from '../shared/review-types';
 
 const TASK_TYPES = ['IMPROVE', 'REACT', 'MAINTENANCE'] as const;
 const PRIORITIES = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
@@ -35,15 +36,6 @@ function getTaskTypeBadgeClass(taskType: string): string {
     case 'IMPROVE': return 'bg-blue-500/20 text-blue-400';
     case 'REACT': return 'bg-orange-500/20 text-orange-400';
     default: return 'bg-gray-500/20 text-gray-400';
-  }
-}
-
-function getPriorityBadgeClass(priority: string): string {
-  switch (priority) {
-    case 'URGENT': return 'bg-red-500/20 text-red-400';
-    case 'HIGH': return 'bg-orange-500/20 text-orange-400';
-    case 'MEDIUM': return 'bg-blue-500/20 text-blue-400';
-    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
   }
 }
 

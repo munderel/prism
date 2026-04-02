@@ -3,7 +3,7 @@ import { ReviewType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { notFoundResponse, forbiddenResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
-import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
+import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 
 type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
 
@@ -60,9 +60,8 @@ export async function PATCH(
   const calendarFieldsChanged = body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined || body.complete;
   if (calendarFieldsChanged) {
     const syncToGcal = async () => {
-      const hasGoogle = await hasGoogleAccount(review.userId);
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(review.userId);
       if (!hasGoogle) return;
-      const targetCalendarId = await getUserSyncCalendarId(review.userId);
       const newStart = updated.timeBlockStart;
       const newEnd = updated.timeBlockEnd;
       const title = `${review.reviewType} Review`;

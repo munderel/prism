@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Target, TrendingUp, ChevronRight } from 'lucide-react';
 import { formatGoalDateRange } from '@/lib/goal-constants';
+import { getStatusBadgeClass } from '../shared/review-types';
 
 interface GoalParent {
   id: string;
@@ -114,15 +115,6 @@ function buildHierarchy(goals: Goal[]): HierarchyNode[] {
   }
 
   return Array.from(hierarchyMap.values());
-}
-
-function getStatusBadgeClass(status: string): string {
-  switch (status) {
-    case 'COMPLETED': return 'bg-green-500/20 text-green-400';
-    case 'IN_PROGRESS': return 'bg-blue-500/20 text-blue-400';
-    case 'ABANDONED': return 'bg-red-500/20 text-red-400';
-    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
-  }
 }
 
 /**
