@@ -11,6 +11,17 @@ type User = {
   email: string;
 };
 
+type GoalAssignee = {
+  user: { id: string; name: string | null };
+};
+
+type Goal = {
+  id: string;
+  title: string;
+  level: string;
+  assignees?: GoalAssignee[];
+};
+
 type UrgencyLevel = 'critical' | 'urgent' | 'standard' | 'consider-idea' | null;
 
 function classifyDeadline(dateStr: string): UrgencyLevel {
@@ -54,8 +65,10 @@ export default function NewReactiveTaskPage() {
   const [error, setError] = useState('');
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [goalId, setGoalId] = useState('');
 
-  // Fetch user list for Process Owner dropdown
+  // Fetch user list and goals on mount
   useEffect(() => {
     async function fetchUsers() {
       try {
@@ -65,14 +78,33 @@ export default function NewReactiveTaskPage() {
           setUsers(data);
         }
       } catch (err) {
-        // Non-admins may not have access to admin endpoint
         console.error('Failed to fetch users:', err);
       } finally {
         setUsersLoading(false);
       }
     }
+    async function fetchGoals() {
+      try {
+        const res = await fetch('/api/goals?isCompany=true');
+        if (res.ok) {
+          const data = await res.json();
+          setGoals(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        // Ignore — goals are optional
+      }
+    }
     fetchUsers();
+    fetchGoals();
   }, []);
+
+  // Auto-assign from goal's responsible person when goal is selected
+  useEffect(() => {
+    if (!goalId) return;
+    const selected = goals.find((g) => g.id === goalId);
+    const firstAssignee = selected?.assignees?.[0]?.user?.id;
+    if (firstAssignee) setAssigneeId(firstAssignee);
+  }, [goalId, goals]);
 
   const urgency = useMemo(() => classifyDeadline(dueDate), [dueDate]);
   const autoPriority = useMemo(() => urgencyToPriority(urgency), [urgency]);
@@ -110,6 +142,7 @@ export default function NewReactiveTaskPage() {
       };
 
       if (assigneeId) body.ownerId = assigneeId;
+      if (goalId) body.goalId = goalId;
 
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -194,7 +227,26 @@ export default function NewReactiveTaskPage() {
           />
         </div>
 
-        {/* 2. Process Owner */}
+        {/* 2. Linked Goal */}
+        <div>
+          <label className="block text-sm text-[var(--text-secondary)] mb-1">
+            Linked Goal <span className="text-xs text-[var(--text-muted)]">(optional — auto-assigns responsible person)</span>
+          </label>
+          <select
+            value={goalId}
+            onChange={(e) => setGoalId(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">-- Select a goal (optional) --</option>
+            {goals.map((goal) => (
+              <option key={goal.id} value={goal.id}>
+                {goal.title}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 3. Process Owner */}
         <div>
           <label className="block text-sm text-[var(--text-secondary)] mb-1">
             Who is responsible for this area of responsibility?

@@ -110,35 +110,42 @@ export function InlineCalendar({
     const start = info.event.start;
     const end = info.event.end || new Date(start.getTime() + 60 * 60 * 1000);
 
-    // PATCH the item with time block
     const taskId = props.taskId || info.event.id?.replace('task-', '');
-    if (taskId) {
-      const endpoints: Record<string, string> = {
-        aim: `/api/aims/instances/${taskId}`,
-        review: `/api/reviews/${taskId}`,
-        task: `/api/tasks/${taskId}`,
-      };
-      const endpoint = endpoints[itemType] || endpoints.task;
-      await fetch(endpoint, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          timeBlockStart: start.toISOString(),
-          timeBlockEnd: end.toISOString(),
-        }),
-      });
+
+    try {
+      // PATCH the item with time block
+      if (taskId) {
+        const endpoints: Record<string, string> = {
+          aim: `/api/aims/instances/${taskId}`,
+          review: `/api/reviews/${taskId}`,
+          task: `/api/tasks/${taskId}`,
+        };
+        const endpoint = endpoints[itemType] || endpoints.task;
+        const res = await fetch(endpoint, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            timeBlockStart: start.toISOString(),
+            timeBlockEnd: end.toISOString(),
+          }),
+        });
+        if (!res.ok) throw new Error('Failed to schedule item');
+      }
+
+      // Notify parent
+      onItemScheduled?.(
+        taskId || info.event.id,
+        start,
+        end,
+        itemType,
+      );
+
+      // Refresh calendar events
+      refreshEvents();
+    } catch {
+      // Remove the ghost event on failure
+      info.event.remove();
     }
-
-    // Notify parent
-    onItemScheduled?.(
-      taskId || info.event.id,
-      start,
-      end,
-      itemType,
-    );
-
-    // Refresh calendar events
-    refreshEvents();
   };
 
   // Handle internal event drag (move existing events)

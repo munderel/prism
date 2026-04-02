@@ -72,6 +72,8 @@ export async function GET(request: NextRequest) {
   if (goalId) extraFilter.goalId = goalId;
   if (status) extraFilter.status = status;
   if (taskType) extraFilter.taskType = taskType;
+  const processIdParam = searchParams.get('processId');
+  if (processIdParam) extraFilter.processId = processIdParam;
 
   // Subtask filtering: by default exclude subtasks from top-level lists
   const parentId = searchParams.get('parentId');
