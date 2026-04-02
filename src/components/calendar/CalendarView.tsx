@@ -371,16 +371,11 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         if (!res.ok) throw new Error('Failed to create work block');
         refreshEvents();
       } else if (itemType === 'deep_work') {
-        // Create an AIM instance for a deep work block
-        const res = await fetch('/api/aims/instances', {
+        // Create a Google Calendar event for a deep work block
+        const res = await fetch('/api/calendar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            aimCategoryId: props.aimCategoryId || undefined,
-            scheduledDate: startISO,
-            timeBlockStart: startISO,
-            timeBlockEnd: endISO,
-          }),
+          body: JSON.stringify({ summary: 'Deep Work Block', start: startISO, end: endISO }),
         });
         if (!res.ok) throw new Error('Failed to create deep work block');
         refreshEvents();
