@@ -8,7 +8,7 @@ import {
   calculateAimStreak,
   type AimPhase,
 } from '@/lib/aim-phases';
-import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
+import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 
 const INSTANCE_INCLUDE = {
   aimCategory: true,
@@ -153,9 +153,8 @@ export async function PATCH(
   const calendarFieldsChanged = status !== undefined || timeBlockStart !== undefined || timeBlockEnd !== undefined;
   if (calendarFieldsChanged) {
     const syncToGcal = async () => {
-      const hasGoogle = await hasGoogleAccount(existing.userId);
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(existing.userId);
       if (!hasGoogle) return;
-      const targetCalendarId = await getUserSyncCalendarId(existing.userId);
       const newStart = updated.timeBlockStart;
       const newEnd = updated.timeBlockEnd;
       const title = updated.selectedActivity

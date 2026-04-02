@@ -6,8 +6,7 @@ export async function fetcher(url: string): Promise<unknown> {
 
 /** Fetcher that bypasses browser HTTP cache. Use after mutations. */
 export async function freshFetcher(url: string): Promise<unknown> {
-  const separator = url.includes('?') ? '&' : '?';
-  const response = await fetch(`${url}${separator}_t=${Date.now()}`, {
+  const response = await fetch(url, {
     signal: AbortSignal.timeout(15000),
     cache: 'no-store',
   });

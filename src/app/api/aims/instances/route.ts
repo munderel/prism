@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
-import { createGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
+import { createGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -82,9 +82,8 @@ export async function POST(request: NextRequest) {
   // Sync to Google Calendar — fire-and-forget
   if (timeBlockStart && timeBlockEnd) {
     const syncToGcal = async () => {
-      const hasGoogle = await hasGoogleAccount(auth.userId);
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
       if (!hasGoogle) return;
-      const targetCalendarId = await getUserSyncCalendarId(auth.userId);
       const title = selectedActivity
         ? `${instance.aimCategory.name}: ${selectedActivity}`
         : instance.aimCategory.name;

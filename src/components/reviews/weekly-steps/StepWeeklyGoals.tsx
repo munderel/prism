@@ -7,12 +7,13 @@ import {
 } from 'lucide-react';
 import { getLocalDateString } from '@/lib/date-utils';
 import { formatGoalDateRange } from '@/lib/goal-constants';
+import { getStatusBadgeClass } from '../shared/review-types';
 import { GoalCreationCoach } from '../shared/GoalCreationCoach';
 
 interface Kpi {
   id: string;
   name: string;
-  type: 'NUMERIC' | 'BOOLEAN';
+  type: 'NUMERIC' | 'BINARY';
   targetValue: number | null;
   unit: string | null;
   isNew?: boolean;
@@ -131,15 +132,6 @@ async function fetchGoalSets(isTeamReview?: boolean): Promise<GoalSet[] | null> 
   return results;
 }
 
-function getStatusBadgeClass(status: string): string {
-  switch (status) {
-    case 'COMPLETED': return 'bg-green-500/20 text-green-400';
-    case 'IN_PROGRESS': return 'bg-blue-500/20 text-blue-400';
-    case 'ABANDONED': return 'bg-red-500/20 text-red-400';
-    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
-  }
-}
-
 function formatShortDateRange(start: Date, end: Date): string {
   const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return `${fmt(start)} – ${fmt(end)}`;
@@ -171,7 +163,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
   // KPI creation state per goal
   const [addingKpiForGoal, setAddingKpiForGoal] = useState<string | null>(null);
   const [newKpiName, setNewKpiName] = useState('');
-  const [newKpiType, setNewKpiType] = useState<'NUMERIC' | 'BOOLEAN'>('NUMERIC');
+  const [newKpiType, setNewKpiType] = useState<'NUMERIC' | 'BINARY'>('NUMERIC');
   const [newKpiTarget, setNewKpiTarget] = useState('');
   const [newKpiUnit, setNewKpiUnit] = useState('');
 
@@ -181,13 +173,6 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
   const [monthlyParentId, setMonthlyParentId] = useState<string | null>(null);
   const [creatingPlaceholder, setCreatingPlaceholder] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [kpiSidebarGoalId, setKpiSidebarGoalId] = useState<string | null>(null);
-
-  // Monthly goal editing state
-  const [editingMonthlyId, setEditingMonthlyId] = useState<string | null>(null);
-  const [editMonthlyTitle, setEditMonthlyTitle] = useState('');
-  const [editMonthlyStatus, setEditMonthlyStatus] = useState('');
-
   useEffect(() => {
     fetchWeeklyGoals();
   }, []);
@@ -452,28 +437,6 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
     setCreatingPlaceholder(false);
   };
 
-  const saveMonthlyEdit = async (goalId: string) => {
-    setSaving(goalId);
-    try {
-      const body: Record<string, any> = { title: editMonthlyTitle };
-      if (editMonthlyStatus) body.status = editMonthlyStatus;
-      await fetch(`/api/goals/${goalId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      setMonthlyGoals((prev) =>
-        prev.map((g) =>
-          g.id === goalId ? { ...g, title: editMonthlyTitle, ...(editMonthlyStatus ? { status: editMonthlyStatus } : {}) } : g
-        )
-      );
-      setEditingMonthlyId(null);
-    } catch (err) {
-      console.error('Failed to save monthly goal:', err);
-    }
-    setSaving(null);
-  };
-
   const addKpi = async (goalId: string) => {
     if (!newKpiName.trim()) return;
     setSaving(goalId);
@@ -495,13 +458,8 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       if (res.ok) {
         const created = await res.json();
         const newKpi = { id: created.id, name: created.name, type: created.type, targetValue: created.targetValue, unit: created.unit };
-        // Update both weekly and monthly goal KPI lists
+        // Update weekly goal KPI list
         setGoals((prev) =>
-          prev.map((g) =>
-            g.id === goalId ? { ...g, kpis: [...g.kpis, newKpi] } : g
-          )
-        );
-        setMonthlyGoals((prev) =>
           prev.map((g) =>
             g.id === goalId ? { ...g, kpis: [...g.kpis, newKpi] } : g
           )
@@ -684,7 +642,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
                 <div className="flex gap-2">
                   <select
                     value={newKpiType}
-                    onChange={(e) => setNewKpiType(e.target.value as 'NUMERIC' | 'BOOLEAN')}
+                    onChange={(e) => setNewKpiType(e.target.value as 'NUMERIC' | 'BINARY')}
                     className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="NUMERIC">Numeric</option>

@@ -5,7 +5,7 @@ import { pickDefined, notFoundResponse, hasAccess, forbiddenResponse, USER_SUMMA
 import { parseBody, updateTaskSchema } from '@/lib/schemas';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
-import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
+import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 
 export async function GET(
@@ -119,9 +119,8 @@ export async function PATCH(
   const calendarFieldsChanged = status !== undefined || timeBlockStart !== undefined || timeBlockEnd !== undefined;
   if (calendarFieldsChanged) {
     const syncCalendar = async () => {
-      const hasGoogle = await hasGoogleAccount(task.ownerId);
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(task.ownerId);
       if (!hasGoogle) return;
-      const targetCalendarId = await getUserSyncCalendarId(task.ownerId);
       const newStart = data.timeBlockStart ?? task.timeBlockStart;
       const newEnd = data.timeBlockEnd ?? task.timeBlockEnd;
 

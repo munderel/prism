@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
-import { createGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
+import { createGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 
 const MEETING_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
@@ -60,9 +60,8 @@ export async function POST(request: NextRequest) {
   // Sync ONE_TIME meetings to Google Calendar — fire-and-forget
   if (cadence === 'ONE_TIME' && occurDate) {
     const syncToGcal = async () => {
-      const hasGoogle = await hasGoogleAccount(auth.userId);
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
       if (!hasGoogle) return;
-      const targetCalendarId = await getUserSyncCalendarId(auth.userId);
       const dateStr = new Date(occurDate).toISOString().split('T')[0];
       const gcalEvent = await createGoogleEvent(auth.userId, {
         summary: title,

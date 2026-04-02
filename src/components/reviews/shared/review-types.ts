@@ -75,3 +75,13 @@ export function getStatusBadgeClass(status: string): string {
       return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
   }
 }
+
+/** Returns Tailwind classes for a task priority badge */
+export function getPriorityBadgeClass(priority: string): string {
+  switch (priority) {
+    case 'URGENT': return 'bg-red-500/20 text-red-400';
+    case 'HIGH': return 'bg-orange-500/20 text-orange-400';
+    case 'MEDIUM': return 'bg-blue-500/20 text-blue-400';
+    default: return 'bg-[var(--surface-raised)] text-[var(--text-muted)]';
+  }
+}
