@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { BarChart3, Target, CheckCircle2 } from 'lucide-react';
+import { formatGoalDateRange } from '@/lib/goal-constants';
 
 interface Kpi {
   id: string;
@@ -20,6 +21,8 @@ interface GoalWithKpis {
   level: string;
   status: string;
   progressPct: number;
+  startDate: string | null;
+  endDate: string | null;
   kpis: Kpi[];
 }
 
@@ -80,16 +83,61 @@ export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChan
       const allGoals = await fetchAllGoalsForKpis(isTeamReview);
       if (!allGoals) { setLoading(false); return; }
 
+      // Calculate date boundaries for filtering
+      const now = new Date();
+      const dow = now.getDay();
+      const mondayOffset = dow === 0 ? -6 : 1 - dow;
+      const thisMonday = new Date(now);
+      thisMonday.setDate(now.getDate() + mondayOffset);
+      thisMonday.setHours(0, 0, 0, 0);
+
+      const lastMonday = new Date(thisMonday);
+      lastMonday.setDate(thisMonday.getDate() - 7);
+
+      const upcomingWeekEnd = new Date(thisMonday);
+      upcomingWeekEnd.setDate(thisMonday.getDate() + 6);
+      upcomingWeekEnd.setHours(23, 59, 59, 999);
+
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
       const result: GoalWithKpis[] = [];
       for (const goal of allGoals) {
         if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') continue;
         if (goal._count?.kpis === 0) continue;
+
+        // Date filtering: only show relevant time periods
+        if (goal.startDate && goal.endDate) {
+          const gs = new Date(goal.startDate);
+          const ge = new Date(goal.endDate);
+
+          if (goal.level === 'WEEKLY') {
+            // Show current week and previous week only
+            const inCurrentWeek = gs <= upcomingWeekEnd && ge >= thisMonday;
+            const inLastWeek = gs <= new Date(thisMonday.getTime() - 1) && ge >= lastMonday;
+            if (!inCurrentWeek && !inLastWeek) continue;
+          } else if (goal.level === 'MONTHLY') {
+            // Show current month only
+            const inCurrentMonth = gs <= currentMonthEnd && ge >= currentMonthStart;
+            if (!inCurrentMonth) continue;
+          }
+        }
+
         const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
         if (!kpisRes.ok) continue;
         const kpisData = await kpisRes.json();
         const kpis = kpisData.kpis ?? kpisData;
         if (kpis.length > 0) {
-          result.push({ id: goal.id, title: goal.title, level: goal.level, status: goal.status, progressPct: goal.progressPct, kpis });
+          result.push({
+            id: goal.id,
+            title: goal.title,
+            level: goal.level,
+            status: goal.status,
+            progressPct: goal.progressPct,
+            startDate: goal.startDate ?? null,
+            endDate: goal.endDate ?? null,
+            kpis,
+          });
         }
       }
 
@@ -196,12 +244,21 @@ export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChan
             className="rounded-lg border border-[var(--border-color)] bg-[var(--surface)] p-4 space-y-3"
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Target className="h-4 w-4 text-blue-400" />
                 <span className="text-sm font-medium text-[var(--text-primary)]">{goal.title}</span>
                 <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--surface-raised)] text-[var(--text-muted)]">
                   {goal.level}
                 </span>
+                {goal.startDate && goal.endDate && (
+                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                    goal.level === 'MONTHLY'
+                      ? 'bg-violet-500/20 text-violet-400'
+                      : 'bg-cyan-500/20 text-cyan-400'
+                  }`}>
+                    {formatGoalDateRange(goal.level, goal.startDate, goal.endDate)}
+                  </span>
+                )}
               </div>
               {goal.status !== 'COMPLETED' && (
                 <button

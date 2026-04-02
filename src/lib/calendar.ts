@@ -21,6 +21,21 @@ export async function hasGoogleAccount(userId: string): Promise<boolean> {
 }
 
 /**
+ * Get the user's configured sync target calendar ID (defaults to 'primary').
+ */
+export async function getUserSyncCalendarId(userId: string): Promise<string> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { syncTargetCalendarId: true },
+    });
+    return user?.syncTargetCalendarId || 'primary';
+  } catch {
+    return 'primary';
+  }
+}
+
+/**
  * Update an existing Google Calendar event.
  */
 export async function updateGoogleEvent(
@@ -31,7 +46,8 @@ export async function updateGoogleEvent(
     description?: string;
     start?: string;
     end?: string;
-  }
+  },
+  calendarId: string = 'primary'
 ) {
   const calendar = await getCalendarClient(userId);
   if (!calendar) return null;
@@ -45,7 +61,7 @@ export async function updateGoogleEvent(
     };
 
     const response = await calendar.events.patch({
-      calendarId: 'primary',
+      calendarId,
       eventId,
       requestBody,
     });
@@ -60,13 +76,13 @@ export async function updateGoogleEvent(
 /**
  * Delete a Google Calendar event.
  */
-export async function deleteGoogleEvent(userId: string, eventId: string) {
+export async function deleteGoogleEvent(userId: string, eventId: string, calendarId: string = 'primary') {
   const calendar = await getCalendarClient(userId);
   if (!calendar) return false;
 
   try {
     await calendar.events.delete({
-      calendarId: 'primary',
+      calendarId,
       eventId,
     });
     return true;
@@ -132,6 +148,7 @@ export async function getCalendarClient(userId: string) {
  * List events from user's Google Calendar within a date range.
  * If calendarIds is provided, fetches from each and merges results.
  * Defaults to ['primary'] if not provided.
+ * Each returned event is tagged with _sourceCalendarId.
  */
 export async function listGoogleEvents(
   userId: string,
@@ -155,7 +172,10 @@ export async function listGoogleEvents(
           orderBy: 'startTime',
           maxResults: 100,
         });
-        return response.data.items ?? [];
+        return (response.data.items ?? []).map((ev) => ({
+          ...ev,
+          _sourceCalendarId: calendarId,
+        }));
       } catch {
         console.warn(`[calendar] Failed to fetch events from calendar ${calendarId}`);
         return [];
@@ -174,6 +194,7 @@ export async function listGoogleEvents(
 /**
  * Safely sync a task to Google Calendar: create, update, or delete event.
  * Swallows errors so callers don't need try/catch.
+ * Uses the user's configured sync target calendar.
  */
 export async function syncTaskCalendarEvent(
   userId: string,
@@ -181,8 +202,10 @@ export async function syncTaskCalendarEvent(
   action: 'create' | 'update' | 'delete'
 ): Promise<string | null> {
   try {
+    const targetCalendarId = await getUserSyncCalendarId(userId);
+
     if (action === 'delete' && task.calendarEventId) {
-      await deleteGoogleEvent(userId, task.calendarEventId);
+      await deleteGoogleEvent(userId, task.calendarEventId, targetCalendarId);
       return null;
     }
 
@@ -196,7 +219,7 @@ export async function syncTaskCalendarEvent(
         description: fullDescription || undefined,
         start: task.timeBlockStart ? new Date(task.timeBlockStart).toISOString() : undefined,
         end: task.timeBlockEnd ? new Date(task.timeBlockEnd).toISOString() : undefined,
-      });
+      }, targetCalendarId);
       return task.calendarEventId;
     }
 
@@ -206,7 +229,7 @@ export async function syncTaskCalendarEvent(
         description: fullDescription || undefined,
         start: new Date(task.timeBlockStart).toISOString(),
         end: new Date(task.timeBlockEnd).toISOString(),
-      });
+      }, targetCalendarId);
       return gcalEvent?.id ?? null;
     }
 
@@ -228,7 +251,8 @@ export async function createGoogleEvent(
     start: string;
     end: string;
     addMeetLink?: boolean;
-  }
+  },
+  calendarId: string = 'primary'
 ) {
   const calendar = await getCalendarClient(userId);
   if (!calendar) return null;
@@ -251,7 +275,7 @@ export async function createGoogleEvent(
     }
 
     const response = await calendar.events.insert({
-      calendarId: 'primary',
+      calendarId,
       requestBody: eventBody,
       conferenceDataVersion: event.addMeetLink ? 1 : 0,
     });

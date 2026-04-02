@@ -51,35 +51,35 @@ const ITEM_GROUPS: {
   {
     key: 'improve',
     label: 'Improve Tasks',
-    emoji: '🎯',
+    emoji: '\uD83C\uDFAF',
     filter: (i) => i.itemType === 'task' && i.taskType === 'IMPROVE',
     colorKey: 'IMPROVE',
   },
   {
     key: 'react',
     label: 'React Tasks',
-    emoji: '⚡',
+    emoji: '\u26A1',
     filter: (i) => i.itemType === 'task' && i.taskType === 'REACT',
     colorKey: 'REACT',
   },
   {
     key: 'maintenance',
     label: 'Maintenance',
-    emoji: '🔧',
+    emoji: '\uD83D\uDD27',
     filter: (i) => i.itemType === 'task' && i.taskType === 'MAINTENANCE',
     colorKey: 'MAINTENANCE',
   },
   {
     key: 'aim',
     label: 'AIMs',
-    emoji: '💪',
+    emoji: '\uD83D\uDCAA',
     filter: (i) => i.itemType === 'aim',
     colorKey: 'AIM',
   },
   {
     key: 'review',
     label: 'Reviews',
-    emoji: '📋',
+    emoji: '\uD83D\uDCCB',
     filter: (i) => i.itemType === 'review',
     colorKey: 'REVIEW',
   },
@@ -101,8 +101,8 @@ function WorkBlockTemplateCard() {
         extendedProps: { itemId: WORK_BLOCK_TEMPLATE_ID, itemType: 'work_block_template' },
       })}
     >
-      <span className="text-sm font-medium text-gray-800">Normal Work Block</span>
-      <div className="mt-1 text-xs text-gray-500">60m · reusable</div>
+      <span className="text-sm font-medium text-[var(--text-primary)]">Normal Work Block</span>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">60m &middot; reusable</div>
     </div>
   );
 }
@@ -119,8 +119,8 @@ function DeepWorkTemplateCard({ duration }: { duration: number }) {
         extendedProps: { itemId: DEEP_WORK_TEMPLATE_ID, itemType: 'work_block_template' },
       })}
     >
-      <span className="text-sm font-medium text-gray-800">Deep Work (AIM Block)</span>
-      <div className="mt-1 text-xs text-gray-500">{duration}m · reusable</div>
+      <span className="text-sm font-medium text-[var(--text-primary)]">Deep Work (AIM Block)</span>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">{duration}m &middot; reusable</div>
     </div>
   );
 }
@@ -128,14 +128,14 @@ function DeepWorkTemplateCard({ duration }: { duration: number }) {
 function priorityBadge(priority?: string) {
   if (!priority) return null;
   const styles: Record<string, string> = {
-    URGENT: 'bg-red-100 text-red-700 border-red-300',
-    HIGH: 'bg-orange-100 text-orange-700 border-orange-300',
-    MEDIUM: 'bg-yellow-100 text-yellow-700 border-yellow-300',
-    LOW: 'bg-green-100 text-green-700 border-green-300',
+    URGENT: 'bg-red-500/15 text-red-400 border-red-500/40',
+    HIGH: 'bg-orange-500/15 text-orange-400 border-orange-500/40',
+    MEDIUM: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/40',
+    LOW: 'bg-green-500/15 text-green-400 border-green-500/40',
   };
   return (
     <span
-      className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${styles[priority] ?? 'bg-gray-100 text-gray-600 border-gray-300'}`}
+      className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${styles[priority] ?? 'bg-[var(--surface-raised)] text-[var(--text-secondary)] border-[var(--border-color)]'}`}
     >
       {priority}
     </span>
@@ -213,12 +213,12 @@ function UnscheduledCard({
       })}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-sm font-medium text-gray-800 leading-tight line-clamp-2">
+        <span className="text-sm font-medium text-[var(--text-primary)] leading-tight line-clamp-2">
           {item.title}
         </span>
         {priorityBadge(item.priority)}
       </div>
-      <div className="mt-1 text-xs text-gray-500">{formatDuration(item.duration)}</div>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">{formatDuration(item.duration)}</div>
     </div>
   );
 }
@@ -235,14 +235,14 @@ function WeeklyHourBar({ scheduledMinutes }: { scheduledMinutes: number }) {
   }
 
   return (
-    <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
-      <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+    <div className="px-4 py-3 border-t border-[var(--border-color)] bg-[var(--surface-raised)]">
+      <div className="flex items-center justify-between text-xs text-[var(--text-secondary)] mb-1">
         <span className="font-medium">Weekly Target</span>
         <span>
           {scheduledHours.toFixed(1)}h / {WEEKLY_HOUR_TARGET}h scheduled
         </span>
       </div>
-      <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+      <div className="h-2 rounded-full bg-[var(--surface)] overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-300 ${barColor}`}
           style={{ width: `${pct}%` }}
@@ -337,7 +337,7 @@ export function CalendarSplitView({
 
   // FullCalendar event receive handler (external drop)
   const handleEventReceive = useCallback(
-    (info: any) => {
+    async (info: any) => {
       const { itemId, itemType } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
@@ -346,14 +346,34 @@ export function CalendarSplitView({
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
         info.event.remove();
-        onCreateWorkBlock?.(start, end);
+        // Optimistic: add a temporary event so the block appears immediately
+        const tempEvent = {
+          id: `temp-wb-${Date.now()}`,
+          title: 'Work Block',
+          start: start.toISOString(),
+          end: end.toISOString(),
+          allDay: false,
+          extendedProps: { source: 'google' },
+        };
+        mutateEvents((current: any) => [...(current ?? []), tempEvent], { revalidate: false });
+        // Create the actual Google Calendar event, then revalidate
+        await onCreateWorkBlock?.(start, end);
         mutateEvents();
         return;
       }
 
-      onSchedule(itemId, itemType, start, end);
-      // Remove the auto-added event — the parent will re-render with updated data
+      // Schedule task/AIM: optimistic update then persist
       info.event.remove();
+      const tempEvent = {
+        id: `temp-${itemId}`,
+        title: info.event.title,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        allDay: false,
+        extendedProps: { itemId, itemType, taskType: info.event.extendedProps?.taskType },
+      };
+      mutateEvents((current: any) => [...(current ?? []), tempEvent], { revalidate: false });
+      await onSchedule(itemId, itemType, start, end);
       mutateEvents();
       onRefresh?.();
     },
@@ -396,7 +416,7 @@ export function CalendarSplitView({
           {!isGoogleEvent && itemId && (
             <button
               type="button"
-              className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-white/80 hover:bg-red-100 text-gray-500 hover:text-red-600 transition-colors text-[10px] leading-none"
+              className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-[var(--surface-raised)]/80 hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-colors text-[10px] leading-none"
               title="Unschedule"
               onClick={(e) => {
                 e.stopPropagation();
@@ -415,15 +435,15 @@ export function CalendarSplitView({
   );
 
   return (
-    <div className="flex h-full w-full min-h-[500px] rounded-xl border border-gray-200 bg-white overflow-hidden">
+    <div className="flex h-full w-full min-h-[500px] rounded-xl border border-[var(--border-color)] bg-[var(--surface)] overflow-hidden">
       {/* Left Panel — Available Work Blocks / Available Work (35%) */}
-      <div className="w-[35%] flex flex-col border-r border-gray-200 bg-gray-50/50">
+      <div className="w-[35%] flex flex-col border-r border-[var(--border-color)] bg-[var(--surface-raised)]/50">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-800">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
             {mode === 'work_blocks' ? 'Available Work Blocks' : 'Available Work'}
           </h3>
-          <span className="text-xs text-gray-500 tabular-nums">
+          <span className="text-xs text-[var(--text-secondary)] tabular-nums">
             {unscheduledItems.length} item{unscheduledItems.length !== 1 ? 's' : ''}
           </span>
         </div>
@@ -435,7 +455,7 @@ export function CalendarSplitView({
               {/* Deep Work (AIM Block) — always shown with reusable template */}
               <div>
                 <div className="flex items-center gap-1.5 mb-2">
-                  <span className="text-sm">💪</span>
+                  <span className="text-sm">{'\uD83D\uDCAA'}</span>
                   <span className="text-xs font-semibold uppercase tracking-wide text-teal-500">
                     Deep Work (AIM Block)
                   </span>
@@ -443,7 +463,7 @@ export function CalendarSplitView({
                 <DeepWorkTemplateCard duration={aimBlockDuration} />
                 {unscheduledItems.filter((i) => i.itemType === 'aim').length > 0 && (
                   <div className="mt-2 space-y-1">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">AIM Instances</p>
+                    <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">AIM Instances</p>
                     {unscheduledItems
                       .filter((i) => i.itemType === 'aim')
                       .map((item) => (
@@ -466,7 +486,7 @@ export function CalendarSplitView({
           ) : (
             <>
               {groupedItems.length === 0 && (
-                <div className="text-center text-sm text-gray-400 py-8">
+                <div className="text-center text-sm text-[var(--text-muted)] py-8">
                   All items scheduled
                 </div>
               )}
@@ -481,7 +501,7 @@ export function CalendarSplitView({
                     >
                       {group.label}
                     </span>
-                    <span className="text-[10px] text-gray-400 ml-auto">{group.items.length}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] ml-auto">{group.items.length}</span>
                   </div>
                   {group.items.map((item) => (
                     <UnscheduledCard key={item.id} item={item} colorKey={group.colorKey} />

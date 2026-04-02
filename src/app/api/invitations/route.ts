@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, createInvitationSchema } from '@/lib/schemas';
+import { sendInviteEmail } from '@/lib/notifications';
 
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RATE_LIMIT_MAX = 10; // max invitations per hour
@@ -70,8 +71,15 @@ export async function POST(request: NextRequest) {
     include: { invitedBy: { select: { name: true, email: true } } },
   });
 
+  const inviteUrl = `/accept-invite/${invitation.id}?token=${verificationToken}`;
+
+  // Send invite email (fire-and-forget)
+  const origin = request.headers.get('origin') ?? request.headers.get('x-forwarded-host') ?? '';
+  const fullInviteUrl = origin ? `${origin}${inviteUrl}` : inviteUrl;
+  sendInviteEmail(normalizedEmail, invitation.invitedBy.name ?? 'A team member', fullInviteUrl).catch(() => {});
+
   return Response.json(
-    { ...invitation, inviteUrl: `/accept-invite/${invitation.id}?token=${verificationToken}` },
+    { ...invitation, inviteUrl },
     { status: 201, ...NO_STORE }
   );
 }

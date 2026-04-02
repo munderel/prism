@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
+import { createGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -77,6 +78,27 @@ export async function POST(request: NextRequest) {
     },
     include: { aimCategory: true },
   });
+
+  // Sync to Google Calendar — fire-and-forget
+  if (timeBlockStart && timeBlockEnd) {
+    const syncToGcal = async () => {
+      const hasGoogle = await hasGoogleAccount(auth.userId);
+      if (!hasGoogle) return;
+      const targetCalendarId = await getUserSyncCalendarId(auth.userId);
+      const title = selectedActivity
+        ? `${instance.aimCategory.name}: ${selectedActivity}`
+        : instance.aimCategory.name;
+      const gcalEvent = await createGoogleEvent(auth.userId, {
+        summary: title,
+        start: new Date(timeBlockStart).toISOString(),
+        end: new Date(timeBlockEnd).toISOString(),
+      }, targetCalendarId);
+      if (gcalEvent?.id) {
+        await prisma.aimInstance.update({ where: { id: instance.id }, data: { calendarEventId: gcalEvent.id } });
+      }
+    };
+    syncToGcal().catch((err) => console.warn('[aims] Google Calendar sync failed:', err));
+  }
 
   return Response.json(instance, { status: 201 });
 }

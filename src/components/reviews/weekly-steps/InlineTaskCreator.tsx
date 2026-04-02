@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import useSWR from 'swr';
-import { Plus, Pencil, Trash2, Save, X, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Save, X, Loader2, BarChart3 } from 'lucide-react';
+import { formatGoalDateRange } from '@/lib/goal-constants';
 
 const TASK_TYPES = ['IMPROVE', 'REACT', 'MAINTENANCE'] as const;
 const PRIORITIES = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
@@ -20,6 +21,8 @@ interface WeeklyGoal {
   id: string;
   title: string;
   status: string;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 interface Stack {
@@ -94,7 +97,77 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
   const [newTaskType, setNewTaskType] = useState<string>('IMPROVE');
   const [newPriority, setNewPriority] = useState<string>('MEDIUM');
   const [newGoalId, setNewGoalId] = useState<string>('');
+  const [newEstimatedMinutes, setNewEstimatedMinutes] = useState(60);
+  const [newDueDate, setNewDueDate] = useState('');
   const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  // Default to REACT when no weekly goals are available (IMPROVE requires a goalId)
+  const hasGoalsForImprove = weeklyGoals.length > 0;
+  useEffect(() => {
+    if (!hasGoalsForImprove && newTaskType === 'IMPROVE' && !newGoalId) {
+      setNewTaskType('REACT');
+    }
+  }, [hasGoalsForImprove]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // KPI state
+  const [kpiExpandedGoal, setKpiExpandedGoal] = useState<string | null>(null);
+  const [goalKpis, setGoalKpis] = useState<Record<string, any[]>>({});
+  const [addingKpiForGoal, setAddingKpiForGoal] = useState<string | null>(null);
+  const [newKpiName, setNewKpiName] = useState('');
+  const [newKpiType, setNewKpiType] = useState<'NUMERIC' | 'BINARY'>('NUMERIC');
+  const [newKpiTarget, setNewKpiTarget] = useState('');
+  const [newKpiUnit, setNewKpiUnit] = useState('');
+  const [kpiSaving, setKpiSaving] = useState(false);
+
+  const toggleKpiSection = async (goalId: string) => {
+    if (kpiExpandedGoal === goalId) {
+      setKpiExpandedGoal(null);
+      return;
+    }
+    setKpiExpandedGoal(goalId);
+    if (!goalKpis[goalId]) {
+      try {
+        const res = await fetch(`/api/goals/${goalId}/kpis`);
+        if (res.ok) {
+          const data = await res.json();
+          setGoalKpis((prev) => ({ ...prev, [goalId]: data.kpis ?? data }));
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const addKpiToGoal = async (goalId: string) => {
+    if (!newKpiName.trim()) return;
+    setKpiSaving(true);
+    try {
+      const body: Record<string, any> = { name: newKpiName.trim(), type: newKpiType };
+      if (newKpiType === 'NUMERIC') {
+        body.targetValue = parseFloat(newKpiTarget) || null;
+        body.unit = newKpiUnit.trim() || null;
+      }
+      const res = await fetch(`/api/goals/${goalId}/kpis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setGoalKpis((prev) => ({
+          ...prev,
+          [goalId]: [...(prev[goalId] ?? []), created],
+        }));
+        setAddingKpiForGoal(null);
+        setNewKpiName('');
+        setNewKpiTarget('');
+        setNewKpiUnit('');
+        setNewKpiType('NUMERIC');
+      }
+    } catch (err) {
+      console.error('Failed to add KPI:', err);
+    }
+    setKpiSaving(false);
+  };
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -105,27 +178,48 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
 
   const handleAdd = useCallback(async () => {
     if (!newTitle.trim()) return;
+    if (newTaskType === 'IMPROVE' && !newGoalId) {
+      setAddError('IMPROVE tasks require a linked goal.');
+      return;
+    }
+    if (newEstimatedMinutes <= 0) {
+      setAddError('Estimated duration is required.');
+      return;
+    }
+    setAddError(null);
     setSaving(true);
     try {
-      await fetch('/api/tasks', {
+      const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: newTitle.trim(),
           taskType: newTaskType,
           priority: newPriority,
+          estimatedMinutes: newEstimatedMinutes,
+          ...(newDueDate ? { dueDate: newDueDate } : {}),
           ...(newGoalId ? { goalId: newGoalId } : {}),
         }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setAddError(err.error || 'Failed to create task.');
+        setSaving(false);
+        return;
+      }
       setNewTitle('');
       setNewGoalId('');
+      setNewDueDate('');
+      setNewEstimatedMinutes(60);
       setShowAddForm(false);
+      setAddError(null);
       mutate();
     } catch (err) {
       console.error('Failed during inline task operation:', err);
+      setAddError('Failed to create task. Please try again.');
     }
     setSaving(false);
-  }, [newTitle, newTaskType, newPriority, newGoalId, mutate]);
+  }, [newTitle, newTaskType, newPriority, newGoalId, newEstimatedMinutes, newDueDate, mutate]);
 
   const startEditing = (task: Task) => {
     setEditingId(task.id);
@@ -301,14 +395,80 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
               <div className="flex items-center justify-between px-1">
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                   {goal.title}
+                  {goal.startDate && goal.endDate && (
+                    <span className="ml-2 normal-case font-normal text-cyan-400">
+                      {formatGoalDateRange('WEEKLY', goal.startDate, goal.endDate)}
+                    </span>
+                  )}
                 </h4>
-                <button
-                  onClick={() => { setNewGoalId(goal.id); setShowAddForm(true); }}
-                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  <Plus className="h-3 w-3" /> Add task
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => toggleKpiSection(goal.id)}
+                    className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                  >
+                    <BarChart3 className="h-3 w-3" /> KPIs
+                  </button>
+                  <button
+                    onClick={() => { setNewGoalId(goal.id); setShowAddForm(true); }}
+                    className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" /> Add task
+                  </button>
+                </div>
               </div>
+
+              {/* KPI section */}
+              {kpiExpandedGoal === goal.id && (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 space-y-2">
+                  {(goalKpis[goal.id] ?? []).length > 0 ? (
+                    (goalKpis[goal.id] ?? []).map((kpi: any) => (
+                      <div key={kpi.id} className="flex items-center gap-2 text-xs rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-1.5">
+                        <span className="text-[var(--text-primary)] flex-1">{kpi.name}</span>
+                        <span className="text-[var(--text-muted)]">
+                          {kpi.type === 'NUMERIC' ? `${kpi.actualValue ?? '—'} / ${kpi.targetValue ?? '?'}${kpi.unit ? ` ${kpi.unit}` : ''}` : (kpi.isComplete ? 'Complete' : 'Incomplete')}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-[var(--text-muted)]">No KPIs yet.</p>
+                  )}
+                  {addingKpiForGoal === goal.id ? (
+                    <div className="space-y-2">
+                      <input type="text" value={newKpiName} onChange={(e) => setNewKpiName(e.target.value)} placeholder="KPI name"
+                        className="w-full rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none" />
+                      <div className="flex gap-2">
+                        <select value={newKpiType} onChange={(e) => setNewKpiType(e.target.value as 'NUMERIC' | 'BINARY')}
+                          className="rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)]">
+                          <option value="NUMERIC">Numeric</option>
+                          <option value="BINARY">Yes/No</option>
+                        </select>
+                        {newKpiType === 'NUMERIC' && (
+                          <>
+                            <input type="number" value={newKpiTarget} onChange={(e) => setNewKpiTarget(e.target.value)} placeholder="Target"
+                              className="w-20 rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)]" />
+                            <input type="text" value={newKpiUnit} onChange={(e) => setNewKpiUnit(e.target.value)} placeholder="Unit"
+                              className="w-16 rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)]" />
+                          </>
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        <button onClick={() => addKpiToGoal(goal.id)} disabled={!newKpiName.trim() || kpiSaving}
+                          className="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-500 disabled:opacity-50">
+                          {kpiSaving ? 'Saving...' : 'Add KPI'}
+                        </button>
+                        <button onClick={() => { setAddingKpiForGoal(null); setNewKpiName(''); setNewKpiTarget(''); setNewKpiUnit(''); }}
+                          className="text-xs text-[var(--text-muted)] px-2 py-1">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setAddingKpiForGoal(goal.id)}
+                      className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                      <Plus className="h-3 w-3" /> Add KPI
+                    </button>
+                  )}
+                </div>
+              )}
+
               {goalTasks.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)] px-1 italic">No tasks linked</p>
               ) : (
@@ -338,18 +498,21 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
       {/* Add Task form */}
       {showAddForm ? (
         <div className="rounded-lg border border-indigo-500/50 bg-[var(--surface-raised)] p-4 space-y-3">
-          <input
-            type="text"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Task title..."
-            autoFocus
-            className="w-full rounded-md border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-            onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
-          />
+          <div className="space-y-1">
+            <label className="text-xs text-[var(--text-muted)]">Title <span className="text-red-400">*</span></label>
+            <input
+              type="text"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Task title..."
+              autoFocus
+              className="w-full rounded-md border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+            />
+          </div>
           <div className="flex items-center gap-3 flex-wrap">
             <div className="space-y-1">
-              <label className="text-xs text-[var(--text-muted)]">Type</label>
+              <label className="text-xs text-[var(--text-muted)]">Type <span className="text-red-400">*</span></label>
               <select
                 value={newTaskType}
                 onChange={(e) => setNewTaskType(e.target.value)}
@@ -372,9 +535,32 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
                 ))}
               </select>
             </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-muted)]">Duration <span className="text-red-400">*</span></label>
+              <select
+                value={newEstimatedMinutes}
+                onChange={(e) => setNewEstimatedMinutes(parseInt(e.target.value))}
+                className="block rounded-md border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)]"
+              >
+                {[15, 30, 45, 60, 90, 120, 180, 240].map((mins) => (
+                  <option key={mins} value={mins}>{mins < 60 ? `${mins}m` : `${mins / 60}h`}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-muted)]">Due Date</label>
+              <input
+                type="date"
+                value={newDueDate}
+                onChange={(e) => setNewDueDate(e.target.value)}
+                className="block rounded-md border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)]"
+              />
+            </div>
             {weeklyGoals.length > 0 && (
               <div className="space-y-1">
-                <label className="text-xs text-[var(--text-muted)]">Weekly Goal</label>
+                <label className="text-xs text-[var(--text-muted)]">
+                  Weekly Goal {newTaskType === 'IMPROVE' && <span className="text-red-400">*</span>}
+                </label>
                 <select
                   value={newGoalId}
                   onChange={(e) => setNewGoalId(e.target.value)}
@@ -390,19 +576,22 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
             <div className="flex-1" />
             <button
               onClick={handleAdd}
-              disabled={saving || !newTitle.trim()}
+              disabled={saving || !newTitle.trim() || newEstimatedMinutes <= 0}
               className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save
             </button>
             <button
-              onClick={() => { setShowAddForm(false); setNewTitle(''); setNewGoalId(''); }}
+              onClick={() => { setShowAddForm(false); setNewTitle(''); setNewGoalId(''); setNewDueDate(''); setAddError(null); }}
               className="rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
             >
               Cancel
             </button>
           </div>
+          {addError && (
+            <p className="text-xs text-red-400">{addError}</p>
+          )}
         </div>
       ) : (
         <button

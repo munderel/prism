@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback, ReactNode, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, ReactNode, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { m, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
 import {
   CheckCircle2, ChevronRight, ChevronLeft, PartyPopper, AlertCircle,
-  Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock,
+  Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock, ChevronDown,
 } from 'lucide-react';
-import { getLocalDateString, getTomorrowDateString } from '@/lib/date-utils';
+import { getLocalDateString, getTomorrowDateString, getWeekBoundaries } from '@/lib/date-utils';
 const CalendarSplitView = dynamic(
   () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
   { ssr: false, loading: () => <div className="text-[var(--text-muted)] py-4 text-center">Loading calendar...</div> }
@@ -165,6 +165,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [weeklyGoals, setWeeklyGoals] = useState<any[]>([]);
   const [weeklyGoalsLoading, setWeeklyGoalsLoading] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState<Record<string, string>>({});
+  const [newTaskExpanded, setNewTaskExpanded] = useState<Record<string, boolean>>({});
+  const [newTaskDescription, setNewTaskDescription] = useState<Record<string, string>>({});
+  const [newTaskDueDate, setNewTaskDueDate] = useState<Record<string, string>>({});
+  const [newTaskDuration, setNewTaskDuration] = useState<Record<string, number>>({});
+
+  // Memoize current week end for task creation defaults
+  const weekEnd = useMemo(() => getWeekBoundaries().end, []);
 
   // Calendar modal state
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
@@ -317,9 +324,17 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         const allGoals = Array.isArray(goalsRaw) ? goalsRaw : [];
         // Exclude completed/abandoned goals
         const goals = allGoals.filter((g: any) => g.status !== 'COMPLETED' && g.status !== 'ABANDONED');
+        // Filter to goals overlapping the current week (Mon-Sun)
+        const { start: weekStart, end: weekEnd } = getWeekBoundaries();
+        const currentWeekGoals = goals.filter((g: any) => {
+          if (!g.startDate && !g.endDate) return true;
+          const gStart = g.startDate ? g.startDate.slice(0, 10) : '0000-01-01';
+          const gEnd = g.endDate ? g.endDate.slice(0, 10) : '9999-12-31';
+          return gStart <= weekEnd && gEnd >= weekStart;
+        });
         // Fetch child tasks for each goal
         const goalsWithTasks = await Promise.all(
-          goals.map(async (g: any) => {
+          currentWeekGoals.map(async (g: any) => {
             try {
               const taskRes = await fetch(`/api/tasks?goalId=${g.id}`);
               const tasks = taskRes.ok ? await taskRes.json() : [];
@@ -356,13 +371,23 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     const title = (newTaskTitle[goalId] ?? '').trim();
     if (!title) return;
     try {
-      const tomorrow = sessionTomorrow;
+      const dueDate = newTaskDueDate[goalId] || weekEnd;
+      const description = (newTaskDescription[goalId] ?? '').trim() || undefined;
+      const estimatedMinutes = newTaskDuration[goalId] || undefined;
       await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, goalId, dueDate: tomorrow, status: 'TODO', taskType: 'IMPROVE' }),
+        body: JSON.stringify({
+          title, goalId, dueDate, status: 'TODO', taskType: 'IMPROVE',
+          ...(description && { description }),
+          ...(estimatedMinutes && { estimatedMinutes }),
+        }),
       });
       setNewTaskTitle((prev) => ({ ...prev, [goalId]: '' }));
+      setNewTaskDescription((prev) => ({ ...prev, [goalId]: '' }));
+      setNewTaskDueDate((prev) => ({ ...prev, [goalId]: '' }));
+      setNewTaskDuration((prev) => ({ ...prev, [goalId]: 0 }));
+      setNewTaskExpanded((prev) => ({ ...prev, [goalId]: false }));
       fetchWeeklyGoals();
       fetchTomorrowTasks();
     } catch {
@@ -647,12 +672,15 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   for (const t of tomorrowTasks) planTasksById.set(t.id, t);
   const planTasks = Array.from(planTasksById.values());
 
-  // Group planTasks by type for Clear Goals step (Steps 5+6)
-  const tasksByType: Record<string, any[]> = {};
-  for (const t of planTasks) {
+  // For Steps 5+6: only tasks with a time block (actually scheduled on calendar)
+  const scheduledPlanTasks = planTasks.filter((t) => t.timeBlockStart);
+
+  // Group scheduled tasks by type for Clear Goals step (Steps 5+6)
+  const scheduledTasksByType: Record<string, any[]> = {};
+  for (const t of scheduledPlanTasks) {
     const type = t.taskType ?? 'OTHER';
-    if (!tasksByType[type]) tasksByType[type] = [];
-    tasksByType[type].push(t);
+    if (!scheduledTasksByType[type]) scheduledTasksByType[type] = [];
+    scheduledTasksByType[type].push(t);
   }
   const typeLabels: Record<string, string> = {
     IMPROVE: 'Improve',
@@ -841,23 +869,73 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     )}
 
                     {/* Inline task creation */}
-                    <div className="flex gap-2 ml-6">
-                      <input
-                        type="text"
-                        value={newTaskTitle[goal.id] ?? ''}
-                        onChange={(e) => setNewTaskTitle((prev) => ({ ...prev, [goal.id]: e.target.value }))}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') createTaskForGoal(goal.id);
-                        }}
-                        placeholder="Add a task for this goal..."
-                        className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                      />
-                      <button
-                        onClick={() => createTaskForGoal(goal.id)}
-                        className="text-xs rounded bg-indigo-600 px-2 py-1 text-white hover:bg-indigo-500"
-                      >
-                        Add
-                      </button>
+                    <div className="ml-6 space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newTaskTitle[goal.id] ?? ''}
+                          onChange={(e) => setNewTaskTitle((prev) => ({ ...prev, [goal.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !newTaskExpanded[goal.id]) createTaskForGoal(goal.id);
+                          }}
+                          placeholder="Add a task for this goal..."
+                          className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                        />
+                        <button
+                          onClick={() => setNewTaskExpanded((prev) => ({ ...prev, [goal.id]: !prev[goal.id] }))}
+                          className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] px-1 flex items-center gap-0.5"
+                          title="More options"
+                        >
+                          <ChevronDown className={`h-3 w-3 transition-transform ${newTaskExpanded[goal.id] ? 'rotate-180' : ''}`} />
+                          <span>{newTaskExpanded[goal.id] ? 'Less' : 'More'}</span>
+                        </button>
+                        <button
+                          onClick={() => createTaskForGoal(goal.id)}
+                          className="text-xs rounded bg-indigo-600 px-2 py-1 text-white hover:bg-indigo-500"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      {newTaskExpanded[goal.id] && (
+                        <div className="space-y-2 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)]/30 p-2">
+                          <textarea
+                            value={newTaskDescription[goal.id] ?? ''}
+                            onChange={(e) => setNewTaskDescription((prev) => ({ ...prev, [goal.id]: e.target.value }))}
+                            placeholder="Description (optional)"
+                            rows={2}
+                            className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none resize-none"
+                          />
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">Due date</label>
+                              <input
+                                type="date"
+                                value={newTaskDueDate[goal.id] || weekEnd}
+                                onChange={(e) => setNewTaskDueDate((prev) => ({ ...prev, [goal.id]: e.target.value }))}
+                                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">Est. duration</label>
+                              <select
+                                value={newTaskDuration[goal.id] ?? 0}
+                                onChange={(e) => setNewTaskDuration((prev) => ({ ...prev, [goal.id]: Number(e.target.value) }))}
+                                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                              >
+                                <option value={0}>No estimate</option>
+                                <option value={15}>15 min</option>
+                                <option value={30}>30 min</option>
+                                <option value={45}>45 min</option>
+                                <option value={60}>1 hour</option>
+                                <option value={90}>1.5 hours</option>
+                                <option value={120}>2 hours</option>
+                                <option value={180}>3 hours</option>
+                                <option value={240}>4 hours</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1044,10 +1122,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 <p className="text-sm text-[var(--text-secondary)] mb-3">
                   For each task, add specific outcomes you&apos;ll achieve. e.g., &quot;Complete first draft of proposal sections 1-3&quot;
                 </p>
-                {planTasks.length === 0 && (
-                  <p className="text-sm text-[var(--text-secondary)]">No tasks selected yet. Go back to Step 3 to pick your top tasks.</p>
+                {scheduledPlanTasks.length === 0 && (
+                  <p className="text-sm text-[var(--text-secondary)]">Nothing is scheduled for tomorrow.</p>
                 )}
-                {Object.entries(tasksByType).map(([type, tasks]) => (
+                {Object.entries(scheduledTasksByType).map(([type, tasks]) => (
                   <div key={type} className="space-y-2">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                       {typeLabels[type] ?? type}
@@ -1105,10 +1183,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 <p className="text-sm text-[var(--text-secondary)] mb-3">
                   Here&apos;s your plan for tomorrow. Review that each task has a clear goal.
                 </p>
-                {planTasks.length === 0 && (
-                  <p className="text-sm text-[var(--text-secondary)]">No tasks planned for tomorrow.</p>
+                {scheduledPlanTasks.length === 0 && (
+                  <p className="text-sm text-[var(--text-secondary)]">Nothing is scheduled for tomorrow.</p>
                 )}
-                {planTasks.map((t) => {
+                {scheduledPlanTasks.map((t) => {
                   const isTop3 = tomorrowPlan.includes(t.id);
                   const checklist = goalChecklists[t.id] ?? clearGoals.find((cg) => cg.taskId === t.id)?.steps ?? [];
                   return (

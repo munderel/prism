@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
+import { createGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
 
 const MEETING_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
@@ -50,11 +51,31 @@ export async function POST(request: NextRequest) {
       occurDate: cadence === 'ONE_TIME' && occurDate ? new Date(occurDate) : null,
       timeStart,
       timeEnd,
-      attendeeIds: attendeeIds || [],
+      attendeeIds: Array.from(new Set([...(attendeeIds || []), auth.userId])),
       createdById: auth.userId,
     },
     include: MEETING_INCLUDE,
   });
+
+  // Sync ONE_TIME meetings to Google Calendar — fire-and-forget
+  if (cadence === 'ONE_TIME' && occurDate) {
+    const syncToGcal = async () => {
+      const hasGoogle = await hasGoogleAccount(auth.userId);
+      if (!hasGoogle) return;
+      const targetCalendarId = await getUserSyncCalendarId(auth.userId);
+      const dateStr = new Date(occurDate).toISOString().split('T')[0];
+      const gcalEvent = await createGoogleEvent(auth.userId, {
+        summary: title,
+        description: description || undefined,
+        start: new Date(`${dateStr}T${timeStart}:00`).toISOString(),
+        end: new Date(`${dateStr}T${timeEnd}:00`).toISOString(),
+      }, targetCalendarId);
+      if (gcalEvent?.id) {
+        await prisma.meeting.update({ where: { id: meeting.id }, data: { calendarEventId: gcalEvent.id } });
+      }
+    };
+    syncToGcal().catch((err) => console.warn('[meetings] Google Calendar sync failed:', err));
+  }
 
   return Response.json(meeting, { status: 201 });
 }

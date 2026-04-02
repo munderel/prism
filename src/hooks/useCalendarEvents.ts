@@ -2,11 +2,13 @@
 
 import useSWR from 'swr';
 
+import type { KeyedMutator } from 'swr';
+
 interface CalendarEventsResult {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   events: any[];
   error: unknown;
-  refreshEvents: () => void;
+  refreshEvents: KeyedMutator<any>;
   isLoading: boolean;
 }
 

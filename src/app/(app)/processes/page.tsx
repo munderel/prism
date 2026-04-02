@@ -485,9 +485,9 @@ export default function ProcessesPage() {
 
   const openSchedulePopup = (proc: ProcessData) => {
     setSchedulingProcess(proc);
-    setSchedTime('09:00');
-    setSchedDayOfWeek(1);
-    setSchedDayOfMonth(1);
+    setSchedTime(proc.scheduledTime || '09:00');
+    setSchedDayOfWeek(proc.scheduledDayOfWeek ?? 1);
+    setSchedDayOfMonth(proc.scheduledDayOfMonth ?? 1);
     setSchedDate('');
     setSchedSaving(false);
   };
@@ -791,10 +791,10 @@ export default function ProcessesPage() {
                     onTimeChange={setNewProcScheduledTime}
                     onDayOfWeekChange={setNewProcDayOfWeek}
                     onDayOfMonthChange={setNewProcDayOfMonth}
-                    label="Calendar Schedule (optional)"
+                    label="Calendar Schedule"
                   />
                   <div className="flex gap-2 pt-1">
-                    <button onClick={() => handleAddProcess(fn.id)} disabled={!newProcTitle.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+                    <button onClick={() => handleAddProcess(fn.id)} disabled={!newProcTitle.trim() || !newProcScheduledTime} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
                       Create
                     </button>
                     <button onClick={() => { setAddingProcessFnId(null); setNewProcTitle(''); setNewProcDesc(''); setNewProcDuration(60); setNewProcScheduledTime(''); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
@@ -846,20 +846,27 @@ export default function ProcessesPage() {
                       <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[proc.cadence] || CADENCE_FALLBACK}`}>
                         {proc.cadence}
                       </span>
-                      {proc.scheduledTime && (
-                        <span className="flex items-center gap-1 text-xs text-cyan-400" title={`On calendar at ${proc.scheduledTime}`}>
-                          <Calendar className="h-3 w-3" />
-                          {proc.scheduledTime}
-                        </span>
-                      )}
                       <span className="text-xs text-[var(--text-muted)]">{proc._count.steps} step{proc._count.steps !== 1 ? 's' : ''}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); openSchedulePopup(proc); }}
-                        className="flex items-center gap-1 rounded-lg border border-indigo-600/30 bg-indigo-600/10 px-2 py-1 text-xs font-medium text-indigo-400 hover:bg-indigo-600/20 transition-colors"
-                        title="Schedule on calendar"
+                        className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors ${
+                          proc.scheduledTime
+                            ? 'border-cyan-600/30 bg-cyan-600/10 text-cyan-400 hover:bg-cyan-600/20'
+                            : 'border-indigo-600/30 bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20'
+                        }`}
+                        title={proc.scheduledTime ? `Scheduled at ${proc.scheduledTime} — click to adjust` : 'Schedule on calendar'}
                       >
-                        <Clock className="h-3 w-3" />
-                        Schedule
+                        {proc.scheduledTime ? (
+                          <>
+                            <Calendar className="h-3 w-3" />
+                            Scheduled · {proc.scheduledTime}
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="h-3 w-3" />
+                            Schedule
+                          </>
+                        )}
                       </button>
                       {isAdmin && (
                         <>

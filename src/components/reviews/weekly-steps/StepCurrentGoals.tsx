@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Target, TrendingUp, ChevronRight } from 'lucide-react';
+import { formatGoalDateRange } from '@/lib/goal-constants';
 
 interface GoalParent {
   id: string;
@@ -235,14 +236,11 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
             {goal.status.replace('_', ' ')}
           </span>
           <span className="text-xs text-[var(--text-muted)]">{goal.level}</span>
-          {goal.level === 'MONTHLY' && goal.startDate && (() => {
-            const d = new Date(goal.startDate + 'T00:00:00');
-            return (
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400">
-                {d.toLocaleString('default', { month: 'long', year: 'numeric' })}
-              </span>
-            );
-          })()}
+          {goal.level === 'MONTHLY' && goal.startDate && (
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400">
+              {formatGoalDateRange('MONTHLY', goal.startDate, goal.endDate)}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
@@ -301,8 +299,8 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           {node.monthlyGoals.length > 0 && (
             <div className="space-y-2 ml-4">
               <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide font-medium">
-                Monthly Goals{node.monthlyGoals.length > 0 && node.monthlyGoals[0].startDate && (
-                  <> — {new Date(node.monthlyGoals[0].startDate + 'T00:00:00').toLocaleString('default', { month: 'long', year: 'numeric' })}</>
+                Monthly Goals{node.monthlyGoals[0]?.startDate && (
+                  <> — {formatGoalDateRange('MONTHLY', node.monthlyGoals[0].startDate, node.monthlyGoals[0].endDate)}</>
                 )}
               </span>
               {node.monthlyGoals.map((g) => renderGoalCard(g, 0))}
@@ -313,7 +311,9 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           {node.weeklyGoals.length > 0 && (
             <div className="space-y-2 ml-6">
               <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide font-medium">
-                Weekly Goals
+                Current Weekly Goals{node.weeklyGoals[0]?.startDate && node.weeklyGoals[0]?.endDate && (
+                  <> — {formatGoalDateRange('WEEKLY', node.weeklyGoals[0].startDate, node.weeklyGoals[0].endDate)}</>
+                )}
               </span>
               {node.weeklyGoals.map((g) => renderGoalCard(g, 0))}
             </div>

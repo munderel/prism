@@ -24,7 +24,7 @@ export const registerSchema = z.object({
 
 export const createTaskSchema = z.object({
   taskType: z.enum(['IMPROVE', 'MAINTENANCE', 'REVIEW']),
-  title: z.string().min(1, 'Title is required').max(500),
+  title: z.string().min(3, 'Title must be at least 3 characters').max(500),
   description: z.string().max(5000).optional().nullable(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
   dueDate: z.string().optional().nullable(),
@@ -43,7 +43,7 @@ export const createTaskSchema = z.object({
 
 export const updateTaskSchema = z.object({
   status: z.enum(['TODO', 'IN_PROGRESS', 'DONE', 'DROPPED']).optional(),
-  title: z.string().min(1).max(500).optional(),
+  title: z.string().min(3, 'Title must be at least 3 characters').max(500).optional(),
   description: z.string().max(5000).optional().nullable(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
   dueDate: z.string().optional().nullable(),
@@ -59,7 +59,7 @@ export const updateTaskSchema = z.object({
 // === GOALS ===
 
 export const createGoalSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(500),
+  title: z.string().min(3, 'Title must be at least 3 characters').max(500),
   description: z.string().max(5000).optional().nullable(),
   stackId: z.string().min(1, 'Stack is required'),
   parentId: z.string().optional().nullable(),
@@ -89,6 +89,8 @@ export const updateSettingsSchema = z.object({
   casualHoursEnd: hhmmTime,
   taskSchedulePeriod: z.enum(['working', 'casual', 'both']).optional().nullable(),
   selectedCalendarIds: z.array(z.string()).optional(),
+  syncTargetCalendarId: z.string().max(200).optional().nullable(),
+  calendarColorOverrides: z.record(z.string(), z.string()).optional(),
   powerdownTime: hhmmTime,
   weeklyReviewDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   weeklyReviewTime: hhmmTime,

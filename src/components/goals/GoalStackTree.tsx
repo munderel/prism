@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
-import { fetcher } from '@/lib/fetcher';
+import { freshFetcher } from '@/lib/fetcher';
 import {
   DndContext,
   closestCenter,
@@ -269,7 +269,7 @@ export function GoalStackTree({
   const handleDelete = useCallback(async (goalId: string) => {
     if (!confirm('Delete this goal and all its children?')) return;
     await fetch(`/api/goals/${goalId}`, { method: 'DELETE' });
-    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+    mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
   }, [mutateGoals, stackId]);
 
   const handleEdit = useCallback((goal: GoalTreeItem) => {
@@ -286,12 +286,29 @@ export function GoalStackTree({
 
   const handleTaskToggle = useCallback(async (task: TaskTreeItem) => {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
-    await fetch(`/api/tasks/${task.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+
+    // Optimistic update: immediately toggle in local SWR data
+    const optimisticData = (current: any) => {
+      if (!Array.isArray(current)) return current;
+      return current.map((goal: any) => ({
+        ...goal,
+        tasks: goal.tasks?.map((t: any) =>
+          t.id === task.id ? { ...t, status: newStatus } : t
+        ),
+      }));
+    };
+
+    mutateGoals(
+      async (current: any) => {
+        await fetch(`/api/tasks/${task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        return freshFetcher(`/api/goals?stackId=${stackId}`);
+      },
+      { optimisticData, revalidate: false, rollbackOnError: true },
+    );
   }, [mutateGoals, stackId]);
 
   const handleTaskEdit = useCallback((task: TaskTreeItem) => {
@@ -301,7 +318,7 @@ export function GoalStackTree({
   const handleTaskDelete = useCallback(async (taskId: string) => {
     if (!confirm('Delete this task?')) return;
     await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
-    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+    mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
   }, [mutateGoals, stackId]);
 
   const handleStatusChange = useCallback(async (goalId: string, status: string) => {
@@ -310,7 +327,7 @@ export function GoalStackTree({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
-    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+    mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
   }, [mutateGoals, stackId]);
 
   const handleKpiClick = useCallback((goal: GoalTreeItem) => {
@@ -324,13 +341,13 @@ export function GoalStackTree({
   const handleEditorSave = useCallback(() => {
     setEditorState({ open: false });
     // Pass a fresh fetch to mutate so it bypasses SWR's dedupingInterval
-    mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
+    mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
   }, [mutateGoals, stackId]);
 
   const handleTaskEditorSave = useCallback(async () => {
     setTaskEditorState({ open: false });
     // Await fresh fetch then revalidate to ensure new tasks appear immediately
-    await mutateGoals(fetcher(`/api/goals?stackId=${stackId}`), { revalidate: true });
+    await mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: true });
   }, [mutateGoals, stackId]);
 
   if (isLoading) {

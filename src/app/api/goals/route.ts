@@ -141,40 +141,85 @@ export async function POST(request: NextRequest) {
     where: { stackId, parentId: parentId ?? null, deletedAt: null },
   });
 
-  // Auto-generate yearly + monthly children for HHG
-  if (autoGenerate && level === 'HIGH_HARD' && startDate && endDate) {
-    const hhgStart = new Date(startDate);
-    const hhgEnd = new Date(endDate);
+  // --- Auto-generate sub-goals based on duration ---
+  if (autoGenerate && startDate && endDate) {
+    const goalStart = new Date(startDate);
+    const goalEnd = new Date(endDate);
+    const weekStartDay = stack.weekStartDay ?? 0;
+
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+
+    // Helper: generate weekly goal data for a date range under a parent
+    const generateWeeks = (
+      parentId: string,
+      rangeStart: Date,
+      rangeEnd: Date,
+      isFirstRange: boolean,
+    ) => {
+      const weeks: {
+        stackId: string; parentId: string; level: 'WEEKLY';
+        title: string; startDate: Date; endDate: Date; sortOrder: number;
+      }[] = [];
+      let weekNum = 1;
+      let cursor = new Date(rangeStart);
+      const cursorDay = cursor.getDay();
+      const diff = (cursorDay - weekStartDay + 7) % 7;
+      if (diff > 0) cursor.setDate(cursor.getDate() - diff);
+      if (cursor < rangeStart && !isFirstRange) {
+        cursor.setDate(cursor.getDate() + 7);
+      }
+      while (cursor <= rangeEnd) {
+        const weekStart = new Date(cursor);
+        const weekEnd = new Date(cursor);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
+        weeks.push({
+          stackId, parentId, level: 'WEEKLY' as const,
+          title: `Week ${weekNum}`, startDate: weekStart, endDate: weekEnd,
+          sortOrder: weekNum - 1,
+        });
+        weekNum++;
+        cursor.setDate(cursor.getDate() + 7);
+      }
+      return weeks;
+    }
 
     const result = await prisma.$transaction(async (tx) => {
-      const hhg = await tx.goal.create({
+      // Create the root goal
+      const rootGoal = await tx.goal.create({
         data: {
           stackId,
           parentId: parentId ?? null,
           level,
           title,
           description: description ?? null,
-          startDate: hhgStart,
-          endDate: hhgEnd,
+          startDate: goalStart,
+          endDate: goalEnd,
           sortOrder: siblingCount,
         },
       });
 
-      const startYear = hhgStart.getFullYear();
-      const endYear = hhgEnd.getFullYear();
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December',
-      ];
+      // MONTHLY root: generate weekly goals directly underneath
+      if (level === 'MONTHLY') {
+        const weeks = generateWeeks(rootGoal.id, goalStart, goalEnd, true);
+        if (weeks.length > 0) await tx.goal.createMany({ data: weeks });
+        return rootGoal;
+      }
 
-      // Build year goals first, then batch-create monthly goals per year
+      // HIGH_HARD (multi-year): STRATEGIC → MONTHLY → WEEKLY
+      const startYear = goalStart.getFullYear();
+      const endYear = goalEnd.getFullYear();
+
       const yearGoals: { id: string; year: number }[] = [];
       let yearOrder = 0;
       for (let year = startYear; year <= endYear; year++) {
         const yearGoal = await tx.goal.create({
           data: {
             stackId,
-            parentId: hhg.id,
+            parentId: rootGoal.id,
             level: 'STRATEGIC',
             title: `Yearly Goal ${yearOrder + 1}`,
             startDate: new Date(year, 0, 1),
@@ -185,24 +230,15 @@ export async function POST(request: NextRequest) {
         yearGoals.push({ id: yearGoal.id, year });
       }
 
-      // Determine week start day from stack settings (0 = Sunday, 1 = Monday)
-      const weekStartDay = stack.weekStartDay ?? 0;
-
-      // Batch-create ALL monthly goals across all years in one pass
+      // Batch-create monthly goals across all years
       const allMonthData: {
-        stackId: string;
-        parentId: string;
-        level: 'MONTHLY';
-        title: string;
-        startDate: Date;
-        endDate: Date;
-        sortOrder: number;
+        stackId: string; parentId: string; level: 'MONTHLY';
+        title: string; startDate: Date; endDate: Date; sortOrder: number;
       }[] = [];
 
       for (const { id: yearGoalId, year } of yearGoals) {
-        const firstMonth = year === startYear ? hhgStart.getMonth() : 0;
-        const lastMonth = year === endYear ? hhgEnd.getMonth() : 11;
-
+        const firstMonth = year === startYear ? goalStart.getMonth() : 0;
+        const lastMonth = year === endYear ? goalEnd.getMonth() : 11;
         for (let month = firstMonth; month <= lastMonth; month++) {
           allMonthData.push({
             stackId,
@@ -220,84 +256,32 @@ export async function POST(request: NextRequest) {
         await tx.goal.createMany({ data: allMonthData });
       }
 
-      // Single query to get ALL monthly goals for this HHG
+      // Fetch all monthly goals, then generate weekly goals
       const yearGoalIds = yearGoals.map((yg) => yg.id);
       const allMonthlyGoals = await tx.goal.findMany({
-        where: {
-          stackId,
-          parentId: { in: yearGoalIds },
-          level: 'MONTHLY',
-          deletedAt: null,
-        },
+        where: { stackId, parentId: { in: yearGoalIds }, level: 'MONTHLY', deletedAt: null },
         orderBy: { sortOrder: 'asc' },
         select: { id: true, startDate: true, endDate: true },
       });
 
-      // Generate weekly goals for each month
       const allWeekData: {
-        stackId: string;
-        parentId: string;
-        level: 'WEEKLY';
-        title: string;
-        startDate: Date;
-        endDate: Date;
-        sortOrder: number;
+        stackId: string; parentId: string; level: 'WEEKLY';
+        title: string; startDate: Date; endDate: Date; sortOrder: number;
       }[] = [];
 
       for (let mi = 0; mi < allMonthlyGoals.length; mi++) {
-        const monthGoal = allMonthlyGoals[mi];
-        if (!monthGoal.startDate || !monthGoal.endDate) continue;
-
-        const monthStart = new Date(monthGoal.startDate);
-        const monthEnd = new Date(monthGoal.endDate);
-        let weekNum = 1;
-
-        // Find the first week-start day on or before the 1st of the month
-        let cursor = new Date(monthStart);
-        const cursorDay = cursor.getDay(); // 0=Sun..6=Sat
-        // Rewind to the previous week start day (or stay if already on it)
-        const diff = (cursorDay - weekStartDay + 7) % 7;
-        if (diff > 0) {
-          cursor.setDate(cursor.getDate() - diff);
-        }
-        // For the very first month the week may start before the month
-        // boundary (e.g. month starts Wednesday, first week starts the
-        // prior Monday) so every week is a full 7 days aligned to
-        // weekStartDay.  For subsequent months the previous month
-        // already owns the straddling week, so advance to the next
-        // aligned start to avoid duplicates.
-        if (cursor < monthStart && mi > 0) {
-          cursor.setDate(cursor.getDate() + 7);
-        }
-
-        while (cursor <= monthEnd) {
-          const weekStart = new Date(cursor);
-
-          // Week end = always 6 days after start (full 7-day week, may span into next month)
-          const weekEnd = new Date(cursor);
-          weekEnd.setDate(weekEnd.getDate() + 6);
-          weekEnd.setHours(23, 59, 59, 999);
-
-          allWeekData.push({
-            stackId,
-            parentId: monthGoal.id,
-            level: 'WEEKLY' as const,
-            title: `Week ${weekNum}`,
-            startDate: weekStart,
-            endDate: weekEnd,
-            sortOrder: weekNum - 1,
-          });
-
-          weekNum++;
-          cursor.setDate(cursor.getDate() + 7);
-        }
+        const mg = allMonthlyGoals[mi];
+        if (!mg.startDate || !mg.endDate) continue;
+        allWeekData.push(
+          ...generateWeeks(mg.id, new Date(mg.startDate), new Date(mg.endDate), mi === 0)
+        );
       }
 
       if (allWeekData.length > 0) {
         await tx.goal.createMany({ data: allWeekData });
       }
 
-      return hhg;
+      return rootGoal;
     });
 
     return Response.json(result, { status: 201, headers: { 'Cache-Control': 'no-store' } });

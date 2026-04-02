@@ -7,6 +7,7 @@ import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun,
 import { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 function DurationInput({ value, onChange, inputClasses }: { value: number; onChange: (v: number) => void; inputClasses: string }) {
   return (
@@ -30,6 +31,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const toast = useToast();
   const { mutate: globalMutate } = useSWRConfig();
+  const { isSubscribed: isPushSubscribed, isSupported: isPushSupported, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const [mounted, setMounted] = useState(false);
 
   const [mtp, setMtp] = useState('');
@@ -54,6 +56,8 @@ export default function SettingsPage() {
   // Connected Calendars
   const [availableCalendars, setAvailableCalendars] = useState<{ id: string; summary: string; primary: boolean; backgroundColor: string }[]>([]);
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
+  const [syncTargetCalendarId, setSyncTargetCalendarId] = useState<string>('');
+  const [calendarColorOverrides, setCalendarColorOverrides] = useState<Record<string, string>>({});
   const [loadingCalendars, setLoadingCalendars] = useState(false);
 
   // Powerdown Time
@@ -121,6 +125,8 @@ export default function SettingsPage() {
       if (data.casualHoursEnd) setCasualHoursEnd(data.casualHoursEnd);
       if (data.taskSchedulePeriod) setTaskSchedulePeriod(data.taskSchedulePeriod);
       if (Array.isArray(data.selectedCalendarIds)) setSelectedCalendarIds(data.selectedCalendarIds);
+      if (data.syncTargetCalendarId) setSyncTargetCalendarId(data.syncTargetCalendarId);
+      if (data.calendarColorOverrides && typeof data.calendarColorOverrides === 'object') setCalendarColorOverrides(data.calendarColorOverrides);
       if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
       if (data.weeklyReviewDayOfWeek != null) setWeeklyReviewDayOfWeek(data.weeklyReviewDayOfWeek);
       if (data.weeklyReviewTime) setWeeklyReviewTime(data.weeklyReviewTime);
@@ -167,7 +173,7 @@ export default function SettingsPage() {
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration }),
+      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration }),
     });
     // Revalidate sidebar's settings cache so hidden features take effect immediately
     globalMutate('/api/settings?scope=user');
@@ -479,7 +485,6 @@ export default function SettingsPage() {
           <div className="space-y-3">
             {[
               { key: 'emailEnabled', label: 'Email notifications' },
-              { key: 'pushEnabled', label: 'Push notifications' },
               { key: 'derailingAlerts', label: 'Derailing alerts' },
               { key: 'mentionAlerts', label: '@mention alerts' },
               { key: 'reviewNags', label: 'Review reminders' },
@@ -494,6 +499,31 @@ export default function SettingsPage() {
                 />
               </label>
             ))}
+            {isPushSupported && (
+              <label className="flex items-center justify-between">
+                <span className="text-sm text-[var(--text-secondary)]">Push notifications</span>
+                <input
+                  type="checkbox"
+                  checked={isPushSubscribed && notifPrefs.pushEnabled}
+                  onChange={async (e) => {
+                    if (e.target.checked) {
+                      const ok = await subscribePush();
+                      if (ok) {
+                        setNotifPrefs({ ...notifPrefs, pushEnabled: true });
+                        toast.success('Push notifications enabled');
+                      } else {
+                        toast.error('Could not enable push notifications. Check browser permissions.');
+                      }
+                    } else {
+                      await unsubscribePush();
+                      setNotifPrefs({ ...notifPrefs, pushEnabled: false });
+                      toast.success('Push notifications disabled');
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+                />
+              </label>
+            )}
           </div>
           <SaveButton onClick={saveUserSettings} label="Save Preferences" className="mt-4" />
         </section>
@@ -567,38 +597,62 @@ export default function SettingsPage() {
             <Calendar className="h-5 w-5 text-purple-400" />
             Connected Calendars
           </h2>
-          <p className="text-xs text-[var(--text-muted)] mb-4">Select which Google Calendars to show in your calendar view. If none are selected, only your primary calendar is used.</p>
+          <p className="text-xs text-[var(--text-muted)] mb-4">Select which Google Calendars to show in your calendar view and configure sync settings.</p>
           {loadingCalendars ? (
             <p className="text-sm text-[var(--text-muted)]">Loading calendars...</p>
           ) : availableCalendars.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">No Google Calendar connected. Connect Google in your account settings to sync calendars.</p>
           ) : (
-            <div className="space-y-2">
-              {availableCalendars.map((cal) => (
-                <label key={cal.id} className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedCalendarIds.includes(cal.id)}
-                    onChange={(e) => {
-                      setSelectedCalendarIds((prev) =>
-                        e.target.checked
-                          ? [...prev, cal.id]
-                          : prev.filter((id) => id !== cal.id)
-                      );
-                    }}
-                    className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span
-                    className="h-3 w-3 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: cal.backgroundColor || '#9333ea' }}
-                  />
-                  <span className="text-sm text-[var(--text-secondary)]">
-                    {cal.summary}
-                    {cal.primary && <span className="text-xs text-[var(--text-muted)] ml-1">(Primary)</span>}
-                  </span>
-                </label>
-              ))}
-            </div>
+            <>
+              <div className="space-y-2 mb-4">
+                {availableCalendars.map((cal) => (
+                  <div key={cal.id} className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedCalendarIds.includes(cal.id)}
+                      onChange={(e) => {
+                        setSelectedCalendarIds((prev) =>
+                          e.target.checked
+                            ? [...prev, cal.id]
+                            : prev.filter((id) => id !== cal.id)
+                        );
+                      }}
+                      className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <input
+                      type="color"
+                      value={calendarColorOverrides[cal.id] || cal.backgroundColor || '#9333ea'}
+                      onChange={(e) => {
+                        setCalendarColorOverrides((prev) => ({ ...prev, [cal.id]: e.target.value }));
+                      }}
+                      className="h-6 w-6 rounded cursor-pointer border-0 p-0 bg-transparent"
+                      title={`Color for ${cal.summary}`}
+                    />
+                    <span className="text-sm text-[var(--text-secondary)]">
+                      {cal.summary}
+                      {cal.primary && <span className="text-xs text-[var(--text-muted)] ml-1">(Primary)</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mb-2">
+                <label className="text-sm text-[var(--text-secondary)]">Sync events to</label>
+                <p className="text-xs text-[var(--text-muted)] mb-1">Events created in the app will appear in this Google Calendar.</p>
+                <select
+                  value={syncTargetCalendarId}
+                  onChange={(e) => setSyncTargetCalendarId(e.target.value)}
+                  className={`${inputClasses} mt-1`}
+                >
+                  <option value="">Primary Calendar</option>
+                  {availableCalendars.map((cal) => (
+                    <option key={cal.id} value={cal.id}>
+                      {cal.summary}{cal.primary ? ' (Primary)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
           <SaveButton onClick={saveUserSettings} className="mt-4" />
         </section>

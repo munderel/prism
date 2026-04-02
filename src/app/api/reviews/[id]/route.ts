@@ -3,6 +3,7 @@ import { ReviewType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { notFoundResponse, forbiddenResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, hasGoogleAccount, getUserSyncCalendarId } from '@/lib/calendar';
 
 type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
 
@@ -54,6 +55,41 @@ export async function PATCH(
   if (body.complete) data.completedAt = new Date();
 
   const updated = await prisma.review.update({ where: { id }, data });
+
+  // Google Calendar sync — fire-and-forget
+  const calendarFieldsChanged = body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined || body.complete;
+  if (calendarFieldsChanged) {
+    const syncToGcal = async () => {
+      const hasGoogle = await hasGoogleAccount(review.userId);
+      if (!hasGoogle) return;
+      const targetCalendarId = await getUserSyncCalendarId(review.userId);
+      const newStart = updated.timeBlockStart;
+      const newEnd = updated.timeBlockEnd;
+      const title = `${review.reviewType} Review`;
+
+      if (body.complete && review.calendarEventId) {
+        await deleteGoogleEvent(review.userId, review.calendarEventId, targetCalendarId);
+        await prisma.review.update({ where: { id }, data: { calendarEventId: null } });
+      } else if (review.calendarEventId && (body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined)) {
+        await updateGoogleEvent(review.userId, review.calendarEventId, {
+          summary: title,
+          start: newStart ? newStart.toISOString() : undefined,
+          end: newEnd ? newEnd.toISOString() : undefined,
+        }, targetCalendarId);
+      } else if (!review.calendarEventId && newStart && newEnd && !body.complete) {
+        const gcalEvent = await createGoogleEvent(review.userId, {
+          summary: title,
+          start: newStart.toISOString(),
+          end: newEnd.toISOString(),
+        }, targetCalendarId);
+        if (gcalEvent?.id) {
+          await prisma.review.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });
+        }
+      }
+    };
+    syncToGcal().catch((err) => console.warn('[reviews] Google Calendar sync failed:', err));
+  }
+
   return Response.json(updated, NO_STORE);
 }
 

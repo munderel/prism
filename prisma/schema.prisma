@@ -55,6 +55,8 @@ model User {
   isPublicOnLeaderboard Boolean   @default(false)
   taskSchedulePeriod    String?   // "working" | "casual" | "both"
   selectedCalendarIds   Json      @default("[]") // String[] of Google Calendar IDs to sync
+  syncTargetCalendarId  String?   // Google Calendar ID to push events to (null = 'primary')
+  calendarColorOverrides Json     @default("{}") // Record<calendarId, hexColor> overrides
   powerdownTime         String?   // "HH:mm" format, e.g. "17:30"
   weeklyReviewDayOfWeek Int?      // 0=Sun,1=Mon,...6=Sat
   weeklyReviewTime      String?   // "HH:mm" format, e.g. "10:00"
@@ -576,10 +578,11 @@ model Meeting {
   occurDate   DateTime?       // specific date for ONE_TIME meetings
   timeStart   String          // "09:00" format
   timeEnd     String          // "10:00" format
-  attendeeIds Json            // String[] of user IDs
-  createdById String
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  attendeeIds     Json            // String[] of user IDs
+  calendarEventId String?         // Google Calendar event ID for sync
+  createdById     String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
 }
@@ -745,6 +748,7 @@ model AimInstance {
   selectedActivity   String?   // e.g., "strength", "sauna", "painting"
   phaseAtCompletion  String?   // snapshot of phase when completed
   pointsEarned       Int       @default(0)
+  calendarEventId    String?   // Google Calendar event ID for sync
   createdAt          DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)

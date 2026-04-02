@@ -2,12 +2,13 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { deleteGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
 
 const MEETING_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
 } as const;
 
-async function findMeetingOrFail(id: string): Promise<{ id: string } | Response> {
+async function findMeetingOrFail(id: string) {
   const meeting = await prisma.meeting.findUnique({ where: { id } });
   if (!meeting) return notFoundResponse('Meeting');
   return meeting;
@@ -52,6 +53,17 @@ export async function DELETE(
   const { id } = await params;
   const meeting = await findMeetingOrFail(id);
   if (meeting instanceof Response) return meeting;
+
+  // Delete linked Google Calendar event
+  const fullMeeting = await prisma.meeting.findUnique({ where: { id }, select: { calendarEventId: true, createdById: true } });
+  if (fullMeeting?.calendarEventId) {
+    try {
+      const targetCalendarId = await getUserSyncCalendarId(fullMeeting.createdById);
+      await deleteGoogleEvent(fullMeeting.createdById, fullMeeting.calendarEventId, targetCalendarId);
+    } catch (err) {
+      console.warn('[meetings] Google Calendar sync failed on delete:', err);
+    }
+  }
 
   await prisma.meeting.delete({ where: { id } });
   return Response.json({ ok: true }, NO_STORE);
