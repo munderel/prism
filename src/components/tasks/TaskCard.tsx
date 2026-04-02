@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star } from 'lucide-react';
+import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star, ListChecks } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
-import { isTaskOverdue } from '@/lib/task-utils';
+import { isTaskOverdue, subtaskDoneCount } from '@/lib/task-utils';
 import { StatusChip } from './StatusChip';
 
 interface TaskCardProps {
@@ -118,6 +118,12 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
             <span className="flex items-center gap-0.5 text-xs text-[var(--text-muted)]">
               <MessageSquare className="h-3.5 w-3.5" />
               {task._count.comments}
+            </span>
+          )}
+          {(task._count?.children ?? 0) > 0 && (
+            <span className="flex items-center gap-0.5 text-xs text-[var(--text-muted)]" title={`${subtaskDoneCount(task.children)}/${task._count.children} subtasks done`}>
+              <ListChecks className="h-3.5 w-3.5" />
+              {subtaskDoneCount(task.children)}/{task._count.children}
             </span>
           )}
         </div>

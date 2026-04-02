@@ -7,7 +7,7 @@ export async function GET() {
 
   const calendar = await getCalendarClient(auth.userId);
   if (!calendar) {
-    return Response.json({ calendars: [] });
+    return Response.json({ calendars: [], connected: false });
   }
 
   try {
@@ -19,9 +19,9 @@ export async function GET() {
       backgroundColor: cal.backgroundColor,
     }));
 
-    return Response.json({ calendars });
+    return Response.json({ calendars, connected: true });
   } catch (err) {
     console.warn('[calendar] Failed to list calendars:', err);
-    return Response.json({ calendars: [] });
+    return Response.json({ calendars: [], connected: true, error: 'Failed to fetch calendars' });
   }
 }

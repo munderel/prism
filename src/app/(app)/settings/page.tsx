@@ -59,6 +59,7 @@ export default function SettingsPage() {
   const [syncTargetCalendarId, setSyncTargetCalendarId] = useState<string>('');
   const [calendarColorOverrides, setCalendarColorOverrides] = useState<Record<string, string>>({});
   const [loadingCalendars, setLoadingCalendars] = useState(false);
+  const [googleCalConnected, setGoogleCalConnected] = useState(true);
 
   // Powerdown Time
   const [powerdownTime, setPowerdownTime] = useState('17:30');
@@ -147,9 +148,12 @@ export default function SettingsPage() {
       if (res.ok) {
         const data = await res.json();
         setAvailableCalendars(data.calendars ?? []);
+        setGoogleCalConnected(data.connected !== false);
+      } else {
+        setGoogleCalConnected(false);
       }
     } catch {
-      // Google Calendar may not be connected
+      setGoogleCalConnected(false);
     } finally {
       setLoadingCalendars(false);
     }
@@ -193,12 +197,18 @@ export default function SettingsPage() {
   };
 
   const toggleAdmin = async (userId: string, newValue: boolean) => {
-    await fetch('/api/admin', {
+    // Optimistic update
+    setUsers((prev) => prev.map((u: any) => u.id === userId ? { ...u, isAdmin: newValue } : u));
+
+    const res = await fetch('/api/admin', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, isAdmin: newValue }),
     });
-    fetchUsers();
+    if (!res.ok) {
+      fetchUsers(); // rollback
+      toast.error('Failed to update admin status');
+    }
   };
 
   const removeUser = async (userId: string) => {
@@ -209,18 +219,22 @@ export default function SettingsPage() {
   const confirmRemoveUser = async () => {
     if (!pendingRemoveUserId) return;
     setConfirmOpen(false);
+    const removedId = pendingRemoveUserId;
+    setPendingRemoveUserId(null);
+
+    // Optimistic: immediately remove from local state
+    setUsers((prev) => prev.filter((u: any) => u.id !== removedId));
+
     const res = await fetch('/api/admin', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: pendingRemoveUserId }),
+      body: JSON.stringify({ userId: removedId }),
     });
-    if (res.ok) {
-      fetchUsers();
-    } else {
-      const data = await res.json();
+    if (!res.ok) {
+      fetchUsers(); // rollback
+      const data = await res.json().catch(() => ({}));
       toast.error(data.error || 'Failed to remove user');
     }
-    setPendingRemoveUserId(null);
   };
 
   const retriggerOnboarding = async () => {
@@ -271,7 +285,11 @@ export default function SettingsPage() {
       const inviteUrl = `${window.location.origin}${invitation.inviteUrl}`;
       try {
         await navigator.clipboard.writeText(inviteUrl);
-        toast.success('Invite link copied!');
+        if (invitation.emailSent) {
+          toast.success('Invite sent and link copied!');
+        } else {
+          toast.success('Invite link copied! Share the link manually — email is not configured.');
+        }
       } catch {
         toast.success('Invitation created!');
       }
@@ -331,12 +349,17 @@ export default function SettingsPage() {
   };
 
   const revokeInvitation = async (id: string) => {
-    const res = await fetch(`/api/invitations/${id}`, {
-      method: 'PATCH',
-    });
-    if (res.ok) {
-      toast.success('Invitation revoked');
+    // Optimistic: immediately mark as REVOKED in local state
+    setInvitations((prev) =>
+      prev.map((inv: any) => inv.id === id ? { ...inv, status: 'REVOKED', revokedAt: new Date().toISOString() } : inv)
+    );
+    toast.success('Invitation revoked');
+
+    const res = await fetch(`/api/invitations/${id}`, { method: 'PATCH' });
+    if (!res.ok) {
+      // Rollback on failure
       fetchInvitations();
+      toast.error('Failed to revoke invitation');
     }
   };
 
@@ -600,8 +623,10 @@ export default function SettingsPage() {
           <p className="text-xs text-[var(--text-muted)] mb-4">Select which Google Calendars to show in your calendar view and configure sync settings.</p>
           {loadingCalendars ? (
             <p className="text-sm text-[var(--text-muted)]">Loading calendars...</p>
+          ) : !googleCalConnected ? (
+            <p className="text-sm text-[var(--text-muted)]">Google Calendar not connected. Sign out and sign in again with Google to grant calendar access.</p>
           ) : availableCalendars.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No Google Calendar connected. Connect Google in your account settings to sync calendars.</p>
+            <p className="text-sm text-[var(--text-muted)]">No calendars found in your Google account.</p>
           ) : (
             <>
               <div className="space-y-2 mb-4">

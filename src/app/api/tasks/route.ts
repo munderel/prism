@@ -73,6 +73,16 @@ export async function GET(request: NextRequest) {
   if (status) extraFilter.status = status;
   if (taskType) extraFilter.taskType = taskType;
 
+  // Subtask filtering: by default exclude subtasks from top-level lists
+  const parentId = searchParams.get('parentId');
+  if (parentId) {
+    // Fetch children of a specific task
+    extraFilter.parentId = parentId;
+  } else if (searchParams.get('includeSubtasks') !== 'true') {
+    // Exclude subtasks from top-level queries
+    extraFilter.parentId = null;
+  }
+
   // Combine all filters with AND so OR clauses don't overwrite each other
   const conditions = [accessFilter, dateFilter, extraFilter].filter(
     (f) => Object.keys(f).length > 0
@@ -89,8 +99,12 @@ export async function GET(request: NextRequest) {
       owner: { select: { id: true, name: true, email: true } },
       goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } },
       processExecution: { include: { process: { select: { title: true } } } },
-      _count: { select: { comments: true } },
+      _count: { select: { comments: true, children: true } },
       attachments: { select: { id: true, fileName: true, fileUrl: true } },
+      children: {
+        select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 
@@ -105,7 +119,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, createTaskSchema);
   if ('error' in parsed) return parsed.error;
-  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay } = parsed.data;
+  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay, parentId } = parsed.data;
 
   // IMPROVE tasks require a goalId
   if (taskType === 'IMPROVE' && !goalId) {
@@ -168,6 +182,7 @@ export async function POST(request: NextRequest) {
       preferredTimeStart: preferredTimeStart ?? null,
       preferredTimeEnd: preferredTimeEnd ?? null,
       isWinTheDay: isWinTheDay ?? false,
+      parentId: parentId ?? null,
     },
     include: {
       goal: { select: { id: true, title: true, level: true } },

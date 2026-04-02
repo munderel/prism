@@ -10,6 +10,7 @@ import {
   Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock, ChevronDown,
 } from 'lucide-react';
 import { getLocalDateString, getTomorrowDateString, getWeekBoundaries } from '@/lib/date-utils';
+import { subtaskDoneCount } from '@/lib/task-utils';
 const CalendarSplitView = dynamic(
   () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
   { ssr: false, loading: () => <div className="text-[var(--text-muted)] py-4 text-center">Loading calendar...</div> }
@@ -1038,11 +1039,18 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                       ) : (
                         <Star className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
                       )}
-                      <span className={`text-sm ${isSelected ? 'text-indigo-500 dark:text-indigo-300 font-medium' : 'text-[var(--text-primary)]'}`}>
-                        {t.title}
-                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-sm ${isSelected ? 'text-indigo-500 dark:text-indigo-300 font-medium' : 'text-[var(--text-primary)]'}`}>
+                          {t.title}
+                        </span>
+                        {(t as any).children?.length > 0 && (
+                          <span className="ml-1.5 text-xs text-[var(--text-muted)]">
+                            ({subtaskDoneCount((t as any).children)}/{(t as any).children.length} subtasks)
+                          </span>
+                        )}
+                      </div>
                       {isSelected && (
-                        <span className="ml-auto text-xs rounded-full bg-indigo-600/20 px-2 py-0.5 text-indigo-600 dark:text-indigo-300 font-medium">
+                        <span className="ml-auto text-xs rounded-full bg-indigo-600/20 px-2 py-0.5 text-indigo-600 dark:text-indigo-300 font-medium flex-shrink-0">
                           Most Important
                         </span>
                       )}
@@ -1132,9 +1140,21 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     </h3>
                     {tasks.map((t) => {
                       const checklist = goalChecklists[t.id] ?? clearGoals.find((cg) => cg.taskId === t.id)?.steps ?? [];
+                      const subtasks = (t as any).children as Array<{ id: string; title: string; status: string }> | undefined;
                       return (
                         <div key={t.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-2 space-y-2">
                           <span className="text-sm text-[var(--text-primary)] font-medium">{t.title}</span>
+                          {subtasks && subtasks.length > 0 && (
+                            <div className="ml-4 space-y-1">
+                              <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Subtasks</span>
+                              {subtasks.map((sub) => (
+                                <div key={sub.id} className={`text-xs flex items-center gap-2 ${sub.status === 'DONE' ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-secondary)]'}`}>
+                                  <span>{sub.status === 'DONE' ? '\u2713' : '\u25CB'}</span>
+                                  <span>{sub.title}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           {checklist.length > 0 && (
                             <div className="ml-4 space-y-1">
                               {checklist.map((step: string, i: number) => (

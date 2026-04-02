@@ -39,6 +39,7 @@ export const createTaskSchema = z.object({
   preferredTimeStart: z.string().optional().nullable(),
   preferredTimeEnd: z.string().optional().nullable(),
   isWinTheDay: z.boolean().optional(),
+  parentId: z.string().optional().nullable(),
 });
 
 export const updateTaskSchema = z.object({
@@ -54,6 +55,7 @@ export const updateTaskSchema = z.object({
   estimatedMinutes: z.number().int().min(1).max(1440).optional().nullable(),
   goalId: z.string().optional().nullable(),
   assigneeId: z.string().optional().nullable(),
+  parentId: z.string().optional().nullable(),
 });
 
 // === GOALS ===

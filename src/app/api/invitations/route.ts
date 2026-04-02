@@ -73,13 +73,20 @@ export async function POST(request: NextRequest) {
 
   const inviteUrl = `/accept-invite/${invitation.id}?token=${verificationToken}`;
 
-  // Send invite email (fire-and-forget)
-  const origin = request.headers.get('origin') ?? request.headers.get('x-forwarded-host') ?? '';
+  // Build full URL for email
+  const proto = request.headers.get('x-forwarded-proto') ?? 'https';
+  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '';
+  const origin = request.headers.get('origin') ?? (host ? `${proto}://${host}` : '');
   const fullInviteUrl = origin ? `${origin}${inviteUrl}` : inviteUrl;
-  sendInviteEmail(normalizedEmail, invitation.invitedBy.name ?? 'A team member', fullInviteUrl).catch(() => {});
+
+  // Send invite email (fire-and-forget) — track whether email infra is configured
+  const emailSent = !!process.env.SMTP_HOST;
+  if (emailSent) {
+    sendInviteEmail(normalizedEmail, invitation.invitedBy.name ?? 'A team member', fullInviteUrl).catch(() => {});
+  }
 
   return Response.json(
-    { ...invitation, inviteUrl },
+    { ...invitation, inviteUrl, emailSent },
     { status: 201, ...NO_STORE }
   );
 }
