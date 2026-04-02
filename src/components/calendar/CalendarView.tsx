@@ -104,7 +104,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const calendarRef = useRef<any>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
-  const { events, refreshEvents, googleStatus, googleError } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
+  const { events, error: calendarError, refreshEvents, googleStatus, googleError, isLoading: calendarLoading } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
   const { resolvedTheme } = useTheme();
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown', 'processes']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
@@ -604,6 +604,12 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-300">
           <span>Google Calendar is not connected.</span>
           <a href="/settings" className="ml-auto whitespace-nowrap text-blue-400 underline hover:text-blue-300">Connect in Settings</a>
+        </div>
+      )}
+      {!!calendarError && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <span>Failed to load calendar events. Please try refreshing the page.</span>
+          <button onClick={() => refreshEvents()} className="ml-auto whitespace-nowrap text-red-400 underline hover:text-red-300">Retry</button>
         </div>
       )}
       {/* Filter toggles */}

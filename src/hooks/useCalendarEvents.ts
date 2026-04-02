@@ -27,6 +27,14 @@ export function useCalendarEvents(
   const googleStatus = Array.isArray(data) ? null : (data?.googleStatus ?? null);
   const googleError = Array.isArray(data) ? undefined : data?.googleError;
 
+  // Debug: log when data arrives or errors occur
+  if (error) {
+    console.error('[useCalendarEvents] SWR error:', error);
+  }
+  if (key && data && events.length === 0) {
+    console.warn('[useCalendarEvents] API returned 0 events for range', key);
+  }
+
   return {
     events,
     error,
