@@ -50,9 +50,13 @@ export async function POST(request: NextRequest) {
     select: { selectedCalendarIds: true },
   });
 
-  const rawIds = Array.isArray(user?.selectedCalendarIds) ? (user.selectedCalendarIds as string[]) : [];
-  // Always include primary so synced events on the primary calendar are found
-  const calendarIds = rawIds.length > 0 ? (rawIds.includes('primary') ? rawIds : ['primary', ...rawIds]) : undefined;
+  const rawIds = Array.isArray(user?.selectedCalendarIds) ? (user.selectedCalendarIds as string[]) : undefined;
+  // undefined = user never configured → listGoogleEvents defaults to primary
+  // [] = user explicitly deselected all → listGoogleEvents returns nothing
+  // [...ids] = user selected specific calendars → always include primary for sync
+  const calendarIds = rawIds === undefined ? undefined
+    : rawIds.length > 0 ? (rawIds.includes('primary') ? rawIds : ['primary', ...rawIds])
+    : rawIds;
 
   const rangeStart = new Date(start);
   const rangeEnd = new Date(end);

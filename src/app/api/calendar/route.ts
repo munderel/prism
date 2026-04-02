@@ -115,10 +115,12 @@ function isUserInMeeting(meeting: { attendeeIds: unknown; createdById: string },
   return attendees.includes(userId) || meeting.createdById === userId;
 }
 
-/** Convert selectedCalendarIds to a string array, or undefined if empty. */
+/** Convert selectedCalendarIds to a string array.
+ *  Returns undefined only when the raw value is not an array (user never configured).
+ *  Returns [] when the user explicitly deselected all calendars. */
 function parseCalendarIds(raw: unknown): string[] | undefined {
-  const ids = Array.isArray(raw) ? (raw as string[]) : [];
-  return ids.length > 0 ? ids : undefined;
+  if (!Array.isArray(raw)) return undefined;
+  return raw as string[];
 }
 
 function taskTypeColor(taskType: string): string {
