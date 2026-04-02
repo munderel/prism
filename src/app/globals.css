@@ -14,7 +14,7 @@
   --surface-raised: #f5f3f0;
   --text-primary: #1a1a2e;
   --text-secondary: #64748b;
-  --text-muted: #94a3b8;
+  --text-muted: #6b7280;
   --border-color: rgba(0, 0, 0, 0.08);
   --hover-bg: rgba(0, 0, 0, 0.04);
   --input-bg: rgba(0, 0, 0, 0.03);
@@ -26,6 +26,7 @@
 
 /* ── Dark mode ── */
 .dark {
+  color-scheme: dark;
   --background: #050510;
   --foreground: #ededed;
   --prism-glow: 0 0 20px rgba(99, 102, 241, 0.15);
@@ -35,7 +36,7 @@
   --surface-raised: rgba(25, 25, 40, 0.8);
   --text-primary: #ffffff;
   --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
+  --text-muted: #9ca3af;
   --border-color: rgba(255, 255, 255, 0.06);
   --hover-bg: rgba(255, 255, 255, 0.05);
   --input-bg: rgba(255, 255, 255, 0.05);
@@ -175,6 +176,11 @@ body {
   content: '\203A';
   font-size: 1.5em;
   line-height: 1;
+}
+
+.fc-dark-theme .fc .fc-button-active,
+.fc-light-theme .fc .fc-button-active {
+  color: #ffffff !important;
 }
 
 .fc-dark-theme .fc .ghost-event {

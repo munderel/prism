@@ -70,6 +70,7 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
   const { data: goalsData } = useSWR(
     isTeamReview ? goalsUrl : personalGoalsUrl
   );
+  // Include both current week and upcoming week's goals
   const weeklyGoals = useMemo(() => {
     const arr = Array.isArray(goalsData) ? goalsData : [];
     const now = new Date();
@@ -78,16 +79,17 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
     const thisMonday = new Date(now);
     thisMonday.setDate(now.getDate() + off);
     thisMonday.setHours(0, 0, 0, 0);
-    const upcomingEnd = new Date(thisMonday);
-    upcomingEnd.setDate(thisMonday.getDate() + 6);
-    upcomingEnd.setHours(23, 59, 59, 999);
+    // Extend to cover upcoming week as well (14 days from this Monday)
+    const nextWeekEnd = new Date(thisMonday);
+    nextWeekEnd.setDate(thisMonday.getDate() + 13);
+    nextWeekEnd.setHours(23, 59, 59, 999);
 
     return arr.filter((g: any) => {
       if (g.level !== 'WEEKLY') return false;
       if (!g.startDate || !g.endDate) return false;
       const gs = new Date(g.startDate);
       const ge = new Date(g.endDate);
-      return gs <= upcomingEnd && ge >= thisMonday;
+      return gs <= nextWeekEnd && ge >= thisMonday;
     }) as WeeklyGoal[];
   }, [goalsData]);
 
@@ -176,14 +178,13 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
   const [editPriority, setEditPriority] = useState('');
   const [editSaving, setEditSaving] = useState(false);
 
+  // Error state for task creation
+  const [addError, setAddError] = useState<string | null>(null);
+
   const handleAdd = useCallback(async () => {
     if (!newTitle.trim()) return;
     if (newTaskType === 'IMPROVE' && !newGoalId) {
       setAddError('IMPROVE tasks require a linked goal.');
-      return;
-    }
-    if (newEstimatedMinutes <= 0) {
-      setAddError('Estimated duration is required.');
       return;
     }
     setAddError(null);
@@ -583,7 +584,7 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
               Save
             </button>
             <button
-              onClick={() => { setShowAddForm(false); setNewTitle(''); setNewGoalId(''); setNewDueDate(''); setAddError(null); }}
+              onClick={() => { setShowAddForm(false); setNewTitle(''); setNewGoalId(''); setAddError(null); }}
               className="rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
             >
               Cancel

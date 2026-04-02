@@ -125,7 +125,7 @@ function DurationPicker({ selected, onChange }: DurationPickerProps) {
             onClick={() => onChange(mins)}
             className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
               selected === mins
-                ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                ? 'bg-indigo-600 text-white border border-indigo-600'
                 : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
             }`}
           >
@@ -1203,7 +1203,7 @@ export default function ProcessesPage() {
                         onClick={() => setSchedDayOfWeek(i)}
                         className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition-colors ${
                           schedDayOfWeek === i
-                            ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                            ? 'bg-indigo-600 text-white border border-indigo-600'
                             : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
                         }`}
                       >
@@ -1226,7 +1226,7 @@ export default function ProcessesPage() {
                         onClick={() => setSchedDayOfMonth(d)}
                         className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${
                           schedDayOfMonth === d
-                            ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                            ? 'bg-indigo-600 text-white border border-indigo-600'
                             : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
                         }`}
                       >

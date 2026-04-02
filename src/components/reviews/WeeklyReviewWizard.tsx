@@ -93,6 +93,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const [finalNotes, setFinalNotes] = useState('');
   const [mitTaskPoolSize, setMitTaskPoolSize] = useState<number | null>(null);
 
+
   // Upcoming week boundaries (Mon-Sun)
   const upcomingWeekStart = useMemo(() => {
     const now = new Date();
@@ -387,9 +388,8 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         }
         break;
       case 'mit':
-        if (mitTaskPoolSize === null) return 'Loading tasks...';
         if (mitTaskPoolSize === 0) break; // No tasks available, allow proceeding
-        if (mitTaskPoolSize > 0) {
+        if (mitTaskPoolSize !== null && mitTaskPoolSize > 0) {
           const required = Math.min(3, mitTaskPoolSize);
           if (mitTaskIds.length < required) {
             return `Please select your top ${required} most important task${required > 1 ? 's' : ''} (${mitTaskIds.length}/${required} selected).`;

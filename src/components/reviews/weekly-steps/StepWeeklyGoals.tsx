@@ -140,15 +140,16 @@ function getStatusBadgeClass(status: string): string {
   }
 }
 
+function formatShortDateRange(start: Date, end: Date): string {
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
 interface MonthlyGoalContext {
   id: string;
   title: string;
-  description: string | null;
   status: string;
   startDate: string | null;
-  endDate: string | null;
-  parentId: string | null;
-  kpis: Kpi[];
 }
 
 export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamReview }: StepWeeklyGoalsProps) {
@@ -191,6 +192,13 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
     fetchWeeklyGoals();
   }, []);
 
+  // Auto-show create form when no goals exist after loading
+  useEffect(() => {
+    if (!loading && goals.length === 0) {
+      setShowCreateForm(true);
+    }
+  }, [loading, goals.length]);
+
   const fetchWeeklyGoals = async () => {
     try {
       const now = new Date();
@@ -207,31 +215,16 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
         if (isPersonalStack && !stackId) setStackId(sId);
 
         for (const g of allGoals) {
-          // Collect monthly goals for the current month
+          // Collect monthly goals for context display
           if (g.level === 'MONTHLY') {
             const gs = g.startDate ? new Date(g.startDate) : null;
             const ge = g.endDate ? new Date(g.endDate) : null;
             if (gs && ge && gs <= now && ge >= now) {
-              // Set as parent for new weekly goals
+              monthlyResult.push({ id: g.id, title: g.title, status: g.status, startDate: g.startDate });
+              // Use as parent for new weekly goals
               if (!isTeamReview && !monthlyParentId && isPersonalStack) {
                 setMonthlyParentId(g.id);
               }
-              // Fetch KPIs for this monthly goal
-              let kpis: Kpi[] = [];
-              try {
-                const kpisRes = await fetch(`/api/goals/${g.id}/kpis`);
-                if (kpisRes.ok) { const kd = await kpisRes.json(); kpis = kd.kpis ?? kd; }
-              } catch { /* ignore */ }
-              monthlyResult.push({
-                id: g.id,
-                title: g.title,
-                description: g.description ?? null,
-                status: g.status,
-                startDate: g.startDate,
-                endDate: g.endDate,
-                parentId: g.parentId ?? null,
-                kpis,
-              });
             }
           }
 
@@ -607,7 +600,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
                 </p>
                 {goal.startDate && goal.endDate && (
                   <span className="text-xs text-[var(--text-muted)]">
-                    {formatGoalDateRange('WEEKLY', goal.startDate, goal.endDate)}
+                    {formatShortDateRange(new Date(goal.startDate), new Date(goal.endDate))}
                   </span>
                 )}
               </div>
@@ -794,148 +787,51 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       </div>
       <GoalCreationCoach goalLevel="WEEKLY" isOpen={showCoach} onToggle={() => setShowCoach(!showCoach)} />
 
-      {/* Monthly goals context — editable */}
+      {/* Monthly goals context */}
       {monthlyGoals.length > 0 && (
         <div className="space-y-2">
           <h4 className="text-xs font-bold text-violet-400 uppercase tracking-wider">
-            Current Monthly Goals{monthlyGoals[0].startDate ? ` — ${formatGoalDateRange('MONTHLY', monthlyGoals[0].startDate, monthlyGoals[0].endDate)}` : ''}
+            Current Monthly Goals — {new Date(monthlyGoals[0].startDate || '').toLocaleString('default', { month: 'long', year: 'numeric' })}
           </h4>
           {monthlyGoals.map((mg) => (
-            <div key={mg.id} className="rounded-lg border border-violet-500/20 bg-violet-500/5 overflow-hidden">
-              <div className="flex items-center gap-3 px-4 py-2">
-                <Target className="h-4 w-4 text-violet-400 flex-shrink-0" />
-                {editingMonthlyId === mg.id ? (
-                  <div className="flex-1 flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={editMonthlyTitle}
-                      onChange={(e) => setEditMonthlyTitle(e.target.value)}
-                      className="flex-1 rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-sm text-[var(--text-primary)] focus:border-violet-500 focus:outline-none"
-                    />
-                    <select
-                      value={editMonthlyStatus}
-                      onChange={(e) => setEditMonthlyStatus(e.target.value)}
-                      className="rounded border border-[var(--border-color)] bg-[var(--surface)] px-1.5 py-1 text-xs text-[var(--text-primary)]"
-                    >
-                      {['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED'].map((s) => (
-                        <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-                      ))}
-                    </select>
-                    <button onClick={() => saveMonthlyEdit(mg.id)} disabled={saving === mg.id} className="text-xs bg-violet-600 text-white px-2 py-1 rounded hover:bg-violet-500 disabled:opacity-50">
-                      <Save className="h-3 w-3 inline mr-1" />Save
-                    </button>
-                    <button onClick={() => setEditingMonthlyId(null)} className="text-xs text-[var(--text-muted)] px-2 py-1">Cancel</button>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-sm text-[var(--text-primary)] flex-1 truncate">{mg.title}</p>
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusBadgeClass(mg.status)}`}>
-                      {mg.status.replace(/_/g, ' ')}
-                    </span>
-                    <button
-                      onClick={() => { setEditingMonthlyId(mg.id); setEditMonthlyTitle(mg.title); setEditMonthlyStatus(mg.status); }}
-                      className="p-1 text-[var(--text-muted)] hover:text-violet-400 transition-colors"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setKpiSidebarGoalId(kpiSidebarGoalId === mg.id ? null : mg.id)}
-                      className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-                    >
-                      <BarChart3 className="h-3 w-3" />
-                      KPIs {mg.kpis.length > 0 && `(${mg.kpis.length})`}
-                    </button>
-                  </>
-                )}
-              </div>
-              {/* Inline KPI display for monthly goal */}
-              {kpiSidebarGoalId === mg.id && (
-                <div className="border-t border-violet-500/10 px-4 py-3 bg-violet-500/5 space-y-2">
-                  {mg.kpis.length > 0 ? (
-                    mg.kpis.map((kpi) => (
-                      <div key={kpi.id} className="flex items-center gap-2 text-xs rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2">
-                        <span className="text-[var(--text-primary)] flex-1">{kpi.name}</span>
-                        <span className="text-[var(--text-muted)]">
-                          {kpi.type === 'NUMERIC' ? `Target: ${kpi.targetValue ?? '?'}${kpi.unit ? ` ${kpi.unit}` : ''}` : 'Yes/No'}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-xs text-[var(--text-muted)]">No KPIs yet.</p>
-                  )}
-                  {addingKpiForGoal === mg.id ? (
-                    <div className="space-y-2 rounded border border-[var(--border-color)] bg-[var(--surface)] p-3">
-                      <input type="text" value={newKpiName} onChange={(e) => setNewKpiName(e.target.value)} placeholder="KPI name"
-                        className="w-full rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none" />
-                      <div className="flex gap-2">
-                        <select value={newKpiType} onChange={(e) => setNewKpiType(e.target.value as 'NUMERIC' | 'BOOLEAN')}
-                          className="rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)]">
-                          <option value="NUMERIC">Numeric</option>
-                          <option value="BOOLEAN">Yes/No</option>
-                        </select>
-                        {newKpiType === 'NUMERIC' && (
-                          <>
-                            <input type="number" value={newKpiTarget} onChange={(e) => setNewKpiTarget(e.target.value)} placeholder="Target"
-                              className="w-20 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)]" />
-                            <input type="text" value={newKpiUnit} onChange={(e) => setNewKpiUnit(e.target.value)} placeholder="Unit"
-                              className="w-16 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)]" />
-                          </>
-                        )}
-                      </div>
-                      <div className="flex gap-1">
-                        <button onClick={() => addKpi(mg.id)} disabled={!newKpiName.trim() || saving === mg.id}
-                          className="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-500 disabled:opacity-50">Add KPI</button>
-                        <button onClick={() => { setAddingKpiForGoal(null); setNewKpiName(''); setNewKpiTarget(''); setNewKpiUnit(''); }}
-                          className="text-xs text-[var(--text-muted)] px-2 py-1">Cancel</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button onClick={() => setAddingKpiForGoal(mg.id)}
-                      className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
-                      <Plus className="h-3 w-3" /> Add KPI
-                    </button>
-                  )}
-                </div>
-              )}
+            <div key={mg.id} className="flex items-center gap-3 rounded-lg border border-violet-500/20 bg-violet-500/5 px-4 py-2">
+              <Target className="h-4 w-4 text-violet-400 flex-shrink-0" />
+              <p className="text-sm text-[var(--text-primary)] flex-1 truncate">{mg.title}</p>
+              <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusBadgeClass(mg.status)}`}>
+                {mg.status.replace(/_/g, ' ')}
+              </span>
             </div>
           ))}
         </div>
       )}
 
       {/* Existing goals — split by week */}
-      {goals.length > 0 ? (
+      {goals.length > 0 ? (() => {
+        const bounds = getWeekBoundaries(new Date());
+        const upcomingLabel = `Upcoming Week's Goals (${formatShortDateRange(bounds.upcomingWeekStart, bounds.upcomingWeekEnd)})`;
+        const lastLabel = `Last Week's Goals (${formatShortDateRange(bounds.lastMonday, bounds.lastSunday)})`;
+        return (
         <div className="space-y-5">
-          {(() => {
-            const bounds = getWeekBoundaries(new Date());
-            const fmtRange = (s: Date, e: Date) => {
-              const sf = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              const ef = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-              return `${sf} \u2013 ${ef}`;
-            };
-            return (
-              <>
-                {renderGoalSection(
-                  goals.filter((g) => g.weekCategory === 'upcoming'),
-                  `Current Weekly Goals (${fmtRange(bounds.upcomingWeekStart, bounds.upcomingWeekEnd)})`,
-                  'text-indigo-400',
-                  renderGoalCard
-                )}
-                {renderGoalSection(
-                  goals.filter((g) => g.weekCategory === 'last'),
-                  `Last Week's Goals (${fmtRange(bounds.lastMonday, bounds.lastSunday)})`,
-                  'text-[var(--text-muted)]',
-                  renderGoalCard
-                )}
-              </>
-            );
-          })()}
+          {renderGoalSection(
+            goals.filter((g) => g.weekCategory === 'upcoming'),
+            upcomingLabel,
+            'text-indigo-400',
+            renderGoalCard
+          )}
+          {renderGoalSection(
+            goals.filter((g) => g.weekCategory === 'last'),
+            lastLabel,
+            'text-[var(--text-muted)]',
+            renderGoalCard
+          )}
           {goals.filter((g) => !g.weekCategory).map((goal) => renderGoalCard(goal))}
         </div>
-      ) : (
+        );
+      })() : (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-6 text-center">
           <Target className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-2" />
-          <p className="text-sm text-[var(--text-muted)]">No weekly goals found for the upcoming week.</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Create one below to get started.</p>
+          <p className="text-sm text-[var(--text-muted)]">No weekly goals for the upcoming week yet.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Create your first goal below to start planning this week.</p>
         </div>
       )}
 
