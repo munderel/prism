@@ -165,8 +165,13 @@ export async function listGoogleEvents(
   const calendar = await getCalendarClient(userId);
   if (!calendar) return [];
 
+  // undefined = user never configured → default to primary
+  // [] = user explicitly deselected all → return nothing
+  if (calendarIds !== undefined && calendarIds.length === 0) {
+    return [];
+  }
   const ids = calendarIds?.length ? [...calendarIds] : ['primary'];
-  // Always include primary calendar so user's main events are never excluded
+  // Always include primary so synced events are found
   if (!ids.includes('primary')) {
     ids.unshift('primary');
   }
