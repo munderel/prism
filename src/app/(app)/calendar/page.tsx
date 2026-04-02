@@ -273,7 +273,6 @@ export default function CalendarPage() {
           task: { bg: '#6366f1', border: '#4f46e5' },
           aim: { bg: '#14b8a6', border: '#0d9488' },
           work_block: { bg: '#6366f1', border: '#4f46e5' },
-          deep_work: { bg: '#14b8a6', border: '#0d9488' },
         };
 
         const { bg, border } = colors[itemType] || colors.task;
@@ -451,10 +450,11 @@ export default function CalendarPage() {
                 </div>
                 <div
                   className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors"
-                  data-item-type="deep_work"
+                  data-item-type="aim"
                   data-item-id="__deep_work_template__"
                   data-item-title="Deep Work Block"
                   data-duration="120"
+                  data-aim-category-id="deep-work"
                 >
                   <div className="flex items-start gap-2">
                     <Brain className="h-4 w-4 text-teal-400 mt-0.5 flex-shrink-0" />
