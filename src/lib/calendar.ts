@@ -165,7 +165,11 @@ export async function listGoogleEvents(
   const calendar = await getCalendarClient(userId);
   if (!calendar) return [];
 
-  const ids = calendarIds?.length ? calendarIds : ['primary'];
+  const ids = calendarIds?.length ? [...calendarIds] : ['primary'];
+  // Always include primary calendar so user's main events are never excluded
+  if (!ids.includes('primary')) {
+    ids.unshift('primary');
+  }
 
   const results = await Promise.all(
     ids.map(async (calendarId) => {
