@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, createInvitationSchema } from '@/lib/schemas';
-import { sendInviteEmail } from '@/lib/notifications';
+import { isEmailTransportConfigured, sendInviteEmail } from '@/lib/notifications';
 
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RATE_LIMIT_MAX = 10; // max invitations per hour
@@ -79,14 +79,26 @@ export async function POST(request: NextRequest) {
   const origin = request.headers.get('origin') ?? (host ? `${proto}://${host}` : '');
   const fullInviteUrl = origin ? `${origin}${inviteUrl}` : inviteUrl;
 
-  // Send invite email (fire-and-forget) — track whether email infra is configured
-  const emailSent = !!process.env.SMTP_HOST;
-  if (emailSent) {
-    sendInviteEmail(normalizedEmail, invitation.invitedBy.name ?? 'A team member', fullInviteUrl).catch(() => {});
-  }
+  const emailResult = isEmailTransportConfigured()
+    ? await sendInviteEmail(
+        normalizedEmail,
+        invitation.invitedBy.name ?? 'A team member',
+        fullInviteUrl
+      )
+    : {
+        configured: false,
+        sent: false,
+        error: 'Invite email is not configured for this environment.',
+      };
 
   return Response.json(
-    { ...invitation, inviteUrl, emailSent },
+    {
+      ...invitation,
+      inviteUrl,
+      emailConfigured: emailResult.configured,
+      emailSent: emailResult.sent,
+      emailError: emailResult.error ?? null,
+    },
     { status: 201, ...NO_STORE }
   );
 }

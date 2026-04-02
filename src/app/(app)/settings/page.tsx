@@ -316,12 +316,28 @@ export default function SettingsPage() {
       try {
         await navigator.clipboard.writeText(inviteUrl);
         if (invitation.emailSent) {
-          toast.success('Invite sent and link copied!');
+          toast.success('Invite email sent and link copied!');
+        } else if (invitation.emailConfigured) {
+          toast.error(
+            invitation.emailError
+              ? `Invite email failed: ${invitation.emailError}. Link copied so you can share it manually.`
+              : 'Invite email failed. Link copied so you can share it manually.'
+          );
         } else {
-          toast.success('Invite link copied! Share the link manually — email is not configured.');
+          toast.success('Invite link copied! Share it manually - email is not configured.');
         }
       } catch {
-        toast.success('Invitation created!');
+        if (invitation.emailSent) {
+          toast.success('Invite email sent!');
+        } else if (invitation.emailConfigured) {
+          toast.error(
+            invitation.emailError
+              ? `Invitation created, but email failed: ${invitation.emailError}`
+              : 'Invitation created, but email failed.'
+          );
+        } else {
+          toast.success('Invitation created. Email is not configured.');
+        }
       }
       setInviteEmail('');
       setInviteRole('user');
@@ -367,9 +383,29 @@ export default function SettingsPage() {
       const inviteUrl = `${window.location.origin}${newInvitation.inviteUrl}`;
       try {
         await navigator.clipboard.writeText(inviteUrl);
-        toast.success('New invite link copied!');
+        if (newInvitation.emailSent) {
+          toast.success('Invite email resent and new link copied!');
+        } else if (newInvitation.emailConfigured) {
+          toast.error(
+            newInvitation.emailError
+              ? `Invite email failed: ${newInvitation.emailError}. New link copied so you can share it manually.`
+              : 'Invite email failed. New link copied so you can share it manually.'
+          );
+        } else {
+          toast.success('New invite link copied! Email is not configured.');
+        }
       } catch {
-        toast.success('Invitation resent!');
+        if (newInvitation.emailSent) {
+          toast.success('Invitation resent!');
+        } else if (newInvitation.emailConfigured) {
+          toast.error(
+            newInvitation.emailError
+              ? `Invitation recreated, but email failed: ${newInvitation.emailError}`
+              : 'Invitation recreated, but email failed.'
+          );
+        } else {
+          toast.success('Invitation recreated. Email is not configured.');
+        }
       }
       fetchInvitations();
     } else {
