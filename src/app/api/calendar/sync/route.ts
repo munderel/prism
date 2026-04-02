@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
-import { listGoogleEvents, createGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
+import { listGoogleEvents, createGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 
 type GCalEntry = { start: string; end: string; summary: string; status: string };
 
@@ -37,6 +37,14 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'start and end are required' }, { status: 400 });
   }
 
+  const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+  if (!hasGoogle) {
+    return Response.json(
+      { error: 'Google Calendar is not connected. Sign out and sign in with Google again to enable sync.' },
+      { status: 400 },
+    );
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: auth.userId },
     select: { selectedCalendarIds: true },
@@ -44,7 +52,6 @@ export async function POST(request: NextRequest) {
 
   const rawIds = Array.isArray(user?.selectedCalendarIds) ? (user.selectedCalendarIds as string[]) : [];
   const calendarIds = rawIds.length > 0 ? rawIds : undefined;
-  const targetCalendarId = await getUserSyncCalendarId(auth.userId);
 
   const rangeStart = new Date(start);
   const rangeEnd = new Date(end);

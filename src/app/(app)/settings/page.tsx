@@ -60,6 +60,7 @@ export default function SettingsPage() {
   const [calendarColorOverrides, setCalendarColorOverrides] = useState<Record<string, string>>({});
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   const [googleCalConnected, setGoogleCalConnected] = useState(true);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
 
   // Powerdown Time
   const [powerdownTime, setPowerdownTime] = useState('17:30');
@@ -109,8 +110,12 @@ export default function SettingsPage() {
   }, [isAdmin]);
 
   const fetchSettings = async () => {
-    const res = await fetch('/api/settings?scope=user');
-    if (res.ok) {
+    try {
+      const res = await fetch('/api/settings?scope=user');
+      if (!res.ok) {
+        throw new Error('Failed to load settings');
+      }
+
       const data = await res.json();
       setMtp(data.mtp ?? '');
       setTimezone(data.timezone ?? 'America/New_York');
@@ -126,34 +131,44 @@ export default function SettingsPage() {
       if (data.casualHoursEnd) setCasualHoursEnd(data.casualHoursEnd);
       if (data.taskSchedulePeriod) setTaskSchedulePeriod(data.taskSchedulePeriod);
       if (Array.isArray(data.selectedCalendarIds)) setSelectedCalendarIds(data.selectedCalendarIds);
-      if (data.syncTargetCalendarId) setSyncTargetCalendarId(data.syncTargetCalendarId);
-      if (data.calendarColorOverrides && typeof data.calendarColorOverrides === 'object') setCalendarColorOverrides(data.calendarColorOverrides);
+      setSyncTargetCalendarId(data.syncTargetCalendarId ?? '');
+      if (data.calendarColorOverrides && typeof data.calendarColorOverrides === 'object') {
+        setCalendarColorOverrides(data.calendarColorOverrides);
+      } else {
+        setCalendarColorOverrides({});
+      }
       if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
       if (data.weeklyReviewDayOfWeek != null) setWeeklyReviewDayOfWeek(data.weeklyReviewDayOfWeek);
       if (data.weeklyReviewTime) setWeeklyReviewTime(data.weeklyReviewTime);
       if (data.weeklyReviewDuration) setWeeklyReviewDuration(data.weeklyReviewDuration);
-      if (data.monthlyReviewRecurrenceRule) setMonthlyReviewRecurrenceRule(data.monthlyReviewRecurrenceRule);
+      setMonthlyReviewRecurrenceRule(data.monthlyReviewRecurrenceRule ?? null);
       if (data.monthlyReviewTime) setMonthlyReviewTime(data.monthlyReviewTime);
       if (data.monthlyReviewDuration) setMonthlyReviewDuration(data.monthlyReviewDuration);
-      if (data.yearlyReviewRecurrenceRule) setYearlyReviewRecurrenceRule(data.yearlyReviewRecurrenceRule);
+      setYearlyReviewRecurrenceRule(data.yearlyReviewRecurrenceRule ?? null);
       if (data.yearlyReviewTime) setYearlyReviewTime(data.yearlyReviewTime);
       if (data.yearlyReviewDuration) setYearlyReviewDuration(data.yearlyReviewDuration);
+    } catch {
+      toast.error('Failed to load settings');
     }
   };
 
   const fetchCalendars = async () => {
     setLoadingCalendars(true);
+    setCalendarError(null);
     try {
       const res = await fetch('/api/calendar/list');
       if (res.ok) {
         const data = await res.json();
         setAvailableCalendars(data.calendars ?? []);
         setGoogleCalConnected(data.connected !== false);
+        setCalendarError(data.error ?? null);
       } else {
         setGoogleCalConnected(false);
+        setCalendarError('Failed to load Google Calendars.');
       }
     } catch {
       setGoogleCalConnected(false);
+      setCalendarError('Failed to load Google Calendars.');
     } finally {
       setLoadingCalendars(false);
     }
@@ -174,15 +189,30 @@ export default function SettingsPage() {
 
   const saveUserSettings = async () => {
     setSaving(true);
-    await fetch('/api/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration }),
-    });
-    // Revalidate sidebar's settings cache so hidden features take effect immediately
-    globalMutate('/api/settings?scope=user');
-    toast.success('Settings saved!');
-    setSaving(false);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to save settings');
+      }
+
+      await Promise.all([
+        fetchSettings(),
+        fetchCalendars(),
+        globalMutate('/api/settings?scope=user'),
+      ]);
+
+      toast.success('Settings saved!');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveCompanyMtp = async () => {
@@ -678,6 +708,9 @@ export default function SettingsPage() {
                 </select>
               </div>
             </>
+          )}
+          {calendarError && (
+            <p className="mt-3 text-sm text-amber-400">{calendarError}</p>
           )}
           <SaveButton onClick={saveUserSettings} className="mt-4" />
         </section>
