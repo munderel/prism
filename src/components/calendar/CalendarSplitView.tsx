@@ -376,7 +376,12 @@ export function CalendarSplitView({
         allDay: false,
         extendedProps: { itemId, itemType, taskType: info.event.extendedProps?.taskType },
       };
-      mutateEvents((current: any) => [...(current ?? []), tempEvent], { revalidate: false });
+      mutateEvents((current: any) => {
+        if (current && !Array.isArray(current) && current.events) {
+          return { ...current, events: [...current.events, tempEvent] };
+        }
+        return [...(current ?? []), tempEvent];
+      }, { revalidate: false });
 
       try {
         await onSchedule(itemId, itemType, snapStart, snapEnd);
@@ -386,10 +391,12 @@ export function CalendarSplitView({
         onRefresh?.();
       } catch {
         // Revert: remove the temp event from SWR cache
-        mutateEvents(
-          (current: any) => (current ?? []).filter((e: any) => e.id !== `temp-${itemId}`),
-          { revalidate: false },
-        );
+        mutateEvents((current: any) => {
+          if (current && !Array.isArray(current) && current.events) {
+            return { ...current, events: current.events.filter((e: any) => e.id !== `temp-${itemId}`) };
+          }
+          return (current ?? []).filter((e: any) => e.id !== `temp-${itemId}`);
+        }, { revalidate: false });
       }
     },
     [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, calendarEvents],

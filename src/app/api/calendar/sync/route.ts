@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
   });
 
   const rawIds = Array.isArray(user?.selectedCalendarIds) ? (user.selectedCalendarIds as string[]) : [];
-  const calendarIds = rawIds.length > 0 ? rawIds : undefined;
+  // Always include primary so synced events on the primary calendar are found
+  const calendarIds = rawIds.length > 0 ? (rawIds.includes('primary') ? rawIds : ['primary', ...rawIds]) : undefined;
 
   const rangeStart = new Date(start);
   const rangeEnd = new Date(end);
