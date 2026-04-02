@@ -648,6 +648,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  if (events.length === 0) {
+    console.warn(`[calendar] 0 events returned for user ${auth.userId}, range ${start} – ${end}, source=${source}`);
+  }
+
   return Response.json({ events, googleStatus, googleError });
 }
 
