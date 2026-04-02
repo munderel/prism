@@ -17,6 +17,8 @@ import { FocusView } from '@/components/dashboard/FocusView';
 import { DashboardTimeline } from '@/components/dashboard/DashboardTimeline';
 import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
+import { setTimeOnDate } from '@/lib/scheduling-engine';
+import { useUserSettings } from '@/hooks/useUserSettings';
 import type { DerailInfo } from '@/lib/derail-detection';
 
 // --- Dashboard-specific interfaces based on API response shapes ---
@@ -176,8 +178,8 @@ export default function DashboardPage() {
   // Batch-fetch derail info
   const { data: derailBatch } = useSWR<DerailBatchResponse>('/api/aims/derail-batch?days=14');
 
-  // Fetch user settings (SWR deduplicates with Sidebar's identical call) and today's PowerDown session
-  const { data: userSettings } = useSWR<{ powerdownTime?: string | null }>('/api/settings?scope=user', { revalidateOnFocus: false, dedupingInterval: 60000 });
+  // Fetch user settings and today's PowerDown session
+  const { data: userSettings } = useUserSettings();
   const { data: powerdownSession, mutate: mutatePowerdown } = useSWR<{ id: string; sessionDate: string; timeBlockStart: string | null; timeBlockEnd: string | null; completedAt: string | null } | null>('/api/powerdown');
 
   // Build timeline blocks from tasks + AIMs
@@ -217,9 +219,7 @@ export default function DashboardPage() {
         pdStart = powerdownSession.timeBlockStart;
         pdEnd = powerdownSession.timeBlockEnd;
       } else if (userSettings?.powerdownTime) {
-        const [h, m] = userSettings.powerdownTime.split(':').map(Number);
-        const s = new Date();
-        s.setHours(h, m, 0, 0);
+        const s = setTimeOnDate(new Date(), userSettings.powerdownTime);
         const e = new Date(s.getTime() + 30 * 60 * 1000);
         pdStart = s.toISOString();
         pdEnd = e.toISOString();
@@ -686,7 +686,7 @@ export default function DashboardPage() {
               <p className="text-xs text-[var(--text-muted)]">
                 {powerdownSession?.completedAt
                   ? `Completed at ${new Date(powerdownSession.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-                  : 'Prepare tomorrow\u0027s plan & close out today'}
+                  : "Prepare tomorrow's plan & close out today"}
               </p>
             </div>
             {powerdownSession?.completedAt ? (

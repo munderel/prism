@@ -25,7 +25,8 @@ export function usePushNotifications() {
     if (supported) {
       navigator.serviceWorker.register('/sw.js').then(async (reg) => {
         const subscription = await reg.pushManager.getSubscription();
-        setIsSubscribed(!!subscription);
+        const subscribed = !!subscription;
+        setIsSubscribed((prev) => prev === subscribed ? prev : subscribed);
       }).catch(() => {});
     }
   }, []);

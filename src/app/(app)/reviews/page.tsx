@@ -8,6 +8,7 @@ import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
 import { getLocalDateString } from '@/lib/date-utils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { REVIEW_LEVEL_COLORS } from '@/lib/goal-constants';
 
 interface ReviewData {
   id: string;
@@ -56,11 +57,6 @@ const YEARLY_RECURRENCE_OPTIONS = [
   { value: 'dec-31', label: 'December 31' },
 ] as const;
 
-const typeColors: Record<string, string> = {
-  WEEKLY: 'bg-green-600 text-white border-transparent',
-  MONTHLY: 'bg-blue-600 text-white border-transparent',
-  YEARLY: 'bg-amber-600 text-white border-transparent',
-};
 
 const COLLAPSED_HISTORY_COUNT = 5;
 
@@ -269,7 +265,7 @@ function ReviewsPageInner() {
                   {teamReviewConfigs.map((tr) => (
                     <div key={tr.id} className="rounded-lg border border-gray-700/50 bg-[var(--surface)] p-3">
                       <div className="flex items-center justify-between mb-1">
-                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${typeColors[tr.reviewType]}`}>
+                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${REVIEW_LEVEL_COLORS[tr.reviewType]}`}>
                           {tr.reviewType}
                         </span>
                         {isAdmin && (
@@ -526,7 +522,7 @@ function ReviewsPageInner() {
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${typeColors[r.reviewType]}`}>
+                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${REVIEW_LEVEL_COLORS[r.reviewType]}`}>
                           {r.reviewType}
                         </span>
                         {r.isTeamReview && (
