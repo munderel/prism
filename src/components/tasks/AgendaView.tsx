@@ -124,9 +124,19 @@ export function AgendaView({ onEdit, onDelete, onClick, onStatusChange }: Agenda
           body: JSON.stringify({ status: newStatus }),
         });
         if (!res.ok) throw new Error('Failed');
-        // Revalidate both SWR caches
-        mutate();
-        mutateOverdue();
+        // Update SWR caches inline (no server refetch) to avoid flicker
+        const updater = (current: any[] | undefined) =>
+          (Array.isArray(current) ? current : []).map((t: any) =>
+            t.id === task.id ? { ...t, status: newStatus } : t
+          );
+        mutate(updater, { revalidate: false });
+        mutateOverdue(updater, { revalidate: false });
+        // Clear optimistic state — real data is now in cache
+        setOptimisticStatuses((prev) => {
+          const copy = { ...prev };
+          delete copy[task.id];
+          return copy;
+        });
         onStatusChange?.();
       } catch {
         // Revert on error

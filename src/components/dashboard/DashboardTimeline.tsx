@@ -18,19 +18,13 @@ interface DashboardTimelineProps {
   onBlockMove?: (blockId: string, type: string, newStart: Date, newEnd: Date) => void;
 }
 
-const TIMELINE_START = 6;  // 6am
-const TIMELINE_END = 20;   // 8pm
-const TIMELINE_HOURS = TIMELINE_END - TIMELINE_START; // 14 hours
+const DEFAULT_TIMELINE_START = 6;  // 6am
+const DEFAULT_TIMELINE_END = 20;   // 8pm
 const SNAP_MINUTES = 15;
 
-const HOUR_LABELS: number[] = [];
-for (let h = TIMELINE_START; h <= TIMELINE_END; h += 2) {
-  HOUR_LABELS.push(h);
-}
-
-function getHourPosition(date: Date): number {
+function getHourPosition(date: Date, timelineStart: number, timelineHours: number): number {
   const hours = date.getHours() + date.getMinutes() / 60;
-  return ((hours - TIMELINE_START) / TIMELINE_HOURS) * 100;
+  return ((hours - timelineStart) / timelineHours) * 100;
 }
 
 function formatHourLabel(hour: number): string {
@@ -109,23 +103,42 @@ function DraggableBlock({
 
 export function DashboardTimeline({ blocks, className = '', onBlockMove }: DashboardTimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
+
+  // Compute dynamic timeline bounds based on events
+  const { timelineStart, timelineEnd, timelineHours, hourLabels } = useMemo(() => {
+    let earliest = DEFAULT_TIMELINE_START;
+    let latest = DEFAULT_TIMELINE_END;
+    for (const b of blocks) {
+      const s = new Date(b.start);
+      const e = new Date(b.end);
+      const sHour = Math.floor(s.getHours());
+      const eHour = Math.ceil(e.getHours() + e.getMinutes() / 60);
+      if (sHour < earliest) earliest = sHour;
+      if (eHour > latest) latest = Math.min(eHour, 24);
+    }
+    const hours = latest - earliest;
+    const labels: number[] = [];
+    for (let h = earliest; h <= latest; h += 2) labels.push(h);
+    return { timelineStart: earliest, timelineEnd: latest, timelineHours: hours, hourLabels: labels };
+  }, [blocks]);
+
   const [nowPosition, setNowPosition] = useState<number | null>(() => {
     const now = new Date();
-    const pos = getHourPosition(now);
+    const pos = getHourPosition(now, timelineStart, timelineHours);
     return pos >= 0 && pos <= 100 ? pos : null;
   });
 
   useEffect(() => {
     function updateNow() {
       const now = new Date();
-      const pos = getHourPosition(now);
+      const pos = getHourPosition(now, timelineStart, timelineHours);
       setNowPosition(pos >= 0 && pos <= 100 ? pos : null);
     }
 
     updateNow();
     const interval = setInterval(updateNow, 60_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [timelineStart, timelineHours]);
 
   const positionedBlocks = useMemo(() => {
     return blocks.map((block) => {
@@ -135,8 +148,8 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
       const endHour = end.getHours() + end.getMinutes() / 60;
       const durationHours = endHour - startHour;
 
-      const left = ((startHour - TIMELINE_START) / TIMELINE_HOURS) * 100;
-      const width = (durationHours / TIMELINE_HOURS) * 100;
+      const left = ((startHour - timelineStart) / timelineHours) * 100;
+      const width = (durationHours / timelineHours) * 100;
 
       const clampedLeft = Math.max(0, left);
       const clampedWidth = Math.min(100 - clampedLeft, width);
@@ -151,7 +164,7 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
         narrow: clampedWidth < MIN_WIDTH_FOR_TEXT,
       };
     });
-  }, [blocks]);
+  }, [blocks, timelineStart, timelineHours]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     if (!onBlockMove || !trackRef.current) return;
@@ -160,7 +173,7 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
 
     const trackWidth = trackRef.current.getBoundingClientRect().width;
     const deltaPercent = (delta.x / trackWidth) * 100;
-    const deltaHours = (deltaPercent / 100) * TIMELINE_HOURS;
+    const deltaHours = (deltaPercent / 100) * timelineHours;
 
     const block = blocks.find((b) => b.id === active.id);
     if (!block) return;
@@ -170,16 +183,16 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
     const durationMs = endDate.getTime() - startDate.getTime();
 
     const oldStartHour = startDate.getHours() + startDate.getMinutes() / 60;
-    const newStartHour = snapToInterval(Math.max(TIMELINE_START, Math.min(TIMELINE_END, oldStartHour + deltaHours)));
+    const newStartHour = snapToInterval(Math.max(timelineStart, Math.min(timelineEnd, oldStartHour + deltaHours)));
 
     const newStart = new Date(startDate);
     newStart.setHours(Math.floor(newStartHour), Math.round((newStartHour % 1) * 60), 0, 0);
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    if (newEnd.getHours() + newEnd.getMinutes() / 60 > TIMELINE_END) return;
+    if (newEnd.getHours() + newEnd.getMinutes() / 60 > timelineEnd) return;
 
     onBlockMove(block.id, block.type, newStart, newEnd);
-  }, [blocks, onBlockMove]);
+  }, [blocks, onBlockMove, timelineStart, timelineEnd, timelineHours]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -199,8 +212,8 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
       </p>
 
       <div className="relative mb-1 flex h-5 select-none">
-        {HOUR_LABELS.map((hour) => {
-          const left = ((hour - TIMELINE_START) / TIMELINE_HOURS) * 100;
+        {hourLabels.map((hour) => {
+          const left = ((hour - timelineStart) / timelineHours) * 100;
           return (
             <span
               key={hour}

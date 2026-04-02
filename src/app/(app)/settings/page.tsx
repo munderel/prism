@@ -52,6 +52,8 @@ export default function SettingsPage() {
   const [casualHoursEnd, setCasualHoursEnd] = useState('22:00');
   const [taskSchedulePeriod, setTaskSchedulePeriod] = useState('both');
   const [saving, setSaving] = useState(false);
+  const [seedingAims, setSeedingAims] = useState(false);
+  const [seedAimResult, setSeedAimResult] = useState('');
 
   // Connected Calendars
   const [availableCalendars, setAvailableCalendars] = useState<{ id: string; summary: string; primary: boolean; backgroundColor: string }[]>([]);
@@ -972,6 +974,40 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* AIM Categories */}
+            <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">AIM Categories</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                    Seed the 7 default AIM categories if none exist.
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    setSeedingAims(true);
+                    setSeedAimResult('');
+                    try {
+                      const res = await fetch('/api/admin/seed-aims', { method: 'POST' });
+                      const data = await res.json();
+                      setSeedAimResult(res.ok ? `Seeded ${data.count} categories.` : (data.error || 'Failed'));
+                    } catch {
+                      setSeedAimResult('Network error');
+                    } finally {
+                      setSeedingAims(false);
+                    }
+                  }}
+                  disabled={seedingAims}
+                  className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50 transition-colors"
+                >
+                  {seedingAims ? 'Seeding...' : 'Seed Default AIMs'}
+                </button>
+              </div>
+              {seedAimResult && (
+                <p className="text-xs text-teal-400 mt-2">{seedAimResult}</p>
+              )}
             </div>
           </section>
         )}

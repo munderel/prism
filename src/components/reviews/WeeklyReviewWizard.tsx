@@ -189,6 +189,21 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
           (!t.goalId && !t.dueDate && t.status === 'TODO');  // unlinked TODO tasks
         if (include) {
           items.push({ id: t.id, itemType: 'task', title: t.title, duration: t.estimatedMinutes || 60, taskType: t.taskType, priority: t.priority });
+          // Also surface unscheduled child tasks (subtasks from processes)
+          if (Array.isArray(t.children)) {
+            for (const child of t.children) {
+              if (child.status === 'DONE' || child.status === 'DROPPED') continue;
+              if (child.timeBlockStart) continue;
+              items.push({
+                id: child.id,
+                itemType: 'task',
+                title: `${t.title} › ${child.title}`,
+                duration: child.estimatedMinutes || 30,
+                taskType: t.taskType,
+                priority: child.priority || t.priority,
+              });
+            }
+          }
         }
       }
     }

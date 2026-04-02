@@ -376,7 +376,10 @@ export default function AimsPage() {
         </h1>
         <div className="glass-panel p-8 text-center">
           <p className="text-[var(--text-secondary)]">No aim categories found.</p>
-          <p className="text-sm text-[var(--text-muted)] mt-1">Please contact your admin to seed the default aim categories.</p>
+          <p className="text-sm text-[var(--text-muted)] mt-1">
+            An admin can seed the default categories from{' '}
+            <a href="/settings" className="text-teal-400 underline hover:text-teal-300">Settings → Admin Panel</a>.
+          </p>
         </div>
       </div>
     );

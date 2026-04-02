@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
         _count: { select: { kpis: true } },
         kpis: true,
         stack: { select: { id: true, name: true, isCompany: true } },
+        assignees: { include: { user: { select: { id: true, name: true } } } },
       },
     });
 
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
+      assignees: { include: { user: { select: { id: true, name: true } } } },
     },
   });
 
@@ -222,8 +224,8 @@ export async function POST(request: NextRequest) {
             parentId: rootGoal.id,
             level: 'STRATEGIC',
             title: `Yearly Goal ${yearOrder + 1}`,
-            startDate: new Date(year, 0, 1),
-            endDate: new Date(year, 11, 31, 23, 59, 59, 999),
+            startDate: new Date(Date.UTC(year, 0, 1)),
+            endDate: new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999)),
             sortOrder: yearOrder++,
           },
         });

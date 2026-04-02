@@ -351,22 +351,48 @@ export function CalendarSplitView({
         return;
       }
 
-      // Remove the auto-added event — the parent will re-render with updated data
-      info.event.remove();
+      // Snap to containing work block if dropping a task in schedule_tasks mode
+      let snapStart = start;
+      let snapEnd = end;
+      if (mode === 'schedule_tasks' && calendarEvents) {
+        const block = calendarEvents.find((evt: any) => {
+          if (evt.source !== 'google') return false;
+          const evtStart = new Date(evt.start);
+          const evtEnd = new Date(evt.end);
+          return start >= evtStart && start < evtEnd;
+        });
+        if (block) {
+          snapStart = new Date(block.start);
+          snapEnd = new Date(block.end);
+        }
+      }
+
+      // Add a temp event optimistically while the API call is in-flight
       const tempEvent = {
         id: `temp-${itemId}`,
         title: info.event.title,
-        start: start.toISOString(),
-        end: end.toISOString(),
+        start: snapStart.toISOString(),
+        end: snapEnd.toISOString(),
         allDay: false,
         extendedProps: { itemId, itemType, taskType: info.event.extendedProps?.taskType },
       };
       mutateEvents((current: any) => [...(current ?? []), tempEvent], { revalidate: false });
-      await onSchedule(itemId, itemType, start, end);
-      mutateEvents();
-      onRefresh?.();
+
+      try {
+        await onSchedule(itemId, itemType, snapStart, snapEnd);
+        // Only remove the FullCalendar event after the API succeeds
+        info.event.remove();
+        mutateEvents();
+        onRefresh?.();
+      } catch {
+        // Revert: remove the temp event from SWR cache
+        mutateEvents(
+          (current: any) => (current ?? []).filter((e: any) => e.id !== `temp-${itemId}`),
+          { revalidate: false },
+        );
+      }
     },
-    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh],
+    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, calendarEvents],
   );
 
   // Shared handler for event resize and internal drag-move
