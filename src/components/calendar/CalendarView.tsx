@@ -608,7 +608,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       )}
       {!!calendarError && (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          <span>Failed to load calendar events. Please try refreshing the page.</span>
+          <span>Failed to load calendar events{calendarError instanceof Error && calendarError.message ? `: ${calendarError.message}` : '. Please try refreshing the page.'}</span>
           <button onClick={() => refreshEvents()} className="ml-auto whitespace-nowrap text-red-400 underline hover:text-red-300">Retry</button>
         </div>
       )}

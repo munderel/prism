@@ -133,6 +133,7 @@ export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
+  try {
   const { searchParams } = new URL(request.url);
   const start = searchParams.get('start');
   const end = searchParams.get('end');
@@ -653,6 +654,13 @@ export async function GET(request: NextRequest) {
   }
 
   return Response.json({ events, googleStatus, googleError });
+
+  } catch (err) {
+    console.error('[calendar] Unhandled error in GET /api/calendar:', err);
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    const stack = err instanceof Error ? err.stack : undefined;
+    return Response.json({ error: message, stack: process.env.NODE_ENV !== 'production' ? stack : undefined }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
