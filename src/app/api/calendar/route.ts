@@ -230,6 +230,9 @@ export async function GET(request: NextRequest) {
   const reviewsEnabled = !prefs || prefs.reviewNags;
   const shouldFetchReviews = (fetchAll || fetchExternal || source === 'reviews') && reviewsEnabled;
 
+  let googleStatus: 'ok' | 'error' | 'not_connected' = 'ok';
+  let googleError: string | undefined;
+
   // Run independent queries in parallel
   const [tasks, reviews, meetings, googleEvents, aimInstances] = await Promise.all([
     (fetchAll || source === 'tasks')
@@ -267,7 +270,12 @@ export async function GET(request: NextRequest) {
         })
       : Promise.resolve([]),
     (fetchAll || fetchExternal || source === 'google')
-      ? listGoogleEvents(auth.userId, start, end, calendarIds).catch(() => [])
+      ? listGoogleEvents(auth.userId, start, end, calendarIds).catch((err) => {
+          googleStatus = 'error';
+          googleError = err instanceof Error ? err.message : 'Failed to fetch Google Calendar events';
+          console.error('[calendar] Google Calendar fetch failed:', err);
+          return [];
+        })
       : Promise.resolve([]),
     (fetchAll || source === 'aims')
       ? prisma.aimInstance.findMany({
@@ -279,6 +287,14 @@ export async function GET(request: NextRequest) {
         })
       : Promise.resolve([]),
   ]);
+
+  // Detect "not connected" — Google was requested but returned empty without error
+  if ((fetchAll || fetchExternal || source === 'google') && googleStatus === 'ok' && googleEvents.length === 0) {
+    const user = await prisma.user.findUnique({ where: { id: auth.userId }, select: { googleRefreshToken: true } });
+    if (!user?.googleRefreshToken) {
+      googleStatus = 'not_connected';
+    }
+  }
 
   for (const task of tasks) {
     events.push({
@@ -632,7 +648,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return Response.json(events);
+  return Response.json({ events, googleStatus, googleError });
 }
 
 export async function POST(request: NextRequest) {
