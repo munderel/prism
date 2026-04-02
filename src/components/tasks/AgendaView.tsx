@@ -43,9 +43,9 @@ const TASK_TYPE_BORDER: Record<string, string> = {
 };
 
 const TASK_TYPE_BADGE_STYLE: Record<string, string> = {
-  IMPROVE: 'bg-indigo-600/20 text-indigo-400 border-indigo-600/30',
-  REACT: 'bg-yellow-600/20 text-yellow-400 border-yellow-600/30',
-  MAINTENANCE: 'bg-cyan-600/20 text-cyan-400 border-cyan-600/30',
+  IMPROVE: 'bg-indigo-100 dark:bg-indigo-600/20 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-600/30',
+  REACT: 'bg-yellow-100 dark:bg-yellow-600/20 text-yellow-800 dark:text-yellow-300 border-yellow-200 dark:border-yellow-600/30',
+  MAINTENANCE: 'bg-cyan-100 dark:bg-cyan-600/20 text-cyan-800 dark:text-cyan-300 border-cyan-200 dark:border-cyan-600/30',
 };
 
 const TASK_TYPE_LABEL: Record<string, string> = {

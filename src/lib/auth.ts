@@ -6,6 +6,30 @@ import bcrypt from 'bcryptjs';
 import { encryptToken } from './crypto';
 import { prisma } from './prisma';
 
+// Fields that exist on the Prisma Account model. NextAuth spreads the raw
+// OAuth token response (`...tokens`) into the data passed to linkAccount,
+// which can include fields like `expires_in` that aren't in our schema.
+// Prisma v7 with driver adapters rejects unknown fields, so we strip them.
+const ACCOUNT_FIELDS = new Set([
+  'id', 'userId', 'type', 'provider', 'providerAccountId',
+  'refresh_token', 'access_token', 'expires_at',
+  'token_type', 'scope', 'id_token', 'session_state',
+]);
+
+function withSafeAdapter(adapter: ReturnType<typeof PrismaAdapter>) {
+  const originalLinkAccount = adapter.linkAccount;
+  return {
+    ...adapter,
+    linkAccount: (account: Record<string, any>) => {
+      const cleaned: Record<string, any> = {};
+      for (const [key, value] of Object.entries(account)) {
+        if (ACCOUNT_FIELDS.has(key)) cleaned[key] = value;
+      }
+      return originalLinkAccount(cleaned as any);
+    },
+  };
+}
+
 // Dev-only credentials provider — passwordless email login for local development.
 // Gated behind NODE_ENV to prevent accidental exposure in production.
 const devProvider =
@@ -137,7 +161,7 @@ const passwordProvider = CredentialsProvider({
 export const authOptions: NextAuthOptions = {
   // PrismaAdapter is kept for Google OAuth account linking and DB user management.
   // With JWT strategy, sessions are stored in the token, not the DB Session table.
-  adapter: PrismaAdapter(prisma),
+  adapter: withSafeAdapter(PrismaAdapter(prisma)),
   providers: [
     ...devProvider,
     passwordProvider,
@@ -296,13 +320,11 @@ export const authOptions: NextAuthOptions = {
   debug: process.env.NEXTAUTH_DEBUG === 'true',
   logger: {
     error(code: string, metadata: any) {
-      console.error('[nextauth][error]', code, JSON.stringify(metadata, null, 2));
+      console.error(`[nextauth][error] ${code}:`, metadata?.message ?? metadata?.error?.message ?? '');
     },
     warn(code: string) {
-      console.warn('[nextauth][warn]', code);
+      console.warn(`[nextauth][warn] ${code}`);
     },
-    debug(code: string, metadata: any) {
-      console.log('[nextauth][debug]', code, JSON.stringify(metadata, null, 2));
-    },
+    debug() {},
   },
 };

@@ -27,12 +27,12 @@ export interface CalendarSplitViewProps {
   viewMode: 'day' | 'week';
   dateRange: { start: string; end: string }; // ISO date strings
   unscheduledItems: UnscheduledItem[];
-  onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => void;
-  onUnschedule: (itemId: string, itemType: string) => void;
+  onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => void | Promise<void>;
+  onUnschedule: (itemId: string, itemType: string) => void | Promise<void>;
   onRefresh?: () => void;
   showAimGrouping?: boolean;
   mode?: 'work_blocks' | 'schedule_tasks';
-  onCreateWorkBlock?: (start: Date, end: Date) => void;
+  onCreateWorkBlock?: (start: Date, end: Date) => void | Promise<void>;
   /** Duration in minutes for the Deep Work (AIM Block) template. Defaults to 60. */
   aimBlockDuration?: number;
 }
@@ -101,8 +101,8 @@ function WorkBlockTemplateCard() {
         extendedProps: { itemId: WORK_BLOCK_TEMPLATE_ID, itemType: 'work_block_template' },
       })}
     >
-      <span className="text-sm font-medium text-gray-800">Normal Work Block</span>
-      <div className="mt-1 text-xs text-gray-500">60m · reusable</div>
+      <span className="text-sm font-medium text-[var(--text-primary)]">Normal Work Block</span>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">60m · reusable</div>
     </div>
   );
 }
@@ -119,8 +119,8 @@ function DeepWorkTemplateCard({ duration }: { duration: number }) {
         extendedProps: { itemId: DEEP_WORK_TEMPLATE_ID, itemType: 'work_block_template' },
       })}
     >
-      <span className="text-sm font-medium text-gray-800">Deep Work (AIM Block)</span>
-      <div className="mt-1 text-xs text-gray-500">{duration}m · reusable</div>
+      <span className="text-sm font-medium text-[var(--text-primary)]">Deep Work (AIM Block)</span>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">{duration}m · reusable</div>
     </div>
   );
 }
@@ -128,14 +128,14 @@ function DeepWorkTemplateCard({ duration }: { duration: number }) {
 function priorityBadge(priority?: string) {
   if (!priority) return null;
   const styles: Record<string, string> = {
-    URGENT: 'bg-red-100 text-red-700 border-red-300',
-    HIGH: 'bg-orange-100 text-orange-700 border-orange-300',
-    MEDIUM: 'bg-yellow-100 text-yellow-700 border-yellow-300',
-    LOW: 'bg-green-100 text-green-700 border-green-300',
+    URGENT: 'bg-red-500/15 text-red-400 border-red-500/40',
+    HIGH: 'bg-orange-500/15 text-orange-400 border-orange-500/40',
+    MEDIUM: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/40',
+    LOW: 'bg-green-500/15 text-green-400 border-green-500/40',
   };
   return (
     <span
-      className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${styles[priority] ?? 'bg-gray-100 text-gray-600 border-gray-300'}`}
+      className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${styles[priority] ?? 'bg-[var(--surface-raised)] text-[var(--text-secondary)] border-[var(--border-color)]'}`}
     >
       {priority}
     </span>
@@ -337,7 +337,7 @@ export function CalendarSplitView({
 
   // FullCalendar event receive handler (external drop)
   const handleEventReceive = useCallback(
-    (info: any) => {
+    async (info: any) => {
       const { itemId, itemType } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
@@ -346,12 +346,12 @@ export function CalendarSplitView({
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
         info.event.remove();
-        onCreateWorkBlock?.(start, end);
+        await onCreateWorkBlock?.(start, end);
         mutateEvents();
         return;
       }
 
-      onSchedule(itemId, itemType, start, end);
+      await onSchedule(itemId, itemType, start, end);
       // Remove the auto-added event — the parent will re-render with updated data
       info.event.remove();
       mutateEvents();
@@ -362,12 +362,12 @@ export function CalendarSplitView({
 
   // Shared handler for event resize and internal drag-move
   const handleEventUpdate = useCallback(
-    (info: any) => {
+    async (info: any) => {
       const { itemId, itemType } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
       const end = info.event.end as Date;
-      onSchedule(itemId, itemType, start, end);
+      await onSchedule(itemId, itemType, start, end);
       mutateEvents();
     },
     [onSchedule, mutateEvents],

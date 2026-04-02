@@ -9,6 +9,7 @@ import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { TaskComments } from '@/components/tasks/TaskComments';
 import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
+import { PowerDownStatusCard } from '@/components/powerdown/PowerDownStatusCard';
 import { getLocalDateString } from '@/lib/date-utils';
 
 type ViewMode = 'day' | 'week' | 'month' | 'agenda';
@@ -90,6 +91,21 @@ export default function TasksPage() {
     }
     return null;
   }, [date, viewMode]);
+
+  // PowerDown: fetch user settings + sessions for current view range
+  const { data: userSettings } = useSWR<{ powerdownTime?: string | null }>('/api/settings?scope=user', { revalidateOnFocus: false, dedupingInterval: 60000 });
+  const powerdownKey = useMemo(() => {
+    if (viewMode === 'day' || viewMode === 'agenda') return '/api/powerdown';
+    const range = getRange();
+    return range ? `/api/powerdown?start=${range.start}&end=${range.end}` : null;
+  }, [viewMode, getRange]);
+  const { data: powerdownData } = useSWR(powerdownKey);
+  const powerdownSessions = useMemo(() => {
+    if (viewMode === 'day' || viewMode === 'agenda') {
+      return powerdownData ? [powerdownData] : [];
+    }
+    return Array.isArray(powerdownData) ? powerdownData : [];
+  }, [powerdownData, viewMode]);
 
   // SWR key for range tasks (week/month views)
   const rangeKey = useMemo(() => {
@@ -213,7 +229,7 @@ export default function TasksPage() {
             onClick={() => setViewMode(key)}
             className={`rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
               viewMode === key
-                ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                ? 'bg-indigo-600 text-white border border-indigo-600'
                 : 'text-[var(--text-secondary)] border border-[var(--surface-raised)] hover:border-[var(--border-color)] hover:text-[var(--text-primary)]'
             }`}
           >
@@ -254,7 +270,7 @@ export default function TasksPage() {
           onClick={goToToday}
           className={`rounded-lg px-3 py-2 text-sm transition-colors ${
             date === today
-              ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+              ? 'bg-indigo-600 text-white border border-indigo-600'
               : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
           }`}
         >
@@ -362,6 +378,56 @@ export default function TasksPage() {
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Power Down Section */}
+          {(userSettings?.powerdownTime || powerdownSessions.length > 0) && (
+            <div className="mt-6">
+              <h2 className={`text-sm font-semibold mb-3 flex items-center gap-1.5 ${PRISM_COLORS.POWER_DOWN.textClass}`}>
+                <span>{PRISM_COLORS.POWER_DOWN.emoji}</span> Power Down
+              </h2>
+              <div className="space-y-2">
+                {viewMode === 'day' || viewMode === 'agenda' ? (
+                  <PowerDownStatusCard
+                    session={powerdownSessions[0] ?? null}
+                    powerdownTime={userSettings?.powerdownTime ?? null}
+                    date={date}
+                    compact
+                  />
+                ) : (
+                  (() => {
+                    const range = getRange();
+                    if (!range) return null;
+                    const start = new Date(range.start + 'T00:00:00');
+                    const end = new Date(range.end + 'T00:00:00');
+                    const days: string[] = [];
+                    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                      days.push(getLocalDateString(d));
+                    }
+                    const sessionsByDate = new Map<string, any>();
+                    for (const s of powerdownSessions) {
+                      const key = getLocalDateString(new Date(s.sessionDate));
+                      sessionsByDate.set(key, s);
+                    }
+                    return days.map((dayKey) => (
+                      <div key={dayKey} className="flex items-center gap-2">
+                        <span className={`text-xs w-20 shrink-0 ${dayKey === today ? 'text-indigo-400 font-semibold' : 'text-[var(--text-muted)]'}`}>
+                          {formatDateLabel(dayKey)}
+                        </span>
+                        <div className="flex-1">
+                          <PowerDownStatusCard
+                            session={sessionsByDate.get(dayKey) ?? null}
+                            powerdownTime={userSettings?.powerdownTime ?? null}
+                            date={dayKey}
+                            compact
+                          />
+                        </div>
+                      </div>
+                    ));
+                  })()
+                )}
               </div>
             </div>
           )}

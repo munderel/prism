@@ -186,7 +186,7 @@ export default function NewIdeaPage() {
                 onClick={() => setConfidence(n)}
                 className={`rounded-lg w-10 h-10 text-sm font-medium transition-colors border ${
                   confidence === n
-                    ? 'bg-indigo-600/20 text-indigo-400 border-indigo-600/30'
+                    ? 'bg-indigo-600 text-white border-indigo-600'
                     : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--glass-border)]'
                 }`}
               >

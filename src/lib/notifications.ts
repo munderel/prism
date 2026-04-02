@@ -84,6 +84,40 @@ async function sendPushNotifications(
   );
 }
 
+/**
+ * Send an invitation email to a prospective user.
+ * Bypasses notification preferences since the recipient isn't a user yet.
+ */
+export async function sendInviteEmail(
+  toEmail: string,
+  inviterName: string,
+  inviteUrl: string,
+): Promise<void> {
+  if (!transporter) return;
+
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM ?? process.env.EMAIL_FROM ?? 'noreply@goaldashboard.app',
+      to: toEmail,
+      subject: `You've been invited to join Prism`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #4f46e5;">You're invited to Prism</h2>
+          <p>${escapeHtml(inviterName)} has invited you to join their team on Prism.</p>
+          <p>
+            <a href="${escapeHtml(inviteUrl)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+              Accept Invitation
+            </a>
+          </p>
+          <p style="color: #6b7280; font-size: 13px;">This invitation expires in 7 days. If you didn't expect this email, you can safely ignore it.</p>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error('[notifications] Invite email send failed:', err instanceof Error ? err.message : err);
+  }
+}
+
 async function sendEmailNotification(
   prefs: { emailEnabled: boolean } | null,
   mailer: typeof transporter,

@@ -194,7 +194,7 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
     <div
       className={`rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40 ${className}`}
     >
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
         Today&apos;s Schedule
       </p>
 
@@ -204,7 +204,7 @@ export function DashboardTimeline({ blocks, className = '', onBlockMove }: Dashb
           return (
             <span
               key={hour}
-              className="absolute -translate-x-1/2 text-[10px] text-zinc-400 dark:text-zinc-500"
+              className="absolute -translate-x-1/2 text-[10px] text-zinc-600 dark:text-zinc-400"
               style={{ left: `${left}%` }}
             >
               {formatHourLabel(hour)}
