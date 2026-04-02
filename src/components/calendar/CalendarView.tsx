@@ -7,8 +7,9 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { type ProposedSlot } from '@/lib/scheduling-engine';
-import { Check, X, ListTodo, Save, Loader2, CheckCircle2 } from 'lucide-react';
+import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2 } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
+import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -132,6 +133,9 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const [pendingActivities, setPendingActivities] = useState<string[]>([]);
   const [pendingAimName, setPendingAimName] = useState('');
 
+  // Task editor modal state
+  const [editingTask, setEditingTask] = useState<any>(null);
+
   // Task assignment panel state (Deep Work as task container)
   const [selectedAimInstance, setSelectedAimInstance] = useState<SelectedAimInstance | null>(null);
   const [showTaskAssignment, setShowTaskAssignment] = useState(false);
@@ -187,6 +191,32 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     (taskId: string) => handleComplete(`/api/tasks/${taskId}`, 'DONE', 'Task'),
     [handleComplete],
   );
+
+  // --- Unschedule handler (clear timeBlockStart/End) ---
+  const handleUnschedule = useCallback(async (
+    endpoint: string,
+    label: string,
+  ) => {
+    setCompletingEvent(true);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
+      });
+      if (res.ok) {
+        toast.success(`${label} unscheduled`);
+        setSelectedEventPopover(null);
+        refreshEvents();
+      } else {
+        toast.error(`Failed to unschedule ${label.toLowerCase()}`);
+      }
+    } catch {
+      toast.error(`Failed to unschedule ${label.toLowerCase()}`);
+    } finally {
+      setCompletingEvent(false);
+    }
+  }, [toast, refreshEvents]);
 
   // --- Task assignment handlers ---
   const handleEventClick = (info: any) => {
@@ -653,7 +683,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       {selectedEventPopover && (
         <div
           ref={popoverRef}
-          className="fixed z-[60] w-72 rounded-xl border border-[var(--border-color)] bg-[var(--surface-base)] shadow-2xl"
+          className="fixed z-[60] w-72 rounded-xl border border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm"
           style={{
             top: Math.min(selectedEventPopover.position.top, window.innerHeight - 280),
             left: Math.min(selectedEventPopover.position.left, window.innerWidth - 300),
@@ -737,20 +767,16 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           </div>
 
           {/* Popover Actions */}
-          <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2">
-            {/* Aim: Complete + Manage Tasks */}
+          <div className="px-4 py-3 border-t border-[var(--border-color)] flex flex-col gap-2">
+            {/* Aim actions */}
             {selectedEventPopover.source === 'aims' && selectedEventPopover.status !== 'COMPLETED' && (
-              <>
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => selectedEventPopover.aimInstanceId && handleCompleteAim(selectedEventPopover.aimInstanceId)}
                   disabled={completingEvent}
                   className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
                 >
-                  {completingEvent ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  )}
+                  {completingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                   Complete
                 </button>
                 <button
@@ -760,7 +786,17 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                   <ListTodo className="h-3.5 w-3.5" />
                   Tasks
                 </button>
-              </>
+              </div>
+            )}
+            {selectedEventPopover.source === 'aims' && selectedEventPopover.status !== 'COMPLETED' && selectedEventPopover.aimInstanceId && (
+              <button
+                onClick={() => handleUnschedule(`/api/aims/instances/${selectedEventPopover.aimInstanceId}`, 'Aim')}
+                disabled={completingEvent}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+              >
+                <CalendarX2 className="h-3.5 w-3.5" />
+                Unschedule
+              </button>
             )}
             {selectedEventPopover.source === 'aims' && selectedEventPopover.status === 'COMPLETED' && (
               <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
@@ -769,26 +805,54 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </div>
             )}
 
-            {/* Task: Complete */}
-            {selectedEventPopover.source === 'task' && selectedEventPopover.status !== 'DONE' && (
-              <button
-                onClick={() => selectedEventPopover.taskId && handleCompleteTask(selectedEventPopover.taskId)}
-                disabled={completingEvent}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-              >
-                {completingEvent ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-3.5 w-3.5" />
+            {/* Task actions */}
+            {selectedEventPopover.source === 'task' && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    const taskId = selectedEventPopover.taskId;
+                    if (!taskId) return;
+                    try {
+                      const res = await fetch(`/api/tasks/${taskId}`);
+                      if (res.ok) {
+                        const task = await res.json();
+                        setEditingTask(task);
+                        setSelectedEventPopover(null);
+                      }
+                    } catch { /* ignore */ }
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-lg bg-[var(--surface-raised)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </button>
+                {selectedEventPopover.status !== 'DONE' && (
+                  <button
+                    onClick={() => selectedEventPopover.taskId && handleCompleteTask(selectedEventPopover.taskId)}
+                    disabled={completingEvent}
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                  >
+                    {completingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    Complete
+                  </button>
                 )}
-                Complete
-              </button>
-            )}
-            {selectedEventPopover.source === 'task' && selectedEventPopover.status === 'DONE' && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Already done
+                {selectedEventPopover.status === 'DONE' && (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Done
+                  </div>
+                )}
               </div>
+            )}
+            {selectedEventPopover.source === 'task' && selectedEventPopover.taskId && (
+              <button
+                onClick={() => handleUnschedule(`/api/tasks/${selectedEventPopover.taskId}`, 'Task')}
+                disabled={completingEvent}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+              >
+                <CalendarX2 className="h-3.5 w-3.5" />
+                Unschedule
+              </button>
             )}
 
           </div>
@@ -954,6 +1018,18 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
             </div>
           </div>
         </div>
+      )}
+
+      {/* Task Editor Modal */}
+      {editingTask && (
+        <TaskEditor
+          task={editingTask}
+          onSave={() => {
+            setEditingTask(null);
+            refreshEvents();
+          }}
+          onClose={() => setEditingTask(null)}
+        />
       )}
     </div>
   );
