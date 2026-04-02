@@ -268,7 +268,7 @@ export default function SettingsPage() {
     });
     if (res.ok) {
       const invitation = await res.json();
-      const inviteUrl = `${window.location.origin}/accept-invite/${invitation.id}`;
+      const inviteUrl = `${window.location.origin}${invitation.inviteUrl}`;
       try {
         await navigator.clipboard.writeText(inviteUrl);
         toast.success('Invite link copied!');
@@ -287,8 +287,8 @@ export default function SettingsPage() {
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const copyInviteLink = async (invitationId: string) => {
-    const inviteUrl = `${window.location.origin}/accept-invite/${invitationId}`;
+  const copyInviteLink = async (invitationId: string, token: string) => {
+    const inviteUrl = `${window.location.origin}/accept-invite/${invitationId}?token=${token}`;
     try {
       await navigator.clipboard.writeText(inviteUrl);
       setCopiedId(invitationId);
@@ -316,7 +316,7 @@ export default function SettingsPage() {
     });
     if (createRes.ok) {
       const newInvitation = await createRes.json();
-      const inviteUrl = `${window.location.origin}/accept-invite/${newInvitation.id}`;
+      const inviteUrl = `${window.location.origin}${newInvitation.inviteUrl}`;
       try {
         await navigator.clipboard.writeText(inviteUrl);
         toast.success('New invite link copied!');
@@ -683,7 +683,7 @@ export default function SettingsPage() {
 
           {/* Weekly Review */}
           <div className="mb-6 pb-6 border-b border-[var(--border-color)]">
-            <h3 className="text-sm font-semibold text-green-400 mb-3">Weekly Review</h3>
+            <h3 className="text-sm font-semibold text-green-700 dark:text-green-400 mb-3">Weekly Review</h3>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
@@ -707,7 +707,7 @@ export default function SettingsPage() {
 
           {/* Monthly Review */}
           <div className="mb-6 pb-6 border-b border-[var(--border-color)]">
-            <h3 className="text-sm font-semibold text-blue-400 mb-3">Monthly Review</h3>
+            <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-3">Monthly Review</h3>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-xs text-[var(--text-secondary)] mb-1">Recurrence</label>
@@ -734,7 +734,7 @@ export default function SettingsPage() {
 
           {/* Yearly Review */}
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-yellow-400 mb-3">Yearly Review</h3>
+            <h3 className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 mb-3">Yearly Review</h3>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-xs text-[var(--text-secondary)] mb-1">Recurrence</label>
@@ -861,7 +861,7 @@ export default function SettingsPage() {
                       disabled={user.id === session?.user?.id}
                       className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
                         user.isAdmin
-                          ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
+                          ? 'bg-red-600 text-white hover:bg-red-700'
                           : 'bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                       } disabled:opacity-50`}
                     >
@@ -982,7 +982,7 @@ export default function SettingsPage() {
                           </div>
                           <div className="flex items-center gap-1.5">
                             <button
-                              onClick={() => copyInviteLink(inv.id)}
+                              onClick={() => copyInviteLink(inv.id, inv.token)}
                               className="rounded-lg p-1.5 text-xs font-medium bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                               title="Copy invite link"
                             >
@@ -994,7 +994,7 @@ export default function SettingsPage() {
                             </button>
                             <button
                               onClick={() => resendInvitation(inv.id, inv.email, inv.role)}
-                              className="rounded-lg px-2.5 py-1 text-xs font-medium bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 transition-colors"
+                              className="rounded-lg px-2.5 py-1 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
                               title="Revoke and resend with new link"
                             >
                               <RefreshCw className="h-3.5 w-3.5 inline-block mr-1" />

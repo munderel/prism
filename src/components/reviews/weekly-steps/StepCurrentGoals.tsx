@@ -237,8 +237,13 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           </span>
           <span className="text-xs text-[var(--text-muted)]">{goal.level}</span>
           {goal.level === 'MONTHLY' && goal.startDate && (
-            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400">
-              {formatGoalDateRange('MONTHLY', goal.startDate, goal.endDate)}
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400">
+              {new Date(goal.startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}
+            </span>
+          )}
+          {goal.level === 'WEEKLY' && goal.startDate && goal.endDate && (
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400">
+              {formatGoalDateRange('WEEKLY', goal.startDate, goal.endDate)}
             </span>
           )}
         </div>
@@ -299,8 +304,8 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           {node.monthlyGoals.length > 0 && (
             <div className="space-y-2 ml-4">
               <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide font-medium">
-                Monthly Goals{node.monthlyGoals[0]?.startDate && (
-                  <> — {formatGoalDateRange('MONTHLY', node.monthlyGoals[0].startDate, node.monthlyGoals[0].endDate)}</>
+                Monthly Goals{node.monthlyGoals.length > 0 && node.monthlyGoals[0].startDate && (
+                  <> — {new Date(node.monthlyGoals[0].startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}</>
                 )}
               </span>
               {node.monthlyGoals.map((g) => renderGoalCard(g, 0))}
@@ -311,9 +316,7 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           {node.weeklyGoals.length > 0 && (
             <div className="space-y-2 ml-6">
               <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide font-medium">
-                Current Weekly Goals{node.weeklyGoals[0]?.startDate && node.weeklyGoals[0]?.endDate && (
-                  <> — {formatGoalDateRange('WEEKLY', node.weeklyGoals[0].startDate, node.weeklyGoals[0].endDate)}</>
-                )}
+                Current Weekly Goals
               </span>
               {node.weeklyGoals.map((g) => renderGoalCard(g, 0))}
             </div>

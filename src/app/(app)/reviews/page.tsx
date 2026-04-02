@@ -3,10 +3,11 @@
 import { useState, useMemo, useEffect, Suspense } from 'react';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { ClipboardCheck, Plus, Check, X, Users, Download, PlayCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ClipboardCheck, Plus, Check, X, Users, Download, PlayCircle, ChevronDown, ChevronUp, Moon } from 'lucide-react';
 import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
 import { getLocalDateString } from '@/lib/date-utils';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 interface ReviewData {
   id: string;
@@ -56,9 +57,9 @@ const YEARLY_RECURRENCE_OPTIONS = [
 ] as const;
 
 const typeColors: Record<string, string> = {
-  WEEKLY: 'text-green-400 bg-green-600/20 border-green-600/30',
-  MONTHLY: 'text-blue-400 bg-blue-600/20 border-blue-600/30',
-  YEARLY: 'text-yellow-400 bg-yellow-600/20 border-yellow-600/30',
+  WEEKLY: 'bg-green-600 text-white border-transparent',
+  MONTHLY: 'bg-blue-600 text-white border-transparent',
+  YEARLY: 'bg-amber-600 text-white border-transparent',
 };
 
 const COLLAPSED_HISTORY_COUNT = 5;
@@ -100,6 +101,10 @@ function ReviewsPageInner() {
   const [teamReviewTime, setTeamReviewTime] = useState('10:00');
   const [teamReviewDuration, setTeamReviewDuration] = useState(60);
   const [teamReviewMembers, setTeamReviewMembers] = useState<string[]>([]);
+
+  // PowerDown sessions for reviews page
+  const { data: powerdownToday } = useSWR<{ id: string; sessionDate: string; completedAt: string | null } | null>('/api/powerdown');
+  const { data: recentPowerdowns } = useSWR<Array<{ id: string; sessionDate: string; completedAt: string | null }>>('/api/powerdown?recent=7');
 
   // History collapse state
   const [historyExpanded, setHistoryExpanded] = useState(false);
@@ -443,6 +448,67 @@ function ReviewsPageInner() {
                 <p className="text-xs text-[var(--text-muted)]">No team reviews scheduled yet. Ask an admin to create one.</p>
               </div>
             )}
+
+          {/* Power Down Sessions */}
+          <div className="glass-panel p-4">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
+              <Moon className="h-4 w-4 text-violet-400" />
+              Power Down Sessions
+            </h3>
+
+            {/* Today's status */}
+            <div className="mb-3">
+              {powerdownToday?.completedAt ? (
+                <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/5 p-2.5">
+                  <Check className="h-4 w-4 text-green-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-green-400">Today - Completed</p>
+                    <p className="text-xs text-[var(--text-muted)]">
+                      {new Date(powerdownToday.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Link
+                  href="/powerdown"
+                  className="flex items-center gap-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-2.5 hover:border-violet-500/50 transition-colors"
+                >
+                  <Moon className="h-4 w-4 text-violet-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-violet-400">Today - Pending</p>
+                  </div>
+                  <span className="text-xs text-white bg-violet-600 rounded px-2 py-0.5">Start</span>
+                </Link>
+              )}
+            </div>
+
+            {/* Recent completed sessions */}
+            {Array.isArray(recentPowerdowns) && recentPowerdowns.length > 0 && (
+              <div>
+                <p className="text-xs text-[var(--text-muted)] mb-2">Recent</p>
+                <div className="space-y-1">
+                  {recentPowerdowns.map((s) => {
+                    const sessionDate = new Date(s.sessionDate);
+                    const isToday = getLocalDateString(sessionDate) === getLocalDateString();
+                    if (isToday) return null; // Already shown above
+                    return (
+                      <div key={s.id} className="flex items-center gap-2 text-xs px-1 py-1">
+                        <Check className="h-3 w-3 text-green-400 shrink-0" />
+                        <span className="text-[var(--text-secondary)]">
+                          {sessionDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </span>
+                        {s.completedAt && (
+                          <span className="text-[var(--text-muted)] ml-auto">
+                            {new Date(s.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Pending reviews */}
           {pendingReviews.length > 0 && (

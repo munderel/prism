@@ -27,12 +27,12 @@ export interface CalendarSplitViewProps {
   viewMode: 'day' | 'week';
   dateRange: { start: string; end: string }; // ISO date strings
   unscheduledItems: UnscheduledItem[];
-  onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => void;
-  onUnschedule: (itemId: string, itemType: string) => void;
+  onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => void | Promise<void>;
+  onUnschedule: (itemId: string, itemType: string) => void | Promise<void>;
   onRefresh?: () => void;
   showAimGrouping?: boolean;
   mode?: 'work_blocks' | 'schedule_tasks';
-  onCreateWorkBlock?: (start: Date, end: Date) => void;
+  onCreateWorkBlock?: (start: Date, end: Date) => void | Promise<void>;
   /** Duration in minutes for the Deep Work (AIM Block) template. Defaults to 60. */
   aimBlockDuration?: number;
 }
@@ -102,7 +102,7 @@ function WorkBlockTemplateCard() {
       })}
     >
       <span className="text-sm font-medium text-[var(--text-primary)]">Normal Work Block</span>
-      <div className="mt-1 text-xs text-[var(--text-secondary)]">60m &middot; reusable</div>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">60m · reusable</div>
     </div>
   );
 }
@@ -120,7 +120,7 @@ function DeepWorkTemplateCard({ duration }: { duration: number }) {
       })}
     >
       <span className="text-sm font-medium text-[var(--text-primary)]">Deep Work (AIM Block)</span>
-      <div className="mt-1 text-xs text-[var(--text-secondary)]">{duration}m &middot; reusable</div>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">{duration}m · reusable</div>
     </div>
   );
 }
@@ -346,23 +346,13 @@ export function CalendarSplitView({
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
         info.event.remove();
-        // Optimistic: add a temporary event so the block appears immediately
-        const tempEvent = {
-          id: `temp-wb-${Date.now()}`,
-          title: 'Work Block',
-          start: start.toISOString(),
-          end: end.toISOString(),
-          allDay: false,
-          extendedProps: { source: 'google' },
-        };
-        mutateEvents((current: any) => [...(current ?? []), tempEvent], { revalidate: false });
-        // Create the actual Google Calendar event, then revalidate
         await onCreateWorkBlock?.(start, end);
         mutateEvents();
         return;
       }
 
-      // Schedule task/AIM: optimistic update then persist
+      await onSchedule(itemId, itemType, start, end);
+      // Remove the auto-added event — the parent will re-render with updated data
       info.event.remove();
       const tempEvent = {
         id: `temp-${itemId}`,
@@ -382,12 +372,12 @@ export function CalendarSplitView({
 
   // Shared handler for event resize and internal drag-move
   const handleEventUpdate = useCallback(
-    (info: any) => {
+    async (info: any) => {
       const { itemId, itemType } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
       const end = info.event.end as Date;
-      onSchedule(itemId, itemType, start, end);
+      await onSchedule(itemId, itemType, start, end);
       mutateEvents();
     },
     [onSchedule, mutateEvents],

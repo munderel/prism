@@ -39,6 +39,10 @@ function getPriorityBadgeClass(priority: string): string {
   }
 }
 
+interface CategorizedTask extends Task {
+  category: 'last_week' | 'overdue' | 'unscheduled';
+}
+
 interface StepReviewTasksProps {
   reviewId: string;
 }
@@ -76,10 +80,9 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
       const seen = new Set<string>();
       const allTasks: CategorizedTask[] = [];
 
-      // Fetch 1: Last week's tasks
+      // Fetch 1: Last week's tasks (existing behavior)
       const lastWeekRes = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}`,
-        { cache: 'no-store' }
+        `/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}`
       );
       if (lastWeekRes.ok) {
         const data: Task[] = await lastWeekRes.json();
@@ -92,7 +95,7 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
       }
 
       // Fetch 2: All tasks including unscheduled — filter for overdue + unscheduled
-      const allRes = await fetch('/api/tasks?includeUnscheduled=true', { cache: 'no-store' });
+      const allRes = await fetch('/api/tasks?includeUnscheduled=true');
       if (allRes.ok) {
         const data: Task[] = await allRes.json();
         const todayStr = getLocalDateString(new Date());
@@ -122,7 +125,7 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
     setLoading(false);
   };
 
-  const toggleTaskComplete = (task: Task) => {
+  const toggleTaskComplete = (task: CategorizedTask) => {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
 
     // Optimistic update: show the checkmark immediately
@@ -224,107 +227,106 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
         {renderTaskSection(lastWeekTasks, "Last Week's Tasks", 'text-[var(--text-muted)]')}
         {renderTaskSection(unscheduledTasks, 'Unscheduled Tasks', 'text-amber-400')}
       </div>
+
     </div>
   );
 
   function renderTaskCard(task: CategorizedTask) {
     return (
-          <div key={task.id} className="space-y-0">
-            <div
-              className="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3"
-            >
-              <button
-                onClick={() => toggleTaskComplete(task)}
-                className="flex-shrink-0"
-              >
-                {task.status === 'DONE' ? (
-                  <CheckCircle2 className="h-5 w-5 text-green-400" />
-                ) : (
-                  <Circle className="h-5 w-5 text-[var(--text-muted)] hover:text-green-400 transition-colors" />
-                )}
-              </button>
+      <div key={task.id} className="space-y-0">
+        <div className="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3">
+          <button
+            onClick={() => toggleTaskComplete(task)}
+            className="flex-shrink-0"
+          >
+            {task.status === 'DONE' ? (
+              <CheckCircle2 className="h-5 w-5 text-green-400" />
+            ) : (
+              <Circle className="h-5 w-5 text-[var(--text-muted)] hover:text-green-400 transition-colors" />
+            )}
+          </button>
 
-              <div className="flex-1 min-w-0">
-                <p className={`text-sm ${
-                  task.status === 'DONE'
-                    ? 'text-[var(--text-muted)] line-through'
-                    : 'text-[var(--text-primary)]'
-                }`}>
-                  {task.title}
-                </p>
-                {task.goal && (
-                  <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
-                    {task.goal.title}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={`text-xs px-1.5 py-0.5 rounded ${getPriorityBadgeClass(task.priority)}`}>
-                  {task.priority}
-                </span>
-
-                {task.status !== 'DONE' && (
-                  <button
-                    onClick={() => setRescheduleTaskId(
-                      rescheduleTaskId === task.id ? null : task.id
-                    )}
-                    className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 transition-colors px-2 py-1 rounded hover:bg-amber-500/10"
-                  >
-                    <CalendarClock className="h-3.5 w-3.5" />
-                    Reschedule
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Reschedule panel */}
-            {rescheduleTaskId === task.id && (
-              <div className="ml-8 mt-1 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 space-y-3">
-                <div className="flex items-center gap-3">
-                  <label className="text-xs text-[var(--text-secondary)] flex-shrink-0">New date:</label>
-                  <input
-                    type="date"
-                    value={rescheduleDate}
-                    onChange={(e) => setRescheduleDate(e.target.value)}
-                    className="rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--text-secondary)] block mb-1">
-                    <MessageSquare className="h-3 w-3 inline mr-1" />
-                    Reason (optional):
-                  </label>
-                  <input
-                    type="text"
-                    value={rescheduleReason}
-                    onChange={(e) => setRescheduleReason(e.target.value)}
-                    placeholder="Why is this being rescheduled?"
-                    className="w-full rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleReschedule(task.id)}
-                    disabled={!rescheduleDate || saving === task.id}
-                    className="text-xs bg-amber-600 text-white px-3 py-1 rounded hover:bg-amber-500 transition-colors disabled:opacity-50"
-                  >
-                    {saving === task.id ? 'Saving...' : 'Reschedule'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setRescheduleTaskId(null);
-                      setRescheduleDate('');
-                      setRescheduleReason('');
-                    }}
-                    className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] px-2 py-1 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm ${
+              task.status === 'DONE'
+                ? 'text-[var(--text-muted)] line-through'
+                : 'text-[var(--text-primary)]'
+            }`}>
+              {task.title}
+            </p>
+            {task.goal && (
+              <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
+                {task.goal.title}
+              </p>
             )}
           </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`text-xs px-1.5 py-0.5 rounded ${getPriorityBadgeClass(task.priority)}`}>
+              {task.priority}
+            </span>
+
+            {task.status !== 'DONE' && (
+              <button
+                onClick={() => setRescheduleTaskId(
+                  rescheduleTaskId === task.id ? null : task.id
+                )}
+                className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 transition-colors px-2 py-1 rounded hover:bg-amber-500/10"
+              >
+                <CalendarClock className="h-3.5 w-3.5" />
+                Reschedule
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Reschedule panel */}
+        {rescheduleTaskId === task.id && (
+          <div className="ml-8 mt-1 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-[var(--text-secondary)] flex-shrink-0">New date:</label>
+              <input
+                type="date"
+                value={rescheduleDate}
+                onChange={(e) => setRescheduleDate(e.target.value)}
+                className="rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-[var(--text-secondary)] block mb-1">
+                <MessageSquare className="h-3 w-3 inline mr-1" />
+                Reason (optional):
+              </label>
+              <input
+                type="text"
+                value={rescheduleReason}
+                onChange={(e) => setRescheduleReason(e.target.value)}
+                placeholder="Why is this being rescheduled?"
+                className="w-full rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleReschedule(task.id)}
+                disabled={!rescheduleDate || saving === task.id}
+                className="text-xs bg-amber-600 text-white px-3 py-1 rounded hover:bg-amber-500 transition-colors disabled:opacity-50"
+              >
+                {saving === task.id ? 'Saving...' : 'Reschedule'}
+              </button>
+              <button
+                onClick={() => {
+                  setRescheduleTaskId(null);
+                  setRescheduleDate('');
+                  setRescheduleReason('');
+                }}
+                className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] px-2 py-1 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 }

@@ -7,11 +7,11 @@ export const LEVEL_LABELS: Record<string, string> = {
 };
 
 export const LEVEL_COLORS: Record<string, string> = {
-  HIGH_HARD: 'bg-gradient-to-r from-purple-600/30 via-indigo-600/30 to-cyan-600/30 text-purple-300 border-purple-500/40',
-  STRATEGIC: 'bg-violet-600/20 text-violet-400 border-violet-600/30',
-  MONTHLY: 'bg-indigo-600/20 text-indigo-400 border-indigo-600/30',
-  WEEKLY: 'bg-cyan-600/20 text-cyan-400 border-cyan-600/30',
-  DAILY: 'bg-gray-600/15 text-gray-400 border-gray-600/25',
+  HIGH_HARD: 'bg-gradient-to-r from-purple-600/30 via-indigo-600/30 to-cyan-600/30 text-purple-700 dark:text-purple-300 border-purple-500/40',
+  STRATEGIC: 'bg-violet-100 dark:bg-violet-600/20 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-600/30',
+  MONTHLY: 'bg-indigo-100 dark:bg-indigo-600/20 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-600/30',
+  WEEKLY: 'bg-cyan-100 dark:bg-cyan-600/20 text-cyan-800 dark:text-cyan-400 border-cyan-200 dark:border-cyan-600/30',
+  DAILY: 'bg-gray-100 dark:bg-gray-600/15 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-600/25',
 };
 
 export const GOAL_STATUS_COLORS: Record<string, string> = {

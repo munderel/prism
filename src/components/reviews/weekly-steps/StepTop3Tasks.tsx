@@ -41,8 +41,7 @@ export function StepTop3Tasks({ reviewId: _reviewId, selectedTaskIds, onSelectio
 
       const scopeParam = isTeamReview ? '&scope=company' : '';
       const res = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO&includeUnscheduled=true${scopeParam}`,
-        { cache: 'no-store' }
+        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO&includeUnscheduled=true${scopeParam}`
       );
       if (res.ok) {
         const data = await res.json();
