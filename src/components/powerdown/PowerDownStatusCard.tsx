@@ -1,7 +1,9 @@
 'use client';
 
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { Moon, Check } from 'lucide-react';
+import { setTimeOnDate } from '@/lib/scheduling-engine';
 
 interface PowerDownSession {
   id: string;
@@ -21,20 +23,21 @@ interface PowerDownStatusCardProps {
 export function PowerDownStatusCard({ session, powerdownTime, date, compact }: PowerDownStatusCardProps) {
   const isCompleted = !!session?.completedAt;
 
-  let timeLabel: string | null = null;
-  if (session?.timeBlockStart && session?.timeBlockEnd) {
-    const start = new Date(session.timeBlockStart).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const end = new Date(session.timeBlockEnd).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    timeLabel = `${start}–${end}`;
-  } else if (powerdownTime) {
-    const [h, m] = powerdownTime.split(':').map(Number);
-    const s = new Date();
-    s.setHours(h, m, 0, 0);
-    const e = new Date(s.getTime() + 30 * 60 * 1000);
-    const start = s.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const end = e.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    timeLabel = `${start}–${end}`;
-  }
+  const timeLabel = useMemo(() => {
+    if (session?.timeBlockStart && session?.timeBlockEnd) {
+      const start = new Date(session.timeBlockStart).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const end = new Date(session.timeBlockEnd).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return `${start}–${end}`;
+    }
+    if (powerdownTime) {
+      const s = setTimeOnDate(new Date(), powerdownTime);
+      const e = new Date(s.getTime() + 30 * 60 * 1000);
+      const start = s.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const end = e.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return `${start}–${end}`;
+    }
+    return null;
+  }, [session?.timeBlockStart, session?.timeBlockEnd, powerdownTime]);
 
   if (compact) {
     return (
@@ -88,7 +91,7 @@ export function PowerDownStatusCard({ session, powerdownTime, date, compact }: P
             ? `Completed at ${new Date(session!.completedAt!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
             : timeLabel
               ? `Scheduled ${timeLabel}`
-              : 'Prepare tomorrow\u0027s plan'}
+              : "Prepare tomorrow's plan"}
         </p>
       </div>
       {isCompleted ? (

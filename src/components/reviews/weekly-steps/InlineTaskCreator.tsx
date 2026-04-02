@@ -122,7 +122,7 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
   const [newKpiUnit, setNewKpiUnit] = useState('');
   const [kpiSaving, setKpiSaving] = useState(false);
 
-  const toggleKpiSection = async (goalId: string) => {
+  const toggleKpiSection = useCallback(async (goalId: string) => {
     if (kpiExpandedGoal === goalId) {
       setKpiExpandedGoal(null);
       return;
@@ -137,7 +137,7 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
         }
       } catch { /* ignore */ }
     }
-  };
+  }, [kpiExpandedGoal, goalKpis]);
 
   const addKpiToGoal = async (goalId: string) => {
     if (!newKpiName.trim()) return;

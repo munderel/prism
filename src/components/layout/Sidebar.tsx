@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { StreakCounter } from '@/components/dopamine/StreakCounter';
 import { useEffect, useState, useMemo } from 'react';
-import useSWR from 'swr';
+import { useUserSettings } from '@/hooks/useUserSettings';
 
 const navSections = [
   {
@@ -62,10 +62,7 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
   const pathname = usePathname();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { data: settings } = useSWR('/api/settings?scope=user', {
-    revalidateOnFocus: false,
-    dedupingInterval: 60000,
-  });
+  const { data: settings } = useUserSettings();
   const hiddenFeatures: string[] = useMemo(
     () => (Array.isArray(settings?.hiddenFeatures) ? settings.hiddenFeatures : []),
     [settings],

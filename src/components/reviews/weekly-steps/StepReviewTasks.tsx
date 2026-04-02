@@ -39,10 +39,6 @@ function getPriorityBadgeClass(priority: string): string {
   }
 }
 
-interface CategorizedTask extends Task {
-  category: 'last_week' | 'overdue' | 'unscheduled';
-}
-
 interface StepReviewTasksProps {
   reviewId: string;
 }
@@ -77,13 +73,15 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
       lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
       lastWeekEnd.setHours(23, 59, 59, 999);
 
+      // Fetch both in parallel, then merge with deduplication
+      const [lastWeekRes, allRes] = await Promise.all([
+        fetch(`/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}`),
+        fetch('/api/tasks?includeUnscheduled=true'),
+      ]);
+
       const seen = new Set<string>();
       const allTasks: CategorizedTask[] = [];
 
-      // Fetch 1: Last week's tasks (existing behavior)
-      const lastWeekRes = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}`
-      );
       if (lastWeekRes.ok) {
         const data: Task[] = await lastWeekRes.json();
         for (const t of data) {
@@ -94,8 +92,6 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
         }
       }
 
-      // Fetch 2: All tasks including unscheduled — filter for overdue + unscheduled
-      const allRes = await fetch('/api/tasks?includeUnscheduled=true');
       if (allRes.ok) {
         const data: Task[] = await allRes.json();
         const todayStr = getLocalDateString(new Date());
@@ -103,14 +99,12 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
           if (seen.has(t.id)) continue;
           if (t.status === 'DONE' || t.status === 'DROPPED') continue;
 
-          // Overdue: has a past due date, not completed
           if (t.dueDate && t.dueDate < todayStr) {
             seen.add(t.id);
             allTasks.push({ ...t, category: 'overdue' });
             continue;
           }
 
-          // Unscheduled: no due date at all, status is TODO or IN_PROGRESS
           if (!t.dueDate && (t.status === 'TODO' || t.status === 'IN_PROGRESS')) {
             seen.add(t.id);
             allTasks.push({ ...t, category: 'unscheduled' });

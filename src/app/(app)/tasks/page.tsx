@@ -11,6 +11,7 @@ import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { PowerDownStatusCard } from '@/components/powerdown/PowerDownStatusCard';
 import { getLocalDateString } from '@/lib/date-utils';
+import { useUserSettings } from '@/hooks/useUserSettings';
 
 type ViewMode = 'day' | 'week' | 'month' | 'agenda';
 
@@ -93,7 +94,7 @@ export default function TasksPage() {
   }, [date, viewMode]);
 
   // PowerDown: fetch user settings + sessions for current view range
-  const { data: userSettings } = useSWR<{ powerdownTime?: string | null }>('/api/settings?scope=user', { revalidateOnFocus: false, dedupingInterval: 60000 });
+  const { data: userSettings } = useUserSettings();
   const powerdownKey = useMemo(() => {
     if (viewMode === 'day' || viewMode === 'agenda') return '/api/powerdown';
     const range = getRange();

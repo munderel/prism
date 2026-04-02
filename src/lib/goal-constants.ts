@@ -14,6 +14,12 @@ export const LEVEL_COLORS: Record<string, string> = {
   DAILY: 'bg-gray-100 dark:bg-gray-600/15 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-600/25',
 };
 
+export const REVIEW_LEVEL_COLORS: Record<string, string> = {
+  WEEKLY: 'bg-green-600 text-white border-transparent',
+  MONTHLY: 'bg-blue-600 text-white border-transparent',
+  YEARLY: 'bg-amber-600 text-white border-transparent',
+};
+
 export const GOAL_STATUS_COLORS: Record<string, string> = {
   NOT_STARTED: 'text-gray-500',
   IN_PROGRESS: 'text-yellow-400',
