@@ -59,7 +59,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
             <div className="relative" ref={feedbackRef}>
               <button
                 onClick={() => setShowFeedback(!showFeedback)}
-                className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                className="flex items-center gap-1.5 text-sm text-[var(--text-primary)] hover:opacity-70 transition-opacity"
                 title="Give feedback"
               >
                 <MessageSquare className="h-4 w-4" />
@@ -93,9 +93,9 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
                 </div>
               )}
             </div>
-            <span className="text-sm text-[var(--text-secondary)]">{session.user.name}</span>
+            <span className="text-sm text-[var(--text-primary)]">{session.user.name}</span>
             {session.user.isAdmin && (
-              <span className="text-[10px] font-medium bg-indigo-600/20 text-indigo-400 border border-indigo-600/30 rounded-md px-1.5 py-0.5">
+              <span className="text-[10px] font-medium bg-indigo-600 text-white rounded-md px-1.5 py-0.5">
                 Admin
               </span>
             )}
@@ -110,7 +110,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
             )}
             <button
               onClick={() => signOut()}
-              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              className="text-sm text-[var(--text-primary)] hover:opacity-70 transition-opacity"
             >
               Sign out
             </button>

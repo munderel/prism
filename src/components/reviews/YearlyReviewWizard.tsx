@@ -553,7 +553,7 @@ function YearlyGoalAdjustmentStep(ctx: GoalAdjustmentContext) {
                           )}
                         </div>
                         {mg.startDate && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400 flex-shrink-0">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400 flex-shrink-0">
                             {new Date(mg.startDate).toLocaleString('default', { month: 'short', year: 'numeric' })}
                           </span>
                         )}

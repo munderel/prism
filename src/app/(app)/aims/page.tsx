@@ -384,7 +384,7 @@ export default function AimsPage() {
           <button
             onClick={() => setViewMode('simplified')}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              viewMode === 'simplified' ? 'bg-teal-600/20 text-teal-400 border border-teal-600/30' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+              viewMode === 'simplified' ? 'bg-teal-600 text-white border border-teal-600' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
             }`}
           >
             Simplified
@@ -392,7 +392,7 @@ export default function AimsPage() {
           <button
             onClick={() => setViewMode('full')}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              viewMode === 'full' ? 'bg-teal-600/20 text-teal-400 border border-teal-600/30' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+              viewMode === 'full' ? 'bg-teal-600 text-white border border-teal-600' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
             }`}
           >
             Full View

@@ -157,7 +157,7 @@ export default function GoalsPage() {
         <button
           onClick={() => setViewTab('stack')}
           className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-            viewTab === 'stack' ? 'bg-indigo-600/20 text-indigo-400' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            viewTab === 'stack' ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
           }`}
         >
           Goal Stack
@@ -165,7 +165,7 @@ export default function GoalsPage() {
         <button
           onClick={() => setViewTab('daily')}
           className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-            viewTab === 'daily' ? 'bg-indigo-600/20 text-indigo-400' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            viewTab === 'daily' ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
           }`}
         >
           <Zap className="h-3 w-3" /> Daily Actions
@@ -275,7 +275,7 @@ export default function GoalsPage() {
                   onClick={() => setNewStackVisibility(v as any)}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                     newStackVisibility === v
-                      ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                      ? 'bg-indigo-600 text-white border border-indigo-600'
                       : 'text-[var(--text-secondary)] border border-[var(--border-color)]'
                   }`}
                 >
@@ -307,7 +307,7 @@ export default function GoalsPage() {
             onClick={() => { setShowInProgress(!showInProgress); if (!showInProgress) setShowDueToday(false); }}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
               showInProgress
-                ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                ? 'bg-indigo-600 text-white border border-indigo-600'
                 : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1]'
             }`}
           >

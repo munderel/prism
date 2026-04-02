@@ -139,8 +139,21 @@ function getStatusBadgeClass(status: string): string {
   }
 }
 
+function formatShortDateRange(start: Date, end: Date): string {
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+interface MonthlyGoalContext {
+  id: string;
+  title: string;
+  status: string;
+  startDate: string | null;
+}
+
 export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamReview }: StepWeeklyGoalsProps) {
   const [goals, setGoals] = useState<WeeklyGoal[]>([]);
+  const [monthlyGoals, setMonthlyGoals] = useState<MonthlyGoalContext[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
@@ -171,11 +184,19 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
     fetchWeeklyGoals();
   }, []);
 
+  // Auto-show create form when no goals exist after loading
+  useEffect(() => {
+    if (!loading && goals.length === 0) {
+      setShowCreateForm(true);
+    }
+  }, [loading, goals.length]);
+
   const fetchWeeklyGoals = async () => {
     try {
       const now = new Date();
       const bounds = getWeekBoundaries(now);
       const result: WeeklyGoal[] = [];
+      const monthlyResult: MonthlyGoalContext[] = [];
 
       // Gather all goals from either company or personal stacks
       const allGoalSets = await fetchGoalSets(isTeamReview);
@@ -186,12 +207,16 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
         if (isPersonalStack && !stackId) setStackId(sId);
 
         for (const g of allGoals) {
-          // Find monthly goals for the current month to use as parent for new weekly goals
-          if (!isTeamReview && g.level === 'MONTHLY' && !monthlyParentId && isPersonalStack) {
+          // Collect monthly goals for context display
+          if (g.level === 'MONTHLY') {
             const gs = g.startDate ? new Date(g.startDate) : null;
             const ge = g.endDate ? new Date(g.endDate) : null;
             if (gs && ge && gs <= now && ge >= now) {
-              setMonthlyParentId(g.id);
+              monthlyResult.push({ id: g.id, title: g.title, status: g.status, startDate: g.startDate });
+              // Use as parent for new weekly goals
+              if (!isTeamReview && !monthlyParentId && isPersonalStack) {
+                setMonthlyParentId(g.id);
+              }
             }
           }
 
@@ -216,6 +241,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       }
 
       setGoals(result);
+      setMonthlyGoals(monthlyResult);
     } catch (err) {
       console.error('Failed during weekly goals operation:', err);
     }
@@ -518,9 +544,16 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
                 </div>
               </div>
             ) : (
-              <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                {goal.title}
-              </p>
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                  {goal.title}
+                </p>
+                {goal.startDate && goal.endDate && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {formatShortDateRange(new Date(goal.startDate), new Date(goal.endDate))}
+                  </span>
+                )}
+              </div>
             )}
           </div>
 
@@ -704,28 +737,51 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       </div>
       <GoalCreationCoach goalLevel="WEEKLY" isOpen={showCoach} onToggle={() => setShowCoach(!showCoach)} />
 
+      {/* Monthly goals context */}
+      {monthlyGoals.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold text-violet-400 uppercase tracking-wider">
+            Current Monthly Goals — {new Date(monthlyGoals[0].startDate || '').toLocaleString('default', { month: 'long', year: 'numeric' })}
+          </h4>
+          {monthlyGoals.map((mg) => (
+            <div key={mg.id} className="flex items-center gap-3 rounded-lg border border-violet-500/20 bg-violet-500/5 px-4 py-2">
+              <Target className="h-4 w-4 text-violet-400 flex-shrink-0" />
+              <p className="text-sm text-[var(--text-primary)] flex-1 truncate">{mg.title}</p>
+              <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusBadgeClass(mg.status)}`}>
+                {mg.status.replace(/_/g, ' ')}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Existing goals — split by week */}
-      {goals.length > 0 ? (
+      {goals.length > 0 ? (() => {
+        const bounds = getWeekBoundaries(new Date());
+        const upcomingLabel = `Upcoming Week's Goals (${formatShortDateRange(bounds.upcomingWeekStart, bounds.upcomingWeekEnd)})`;
+        const lastLabel = `Last Week's Goals (${formatShortDateRange(bounds.lastMonday, bounds.lastSunday)})`;
+        return (
         <div className="space-y-5">
           {renderGoalSection(
             goals.filter((g) => g.weekCategory === 'upcoming'),
-            "Upcoming Week's Goals",
+            upcomingLabel,
             'text-indigo-400',
             renderGoalCard
           )}
           {renderGoalSection(
             goals.filter((g) => g.weekCategory === 'last'),
-            "Last Week's Goals",
+            lastLabel,
             'text-[var(--text-muted)]',
             renderGoalCard
           )}
           {goals.filter((g) => !g.weekCategory).map((goal) => renderGoalCard(goal))}
         </div>
-      ) : (
+        );
+      })() : (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-6 text-center">
           <Target className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-2" />
-          <p className="text-sm text-[var(--text-muted)]">No weekly goals found for the upcoming week.</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Create one below to get started.</p>
+          <p className="text-sm text-[var(--text-muted)]">No weekly goals for the upcoming week yet.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Create your first goal below to start planning this week.</p>
         </div>
       )}
 

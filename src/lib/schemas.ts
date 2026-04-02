@@ -23,7 +23,7 @@ export const registerSchema = z.object({
 // === TASKS ===
 
 export const createTaskSchema = z.object({
-  taskType: z.enum(['IMPROVE', 'MAINTENANCE', 'REVIEW']),
+  taskType: z.enum(['IMPROVE', 'REACT', 'MAINTENANCE', 'REVIEW']),
   title: z.string().min(1, 'Title is required').max(500),
   description: z.string().max(5000).optional().nullable(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),

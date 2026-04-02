@@ -181,7 +181,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                       onClick={() => setTaskType(t)}
                       className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                         taskType === t
-                          ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                          ? 'bg-indigo-600 text-white border border-indigo-600'
                           : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
                       }`}
                     >
@@ -237,7 +237,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                     onClick={() => setEstimatedMinutes(mins)}
                     className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                       estimatedMinutes === mins
-                        ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+                        ? 'bg-indigo-600 text-white border border-indigo-600'
                         : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
                     }`}
                   >

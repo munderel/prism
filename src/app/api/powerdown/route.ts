@@ -13,10 +13,42 @@ function toDateOrNull(value: string | null | undefined): Date | null {
   return value ? new Date(value) : null;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
+  const { searchParams } = request.nextUrl;
+  const start = searchParams.get('start');
+  const end = searchParams.get('end');
+  const recent = searchParams.get('recent');
+
+  // Date-range query: return all sessions in range
+  if (start && end) {
+    const sessions = await prisma.powerdownSession.findMany({
+      where: {
+        userId: auth.userId,
+        sessionDate: { gte: new Date(start), lte: new Date(end + 'T23:59:59.999Z') },
+      },
+      orderBy: { sessionDate: 'desc' },
+    });
+    return Response.json(sessions);
+  }
+
+  // Recent completed sessions query
+  if (recent) {
+    const take = Math.min(Math.max(parseInt(recent, 10) || 7, 1), 30);
+    const sessions = await prisma.powerdownSession.findMany({
+      where: {
+        userId: auth.userId,
+        completedAt: { not: null },
+      },
+      orderBy: { sessionDate: 'desc' },
+      take,
+    });
+    return Response.json(sessions);
+  }
+
+  // Default: today's session
   const session = await prisma.powerdownSession.findFirst({
     where: {
       userId: auth.userId,

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Focus, AlertTriangle, Lightbulb, Moon } from 'lucide-react';
+import { Focus, AlertTriangle, Lightbulb, Moon, Check } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { getLocalDateString, toLocalDateKey, formatDisplayDate } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -176,6 +176,10 @@ export default function DashboardPage() {
   // Batch-fetch derail info
   const { data: derailBatch } = useSWR<DerailBatchResponse>('/api/aims/derail-batch?days=14');
 
+  // Fetch user settings (SWR deduplicates with Sidebar's identical call) and today's PowerDown session
+  const { data: userSettings } = useSWR<{ powerdownTime?: string | null }>('/api/settings?scope=user', { revalidateOnFocus: false, dedupingInterval: 60000 });
+  const { data: powerdownSession, mutate: mutatePowerdown } = useSWR<{ id: string; sessionDate: string; timeBlockStart: string | null; timeBlockEnd: string | null; completedAt: string | null } | null>('/api/powerdown');
+
   // Build timeline blocks from tasks + AIMs
   const timelineBlocks = useMemo(() => {
     const blocks: Array<{ id: string; title: string; start: string; end: string; type: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'AIM' | 'REVIEW' | 'GOOGLE_CAL' | 'POWER_DOWN' | 'MEETING' }> = [];
@@ -204,8 +208,36 @@ export default function DashboardPage() {
       }
     }
 
+    // Inject Power Down block from user settings or session overrides
+    if (userSettings?.powerdownTime || powerdownSession?.timeBlockStart) {
+      let pdStart: string | null = null;
+      let pdEnd: string | null = null;
+
+      if (powerdownSession?.timeBlockStart && powerdownSession?.timeBlockEnd) {
+        pdStart = powerdownSession.timeBlockStart;
+        pdEnd = powerdownSession.timeBlockEnd;
+      } else if (userSettings?.powerdownTime) {
+        const [h, m] = userSettings.powerdownTime.split(':').map(Number);
+        const s = new Date();
+        s.setHours(h, m, 0, 0);
+        const e = new Date(s.getTime() + 30 * 60 * 1000);
+        pdStart = s.toISOString();
+        pdEnd = e.toISOString();
+      }
+
+      if (pdStart && pdEnd) {
+        blocks.push({
+          id: 'powerdown',
+          title: 'Power Down',
+          start: pdStart,
+          end: pdEnd,
+          type: 'POWER_DOWN',
+        });
+      }
+    }
+
     return blocks;
-  }, [list, aimList]);
+  }, [list, aimList, userSettings, powerdownSession]);
 
   // Win the Day: top 3 ranked tasks from power-down
   const winTheDayTasks = useMemo(() => {
@@ -316,6 +348,16 @@ export default function DashboardPage() {
     const endISO = newEnd.toISOString();
     const payload = { timeBlockStart: startISO, timeBlockEnd: endISO };
 
+    if (type === 'POWER_DOWN') {
+      const dateStr = getLocalDateString(newStart);
+      fetch('/api/powerdown', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionDate: dateStr, timeBlockStart: startISO, timeBlockEnd: endISO }),
+      }).then(() => mutatePowerdown());
+      return;
+    }
+
     if (type === 'AIM') {
       mutateAims(
         async (currentData: DashboardAimInstance[] | undefined) => {
@@ -357,7 +399,7 @@ export default function DashboardPage() {
         }
       );
     }
-  }, [mutate, mutateAims]);
+  }, [mutate, mutateAims, mutatePowerdown]);
 
   const handleTaskClick = useCallback((t: DashboardTask) => {
     if (t.taskType === 'REVIEW') {
@@ -385,7 +427,7 @@ export default function DashboardPage() {
           <button
             onClick={() => setViewMode('daily')}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              viewMode === 'daily' ? 'bg-indigo-600/20 text-indigo-400' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              viewMode === 'daily' ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
             }`}
           >
             Daily
@@ -393,7 +435,7 @@ export default function DashboardPage() {
           <button
             onClick={() => setViewMode('weekly')}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              viewMode === 'weekly' ? 'bg-indigo-600/20 text-indigo-400' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              viewMode === 'weekly' ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
             }`}
           >
             Weekly
@@ -403,7 +445,7 @@ export default function DashboardPage() {
           onClick={toggleFocusMode}
           className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
             focusMode
-              ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-600/30'
+              ? 'bg-indigo-600 text-white border border-indigo-600'
               : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-white/[0.1]'
           }`}
         >
@@ -632,14 +674,26 @@ export default function DashboardPage() {
           {/* Power Down reminder */}
           <Link
             href="/powerdown"
-            className="flex items-center gap-3 glass-panel p-3 border-violet-500/20 hover:border-violet-500/40 transition-colors"
+            className={`flex items-center gap-3 glass-panel p-3 transition-colors ${powerdownSession?.completedAt ? 'border-green-500/30 hover:border-green-500/50' : 'border-violet-500/20 hover:border-violet-500/40'}`}
           >
-            <Moon className="h-5 w-5 text-violet-400" />
+            {powerdownSession?.completedAt ? (
+              <Check className="h-5 w-5 text-green-400" />
+            ) : (
+              <Moon className="h-5 w-5 text-violet-400" />
+            )}
             <div className="flex-1">
-              <p className="text-sm font-medium text-[var(--text-primary)]">Power Down</p>
-              <p className="text-xs text-[var(--text-muted)]">Prepare tomorrow&apos;s plan & close out today</p>
+              <p className={`text-sm font-medium ${powerdownSession?.completedAt ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>Power Down</p>
+              <p className="text-xs text-[var(--text-muted)]">
+                {powerdownSession?.completedAt
+                  ? `Completed at ${new Date(powerdownSession.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                  : 'Prepare tomorrow\u0027s plan & close out today'}
+              </p>
             </div>
-            <span className="text-xs text-violet-400 bg-violet-500/15 rounded-lg px-3 py-1">Start</span>
+            {powerdownSession?.completedAt ? (
+              <span className="text-xs text-green-400 bg-green-500/15 rounded-lg px-3 py-1">Done</span>
+            ) : (
+              <span className="text-xs text-white bg-violet-600 rounded-lg px-3 py-1">Start</span>
+            )}
           </Link>
         </>
       )}
