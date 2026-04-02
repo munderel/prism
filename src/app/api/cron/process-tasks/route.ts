@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
       include: {
         assignee: { select: { id: true } },
         delegate: { select: { id: true } },
+        steps: { select: { title: true, description: true }, orderBy: { sortOrder: 'asc' } },
       },
     });
 
@@ -65,6 +66,26 @@ export async function GET(request: NextRequest) {
               taskId: task.id,
             },
           });
+
+          // Create subtasks from process steps
+          if (process.steps.length > 0) {
+            await Promise.all(
+              process.steps.map((step) =>
+                tx.task.create({
+                  data: {
+                    ownerId: responsibleUserId!,
+                    taskType: 'MAINTENANCE',
+                    title: step.title,
+                    description: step.description,
+                    dueDate: task.dueDate,
+                    status: 'TODO',
+                    priority: 'MEDIUM',
+                    parentId: task.id,
+                  },
+                })
+              )
+            );
+          }
 
           await tx.process.update({
             where: { id: process.id },

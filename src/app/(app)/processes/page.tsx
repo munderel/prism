@@ -483,6 +483,56 @@ export default function ProcessesPage() {
     }
   };
 
+  const [creatingTasks, setCreatingTasks] = useState(false);
+
+  const createTasksFromSteps = async (proc: ProcessData) => {
+    if (!expandedProcessData?.steps?.length) {
+      toast.error('No steps defined for this process');
+      return;
+    }
+    setCreatingTasks(true);
+    try {
+      // Create parent task
+      const parentRes = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: proc.title,
+          taskType: 'MAINTENANCE',
+          processId: proc.id,
+          dueDate: new Date().toISOString(),
+          estimatedMinutes: proc.defaultDurationMinutes,
+        }),
+      });
+      if (!parentRes.ok) {
+        toast.error('Failed to create parent task');
+        return;
+      }
+      const parentTask = await parentRes.json();
+
+      // Create subtasks from each step
+      await Promise.all(
+        expandedProcessData.steps.map((step: Step) =>
+          fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: step.title,
+              taskType: 'MAINTENANCE',
+              parentId: parentTask.id,
+              dueDate: new Date().toISOString(),
+            }),
+          })
+        )
+      );
+      toast.success(`Created ${expandedProcessData.steps.length} subtasks`);
+    } catch {
+      toast.error('Failed to create tasks');
+    } finally {
+      setCreatingTasks(false);
+    }
+  };
+
   const openSchedulePopup = (proc: ProcessData) => {
     setSchedulingProcess(proc);
     setSchedTime(proc.scheduledTime || '09:00');
@@ -1137,6 +1187,20 @@ export default function ProcessesPage() {
                               </button>
                             </div>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Create tasks from steps */}
+                      {expandedProcessData.steps?.length > 0 && (
+                        <div className="mt-3">
+                          <button
+                            onClick={() => createTasksFromSteps(proc)}
+                            disabled={creatingTasks}
+                            className="flex items-center gap-1.5 rounded-lg bg-cyan-600/20 border border-cyan-600/30 px-3 py-1.5 text-xs font-medium text-cyan-400 hover:bg-cyan-600/30 transition-colors disabled:opacity-50"
+                          >
+                            <ListChecks className="h-3.5 w-3.5" />
+                            {creatingTasks ? 'Creating...' : 'Create tasks from steps'}
+                          </button>
                         </div>
                       )}
 

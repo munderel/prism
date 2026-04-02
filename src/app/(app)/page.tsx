@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { TaskCard } from '@/components/tasks/TaskCard';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
+import { SubtaskList } from '@/components/tasks/SubtaskList';
 import { WinTheDayCard } from '@/components/dashboard/WinTheDayCard';
 import { WinTheDayCelebration } from '@/components/dopamine/WinTheDayCelebration';
 import { FocusView } from '@/components/dashboard/FocusView';
@@ -56,7 +57,8 @@ interface DashboardTask {
   assigneeId: string | null;
   goal?: { id: string; title: string; level: string; stack?: { name: string } } | null;
   processExecution?: { process: { title: string } } | null;
-  _count?: { comments: number };
+  _count?: { comments: number; children: number };
+  children?: { id: string; title: string; status: string; priority: string; dueDate: string | null; completedAt: string | null }[];
 }
 
 /** AIM instance as returned by GET /api/aims/instances (Prisma AimInstance + included relations) */
@@ -88,6 +90,18 @@ interface DerailBatchResponse {
 }
 
 const FOCUS_MODE_KEY = 'prism-focus-mode';
+
+/** Calendar event sources already handled by dedicated SWR fetches (tasks, aims, powerdown). */
+const CALENDAR_SKIP_SOURCES = new Set(['tasks', 'aims', 'powerdown']);
+
+/** Maps calendar API `source` values to DashboardTimeline block types. */
+const CALENDAR_SOURCE_TYPE_MAP: Record<string, 'GOOGLE_CAL' | 'MEETING' | 'REVIEW' | 'MAINTENANCE'> = {
+  google: 'GOOGLE_CAL',
+  meeting: 'MEETING',
+  reviews: 'REVIEW',
+  review: 'REVIEW',
+  processes: 'MAINTENANCE',
+};
 
 export default function DashboardPage() {
   const toast = useToast();
@@ -182,6 +196,11 @@ export default function DashboardPage() {
   const { data: userSettings } = useUserSettings();
   const { data: powerdownSession, mutate: mutatePowerdown } = useSWR<{ id: string; sessionDate: string; timeBlockStart: string | null; timeBlockEnd: string | null; completedAt: string | null } | null>('/api/powerdown');
 
+  // Fetch external calendar events (Google, meetings, reviews, processes) for the timeline
+  // Uses 'external' source to avoid re-fetching tasks/aims/powerdown already handled above
+  const calendarSWRKey = `/api/calendar?start=${today}T00:00:00&end=${today}T23:59:59&source=external`;
+  const { data: calendarEvents } = useSWR<any[]>(calendarSWRKey);
+
   // Build timeline blocks from tasks + AIMs
   const timelineBlocks = useMemo(() => {
     const blocks: Array<{ id: string; title: string; start: string; end: string; type: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'AIM' | 'REVIEW' | 'GOOGLE_CAL' | 'POWER_DOWN' | 'MEETING' }> = [];
@@ -206,6 +225,22 @@ export default function DashboardPage() {
           start: aim.timeBlockStart,
           end: aim.timeBlockEnd,
           type: 'AIM',
+        });
+      }
+    }
+
+    // Inject calendar events (Google, meetings, reviews, processes) — skip sources already handled above
+    if (Array.isArray(calendarEvents)) {
+      for (const ev of calendarEvents) {
+        if (CALENDAR_SKIP_SOURCES.has(ev.source) || !ev.start || !ev.end || ev.allDay) continue;
+        const mappedType = CALENDAR_SOURCE_TYPE_MAP[ev.source];
+        if (!mappedType) continue;
+        blocks.push({
+          id: ev.id,
+          title: ev.title ?? 'Event',
+          start: ev.start,
+          end: ev.end,
+          type: mappedType,
         });
       }
     }
@@ -237,7 +272,7 @@ export default function DashboardPage() {
     }
 
     return blocks;
-  }, [list, aimList, userSettings, powerdownSession]);
+  }, [list, aimList, userSettings, powerdownSession, calendarEvents]);
 
   // Win the Day: top 3 ranked tasks from power-down
   const winTheDayTasks = useMemo(() => {
@@ -344,6 +379,9 @@ export default function DashboardPage() {
   }, [mutateAims]);
 
   const handleBlockMove = useCallback((blockId: string, type: string, newStart: Date, newEnd: Date) => {
+    // External calendar events, meetings, and reviews are read-only
+    if (type === 'GOOGLE_CAL' || type === 'MEETING' || type === 'REVIEW') return;
+
     const startISO = newStart.toISOString();
     const endISO = newEnd.toISOString();
     const payload = { timeBlockStart: startISO, timeBlockEnd: endISO };
@@ -593,7 +631,8 @@ export default function DashboardPage() {
                             onStatusChange={handleFocusStatusChange}
                           />
                           {expandedTaskId === task.id && (
-                            <div className="ml-8 mt-1 mb-2">
+                            <div className="ml-8 mt-1 mb-2 space-y-2">
+                              <SubtaskList parentId={task.id} initialChildren={task.children} compact onMutate={() => mutate()} />
                               <ClearGoalsDisplay taskId={task.id} compact />
                             </div>
                           )}

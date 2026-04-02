@@ -220,13 +220,15 @@ export async function GET(request: NextRequest) {
 
   const events: any[] = [];
   const fetchAll = !source || source === 'all';
+  // 'external' fetches only Google, meetings, reviews, processes — excludes tasks/aims/powerdown
+  const fetchExternal = source === 'external';
 
   const prefs = await prisma.notificationPreference.findUnique({
     where: { userId: auth.userId },
     select: { reviewNags: true },
   });
   const reviewsEnabled = !prefs || prefs.reviewNags;
-  const shouldFetchReviews = (fetchAll || source === 'reviews') && reviewsEnabled;
+  const shouldFetchReviews = (fetchAll || fetchExternal || source === 'reviews') && reviewsEnabled;
 
   // Run independent queries in parallel
   const [tasks, reviews, meetings, googleEvents, aimInstances] = await Promise.all([
@@ -253,7 +255,7 @@ export async function GET(request: NextRequest) {
           },
         })
       : Promise.resolve([]),
-    (fetchAll || source === 'meetings')
+    (fetchAll || fetchExternal || source === 'meetings')
       ? prisma.meeting.findMany({
           where: {
             OR: [
@@ -264,7 +266,7 @@ export async function GET(request: NextRequest) {
           include: { createdBy: { select: { name: true } } },
         })
       : Promise.resolve([]),
-    (fetchAll || source === 'google')
+    (fetchAll || fetchExternal || source === 'google')
       ? listGoogleEvents(auth.userId, start, end, calendarIds).catch(() => [])
       : Promise.resolve([]),
     (fetchAll || source === 'aims')
@@ -366,8 +368,8 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Generate powerdown events if user has powerdownTime set
-  if (userSettings?.powerdownTime) {
+  // Generate powerdown events if user has powerdownTime set (skip for 'external' source)
+  if (userSettings?.powerdownTime && !fetchExternal) {
     const [pdH, pdM] = userSettings.powerdownTime.split(':').map(Number);
 
     const pdSessions = await prisma.powerdownSession.findMany({
@@ -480,7 +482,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Generate team review events (only for members of each team review)
-  if (fetchAll || source === 'reviews') {
+  if (fetchAll || fetchExternal || source === 'reviews') {
     const teamReviews = await prisma.recurringTeamReview.findMany({
       where: {
         isActive: true,

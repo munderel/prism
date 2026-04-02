@@ -1,15 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CalendarClock, ListTodo, Brain, Target } from 'lucide-react';
+import { CalendarClock, ListTodo, Brain, Target, ListChecks } from 'lucide-react';
 import { getLocalDateString } from '@/lib/date-utils';
+import { subtaskDoneCount } from '@/lib/task-utils';
 import { getPriorityBadgeClass } from '../shared/review-types';
+
+interface SubtaskSummary {
+  id: string;
+  title: string;
+  status: string;
+}
 
 interface Task {
   id: string;
   title: string;
   priority: string;
   goal?: { id: string; title: string } | null;
+  children?: SubtaskSummary[];
+  _count?: { children: number };
 }
 
 interface WorkBlock {
@@ -173,11 +182,28 @@ export function StepScheduleTasks({
             >
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-[var(--text-primary)] truncate">{task.title}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm text-[var(--text-primary)] truncate">{task.title}</p>
+                    {(task._count?.children ?? 0) > 0 && (
+                      <span className="flex items-center gap-0.5 text-xs text-[var(--text-muted)]" title={`${subtaskDoneCount(task.children)}/${task._count!.children} subtasks`}>
+                        <ListChecks className="h-3 w-3" />
+                        {subtaskDoneCount(task.children)}/{task._count!.children}
+                      </span>
+                    )}
+                  </div>
                   {task.goal && (
                     <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
                       {task.goal.title}
                     </p>
+                  )}
+                  {task.children && task.children.length > 0 && (
+                    <div className="mt-1 ml-2 space-y-0.5">
+                      {task.children.map((child) => (
+                        <p key={child.id} className={`text-xs ${child.status === 'DONE' ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-secondary)]'}`}>
+                          {child.status === 'DONE' ? '\u2713' : '\u25CB'} {child.title}
+                        </p>
+                      ))}
+                    </div>
                   )}
                 </div>
                 <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${getPriorityBadgeClass(task.priority)}`}>

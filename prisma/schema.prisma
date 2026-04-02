@@ -246,12 +246,15 @@ model Task {
 
   aimInstanceId  String?
   assigneeId     String?
+  parentId       String?
 
   owner    User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   assignee User?         @relation("TaskAssignee", fields: [assigneeId], references: [id])
   goal     Goal?         @relation(fields: [goalId], references: [id])
   process  Process?      @relation("TaskProcess", fields: [processId], references: [id])
   aimInstance AimInstance? @relation(fields: [aimInstanceId], references: [id])
+  parent   Task?         @relation("TaskHierarchy", fields: [parentId], references: [id])
+  children Task[]        @relation("TaskHierarchy")
   comments TaskComment[]
   publicWins PublicWin[]
   processExecution ProcessExecution?
@@ -269,6 +272,7 @@ model Task {
   @@index([assigneeId])
   @@index([dueDate, status])
   @@index([goalId, status])
+  @@index([parentId])
 }
 
 model Streak {

@@ -330,20 +330,19 @@ export default function AimsPage() {
         <div className="space-y-2">
           {activeCats.map((cat) => {
             const ua = userAimMap.get(cat.id);
-            if (!ua) return null;
             const inst = todayInstanceMap.get(cat.id);
             return (
               <AimCardSimplified
                 key={cat.id}
                 aim={{
-                  id: ua.id,
+                  id: ua?.id ?? `default-${cat.id}`,
                   aimCategory: { name: cat.name, description: cat.description ?? undefined },
-                  isActive: ua.isActive,
-                  currentPhase: ua.currentPhase,
-                  currentStreak: ua.currentStreak,
-                  bestStreak: ua.bestStreak,
-                  customDuration: ua.customDuration ?? undefined,
-                  customFrequency: ua.customFrequency ?? undefined,
+                  isActive: ua?.isActive ?? true,
+                  currentPhase: ua?.currentPhase ?? 'SEED',
+                  currentStreak: ua?.currentStreak ?? 0,
+                  bestStreak: ua?.bestStreak ?? 0,
+                  customDuration: ua?.customDuration ?? undefined,
+                  customFrequency: ua?.customFrequency ?? undefined,
                 }}
                 todayInstance={inst ? { id: inst.id, status: inst.status } : undefined}
                 onComplete={completeInstance}
@@ -363,6 +362,21 @@ export default function AimsPage() {
         </h1>
         <div className="flex items-center justify-center py-16">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent-primary)]" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!categories || categories.length === 0) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold font-display text-[var(--text-primary)] flex items-center gap-2">
+          <Flame className="h-6 w-6 text-teal-500" />
+          Aims
+        </h1>
+        <div className="glass-panel p-8 text-center">
+          <p className="text-[var(--text-secondary)]">No aim categories found.</p>
+          <p className="text-sm text-[var(--text-muted)] mt-1">Please contact your admin to seed the default aim categories.</p>
         </div>
       </div>
     );

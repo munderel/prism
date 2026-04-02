@@ -27,6 +27,11 @@ export async function GET(
           mentions: { include: { user: { select: { id: true, name: true } } } },
         },
       },
+      children: {
+        select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true },
+        orderBy: { createdAt: 'asc' },
+      },
+      _count: { select: { children: true } },
     },
   });
 
