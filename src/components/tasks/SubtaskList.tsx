@@ -34,14 +34,31 @@ export function SubtaskList({ parentId, initialChildren, compact, onMutate }: Su
   const doneCount = subtasks.filter((s) => s.status === 'DONE').length;
   const total = subtasks.length;
 
-  const toggleSubtask = useCallback(async (subtask: Subtask) => {
+  const toggleSubtask = useCallback((subtask: Subtask) => {
     const newStatus = subtask.status === 'DONE' ? 'TODO' : 'DONE';
-    const res = await fetch(`/api/tasks/${subtask.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    if (res.ok) { mutate(); onMutate?.(); }
+    const applyToggle = (list: Subtask[] | undefined) =>
+      (Array.isArray(list) ? list : []).map((s) =>
+        s.id === subtask.id
+          ? { ...s, status: newStatus as Subtask['status'], completedAt: newStatus === 'DONE' ? new Date().toISOString() : null }
+          : s
+      );
+    mutate(
+      async (currentData: Subtask[] | undefined) => {
+        const res = await fetch(`/api/tasks/${subtask.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!res.ok) throw new Error('Failed to update subtask');
+        onMutate?.();
+        return applyToggle(currentData);
+      },
+      {
+        optimisticData: applyToggle,
+        rollbackOnError: true,
+        revalidate: false,
+      }
+    );
   }, [mutate, onMutate]);
 
   const addSubtask = useCallback(async () => {

@@ -91,33 +91,36 @@ export async function PATCH(
 
   const updated = await prisma.task.update({ where: { id }, data });
 
-  // On completion or drop: handle recurrence + progress cascade (fast DB ops — keep synchronous)
+  // On completion or drop: handle recurrence + progress cascade (fire-and-forget to avoid blocking response)
   if (status === 'DONE' || status === 'DROPPED') {
-    if (status === 'DONE' && task.recurrenceRule) {
-      try {
-        const rule = parseRRule(task.recurrenceRule);
-        const baseDate = task.dueDate ?? new Date();
-        const nextDate = getNextOccurrence(baseDate, rule);
-        await prisma.task.create({
-          data: {
-            ownerId: task.ownerId,
-            taskType: task.taskType,
-            title: task.title,
-            description: task.description,
-            priority: task.priority,
-            dueDate: nextDate,
-            goalId: task.goalId,
-            recurrenceRule: task.recurrenceRule,
-          },
-        });
-      } catch {
-        // Invalid rule — skip recurrence silently
+    const postUpdate = async () => {
+      if (status === 'DONE' && task.recurrenceRule) {
+        try {
+          const rule = parseRRule(task.recurrenceRule);
+          const baseDate = task.dueDate ?? new Date();
+          const nextDate = getNextOccurrence(baseDate, rule);
+          await prisma.task.create({
+            data: {
+              ownerId: task.ownerId,
+              taskType: task.taskType,
+              title: task.title,
+              description: task.description,
+              priority: task.priority,
+              dueDate: nextDate,
+              goalId: task.goalId,
+              recurrenceRule: task.recurrenceRule,
+            },
+          });
+        } catch {
+          // Invalid rule — skip recurrence silently
+        }
       }
-    }
 
-    if (task.goalId) {
-      await cascadeProgressUp(task.goalId);
-    }
+      if (task.goalId) {
+        await cascadeProgressUp(task.goalId);
+      }
+    };
+    postUpdate().catch((err) => console.warn('[tasks] post-update (recurrence/cascade) failed:', err));
   }
 
   // Google Calendar sync — fire-and-forget (external API calls can be slow)
@@ -181,9 +184,9 @@ export async function DELETE(
 
   await prisma.task.delete({ where: { id } });
 
-  // Cascade goal progress if linked
+  // Cascade goal progress if linked (fire-and-forget)
   if (task.goalId) {
-    await cascadeProgressUp(task.goalId);
+    cascadeProgressUp(task.goalId).catch((err) => console.warn('[tasks] cascade after delete failed:', err));
   }
 
   return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
