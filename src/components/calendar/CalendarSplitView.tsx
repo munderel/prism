@@ -344,13 +344,13 @@ export function CalendarSplitView({
       const { itemId, itemType } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
-      const end = info.event.end as Date;
+      const end = info.event.end ?? new Date(start.getTime() + 60 * 60 * 1000);
 
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
         info.event.remove();
         await onCreateWorkBlock?.(start, end);
-        mutateEvents();
+        await mutateEvents();
         return;
       }
 
@@ -370,36 +370,13 @@ export function CalendarSplitView({
         }
       }
 
-      // Add a temp event optimistically while the API call is in-flight
-      const tempEvent = {
-        id: `temp-${itemId}`,
-        title: info.event.title,
-        start: snapStart.toISOString(),
-        end: snapEnd.toISOString(),
-        allDay: false,
-        extendedProps: { itemId, itemType, taskType: info.event.extendedProps?.taskType },
-      };
-      mutateEvents((current: any) => {
-        if (current && !Array.isArray(current) && current.events) {
-          return { ...current, events: [...current.events, tempEvent] };
-        }
-        return [...(current ?? []), tempEvent];
-      }, { revalidate: false });
-
       try {
         await onSchedule(itemId, itemType, snapStart, snapEnd);
-        // Only remove the FullCalendar event after the API succeeds
+        await mutateEvents();
         info.event.remove();
-        mutateEvents();
         onRefresh?.();
       } catch {
-        // Revert: remove the temp event from SWR cache
-        mutateEvents((current: any) => {
-          if (current && !Array.isArray(current) && current.events) {
-            return { ...current, events: current.events.filter((e: any) => e.id !== `temp-${itemId}`) };
-          }
-          return (current ?? []).filter((e: any) => e.id !== `temp-${itemId}`);
-        }, { revalidate: false });
+        info.event.remove();
       }
     },
     [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, calendarEvents],
