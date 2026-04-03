@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
+import { regenerateAdvancedModeTasks } from '@/lib/process-task-generator';
 
 export async function GET(
   _request: NextRequest,
@@ -55,6 +56,14 @@ export async function POST(
       sortOrder: order,
     },
   });
+
+  // Regenerate tasks if process is in ADVANCED mode
+  const process = await prisma.process.findUnique({ where: { id }, select: { mode: true } });
+  if (process?.mode === 'ADVANCED') {
+    regenerateAdvancedModeTasks(id).catch((err) => {
+      console.error('[step-create] Failed to regenerate tasks:', err);
+    });
+  }
 
   return Response.json(step, { status: 201 });
 }

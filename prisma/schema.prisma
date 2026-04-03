@@ -449,7 +449,8 @@ model NotificationPreference {
   pushEnabled     Boolean @default(true)
   derailingAlerts Boolean @default(true)
   mentionAlerts   Boolean @default(true)
-  reviewNags      Boolean @default(true)
+  reviewNags       Boolean @default(true)
+  meetingReminders Boolean @default(true)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -492,6 +493,16 @@ enum ProcessCadence {
   YEARLY
 }
 
+enum ProcessMode {
+  BASIC
+  ADVANCED
+}
+
+enum SubtaskMode {
+  PAIRED
+  UNPAIRED
+}
+
 model BusinessFunction {
   id          String    @id @default(cuid())
   name        String
@@ -513,6 +524,8 @@ model Process {
   delegateUntil DateTime?
   cadence       ProcessCadence
   cadenceRule   String?
+  mode          ProcessMode    @default(BASIC)
+  subtaskMode   SubtaskMode    @default(PAIRED)
   defaultDurationMinutes Int    @default(60)
   scheduledTime       String?
   scheduledDayOfWeek  Int?
@@ -584,6 +597,8 @@ model Meeting {
   timeEnd     String          // "10:00" format
   attendeeIds     Json            // String[] of user IDs
   calendarEventId String?         // Google Calendar event ID for sync
+  meetLink            String?         // Google Meet link (hangoutLink)
+  lastReminderSentAt  DateTime?       // prevents duplicate reminder notifications
   createdById     String
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt

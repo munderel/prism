@@ -66,12 +66,29 @@ export default function IdeasPage() {
 
   const updateStatus = useCallback(
     async (id: string, newStatus: string) => {
-      const res = await fetch(`/api/ideas/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (res.ok) mutate();
+      // Optimistic update
+      mutate(
+        (current: any) => {
+          if (!current?.ideas) return current;
+          return {
+            ...current,
+            ideas: current.ideas.map((idea: any) =>
+              idea.id === id ? { ...idea, status: newStatus } : idea
+            ),
+          };
+        },
+        { revalidate: false },
+      );
+      try {
+        const res = await fetch(`/api/ideas/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!res.ok) mutate(); // Revert on error
+      } catch {
+        mutate(); // Revert on error
+      }
     },
     [mutate]
   );

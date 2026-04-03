@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
-import { deleteGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
+import { deleteGoogleEvent, updateGoogleEvent, createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
 
 const MEETING_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
@@ -40,6 +40,75 @@ export async function PATCH(
     include: MEETING_INCLUDE,
   });
 
+  // Sync changes to Google Calendar — fire-and-forget
+  const syncToGcal = async () => {
+    const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(meeting.createdById);
+    if (!hasGoogle) return;
+
+    const cadenceChanged = body.cadence !== undefined && body.cadence !== meeting.cadence;
+
+    if (cadenceChanged && meeting.calendarEventId) {
+      // Cadence changed — delete old event and create new one with updated recurrence
+      await deleteGoogleEvent(meeting.createdById, meeting.calendarEventId, targetCalendarId);
+
+      const user = await prisma.user.findUnique({
+        where: { id: meeting.createdById },
+        select: { timezone: true },
+      });
+      const tz = user?.timezone ?? 'America/New_York';
+      const newCadence = body.cadence ?? meeting.cadence;
+      const newDayOfWeek = body.dayOfWeek !== undefined ? body.dayOfWeek : meeting.dayOfWeek;
+      const recurrence = buildMeetingRecurrence(newCadence, newDayOfWeek);
+
+      let dateStr: string;
+      if (newCadence === 'ONE_TIME' && (body.occurDate || meeting.occurDate)) {
+        dateStr = new Date(body.occurDate || meeting.occurDate!).toISOString().split('T')[0];
+      } else {
+        const today = new Date();
+        if (newDayOfWeek != null) {
+          const daysUntil = (newDayOfWeek - today.getDay() + 7) % 7 || 7;
+          const nextDate = new Date(today);
+          nextDate.setDate(today.getDate() + daysUntil);
+          dateStr = nextDate.toISOString().split('T')[0];
+        } else {
+          dateStr = today.toISOString().split('T')[0];
+        }
+      }
+
+      const ts = body.timeStart ?? meeting.timeStart;
+      const te = body.timeEnd ?? meeting.timeEnd;
+
+      const gcalEvent = await createGoogleEvent(meeting.createdById, {
+        summary: body.title ?? meeting.title,
+        description: (body.description !== undefined ? body.description : meeting.description) || undefined,
+        start: new Date(`${dateStr}T${ts}:00`).toISOString(),
+        end: new Date(`${dateStr}T${te}:00`).toISOString(),
+        timeZone: tz,
+        addMeetLink: !!meeting.meetLink,
+        recurrence,
+      }, targetCalendarId);
+
+      if (gcalEvent?.id) {
+        const updateData: { calendarEventId: string; meetLink?: string } = {
+          calendarEventId: gcalEvent.id,
+        };
+        if (gcalEvent.hangoutLink) {
+          updateData.meetLink = gcalEvent.hangoutLink;
+        }
+        await prisma.meeting.update({ where: { id }, data: updateData });
+      }
+    } else if (meeting.calendarEventId) {
+      // Simple field update — patch the existing Google Calendar event
+      await updateGoogleEvent(meeting.createdById, meeting.calendarEventId, {
+        summary: body.title,
+        description: body.description !== undefined ? (body.description || '') : undefined,
+        start: body.timeStart ? new Date(`1970-01-01T${body.timeStart}:00`).toISOString() : undefined,
+        end: body.timeEnd ? new Date(`1970-01-01T${body.timeEnd}:00`).toISOString() : undefined,
+      }, targetCalendarId);
+    }
+  };
+  syncToGcal().catch((err) => console.warn('[meetings] Google Calendar sync on update failed:', err));
+
   return Response.json(updated, NO_STORE);
 }
 
@@ -58,7 +127,7 @@ export async function DELETE(
   const fullMeeting = await prisma.meeting.findUnique({ where: { id }, select: { calendarEventId: true, createdById: true } });
   if (fullMeeting?.calendarEventId) {
     try {
-      const targetCalendarId = await getUserSyncCalendarId(fullMeeting.createdById);
+      const { calendarId: targetCalendarId } = await getGoogleSyncInfo(fullMeeting.createdById);
       await deleteGoogleEvent(fullMeeting.createdById, fullMeeting.calendarEventId, targetCalendarId);
     } catch (err) {
       console.warn('[meetings] Google Calendar sync failed on delete:', err);

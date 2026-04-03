@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/review-nag",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/meeting-reminders",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

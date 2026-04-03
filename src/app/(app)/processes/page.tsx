@@ -19,6 +19,9 @@ import {
   X,
   ExternalLink,
   Clock,
+  Flame,
+  CheckCircle2,
+  RefreshCw,
 } from 'lucide-react';
 
 interface Step {
@@ -34,6 +37,8 @@ interface ProcessData {
   title: string;
   description: string | null;
   cadence: string;
+  mode: 'BASIC' | 'ADVANCED';
+  subtaskMode: 'PAIRED' | 'UNPAIRED';
   defaultDurationMinutes: number;
   scheduledTime: string | null;
   scheduledDayOfWeek: number | null;
@@ -236,6 +241,8 @@ export default function ProcessesPage() {
   const [newProcScheduledTime, setNewProcScheduledTime] = useState('');
   const [newProcDayOfWeek, setNewProcDayOfWeek] = useState(1);
   const [newProcDayOfMonth, setNewProcDayOfMonth] = useState(1);
+  const [newProcMode, setNewProcMode] = useState<'BASIC' | 'ADVANCED'>('BASIC');
+  const [newProcSubtaskMode, setNewProcSubtaskMode] = useState<'PAIRED' | 'UNPAIRED'>('PAIRED');
 
   // Expanded process
   const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null);
@@ -263,6 +270,8 @@ export default function ProcessesPage() {
   const [editProcScheduledTime, setEditProcScheduledTime] = useState('');
   const [editProcDayOfWeek, setEditProcDayOfWeek] = useState(1);
   const [editProcDayOfMonth, setEditProcDayOfMonth] = useState(1);
+  const [editProcMode, setEditProcMode] = useState<'BASIC' | 'ADVANCED'>('BASIC');
+  const [editProcSubtaskMode, setEditProcSubtaskMode] = useState<'PAIRED' | 'UNPAIRED'>('PAIRED');
 
   // Delegation
   const [delegateUserId, setDelegateUserId] = useState('');
@@ -277,6 +286,66 @@ export default function ProcessesPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [addingSubtaskFor, setAddingSubtaskFor] = useState<string | null>(null);
+
+  // Process streaks
+  const { data: processStreaks, mutate: mutateStreaks } = useSWR('/api/streaks?type=process');
+
+  // Completing a basic process
+  const [completingProcessId, setCompletingProcessId] = useState<string | null>(null);
+
+  const handleCompleteProcess = async (processId: string) => {
+    setCompletingProcessId(processId);
+    try {
+      const res = await fetch(`/api/processes/${processId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledDate: new Date().toISOString() }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.completed ? 'Process marked complete!' : 'Completion removed');
+        mutateStreaks();
+        if (expandedProcessId === processId) fetchProcessDetail(processId);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to complete process');
+      }
+    } catch {
+      toast.error('Failed to complete process');
+    } finally {
+      setCompletingProcessId(null);
+    }
+  };
+
+  const getProcessStreak = (processId: string): number => {
+    if (!Array.isArray(processStreaks)) return 0;
+    const streak = processStreaks.find((s: any) => s.streakType === `process_${processId}`);
+    return streak?.currentCount ?? 0;
+  };
+
+  // Regenerate tasks (for ADVANCED mode)
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+
+  const handleRegenerateTasks = async (processId: string) => {
+    if (!confirm('This will delete future TODO tasks and recreate them. Continue?')) return;
+    setRegeneratingId(processId);
+    try {
+      const res = await fetch(`/api/processes/${processId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerate: true }),
+      });
+      if (res.ok) {
+        toast.success('Tasks regenerated');
+        mutateProcessTasks();
+        if (expandedProcessId === processId) fetchProcessDetail(processId);
+      }
+    } catch {
+      toast.error('Failed to regenerate tasks');
+    } finally {
+      setRegeneratingId(null);
+    }
+  };
 
   // Schedule popup
   const [schedulingProcess, setSchedulingProcess] = useState<ProcessData | null>(null);
@@ -377,6 +446,8 @@ export default function ProcessesPage() {
         scheduledTime: newProcScheduledTime || null,
         scheduledDayOfWeek: cadenceNeedsDayOfWeek(newProcCadence) ? newProcDayOfWeek : null,
         scheduledDayOfMonth: cadenceNeedsDayOfMonth(newProcCadence) ? newProcDayOfMonth : null,
+        mode: newProcMode,
+        subtaskMode: newProcSubtaskMode,
       }),
     });
     if (res.ok) {
@@ -388,6 +459,8 @@ export default function ProcessesPage() {
       setNewProcScheduledTime('');
       setNewProcDayOfWeek(1);
       setNewProcDayOfMonth(1);
+      setNewProcMode('BASIC');
+      setNewProcSubtaskMode('PAIRED');
       setAddingProcessFnId(null);
       mutateFunctions();
     } else {
@@ -409,6 +482,8 @@ export default function ProcessesPage() {
         scheduledTime: editProcScheduledTime || null,
         scheduledDayOfWeek: cadenceNeedsDayOfWeek(editProcCadence) ? editProcDayOfWeek : null,
         scheduledDayOfMonth: cadenceNeedsDayOfMonth(editProcCadence) ? editProcDayOfMonth : null,
+        mode: editProcMode,
+        subtaskMode: editProcSubtaskMode,
       }),
     });
     if (res.ok) {
@@ -871,11 +946,79 @@ export default function ProcessesPage() {
                     onDayOfMonthChange={setNewProcDayOfMonth}
                     label="Calendar Schedule"
                   />
+                  {/* Mode toggle */}
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Mode</label>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setNewProcMode('BASIC')}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                          newProcMode === 'BASIC'
+                            ? 'bg-emerald-600 text-white border border-emerald-600'
+                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                        }`}
+                      >
+                        Basic
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewProcMode('ADVANCED')}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                          newProcMode === 'ADVANCED'
+                            ? 'bg-blue-600 text-white border border-blue-600'
+                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                        }`}
+                      >
+                        Advanced
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                      {newProcMode === 'BASIC'
+                        ? 'Shows on calendar as a reminder. Mark complete to track streaks.'
+                        : 'Pre-creates tasks with subtasks for multiple periods ahead.'}
+                    </p>
+                  </div>
+                  {/* Subtask mode (only for ADVANCED) */}
+                  {newProcMode === 'ADVANCED' && (
+                    <div>
+                      <label className="block text-xs text-[var(--text-secondary)] mb-1">Subtask Mode</label>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setNewProcSubtaskMode('PAIRED')}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                            newProcSubtaskMode === 'PAIRED'
+                              ? 'bg-indigo-600 text-white border border-indigo-600'
+                              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                          }`}
+                        >
+                          Paired (Checklist)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewProcSubtaskMode('UNPAIRED')}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                            newProcSubtaskMode === 'UNPAIRED'
+                              ? 'bg-indigo-600 text-white border border-indigo-600'
+                              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                          }`}
+                        >
+                          Unpaired (Separate)
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                        {newProcSubtaskMode === 'PAIRED'
+                          ? 'Steps appear as a checklist inside each task.'
+                          : 'Steps become independent tasks, schedulable separately.'}
+                      </p>
+                    </div>
+                  )}
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => handleAddProcess(fn.id)} disabled={!newProcTitle.trim() || !newProcScheduledTime} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
                       Create
                     </button>
-                    <button onClick={() => { setAddingProcessFnId(null); setNewProcTitle(''); setNewProcDesc(''); setNewProcDuration(60); setNewProcScheduledTime(''); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+                    <button onClick={() => { setAddingProcessFnId(null); setNewProcTitle(''); setNewProcDesc(''); setNewProcDuration(60); setNewProcScheduledTime(''); setNewProcMode('BASIC'); setNewProcSubtaskMode('PAIRED'); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                       Cancel
                     </button>
                   </div>
@@ -924,6 +1067,19 @@ export default function ProcessesPage() {
                       <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[proc.cadence] || CADENCE_FALLBACK}`}>
                         {proc.cadence}
                       </span>
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                        proc.mode === 'ADVANCED'
+                          ? 'bg-blue-900/50 text-blue-300 border-blue-800'
+                          : 'bg-emerald-900/50 text-emerald-300 border-emerald-800'
+                      }`}>
+                        {proc.mode || 'BASIC'}
+                      </span>
+                      {getProcessStreak(proc.id) > 0 && (
+                        <span className="flex items-center gap-0.5 text-xs text-amber-400" title={`${getProcessStreak(proc.id)}-period streak`}>
+                          <Flame className="h-3 w-3" />
+                          {getProcessStreak(proc.id)}
+                        </span>
+                      )}
                       <span className="text-xs text-[var(--text-muted)]">{proc._count.steps} step{proc._count.steps !== 1 ? 's' : ''}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); openSchedulePopup(proc); }}
@@ -960,6 +1116,8 @@ export default function ProcessesPage() {
                               setEditProcScheduledTime(proc.scheduledTime || '');
                               setEditProcDayOfWeek(proc.scheduledDayOfWeek ?? 1);
                               setEditProcDayOfMonth(proc.scheduledDayOfMonth ?? 1);
+                              setEditProcMode(proc.mode || 'BASIC');
+                              setEditProcSubtaskMode(proc.subtaskMode || 'PAIRED');
                             }}
                             className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
                           >
@@ -1026,6 +1184,63 @@ export default function ProcessesPage() {
                           onDayOfMonthChange={setEditProcDayOfMonth}
                           label="Calendar Schedule"
                         />
+                        {/* Mode toggle */}
+                        <div>
+                          <label className="block text-xs text-[var(--text-secondary)] mb-1">Mode</label>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditProcMode('BASIC')}
+                              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                                editProcMode === 'BASIC'
+                                  ? 'bg-emerald-600 text-white border border-emerald-600'
+                                  : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                              }`}
+                            >
+                              Basic
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditProcMode('ADVANCED')}
+                              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                                editProcMode === 'ADVANCED'
+                                  ? 'bg-blue-600 text-white border border-blue-600'
+                                  : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                              }`}
+                            >
+                              Advanced
+                            </button>
+                          </div>
+                        </div>
+                        {editProcMode === 'ADVANCED' && (
+                          <div>
+                            <label className="block text-xs text-[var(--text-secondary)] mb-1">Subtask Mode</label>
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditProcSubtaskMode('PAIRED')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                                  editProcSubtaskMode === 'PAIRED'
+                                    ? 'bg-indigo-600 text-white border border-indigo-600'
+                                    : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                                }`}
+                              >
+                                Paired (Checklist)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditProcSubtaskMode('UNPAIRED')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                                  editProcSubtaskMode === 'UNPAIRED'
+                                    ? 'bg-indigo-600 text-white border border-indigo-600'
+                                    : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                                }`}
+                              >
+                                Unpaired (Separate)
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         <div className="flex gap-2 pt-1">
                           <button onClick={() => handleEditProcess(proc.id)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors">
                             Save
@@ -1218,9 +1433,42 @@ export default function ProcessesPage() {
                         </div>
                       )}
 
-                      {/* Create tasks from steps */}
-                      {expandedProcessData.steps?.length > 0 && (
-                        <div className="mt-3">
+                      {/* Mode-specific actions */}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {/* BASIC mode: Mark Complete button */}
+                        {proc.mode !== 'ADVANCED' && (
+                          <button
+                            onClick={() => handleCompleteProcess(proc.id)}
+                            disabled={completingProcessId === proc.id}
+                            className="flex items-center gap-1.5 rounded-lg bg-emerald-600/20 border border-emerald-600/30 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-600/30 transition-colors disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {completingProcessId === proc.id ? 'Saving...' : 'Mark Complete'}
+                          </button>
+                        )}
+
+                        {/* BASIC mode: Show streak */}
+                        {proc.mode !== 'ADVANCED' && getProcessStreak(proc.id) > 0 && (
+                          <span className="flex items-center gap-1.5 rounded-lg bg-amber-600/20 border border-amber-600/30 px-3 py-1.5 text-xs font-medium text-amber-400">
+                            <Flame className="h-3.5 w-3.5" />
+                            Streak: {getProcessStreak(proc.id)} consecutive {proc.cadence.toLowerCase().replace('_', ' ')} completions
+                          </span>
+                        )}
+
+                        {/* ADVANCED mode: Regenerate button */}
+                        {proc.mode === 'ADVANCED' && (
+                          <button
+                            onClick={() => handleRegenerateTasks(proc.id)}
+                            disabled={regeneratingId === proc.id}
+                            className="flex items-center gap-1.5 rounded-lg bg-blue-600/20 border border-blue-600/30 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-600/30 transition-colors disabled:opacity-50"
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 ${regeneratingId === proc.id ? 'animate-spin' : ''}`} />
+                            {regeneratingId === proc.id ? 'Regenerating...' : 'Regenerate Tasks'}
+                          </button>
+                        )}
+
+                        {/* Manual create tasks from steps (only for BASIC mode) */}
+                        {proc.mode !== 'ADVANCED' && expandedProcessData.steps?.length > 0 && (
                           <button
                             onClick={() => createTasksFromSteps(proc)}
                             disabled={creatingTasks}
@@ -1229,8 +1477,8 @@ export default function ProcessesPage() {
                             <ListChecks className="h-3.5 w-3.5" />
                             {creatingTasks ? 'Creating...' : 'Create tasks from steps'}
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
 
                       {/* Current Cycle Tasks */}
                       <div className="mt-4">

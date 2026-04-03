@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Pencil, Trash2, Users, Clock, CalendarCheck } from 'lucide-react';
+import { X, Plus, Pencil, Trash2, Users, Clock, CalendarCheck, Video } from 'lucide-react';
 import { getLocalDateString } from '@/lib/date-utils';
 
 interface Meeting {
@@ -14,6 +14,7 @@ interface Meeting {
   timeStart: string;
   timeEnd: string;
   attendeeIds: string[];
+  meetLink: string | null;
   createdBy: { id: string; name: string | null; email: string };
 }
 
@@ -101,6 +102,7 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
   const [userResults, setUserResults] = useState<UserOption[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [addMeetLink, setAddMeetLink] = useState(true);
 
   const fetchMeetings = useCallback(async () => {
     setLoading(true);
@@ -203,6 +205,7 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
     setUserSearch('');
     setEditingId(null);
     setShowForm(false);
+    setAddMeetLink(true);
   };
 
   const startEdit = (meeting: Meeting) => {
@@ -223,6 +226,7 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
         image: null,
       }))
     );
+    setAddMeetLink(!!meeting.meetLink);
     setShowForm(true);
   };
 
@@ -239,6 +243,7 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
       timeStart,
       timeEnd,
       attendeeIds: selectedAttendees.map((a) => a.id),
+      addMeetLink,
     };
 
     const url = editingId ? `/api/meetings/${editingId}` : '/api/meetings';
@@ -470,6 +475,18 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
                     <span>
                       {m.attendeeIds?.length ?? 0} attendee{m.attendeeIds?.length === 1 ? '' : 's'}
                     </span>
+                    {m.meetLink && (
+                      <a
+                        href={m.meetLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 transition-colors"
+                      >
+                        <Video className="h-3 w-3" />
+                        Meet
+                      </a>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 ml-4">
@@ -645,6 +662,21 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Google Meet link toggle */}
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="addMeetLink"
+                checked={addMeetLink}
+                onChange={(e) => setAddMeetLink(e.target.checked)}
+                className="rounded border-[var(--border-color)] bg-[var(--surface-raised)] text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+              />
+              <label htmlFor="addMeetLink" className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+                <Video className="h-3.5 w-3.5 text-emerald-400" />
+                Create Google Meet link
+              </label>
             </div>
 
             <div className="flex items-center gap-3 pt-2">

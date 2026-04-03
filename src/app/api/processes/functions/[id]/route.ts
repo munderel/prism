@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 import { safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { generateAdvancedModeTasks } from '@/lib/process-task-generator';
 
 export async function POST(
   request: NextRequest,
@@ -14,7 +15,7 @@ export async function POST(
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { title, description, cadence, assigneeId, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;
+  const { title, description, cadence, assigneeId, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth, mode, subtaskMode } = body;
 
   if (!title || typeof title !== 'string') {
     return Response.json({ error: 'title is required' }, { status: 400 });
@@ -28,6 +29,11 @@ export async function POST(
     return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
   }
 
+  // Validate ADVANCED mode requires an assignee
+  if (mode === 'ADVANCED' && !assigneeId) {
+    return Response.json({ error: 'ADVANCED mode requires an assignee' }, { status: 400 });
+  }
+
   const process = await prisma.process.create({
     data: {
       functionId: id,
@@ -35,6 +41,8 @@ export async function POST(
       description: description || null,
       cadence: cadence || 'WEEKLY',
       assigneeId: assigneeId || null,
+      ...(mode && { mode }),
+      ...(subtaskMode && { subtaskMode }),
       ...(defaultDurationMinutes !== undefined && { defaultDurationMinutes }),
       ...(scheduledTime !== undefined && { scheduledTime: scheduledTime || null }),
       ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
@@ -44,6 +52,13 @@ export async function POST(
       assignee: { select: { id: true, name: true, email: true } },
     },
   });
+
+  // For ADVANCED mode, pre-create tasks (fire-and-forget — steps may not exist yet)
+  if (process.mode === 'ADVANCED') {
+    generateAdvancedModeTasks(process.id).catch((err) => {
+      console.error('[process-create] Failed to generate advanced tasks:', err);
+    });
+  }
 
   return Response.json(process, { status: 201, ...NO_STORE });
 }
