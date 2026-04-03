@@ -349,6 +349,7 @@ export default function DashboardPage() {
             t.id === taskId ? { ...t, status: newStatus as DashboardTask['status'] } : t
           ),
         rollbackOnError: true,
+        revalidate: false,
       }
     ).catch(() => {
       toast.error('Failed to update task');

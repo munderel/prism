@@ -74,6 +74,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(patch),
           });
+          onStatusChange?.();
           return (Array.isArray(currentData) ? currentData : []).map((t: DailyTask) =>
             t.id === taskId ? optimisticUpdate(t) : t
           );
@@ -84,9 +85,9 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
               t.id === taskId ? optimisticUpdate(t) : t
             ),
           rollbackOnError: true,
+          revalidate: false,
         }
       );
-      onStatusChange?.();
     },
     [mutate, onStatusChange]
   );
@@ -114,6 +115,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ isWinTheDay: newValue }),
           });
+          onStatusChange?.();
           return (Array.isArray(currentData) ? currentData : []).map((t: DailyTask) => {
             if (t.id === task.id) return { ...t, isWinTheDay: newValue };
             if (newValue && t.isWinTheDay) return { ...t, isWinTheDay: false };
@@ -128,9 +130,9 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
               return t;
             }),
           rollbackOnError: true,
+          revalidate: false,
         }
       );
-      onStatusChange?.();
     },
     [mutate, onStatusChange]
   );
