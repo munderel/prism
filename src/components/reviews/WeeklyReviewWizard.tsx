@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react
 import { m, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import {
   ChevronRight, ChevronLeft, PartyPopper,
@@ -72,6 +72,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
+  const { mutate } = useSWRConfig();
   // URL step param is 1-based for user-friendliness; internal state is 0-based
   const urlStep = searchParams.get('step');
   const initialStep = urlStep ? Math.max(0, Math.min(parseInt(urlStep, 10) - 1, TOTAL_STEPS - 1)) : 0;
@@ -114,10 +115,10 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const upcomingWeekEndStr = getLocalDateString(upcomingWeekEnd);
 
   // Fetch unscheduled tasks and AIM instances for calendar steps
-  const { data: weekTasks } = useSWR('/api/tasks?includeUnscheduled=true');
-  const { data: weekAims } = useSWR(
-    `/api/aims/instances?start=${upcomingWeekStartStr}T00:00:00&end=${upcomingWeekEndStr}T23:59:59`
-  );
+  const weekTasksSWRKey = '/api/tasks?includeUnscheduled=true';
+  const weekAimsSWRKey = `/api/aims/instances?start=${upcomingWeekStartStr}T00:00:00&end=${upcomingWeekEndStr}T23:59:59`;
+  const { data: weekTasks } = useSWR(weekTasksSWRKey);
+  const { data: weekAims } = useSWR(weekAimsSWRKey);
 
   // Fetch user aims for AIM block duration (calendar work blocks)
   const { data: userAimsData } = useSWR('/api/aims/user');
@@ -323,7 +324,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
     });
-  }, []);
+    mutate(weekTasksSWRKey);
+    mutate(weekAimsSWRKey);
+  }, [mutate, weekTasksSWRKey, weekAimsSWRKey]);
 
   const handleUnscheduleItem = useCallback(async (itemId: string, itemType: string) => {
     const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
@@ -332,7 +335,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
     });
-  }, []);
+    mutate(weekTasksSWRKey);
+    mutate(weekAimsSWRKey);
+  }, [mutate, weekTasksSWRKey, weekAimsSWRKey]);
 
   const persistAnswer = useCallback(async (stepKey: string, answerType: string, answerData: any) => {
     try {

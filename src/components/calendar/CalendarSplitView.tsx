@@ -35,6 +35,8 @@ export interface CalendarSplitViewProps {
   onCreateWorkBlock?: (start: Date, end: Date) => void | Promise<void>;
   /** Duration in minutes for the Deep Work (AIM Block) template. Defaults to 60. */
   aimBlockDuration?: number;
+  /** Show work block template cards at the bottom of the left panel (default mode only). */
+  showWorkBlockTemplates?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +269,7 @@ export function CalendarSplitView({
   mode,
   onCreateWorkBlock,
   aimBlockDuration = 60,
+  showWorkBlockTemplates = false,
 }: CalendarSplitViewProps) {
   const draggableContainerRef = useRef<HTMLDivElement>(null);
   const calendarRef = useRef<FullCalendar>(null);
@@ -440,9 +443,9 @@ export function CalendarSplitView({
               type="button"
               className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-[var(--surface-raised)]/80 hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-colors text-[10px] leading-none"
               title="Unschedule"
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
-                onUnschedule(itemId, itemType);
+                await onUnschedule(itemId, itemType);
                 mutateEvents();
                 onRefresh?.();
               }}
@@ -530,6 +533,19 @@ export function CalendarSplitView({
                   ))}
                 </div>
               ))}
+
+              {showWorkBlockTemplates && (
+                <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-indigo-400">
+                      Work Blocks
+                    </span>
+                  </div>
+                  <WorkBlockTemplateCard />
+                  <div className="mt-2" />
+                  <DeepWorkTemplateCard duration={aimBlockDuration} />
+                </div>
+              )}
             </>
           )}
         </div>
