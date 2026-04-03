@@ -9,7 +9,8 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft, PartyPopper, AlertCircle,
   Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock, ChevronDown,
 } from 'lucide-react';
-import { getLocalDateString, getTomorrowDateString, getWeekBoundaries } from '@/lib/date-utils';
+import { getLocalDateString, getTomorrowDateString, getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
+import { useToast } from '@/components/ui/ToastProvider';
 import { subtaskDoneCount } from '@/lib/task-utils';
 const CalendarSplitView = dynamic(
   () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
@@ -137,10 +138,17 @@ interface PowerDownRitualProps {
 
 export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const { resolvedTheme, setTheme } = useTheme();
+  const toast = useToast();
   const previousThemeRef = useRef<string | undefined>();
   // Capture today/tomorrow once at mount to avoid cross-midnight drift
   const [sessionToday] = useState(() => getLocalDateString());
   const [sessionTomorrow] = useState(() => getTomorrowDateString());
+  const tomorrowDateRange = useMemo(() => {
+    const start = parseLocalDate(sessionTomorrow);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }, [sessionTomorrow]);
   const [session, setSession] = useState<any>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -436,6 +444,23 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchUnscheduledTomorrow();
     fetchTomorrowTasks();
   }, [fetchUnscheduledTomorrow, fetchTomorrowTasks]);
+
+  const handleCreateWorkBlock = useCallback(async (start: Date, end: Date) => {
+    try {
+      const res = await fetch('/api/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: 'Work Block',
+          start: start.toISOString(),
+          end: end.toISOString(),
+        }),
+      });
+      if (!res.ok) toast.error('Failed to create work block. Is Google Calendar connected?');
+    } catch {
+      toast.error('Failed to create work block.');
+    }
+  }, [toast]);
 
   const persistStep = async (nextStep: number, extra: Record<string, any> = {}) => {
     if (!session) return;
@@ -1098,13 +1123,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                       <div className="flex-1 min-h-0 p-2">
                         <CalendarSplitView
                           viewMode="day"
-                          dateRange={{
-                            start: new Date(Date.now() + 86400000).toISOString(),
-                            end: new Date(Date.now() + 2 * 86400000).toISOString(),
-                          }}
+                          dateRange={tomorrowDateRange}
                           unscheduledItems={unscheduledTomorrowItems}
                           onSchedule={handleItemScheduled}
                           onUnschedule={handleItemUnscheduled}
+                          onRefresh={fetchUnscheduledTomorrow}
+                          onCreateWorkBlock={handleCreateWorkBlock}
+                          showWorkBlockTemplates
                         />
                       </div>
                     </div>

@@ -862,7 +862,13 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                 </button>
               </div>
             )}
-            {selectedEventPopover.source === 'aims' && selectedEventPopover.status !== 'COMPLETED' && selectedEventPopover.aimInstanceId && (
+            {selectedEventPopover.source === 'aims' && selectedEventPopover.status === 'COMPLETED' && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Already completed
+              </div>
+            )}
+            {selectedEventPopover.source === 'aims' && selectedEventPopover.aimInstanceId && (
               <button
                 onClick={() => handleUnschedule(`/api/aims/instances/${selectedEventPopover.aimInstanceId}`, 'Aim')}
                 disabled={completingEvent}
@@ -871,12 +877,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                 <CalendarX2 className="h-3.5 w-3.5" />
                 Unschedule
               </button>
-            )}
-            {selectedEventPopover.source === 'aims' && selectedEventPopover.status === 'COMPLETED' && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Already completed
-              </div>
             )}
 
             {/* Task actions */}
