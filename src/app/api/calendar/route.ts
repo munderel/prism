@@ -330,7 +330,10 @@ export async function GET(request: NextRequest) {
   }
 
   for (const meeting of meetings) {
-    if (!isUserInMeeting(meeting, auth.userId)) continue;
+    if (!isUserInMeeting(meeting, auth.userId)) {
+      console.warn(`[calendar] Meeting "${meeting.title}" skipped — user ${auth.userId} not in attendeeIds:`, meeting.attendeeIds, 'createdById:', meeting.createdById);
+      continue;
+    }
     for (const instance of generateMeetingInstances(meeting, rangeStart, rangeEnd, userTz)) {
       events.push({
         id: `meeting-${meeting.id}-${instance.start.toISOString()}`,
