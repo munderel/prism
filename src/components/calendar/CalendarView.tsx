@@ -17,7 +17,7 @@ import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 interface SelectedEventPopover {
   eventId: string;
   title: string;
-  source: 'aims' | 'task';
+  source: 'aims' | 'task' | 'review' | 'powerdown' | 'meeting' | 'process';
   status: string;
   position: { top: number; left: number };
   // Aim-specific
@@ -29,6 +29,11 @@ interface SelectedEventPopover {
   taskType?: string;
   priority?: string;
   goalTitle?: string;
+  // Review/powerdown/meeting/process
+  link?: string;
+  description?: string;
+  cadence?: string;
+  createdBy?: string;
 }
 
 interface AimTask {
@@ -223,31 +228,72 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     const props = info.event.extendedProps || {};
     const rect = info.el.getBoundingClientRect();
 
-    // If this is a powerdown event, navigate to powerdown page
+    // Powerdown event → show popover with Start action
     if (props.link === '/powerdown' || info.event.id?.startsWith('powerdown-')) {
-      router.push('/powerdown');
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'powerdown',
+        status: '',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        link: '/powerdown',
+      });
       return;
     }
 
-    // If this is a virtual review event (weekly/monthly/yearly/team), use the link which contains action params
+    // Review events → show popover with Start + Settings actions
     if (info.event.id?.startsWith('weekly-review-') || info.event.id?.startsWith('monthly-review-') || info.event.id?.startsWith('yearly-review-') || info.event.id?.startsWith('team-review-')) {
-      const link = props.link || '/reviews';
-      router.push(link);
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'review',
+        status: '',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        link: props.link || '/reviews',
+      });
       return;
     }
 
-    // If this is a stored review event (already in DB), navigate to its completion wizard
+    // Stored review event → show popover
     if (info.event.id?.startsWith('review-')) {
       const reviewId = props.reviewId;
-      if (reviewId) {
-        router.push(`/reviews/${reviewId}/complete`);
-        return;
-      }
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'review',
+        status: props.completed ? 'completed' : '',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        link: reviewId ? `/reviews/${reviewId}/complete` : '/reviews',
+      });
+      return;
     }
 
-    // If this is a process event, navigate to processes page
+    // Process event → show popover
     if (info.event.id?.startsWith('process-')) {
-      router.push('/processes');
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'process',
+        status: '',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        link: '/processes',
+      });
+      return;
+    }
+
+    // Meeting event → show popover
+    if (info.event.id?.startsWith('meeting-')) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'meeting',
+        status: '',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        description: props.description,
+        cadence: props.cadence,
+        createdBy: props.createdBy,
+        link: props.meetLink,
+      });
       return;
     }
 
@@ -764,6 +810,34 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </>
             )}
 
+            {/* REVIEW / POWERDOWN / PROCESS popover */}
+            {(selectedEventPopover.source === 'review' || selectedEventPopover.source === 'powerdown' || selectedEventPopover.source === 'process') && (
+              <div className="text-xs text-[var(--text-muted)]">
+                {selectedEventPopover.source === 'review' && 'Scheduled review session'}
+                {selectedEventPopover.source === 'powerdown' && 'Daily shutdown ritual'}
+                {selectedEventPopover.source === 'process' && 'Recurring process'}
+              </div>
+            )}
+
+            {/* MEETING popover */}
+            {selectedEventPopover.source === 'meeting' && (
+              <>
+                {selectedEventPopover.cadence && (
+                  <div className="text-xs text-[var(--text-muted)]">
+                    <span className="font-medium">Cadence:</span> {selectedEventPopover.cadence.toLowerCase().replace('_', ' ')}
+                  </div>
+                )}
+                {selectedEventPopover.createdBy && (
+                  <div className="text-xs text-[var(--text-muted)]">
+                    <span className="font-medium">Created by:</span> {selectedEventPopover.createdBy}
+                  </div>
+                )}
+                {selectedEventPopover.description && (
+                  <div className="text-xs text-[var(--text-secondary)] mt-1">{selectedEventPopover.description}</div>
+                )}
+              </>
+            )}
+
           </div>
 
           {/* Popover Actions */}
@@ -853,6 +927,55 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                 <CalendarX2 className="h-3.5 w-3.5" />
                 Unschedule
               </button>
+            )}
+
+            {/* Review / Powerdown: Start + Settings */}
+            {(selectedEventPopover.source === 'review' || selectedEventPopover.source === 'powerdown') && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    router.push(selectedEventPopover.link || (selectedEventPopover.source === 'review' ? '/reviews' : '/powerdown'));
+                    setSelectedEventPopover(null);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors"
+                >
+                  Start
+                </button>
+                <button
+                  onClick={() => {
+                    router.push('/settings');
+                    setSelectedEventPopover(null);
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-lg bg-[var(--surface-raised)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
+                >
+                  Settings
+                </button>
+              </div>
+            )}
+
+            {/* Process: Open */}
+            {selectedEventPopover.source === 'process' && (
+              <button
+                onClick={() => {
+                  router.push('/processes');
+                  setSelectedEventPopover(null);
+                }}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors"
+              >
+                Open
+              </button>
+            )}
+
+            {/* Meeting: Join (if meet link) */}
+            {selectedEventPopover.source === 'meeting' && selectedEventPopover.link && (
+              <a
+                href={selectedEventPopover.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
+              >
+                Join Meeting
+              </a>
             )}
 
           </div>
