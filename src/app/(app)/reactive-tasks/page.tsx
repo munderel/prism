@@ -116,6 +116,14 @@ export default function ReactiveTasksPage() {
   const updateTask = useCallback(async (id: string, data: Record<string, unknown>) => {
     setUpdatingId(id);
     setError('');
+    // Optimistic update
+    mutate(
+      (current: Task[] | undefined) =>
+        (Array.isArray(current) ? current : []).map((t) =>
+          t.id === id ? { ...t, ...data } : t
+        ),
+      { revalidate: false },
+    );
     try {
       const res = await fetch(`/api/tasks/${id}`, {
         method: 'PATCH',
@@ -125,11 +133,12 @@ export default function ReactiveTasksPage() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setError(err.error || 'Failed to update task');
+        mutate(); // Refetch to revert on error
         return;
       }
-      mutate();
     } catch {
       setError('Network error — please try again');
+      mutate(); // Refetch to revert on error
     } finally {
       setUpdatingId(null);
     }

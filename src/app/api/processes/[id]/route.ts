@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { regenerateAdvancedModeTasks, updateFutureTaskOwners } from '@/lib/process-task-generator';
 
 export async function GET(
   _request: NextRequest,
@@ -96,6 +97,12 @@ export async function PATCH(
 
   const { delegateId, delegateUntil, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;
 
+  // Validate ADVANCED mode requires an assignee
+  const newMode = isAdmin ? body.mode : undefined;
+  if (newMode === 'ADVANCED' && !process.assigneeId && !body.assigneeId) {
+    return Response.json({ error: 'ADVANCED mode requires an assignee' }, { status: 400 });
+  }
+
   const updated = await prisma.process.update({
     where: { id },
     data: {
@@ -106,10 +113,31 @@ export async function PATCH(
       ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
       ...(scheduledDayOfMonth !== undefined && { scheduledDayOfMonth: scheduledDayOfMonth ?? null }),
       // Admin-only fields
-      ...(isAdmin && pickDefined(body, ['title', 'description', 'cadence', 'cadenceRule', 'defaultDurationMinutes'])),
+      ...(isAdmin && pickDefined(body, ['title', 'description', 'cadence', 'cadenceRule', 'defaultDurationMinutes', 'mode', 'subtaskMode'])),
       ...(isAdmin && body.assigneeId !== undefined && { assigneeId: body.assigneeId || null }),
     },
   });
+
+  // Handle ADVANCED mode task regeneration
+  if (isAdmin && updated.mode === 'ADVANCED') {
+    const modeChanged = newMode !== undefined && newMode !== process.mode;
+    const cadenceChanged = body.cadence !== undefined && body.cadence !== process.cadence;
+    const subtaskModeChanged = body.subtaskMode !== undefined && body.subtaskMode !== process.subtaskMode;
+    const forceRegenerate = body.regenerate === true;
+
+    if (modeChanged || cadenceChanged || subtaskModeChanged || forceRegenerate) {
+      regenerateAdvancedModeTasks(id).catch((err) => {
+        console.error('[process-update] Failed to regenerate tasks:', err);
+      });
+    }
+
+    // Handle assignee change: update future task owners
+    if (body.assigneeId !== undefined && body.assigneeId !== process.assigneeId && body.assigneeId) {
+      updateFutureTaskOwners(id, body.assigneeId).catch((err) => {
+        console.error('[process-update] Failed to update task owners:', err);
+      });
+    }
+  }
 
   return Response.json(updated, NO_STORE);
 }

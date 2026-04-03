@@ -208,14 +208,25 @@ export default function AimsPage() {
   const toggleAim = useCallback(
     async (catId: string) => {
       const currentlyActive = isActive(catId);
-      await fetch('/api/aims/user', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          aims: [{ aimCategoryId: catId, isActive: !currentlyActive }],
-        }),
-      });
-      mutateAims();
+      // Optimistic update
+      mutateAims(
+        (current: UserAim[] | undefined) =>
+          (Array.isArray(current) ? current : []).map((ua) =>
+            ua.aimCategoryId === catId ? { ...ua, isActive: !currentlyActive } : ua
+          ),
+        { revalidate: false },
+      );
+      try {
+        await fetch('/api/aims/user', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            aims: [{ aimCategoryId: catId, isActive: !currentlyActive }],
+          }),
+        });
+      } catch {
+        mutateAims(); // Revert on error
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [userAims, mutateAims]
@@ -312,12 +323,24 @@ export default function AimsPage() {
   };
 
   const completeInstance = async (instanceId: string) => {
-    await fetch(`/api/aims/instances/${instanceId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'COMPLETED' }),
-    });
-    await Promise.all([mutateAims(), mutateTodayInstances()]);
+    // Optimistic update for today instances
+    mutateTodayInstances(
+      (current: AimInstance[] | undefined) =>
+        (Array.isArray(current) ? current : []).map((inst) =>
+          inst.id === instanceId ? { ...inst, status: 'COMPLETED' as const } : inst
+        ),
+      { revalidate: false },
+    );
+    try {
+      await fetch(`/api/aims/instances/${instanceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      });
+      mutateAims(); // Refresh user aims for streak/phase updates
+    } catch {
+      mutateTodayInstances(); // Revert on error
+    }
   };
 
   function renderSimplifiedSection(title: string, cats: AimCategory[]) {

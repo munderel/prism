@@ -5,13 +5,17 @@ import { safeParseJson } from '@/lib/api-helpers';
 
 const STREAK_MILESTONES = new Set([7, 14, 30, 50, 100]);
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const streaks = await prisma.streak.findMany({
-    where: { userId: auth.userId },
-  });
+  const typeFilter = request.nextUrl.searchParams.get('type');
+  const where: Record<string, unknown> = { userId: auth.userId };
+  if (typeFilter === 'process') {
+    where.streakType = { startsWith: 'process_' };
+  }
+
+  const streaks = await prisma.streak.findMany({ where });
 
   return Response.json(streaks);
 }

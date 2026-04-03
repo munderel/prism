@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 import { listGoogleEvents, createGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
+import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 const MAX_DAYS = 366;
@@ -102,17 +103,6 @@ function matchesYearlyRule(d: Date, rule: string): boolean {
       return false;
     }
   }
-}
-
-/** Check if a user is an attendee or creator of a meeting. */
-function isUserInMeeting(meeting: { attendeeIds: unknown; createdById: string }, userId: string): boolean {
-  let attendees: string[] = [];
-  if (Array.isArray(meeting.attendeeIds)) {
-    attendees = meeting.attendeeIds;
-  } else if (typeof meeting.attendeeIds === 'string') {
-    try { attendees = JSON.parse(meeting.attendeeIds); } catch { /* ignore */ }
-  }
-  return attendees.includes(userId) || meeting.createdById === userId;
 }
 
 /** Convert selectedCalendarIds to a string array.
@@ -329,6 +319,14 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  // Build set of synced calendar event IDs for dedup against Google Calendar
+  const syncedCalendarEventIds = new Set<string>();
+  for (const meeting of meetings) {
+    if (meeting.calendarEventId) {
+      syncedCalendarEventIds.add(meeting.calendarEventId);
+    }
+  }
+
   for (const meeting of meetings) {
     if (!isUserInMeeting(meeting, auth.userId)) {
       console.warn(`[calendar] Meeting "${meeting.title}" skipped — user ${auth.userId} not in attendeeIds:`, meeting.attendeeIds, 'createdById:', meeting.createdById);
@@ -346,12 +344,17 @@ export async function GET(request: NextRequest) {
         description: meeting.description,
         cadence: meeting.cadence,
         createdBy: meeting.createdBy.name,
+        meetLink: meeting.meetLink,
         color: '#f97316',
       });
     }
   }
 
   for (const ge of googleEvents) {
+    // Skip Google Calendar events that are already represented by Prism meetings
+    if (ge.id && syncedCalendarEventIds.has(ge.id)) continue;
+    if ((ge as any).recurringEventId && syncedCalendarEventIds.has((ge as any).recurringEventId)) continue;
+
     const sourceCalId = (ge as any)._sourceCalendarId;
     const eventColor = colorOverrides[sourceCalId] || (ge as any).colorId || '#9333ea';
     events.push({
@@ -556,6 +559,7 @@ export async function GET(request: NextRequest) {
       id: true,
       title: true,
       cadence: true,
+      mode: true,
       scheduledTime: true,
       scheduledDayOfWeek: true,
       scheduledDayOfMonth: true,
@@ -569,19 +573,20 @@ export async function GET(request: NextRequest) {
       where: {
         processId: { in: processIds },
         scheduledDate: { gte: rangeStart, lte: rangeEnd },
-        OR: [
-          { timeBlockStart: { not: null } },
-          { timeBlockEnd: { not: null } },
-        ],
       },
-      select: { processId: true, scheduledDate: true, timeBlockStart: true, timeBlockEnd: true },
+      select: { processId: true, scheduledDate: true, timeBlockStart: true, timeBlockEnd: true, completedAt: true },
     });
 
     const procOverrides = new Map<string, { start: Date; end: Date }>();
+    const procCompletions = new Set<string>();
     for (const ex of processExecutions) {
+      const dateKey = ex.scheduledDate.toISOString().split('T')[0];
+      const key = `${ex.processId}-${dateKey}`;
       if (ex.timeBlockStart && ex.timeBlockEnd) {
-        const dateKey = ex.scheduledDate.toISOString().split('T')[0];
-        procOverrides.set(`${ex.processId}-${dateKey}`, { start: ex.timeBlockStart, end: ex.timeBlockEnd });
+        procOverrides.set(key, { start: ex.timeBlockStart, end: ex.timeBlockEnd });
+      }
+      if (ex.completedAt) {
+        procCompletions.add(key);
       }
     }
 
@@ -638,6 +643,8 @@ export async function GET(request: NextRequest) {
         }
 
         if (evStart >= rangeStart && evStart <= rangeEnd) {
+          const completionKey = `${proc.id}-${dateKey}`;
+          const completed = procCompletions.has(completionKey);
           events.push({
             id: `process-${proc.id}-${dateKey}`,
             title: proc.title,
@@ -646,7 +653,9 @@ export async function GET(request: NextRequest) {
             allDay: false,
             source: 'processes',
             processId: proc.id,
-            color: '#06b6d4',
+            processMode: proc.mode,
+            completed,
+            color: completed ? '#22c55e' : '#06b6d4',
             link: '/processes',
           });
         }
@@ -697,98 +706,3 @@ export async function POST(request: NextRequest) {
   return Response.json(event, { status: 201 });
 }
 
-// Generate recurring meeting instances within a date range
-function generateMeetingInstances(
-  meeting: { cadence: string; dayOfWeek: number | null; occurDate?: Date | null; timeStart: string; timeEnd: string },
-  rangeStart: Date,
-  rangeEnd: Date,
-  timezone: string,
-): { start: Date; end: Date }[] {
-  const instances: { start: Date; end: Date }[] = [];
-
-  // One-time meetings: just check if the specific date falls in range
-  if (meeting.cadence === 'ONE_TIME' && meeting.occurDate) {
-    const zoned = toZonedTime(new Date(meeting.occurDate), timezone);
-    const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-    const s = fromZonedTime(`${dateKey}T${meeting.timeStart}:00`, timezone);
-    const e = fromZonedTime(`${dateKey}T${meeting.timeEnd}:00`, timezone);
-    if (s >= rangeStart && s <= rangeEnd) {
-      instances.push({ start: s, end: e });
-    }
-    return instances;
-  }
-
-  // Iterate day-by-day through range (capped at 366 days for safety)
-  const cursor = new Date(rangeStart);
-  cursor.setUTCHours(0, 0, 0, 0);
-  const maxIterations = 366;
-  let iterations = 0;
-
-  while (cursor <= rangeEnd && iterations < maxIterations) {
-    iterations++;
-    const zoned = toZonedTime(cursor, timezone);
-    const dow = zoned.getDay(); // 0=Sun ... 6=Sat
-    let matches = false;
-
-    switch (meeting.cadence) {
-      case 'DAILY':
-        // Every weekday (Mon-Fri) if no dayOfWeek specified, otherwise every day
-        matches = meeting.dayOfWeek === null ? (dow >= 1 && dow <= 5) : true;
-        break;
-      case 'WEEKLY':
-        matches = meeting.dayOfWeek !== null ? dow === meeting.dayOfWeek : dow === 1; // default Monday
-        break;
-      case 'BIWEEKLY': {
-        // Match the day of week, every other week (using epoch week parity)
-        const targetDow = meeting.dayOfWeek ?? 1;
-        if (dow === targetDow) {
-          const weekNum = Math.floor(cursor.getTime() / (7 * 24 * 60 * 60 * 1000));
-          matches = weekNum % 2 === 0;
-        }
-        break;
-      }
-      case 'MONTHLY':
-        // First occurrence of the specified day in the month
-        if (meeting.dayOfWeek !== null) {
-          matches = dow === meeting.dayOfWeek && zoned.getDate() <= 7;
-        } else {
-          matches = zoned.getDate() === 1; // first of month
-        }
-        break;
-      case 'QUARTERLY':
-        // First occurrence of the day in quarter months (Jan, Apr, Jul, Oct)
-        if ([0, 3, 6, 9].includes(zoned.getMonth())) {
-          if (meeting.dayOfWeek !== null) {
-            matches = dow === meeting.dayOfWeek && zoned.getDate() <= 7;
-          } else {
-            matches = zoned.getDate() === 1;
-          }
-        }
-        break;
-      case 'YEARLY':
-        // Jan 1st or first occurrence of the day in January
-        if (zoned.getMonth() === 0) {
-          if (meeting.dayOfWeek !== null) {
-            matches = dow === meeting.dayOfWeek && zoned.getDate() <= 7;
-          } else {
-            matches = zoned.getDate() === 1;
-          }
-        }
-        break;
-    }
-
-    if (matches) {
-      const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-      const eventStart = fromZonedTime(`${dateKey}T${meeting.timeStart}:00`, timezone);
-      const eventEnd = fromZonedTime(`${dateKey}T${meeting.timeEnd}:00`, timezone);
-
-      if (eventStart >= rangeStart && eventStart <= rangeEnd) {
-        instances.push({ start: eventStart, end: eventEnd });
-      }
-    }
-
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  return instances;
-}

@@ -1,81 +1,47 @@
 import { prisma } from '@/lib/prisma';
-import { computeNextDueDate } from '@/lib/process-scheduler';
+import { generateAdvancedModeTasks } from '@/lib/process-task-generator';
+
+const PERIODS_AHEAD: Record<string, number> = {
+  ONE_TIME: 1,
+  DAILY: 5,
+  WEEKLY: 4,
+  BIWEEKLY: 4,
+  MONTHLY: 3,
+  QUARTERLY: 2,
+  YEARLY: 1,
+};
 
 /**
- * Determine the responsible user for a process, considering delegation.
- */
-function getResponsibleUserId(
-  process: { assigneeId: string | null; delegateId: string | null; delegateUntil: Date | null },
-  today: Date
-): string | null {
-  if (process.delegateId && process.delegateUntil && process.delegateUntil >= today) {
-    return process.delegateId;
-  }
-  return process.assigneeId;
-}
-
-/**
- * Check for processes that are due and create maintenance tasks for them.
- * Called on-demand from /api/tasks GET to avoid needing a cron job.
- * Idempotent — skips processes that already have an execution today.
+ * Check for ADVANCED mode processes that need task replenishment.
+ * Called on-demand from GET /api/tasks to avoid needing a cron job.
+ *
+ * BASIC mode processes are skipped — they use calendar events + completion tracking,
+ * not pre-created tasks.
  */
 export async function checkAndCreateDueProcessTasks(): Promise<void> {
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  const dueProcesses = await prisma.process.findMany({
-    where: { nextDueAt: { lte: now } },
-    include: {
-      assignee: { select: { id: true } },
-      delegate: { select: { id: true } },
-    },
+  const advancedProcesses = await prisma.process.findMany({
+    where: { mode: 'ADVANCED' },
+    select: { id: true, cadence: true },
   });
 
-  if (dueProcesses.length === 0) return;
+  if (advancedProcesses.length === 0) return;
 
   await Promise.all(
-    dueProcesses.map(async (process) => {
-      const responsibleUserId = getResponsibleUserId(process, today);
-      if (!responsibleUserId) return;
-
-      const existingExecution = await prisma.processExecution.findFirst({
+    advancedProcesses.map(async (process) => {
+      const futureTasks = await prisma.task.count({
         where: {
           processId: process.id,
-          scheduledDate: { gte: today },
+          status: 'TODO',
+          dueDate: { gte: now },
         },
       });
-      if (existingExecution) return;
 
-      const nextDueAt = computeNextDueDate(process.cadence, now);
-
-      await prisma.$transaction(async (tx) => {
-        const task = await tx.task.create({
-          data: {
-            ownerId: responsibleUserId,
-            taskType: 'MAINTENANCE',
-            title: process.title,
-            description: process.description,
-            dueDate: nextDueAt,
-            status: 'TODO',
-            priority: 'MEDIUM',
-            estimatedMinutes: process.defaultDurationMinutes,
-          },
-        });
-
-        await tx.processExecution.create({
-          data: {
-            processId: process.id,
-            executedById: responsibleUserId,
-            scheduledDate: now,
-            taskId: task.id,
-          },
-        });
-
-        await tx.process.update({
-          where: { id: process.id },
-          data: { lastRunAt: now, nextDueAt },
-        });
-      });
+      const target = PERIODS_AHEAD[process.cadence] ?? 4;
+      if (futureTasks < target) {
+        await generateAdvancedModeTasks(process.id);
+      }
     })
   );
 }

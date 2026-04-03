@@ -266,7 +266,7 @@ export async function syncTaskCalendarEvent(
 }
 
 /**
- * Create a Google Calendar event (optionally with Meet link).
+ * Create a Google Calendar event (optionally with Meet link and/or recurrence).
  */
 export async function createGoogleEvent(
   userId: string,
@@ -275,7 +275,9 @@ export async function createGoogleEvent(
     description?: string;
     start: string;
     end: string;
+    timeZone?: string;
     addMeetLink?: boolean;
+    recurrence?: string[];
   },
   calendarId: string = 'primary'
 ) {
@@ -283,11 +285,18 @@ export async function createGoogleEvent(
   if (!calendar) return null;
 
   try {
+    const startObj: any = { dateTime: event.start };
+    const endObj: any = { dateTime: event.end };
+    if (event.timeZone) {
+      startObj.timeZone = event.timeZone;
+      endObj.timeZone = event.timeZone;
+    }
+
     const eventBody: any = {
       summary: event.summary,
       description: event.description,
-      start: { dateTime: event.start },
-      end: { dateTime: event.end },
+      start: startObj,
+      end: endObj,
     };
 
     if (event.addMeetLink) {
@@ -299,6 +308,10 @@ export async function createGoogleEvent(
       };
     }
 
+    if (event.recurrence) {
+      eventBody.recurrence = event.recurrence;
+    }
+
     const response = await calendar.events.insert({
       calendarId,
       requestBody: eventBody,
@@ -308,5 +321,40 @@ export async function createGoogleEvent(
     return response.data;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Map a ProcessCadence + dayOfWeek to a Google Calendar RRULE array.
+ * Returns undefined for ONE_TIME (no recurrence).
+ */
+const RRULE_DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const;
+
+export function buildMeetingRecurrence(
+  cadence: string,
+  dayOfWeek: number | null
+): string[] | undefined {
+  const day = dayOfWeek != null ? RRULE_DAYS[dayOfWeek] : 'MO';
+
+  switch (cadence) {
+    case 'ONE_TIME':
+      return undefined;
+    case 'DAILY':
+      // Weekdays only (matching generateMeetingInstances behavior when dayOfWeek is null)
+      return dayOfWeek == null
+        ? ['RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR']
+        : ['RRULE:FREQ=DAILY'];
+    case 'WEEKLY':
+      return [`RRULE:FREQ=WEEKLY;BYDAY=${day}`];
+    case 'BIWEEKLY':
+      return [`RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=${day}`];
+    case 'MONTHLY':
+      return [`RRULE:FREQ=MONTHLY;BYDAY=1${day}`];
+    case 'QUARTERLY':
+      return [`RRULE:FREQ=MONTHLY;INTERVAL=3;BYDAY=1${day}`];
+    case 'YEARLY':
+      return [`RRULE:FREQ=YEARLY;BYMONTH=1;BYDAY=1${day}`];
+    default:
+      return undefined;
   }
 }
