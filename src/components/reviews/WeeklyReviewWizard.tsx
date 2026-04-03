@@ -319,11 +319,12 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
 
   const handleScheduleItem = useCallback(async (itemId: string, itemType: string, start: Date, end: Date) => {
     const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
-    await fetch(endpoint, {
+    const res = await fetch(endpoint, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
     });
+    if (!res.ok) throw new Error(`Failed to schedule item: ${res.status}`);
     mutate(weekTasksSWRKey);
     mutate(weekAimsSWRKey);
   }, [mutate, weekTasksSWRKey, weekAimsSWRKey]);
