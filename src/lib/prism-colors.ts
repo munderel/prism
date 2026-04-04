@@ -23,6 +23,10 @@ export interface ColorDef {
   bg: string;
   /** Border color for left accents */
   border: string;
+  /** Darker text hex for light-mode backgrounds */
+  textLight: string;
+  /** Lighter text hex for dark-mode backgrounds */
+  textDark: string;
   /** Tailwind text color class */
   textClass: string;
   /** Tailwind background class (for badges/chips) */
@@ -41,6 +45,8 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     emoji: '🎯',
     bg: 'rgba(99,102,241,0.15)',
     border: '#818cf8',
+    textLight: '#3730a3',
+    textDark: '#a5b4fc',
     textClass: 'text-indigo-700 dark:text-indigo-400',
     bgClass: 'bg-indigo-500/15',
     borderClass: 'border-indigo-500/40',
@@ -52,6 +58,8 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     emoji: '⚡',
     bg: 'rgba(249,115,22,0.15)',
     border: '#f97316',
+    textLight: '#9a3412',
+    textDark: '#fdba74',
     textClass: 'text-orange-700 dark:text-orange-400',
     bgClass: 'bg-orange-500/15',
     borderClass: 'border-orange-500/40',
@@ -63,6 +71,8 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     emoji: '🔧',
     bg: 'rgba(34,211,238,0.15)',
     border: '#22d3ee',
+    textLight: '#155e75',
+    textDark: '#67e8f9',
     textClass: 'text-cyan-700 dark:text-cyan-400',
     bgClass: 'bg-cyan-500/15',
     borderClass: 'border-cyan-500/40',
@@ -74,6 +84,8 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     emoji: '💪',
     bg: 'rgba(45,212,191,0.15)',
     border: '#2dd4bf',
+    textLight: '#115e59',
+    textDark: '#5eead4',
     textClass: 'text-teal-700 dark:text-teal-400',
     bgClass: 'bg-teal-500/15',
     borderClass: 'border-teal-500/40',
@@ -84,6 +96,8 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     emoji: '📋',
     bg: 'rgba(251,113,133,0.15)',
     border: '#fb7185',
+    textLight: '#9f1239',
+    textDark: '#fda4af',
     textClass: 'text-rose-700 dark:text-rose-400',
     bgClass: 'bg-rose-500/15',
     borderClass: 'border-rose-500/40',
@@ -94,6 +108,8 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     emoji: '🟣',
     bg: 'rgba(168,85,247,0.15)',
     border: '#a855f7',
+    textLight: '#6b21a8',
+    textDark: '#c084fc',
     textClass: 'text-purple-700 dark:text-purple-400',
     bgClass: 'bg-purple-500/15',
     borderClass: 'border-purple-500/40',
@@ -104,6 +120,8 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     emoji: '🌙',
     bg: 'rgba(139,92,246,0.15)',
     border: '#8b5cf6',
+    textLight: '#5b21b6',
+    textDark: '#a78bfa',
     textClass: 'text-violet-700 dark:text-violet-400',
     bgClass: 'bg-violet-500/15',
     borderClass: 'border-violet-500/40',
@@ -114,6 +132,8 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     emoji: '🟢',
     bg: 'rgba(16,185,129,0.15)',
     border: '#10b981',
+    textLight: '#065f46',
+    textDark: '#6ee7b7',
     textClass: 'text-emerald-700 dark:text-emerald-400',
     bgClass: 'bg-emerald-500/15',
     borderClass: 'border-emerald-500/40',
