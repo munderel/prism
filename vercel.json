@@ -1,5 +1,5 @@
 {
-  "buildCommand": "next build",
+  "buildCommand": "npm run build",
   "crons": [
     {
       "path": "/api/cron/review-nag",
