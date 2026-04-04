@@ -8,6 +8,8 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   AccessDenied: 'Access denied. You need an invitation to sign in.',
   OAuthAccountNotLinked: 'Access denied. You need an invitation to sign in.',
   access_revoked: 'Your access has been revoked. Contact your admin.',
+  Callback: 'Sign in failed due to a server error. Please try again.',
+  SignInCallbackError: 'Sign in failed due to a server error. Please try again.',
 };
 
 const showDevLogin = process.env.NEXT_PUBLIC_DEV_LOGIN === 'true';
@@ -186,8 +188,9 @@ export default function LoginPage() {
               </p>
             </div>
             <button
-              onClick={() => signIn('google', { callbackUrl: '/settings' })}
-              className="w-full rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white hover:bg-indigo-500 transition-colors"
+              onClick={() => { setLoading(true); signIn('google', { callbackUrl: '/settings' }); }}
+              disabled={loading}
+              className="w-full rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Sign in with Google to set up 2FA
             </button>
@@ -254,8 +257,9 @@ export default function LoginPage() {
             </div>
 
             <button
-              onClick={() => signIn('google', { callbackUrl: '/' })}
-              className="flex items-center justify-center gap-3 w-full px-6 py-3 bg-white text-gray-900 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+              onClick={() => { setLoading(true); signIn('google', { callbackUrl: '/' }); }}
+              disabled={loading}
+              className="flex items-center justify-center gap-3 w-full px-6 py-3 bg-white text-gray-900 rounded-lg font-medium hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24">
                 <path
