@@ -17,39 +17,20 @@ export async function GET() {
   weekEnd.setDate(weekStart.getDate() + 6);
   weekEnd.setHours(23, 59, 59, 999);
 
-  // Get all active user aims (explicit UserAim rows with isActive: true)
+  // Get only explicitly active user aims (no auto-include of default categories)
   const userAims = await prisma.userAim.findMany({
-    where: { userId: auth.userId },
+    where: { userId: auth.userId, isActive: true },
     include: { aimCategory: true },
   });
 
-  // Default aim categories that have no UserAim record yet
-  const userAimCategoryIds = new Set(userAims.map((ua) => ua.aimCategoryId));
-  const defaultCategories = await prisma.aimCategory.findMany({
-    where: { isDefault: true, id: { notIn: Array.from(userAimCategoryIds) } },
-  });
-
-  // Combine: explicit active aims + default categories without a UserAim record
-  const activeAims = [
-    ...userAims
-      .filter((ua) => ua.isActive)
-      .map((ua) => ({
-        aimCategoryId: ua.aimCategoryId,
-        aimCategory: ua.aimCategory,
-        customFrequency: ua.customFrequency,
-        customDuration: ua.customDuration,
-        currentPhase: ua.currentPhase,
-        phaseStartedAt: ua.phaseStartedAt,
-      })),
-    ...defaultCategories.map((cat) => ({
-      aimCategoryId: cat.id,
-      aimCategory: cat,
-      customFrequency: null as number | null,
-      customDuration: null as number | null,
-      currentPhase: 'SEED',
-      phaseStartedAt: new Date(),
-    })),
-  ];
+  const activeAims = userAims.map((ua) => ({
+    aimCategoryId: ua.aimCategoryId,
+    aimCategory: ua.aimCategory,
+    customFrequency: ua.customFrequency,
+    customDuration: ua.customDuration,
+    currentPhase: ua.currentPhase,
+    phaseStartedAt: ua.phaseStartedAt,
+  }));
 
   const existingInstances = await prisma.aimInstance.findMany({
     where: {

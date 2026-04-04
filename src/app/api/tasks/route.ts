@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, createTaskSchema);
   if ('error' in parsed) return parsed.error;
-  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay, parentId } = parsed.data;
+  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay, parentId, assigneeId } = parsed.data;
 
   // IMPROVE tasks require a goalId
   if (taskType === 'IMPROVE' && !goalId) {
@@ -185,6 +185,7 @@ export async function POST(request: NextRequest) {
       preferredTimeEnd: preferredTimeEnd ?? null,
       isWinTheDay: isWinTheDay ?? false,
       parentId: parentId ?? null,
+      assigneeId: assigneeId ?? null,
     },
     include: {
       goal: { select: { id: true, title: true, level: true } },

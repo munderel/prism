@@ -40,6 +40,7 @@ export const createTaskSchema = z.object({
   preferredTimeEnd: z.string().optional().nullable(),
   isWinTheDay: z.boolean().optional(),
   parentId: z.string().optional().nullable(),
+  assigneeId: z.string().optional().nullable(),
 });
 
 export const updateTaskSchema = z.object({

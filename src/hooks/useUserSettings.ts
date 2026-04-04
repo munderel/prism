@@ -3,6 +3,7 @@ import useSWR from 'swr';
 interface UserSettings {
   powerdownTime?: string | null;
   hiddenFeatures?: string[];
+  hasCompletedOnboarding?: boolean;
   [key: string]: unknown;
 }
 

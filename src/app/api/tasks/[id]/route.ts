@@ -64,6 +64,7 @@ export async function PATCH(
   const data: any = pickDefined(body, [
     'title', 'description', 'priority', 'deliverable', 'estimatedMinutes',
     'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay',
+    'assigneeId',
   ]);
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
   if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
@@ -109,6 +110,12 @@ export async function PATCH(
               dueDate: nextDate,
               goalId: task.goalId,
               recurrenceRule: task.recurrenceRule,
+              assigneeId: task.assigneeId,
+              deliverable: task.deliverable,
+              estimatedMinutes: task.estimatedMinutes,
+              preferredTimeStart: task.preferredTimeStart,
+              preferredTimeEnd: task.preferredTimeEnd,
+              processId: task.processId,
             },
           });
         } catch {
