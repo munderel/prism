@@ -2,16 +2,11 @@ import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { NO_STORE } from '@/lib/api-helpers';
+import { NO_STORE, isInviteExpired } from '@/lib/api-helpers';
 import { parseBody, createInvitationSchema } from '@/lib/schemas';
 import { isEmailTransportConfigured, sendInviteEmail } from '@/lib/notifications';
 
-const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RATE_LIMIT_MAX = 10; // max invitations per hour
-
-function isInviteExpired(inv: { status: string; createdAt: Date }): boolean {
-  return inv.status === 'PENDING' && Date.now() - new Date(inv.createdAt).getTime() > INVITE_EXPIRY_MS;
-}
 
 export async function GET() {
   const auth = await requireAdmin();

@@ -112,6 +112,13 @@ export async function safeParseJson<T = any>(
  */
 export const NO_STORE = { headers: { 'Cache-Control': 'no-store' } } as const;
 
+/** Invitation validity window (7 days). */
+export const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function isInviteExpired(inv: { status: string; createdAt: Date }): boolean {
+  return inv.status === 'PENDING' && Date.now() - new Date(inv.createdAt).getTime() > INVITE_EXPIRY_MS;
+}
+
 /**
  * Prisma select for user summary fields -- reuse wherever you include a user relation.
  */

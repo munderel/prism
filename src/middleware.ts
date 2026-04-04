@@ -11,6 +11,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Immediately redirect locked-out users (set when invite is revoked)
+  if (token.isLockedOut) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('error', 'access_revoked');
+    return NextResponse.redirect(loginUrl);
+  }
+
   return NextResponse.next();
 }
 

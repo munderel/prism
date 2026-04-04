@@ -2,9 +2,8 @@ import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, NO_STORE, INVITE_EXPIRY_MS } from '@/lib/api-helpers';
 
-const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const TOKEN_ERROR = 'Invalid invitation token. Please use the link from your invitation email.';
 
 export async function POST(
