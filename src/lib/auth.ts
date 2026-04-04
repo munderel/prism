@@ -248,7 +248,7 @@ export const authOptions: NextAuthOptions = {
 
         // Allow the very first user (bootstrap admin)
         const userCount = await prisma.user.count();
-        if (userCount === 0) return true;
+        if (userCount <= 1) return true;
 
         // No existing account, no valid invitation — block sign-in
         return false;
@@ -262,10 +262,34 @@ export const authOptions: NextAuthOptions = {
     // Write operations run here instead of in callbacks.signIn because
     // events.signIn fires AFTER the PrismaAdapter creates the user,
     // so user.id is always a valid DB record ID.
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       if (account?.provider !== 'google') return;
 
       try {
+        // Defense-in-depth: detect cross-user account linking.
+        // When an existing session cookie is present during a new Google OAuth
+        // flow, NextAuth's callbackHandler links the new Google account to the
+        // session user instead of creating a new user. Detect and remediate by
+        // comparing the OAuth profile email with the DB user's email.
+        if (
+          profile?.email &&
+          user.email &&
+          profile.email.toLowerCase() !== user.email.toLowerCase()
+        ) {
+          await prisma.account.deleteMany({
+            where: {
+              userId: user.id,
+              provider: 'google',
+              providerAccountId: account.providerAccountId,
+            },
+          });
+          console.error(
+            `[auth] Security: Cross-user account linking detected and remediated. ` +
+            `DB user ${user.email} had Google account for ${profile.email} incorrectly linked. Unlinked.`
+          );
+          return;
+        }
+
         // Store Google refresh token (encrypted)
         if (account.refresh_token) {
           if (!process.env.TOKEN_ENCRYPTION_KEY) {
