@@ -133,6 +133,8 @@ export default function AimsPage() {
 
   const completeToday = useCallback(
     async (aimCategoryId: string) => {
+      // Only allow completion for enrolled (active) AIMS
+      if (!isActive(aimCategoryId)) return;
       setCompletingId(aimCategoryId);
       try {
         // Check if an instance exists for today already
@@ -187,7 +189,7 @@ export default function AimsPage() {
 
   const isActive = (catId: string) => {
     const ua = userAimMap.get(catId);
-    return ua ? ua.isActive : true;
+    return ua ? ua.isActive : false;
   };
 
   const getDuration = (cat: AimCategory) => {
@@ -344,8 +346,9 @@ export default function AimsPage() {
   };
 
   function renderSimplifiedSection(title: string, cats: AimCategory[]) {
+    if (cats.length === 0) return null;
     const activeCats = cats.filter((cat) => isActive(cat.id));
-    if (activeCats.length === 0) return null;
+    const inactiveCats = cats.filter((cat) => !isActive(cat.id));
 
     return (
       <section>
@@ -360,7 +363,7 @@ export default function AimsPage() {
                 aim={{
                   id: ua?.id ?? `default-${cat.id}`,
                   aimCategory: { name: cat.name, description: cat.description ?? undefined },
-                  isActive: ua?.isActive ?? true,
+                  isActive: true,
                   currentPhase: ua?.currentPhase ?? 'SEED',
                   currentStreak: ua?.currentStreak ?? 0,
                   bestStreak: ua?.bestStreak ?? 0,
@@ -372,6 +375,22 @@ export default function AimsPage() {
               />
             );
           })}
+          {inactiveCats.map((cat) => (
+            <div
+              key={cat.id}
+              className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 opacity-60 dark:border-gray-800 dark:bg-gray-950"
+            >
+              <span className="text-sm text-[var(--text-muted)]">{cat.name}</span>
+              <button
+                onClick={() => toggleAim(cat.id)}
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-teal-500 hover:bg-teal-500/10 transition-colors"
+                title="Enable this aim"
+              >
+                <ToggleLeft className="h-5 w-5" />
+                Enable
+              </button>
+            </div>
+          ))}
         </div>
       </section>
     );

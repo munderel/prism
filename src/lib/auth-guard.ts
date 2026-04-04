@@ -74,7 +74,7 @@ export async function requireTaskAccess(taskId: string): Promise<AuthResult & { 
     return { error: 'Task not found', status: 404 };
   }
 
-  if (task.ownerId !== result.userId && !result.session.user.isAdmin) {
+  if (task.ownerId !== result.userId && task.assigneeId !== result.userId && !result.session.user.isAdmin) {
     return { error: 'Forbidden', status: 403 };
   }
 

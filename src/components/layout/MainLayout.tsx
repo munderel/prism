@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { SessionProvider } from 'next-auth/react';
 import { LazyMotion, domAnimation, m } from 'framer-motion';
 import { SWRProvider } from '@/app/(app)/swr-provider';
@@ -8,8 +8,34 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { FloatingIdeaButton } from './FloatingIdeaButton';
 import { CommandPalette } from '../CommandPalette';
+import { OnboardingTour } from '../onboarding/OnboardingTour';
+import { useUserSettings } from '@/hooks/useUserSettings';
 
 const SIDEBAR_COLLAPSED_KEY = 'prism-sidebar-collapsed';
+
+function OnboardingGate() {
+  const { data: settings, mutate } = useUserSettings();
+  const [showTour, setShowTour] = useState(false);
+
+  useEffect(() => {
+    if (settings && settings.hasCompletedOnboarding === false) {
+      setShowTour(true);
+    }
+  }, [settings]);
+
+  const handleTourComplete = useCallback(async () => {
+    setShowTour(false);
+    await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hasCompletedOnboarding: true }),
+    });
+    mutate();
+  }, [mutate]);
+
+  if (!showTour) return null;
+  return <OnboardingTour onComplete={handleTourComplete} />;
+}
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -55,6 +81,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           </div>
           <FloatingIdeaButton />
           <CommandPalette />
+          <OnboardingGate />
         </LazyMotion>
       </SWRProvider>
     </SessionProvider>
