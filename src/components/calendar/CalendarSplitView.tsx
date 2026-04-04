@@ -348,9 +348,8 @@ export function CalendarSplitView({
 
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
-        info.event.remove();
         await onCreateWorkBlock?.(start, end);
-        await mutateEvents();
+        mutateEvents();
         return;
       }
 

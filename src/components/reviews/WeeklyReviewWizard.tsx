@@ -404,11 +404,6 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const validateCurrentStep = (): string | null => {
     const stepKey = STEPS[currentStep].key;
     switch (stepKey) {
-      case 'successes_difficulties':
-        if (successes.length === 0 && difficulties.length === 0) {
-          return 'Please add at least one success or difficulty before continuing.';
-        }
-        break;
       case 'mit':
         if (mitTaskPoolSize === 0) break; // No tasks available, allow proceeding
         if (mitTaskPoolSize !== null && mitTaskPoolSize > 0) {
@@ -723,18 +718,18 @@ function CalendarStepContent({
         </button>
       </div>
       {calendarModalOpen && createPortal(
-        <div className="fixed inset-0 z-[200] bg-black/80 flex items-start justify-center pt-[72px] px-2 pb-2">
-          <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
-            <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
+        <div className="fixed inset-0 z-[200] bg-black/80 flex items-start justify-center pt-[72px]">
+          <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-[95vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
               <h3 className="text-lg font-semibold text-[var(--text-primary)]">{stepTitle}</h3>
               <button
                 onClick={onCloseModal}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+                className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
               >
                 Done
               </button>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden p-2">
+            <div className="flex-1 min-h-0 p-2">
               <CalendarSplitView
                 mode={mode}
                 viewMode="week"
