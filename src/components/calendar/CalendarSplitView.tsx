@@ -5,8 +5,10 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction';
+import { useTheme } from 'next-themes';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING } from '@/lib/prism-colors';
+import type { ColorDef } from '@/lib/prism-colors';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,33 +153,34 @@ function formatDuration(minutes: number) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-const DEFAULT_EVENT_COLOR = { bg: '#e0e7ff', border: '#6366f1', text: '#4338ca' };
+const DEFAULT_EVENT_COLOR_LIGHT = { bg: '#e0e7ff', border: '#6366f1', text: '#3730a3' };
+const DEFAULT_EVENT_COLOR_DARK = { bg: '#e0e7ff', border: '#6366f1', text: '#a5b4fc' };
 
-function colorFromDef(c: { bg: string; border: string; color: string }) {
-  return { bg: c.bg, border: c.border, text: c.color };
+function colorFromDef(c: ColorDef, isDark: boolean) {
+  return { bg: c.bg, border: c.border, text: isDark ? c.textDark : c.textLight };
 }
 
-function getEventColor(event: any): { bg: string; border: string; text: string } {
+function getEventColor(event: any, isDark: boolean): { bg: string; border: string; text: string } {
   const props = event.extendedProps ?? {};
 
   if (props.source === 'google') {
-    return colorFromDef(PRISM_COLORS.GOOGLE_CAL);
+    return colorFromDef(PRISM_COLORS.GOOGLE_CAL, isDark);
   }
 
   // Match by task type (IMPROVE, REACT, MAINTENANCE)
   const taskType = props.taskType as keyof typeof PRISM_COLORS | undefined;
   if (taskType && PRISM_COLORS[taskType]) {
-    return colorFromDef(PRISM_COLORS[taskType]);
+    return colorFromDef(PRISM_COLORS[taskType], isDark);
   }
 
   // Match by item type (aim, review)
   const ITEM_TYPE_MAP: Record<string, keyof typeof PRISM_COLORS> = { aim: 'AIM', review: 'REVIEW' };
   const colorKey = ITEM_TYPE_MAP[props.itemType];
   if (colorKey) {
-    return colorFromDef(PRISM_COLORS[colorKey]);
+    return colorFromDef(PRISM_COLORS[colorKey], isDark);
   }
 
-  return DEFAULT_EVENT_COLOR;
+  return isDark ? DEFAULT_EVENT_COLOR_DARK : DEFAULT_EVENT_COLOR_LIGHT;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +276,8 @@ export function CalendarSplitView({
 }: CalendarSplitViewProps) {
   const draggableContainerRef = useRef<HTMLDivElement>(null);
   const calendarRef = useRef<FullCalendar>(null);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme !== 'light';
 
   // Fetch existing calendar events for the date range
   const { events: calendarEvents, refreshEvents: mutateEvents } = useCalendarEvents(
@@ -338,6 +343,19 @@ export function CalendarSplitView({
     })).filter((g) => g.items.length > 0);
   }, [unscheduledItems]);
 
+  // Optimistically add an event to the SWR cache, handling both response shapes
+  const addOptimisticEvent = useCallback(
+    (newEvent: Record<string, any>) => {
+      mutateEvents((currentData: any) => {
+        if (!currentData) return currentData;
+        const events = Array.isArray(currentData) ? currentData : (currentData?.events ?? []);
+        const updated = [...events, newEvent];
+        return Array.isArray(currentData) ? updated : { ...currentData, events: updated };
+      }, { revalidate: true });
+    },
+    [mutateEvents],
+  );
+
   // FullCalendar event receive handler (external drop)
   const handleEventReceive = useCallback(
     async (info: any) => {
@@ -345,11 +363,20 @@ export function CalendarSplitView({
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
       const end = info.event.end ?? new Date(start.getTime() + 60 * 60 * 1000);
+      const title = info.event.title;
 
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
+        info.event.remove();
         await onCreateWorkBlock?.(start, end);
-        mutateEvents();
+        addOptimisticEvent({
+          id: `google-pending-${Date.now()}`,
+          title: title || 'Work Block',
+          start: start.toISOString(),
+          end: end.toISOString(),
+          allDay: false,
+          source: 'google',
+        });
         return;
       }
 
@@ -370,14 +397,28 @@ export function CalendarSplitView({
       }
 
       try {
+        info.event.remove();
         await onSchedule(itemId, itemType, snapStart, snapEnd);
-        mutateEvents();
+        const idPrefix = itemType === 'aim' ? 'aim' : 'task';
+        const source = itemType === 'aim' ? 'aims' : 'tasks';
+        addOptimisticEvent({
+          id: `${idPrefix}-${itemId}`,
+          title,
+          start: snapStart.toISOString(),
+          end: snapEnd.toISOString(),
+          allDay: false,
+          source,
+          itemId,
+          itemType,
+          taskType: info.event.extendedProps?.taskType,
+        });
         onRefresh?.();
       } catch {
-        info.event.remove();
+        // Re-fetch to restore correct state on error
+        mutateEvents();
       }
     },
-    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, calendarEvents],
+    [onSchedule, onCreateWorkBlock, mutateEvents, addOptimisticEvent, onRefresh, mode, calendarEvents],
   );
 
   // Shared handler for event resize and internal drag-move
@@ -397,7 +438,7 @@ export function CalendarSplitView({
   const renderEventContent = useCallback(
     (eventInfo: any) => {
       const { itemId, itemType, source } = eventInfo.event.extendedProps ?? {};
-      const colors = getEventColor(eventInfo.event);
+      const colors = getEventColor(eventInfo.event, isDark);
       const isGoogleEvent = source === 'google';
 
       return (
@@ -431,7 +472,7 @@ export function CalendarSplitView({
         </div>
       );
     },
-    [onUnschedule, mutateEvents, onRefresh],
+    [onUnschedule, mutateEvents, onRefresh, isDark],
   );
 
   return (
