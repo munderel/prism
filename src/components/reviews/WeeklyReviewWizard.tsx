@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { m, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -618,6 +619,8 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 onCreateWorkBlock={step.key === 'work_blocks' ? handleCreateWorkBlock : undefined}
                 onSchedule={handleScheduleItem}
                 onUnschedule={handleUnscheduleItem}
+                onRefresh={() => { mutate(weekTasksSWRKey); mutate(weekAimsSWRKey); }}
+                showWorkBlockTemplates={step.key === 'work_blocks'}
               />
             )}
             {step.key === 'maintenance' && (
@@ -679,6 +682,8 @@ interface CalendarStepContentProps {
   onCreateWorkBlock?: (start: Date, end: Date) => Promise<void>;
   onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => Promise<void>;
   onUnschedule: (itemId: string, itemType: string) => Promise<void>;
+  onRefresh?: () => void;
+  showWorkBlockTemplates?: boolean;
 }
 
 function CalendarStepContent({
@@ -695,6 +700,8 @@ function CalendarStepContent({
   onCreateWorkBlock,
   onSchedule,
   onUnschedule,
+  onRefresh,
+  showWorkBlockTemplates,
 }: CalendarStepContentProps): ReactNode {
   if (isTeamReview) {
     return (
@@ -715,8 +722,8 @@ function CalendarStepContent({
           Open Calendar
         </button>
       </div>
-      {calendarModalOpen && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 flex items-start justify-center pt-[72px] px-2 pb-2">
+      {calendarModalOpen && createPortal(
+        <div className="fixed inset-0 z-[200] bg-black/80 flex items-start justify-center pt-[72px] px-2 pb-2">
           <div className="bg-[var(--surface-default,#fff)] dark:bg-[var(--surface-default,#1a1a2e)] rounded-xl w-full max-w-[98vw] h-[calc(100vh-80px)] flex flex-col overflow-hidden shadow-2xl">
             <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[var(--border-color)]">
               <h3 className="text-lg font-semibold text-[var(--text-primary)]">{stepTitle}</h3>
@@ -737,10 +744,13 @@ function CalendarStepContent({
                 onCreateWorkBlock={onCreateWorkBlock}
                 onSchedule={onSchedule}
                 onUnschedule={onUnschedule}
+                onRefresh={onRefresh}
+                showWorkBlockTemplates={showWorkBlockTemplates}
               />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

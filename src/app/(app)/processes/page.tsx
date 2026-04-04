@@ -1,199 +1,64 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import useSWR from 'swr';
-import { AssigneeFilter } from '@/components/shared/AssigneeFilter';
+import { m, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
-import { ProcessKpiSection } from '@/components/processes/ProcessKpiSection';
-import { useToast } from '@/components/ui/ToastProvider';
 import {
   ListChecks,
   Plus,
+  Upload,
+  Search,
+  ChevronRight,
   Pencil,
   Trash2,
-  ChevronDown,
-  ChevronRight,
-  Upload,
-  User,
-  Calendar,
-  X,
-  ExternalLink,
   Clock,
+  Calendar,
+  User,
   Flame,
-  CheckCircle2,
-  RefreshCw,
 } from 'lucide-react';
+import { AssigneeFilter } from '@/components/shared/AssigneeFilter';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/ToastProvider';
+import { ProcessSkeleton } from '@/components/processes/ProcessSkeleton';
+import { ProcessEmptyState, ProcessListEmptyState } from '@/components/processes/ProcessEmptyState';
+import { ProcessForm } from '@/components/processes/ProcessForm';
+import { FunctionForm } from '@/components/processes/FunctionForm';
+import { ProcessDetailView } from '@/components/processes/ProcessDetailView';
+import { ScheduleModal } from '@/components/processes/ScheduleModal';
+import { ImportPanel } from '@/components/processes/ImportPanel';
+import { CadenceBadge } from '@/components/processes/CadenceBadge';
+import {
+  CADENCE_OPTIONS,
+  INPUT_CLASSES,
+  cadenceNeedsDayOfWeek,
+  cadenceNeedsDayOfMonth,
+} from '@/lib/process-constants';
+import {
+  staggerContainer,
+  staggerItem,
+  springTransition,
+  cardHoverProps,
+} from '@/lib/process-animations';
+import type { BusinessFunction, ProcessData, ProcessFormValues, UserOption } from '@/types/process';
 
-interface Step {
-  id: string;
+// ── Confirm dialog state ──
+
+interface ConfirmState {
+  open: boolean;
   title: string;
-  description: string | null;
-  url: string | null;
-  sortOrder: number;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
 }
 
-interface ProcessData {
-  id: string;
-  title: string;
-  description: string | null;
-  cadence: string;
-  mode: 'BASIC' | 'ADVANCED';
-  subtaskMode: 'PAIRED' | 'UNPAIRED';
-  defaultDurationMinutes: number;
-  scheduledTime: string | null;
-  scheduledDayOfWeek: number | null;
-  scheduledDayOfMonth: number | null;
-  nextDueAt: string | null;
-  assigneeId: string | null;
-  delegateId: string | null;
-  delegateUntil: string | null;
-  assignee: { id: string; name: string | null; email: string } | null;
-  delegate: { id: string; name: string | null; email: string } | null;
-  _count: { steps: number };
-}
-
-interface BusinessFunction {
-  id: string;
-  name: string;
-  description: string | null;
-  processes: ProcessData[];
-}
-
-interface UserOption {
-  id: string;
-  name: string | null;
-  email: string;
-}
-
-const CADENCE_COLORS: Record<string, string> = {
-  DAILY: 'bg-red-900/50 text-red-300 border-red-800',
-  WEEKLY: 'bg-blue-900/50 text-blue-300 border-blue-800',
-  BIWEEKLY: 'bg-cyan-900/50 text-cyan-300 border-cyan-800',
-  MONTHLY: 'bg-purple-900/50 text-purple-300 border-purple-800',
-  QUARTERLY: 'bg-amber-900/50 text-amber-300 border-amber-800',
-  YEARLY: 'bg-green-900/50 text-green-300 border-green-800',
+const CONFIRM_INITIAL: ConfirmState = {
+  open: false,
+  title: '',
+  message: '',
+  confirmLabel: 'Confirm',
+  onConfirm: () => {},
 };
-
-const CADENCE_FALLBACK = 'bg-[var(--surface-raised)] text-[var(--text-secondary)] border-[var(--border-color)]';
-
-const CADENCE_OPTIONS = [
-  { value: 'DAILY', label: 'Daily' },
-  { value: 'WEEKLY', label: 'Weekly' },
-  { value: 'BIWEEKLY', label: 'Biweekly' },
-  { value: 'MONTHLY', label: 'Monthly' },
-  { value: 'QUARTERLY', label: 'Quarterly' },
-  { value: 'YEARLY', label: 'Yearly' },
-] as const;
-
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240] as const;
-
-function formatDurationLabel(mins: number): string {
-  return mins < 60 ? `${mins}m` : `${mins / 60}h`;
-}
-
-function formatDurationDisplay(mins: number): string {
-  if (mins < 60) return `${mins} min`;
-  if (mins % 60 === 0) return `${mins / 60}h`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
-}
-
-function cadenceNeedsDayOfWeek(cadence: string): boolean {
-  return cadence === 'WEEKLY' || cadence === 'BIWEEKLY';
-}
-
-function cadenceNeedsDayOfMonth(cadence: string): boolean {
-  return cadence === 'MONTHLY' || cadence === 'QUARTERLY';
-}
-
-function cadenceNeedsDate(cadence: string): boolean {
-  return cadence === 'YEARLY' || cadence === 'ONE_TIME';
-}
-
-const inputClasses = 'rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none';
-
-interface DurationPickerProps {
-  selected: number;
-  onChange: (mins: number) => void;
-}
-
-function DurationPicker({ selected, onChange }: DurationPickerProps) {
-  return (
-    <div>
-      <label className="block text-xs text-[var(--text-secondary)] mb-1">Default Duration</label>
-      <div className="flex flex-wrap gap-1.5">
-        {DURATION_OPTIONS.map((mins) => (
-          <button
-            key={mins}
-            type="button"
-            onClick={() => onChange(mins)}
-            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-              selected === mins
-                ? 'bg-indigo-600 text-white border border-indigo-600'
-                : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-            }`}
-          >
-            {formatDurationLabel(mins)}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-interface ScheduleFieldsProps {
-  cadence: string;
-  scheduledTime: string;
-  dayOfWeek: number;
-  dayOfMonth: number;
-  onTimeChange: (v: string) => void;
-  onDayOfWeekChange: (v: number) => void;
-  onDayOfMonthChange: (v: number) => void;
-  label: string;
-}
-
-function ScheduleFields({ cadence, scheduledTime, dayOfWeek, dayOfMonth, onTimeChange, onDayOfWeekChange, onDayOfMonthChange, label }: ScheduleFieldsProps) {
-  return (
-    <div>
-      <label className="block text-xs text-[var(--text-secondary)] mb-1">{label}</label>
-      <div className="flex flex-wrap gap-2">
-        <input
-          type="time"
-          value={scheduledTime}
-          onChange={(e) => onTimeChange(e.target.value)}
-          className={inputClasses}
-          placeholder="Time"
-        />
-        {cadenceNeedsDayOfWeek(cadence) && (
-          <select
-            value={dayOfWeek}
-            onChange={(e) => onDayOfWeekChange(Number(e.target.value))}
-            className={inputClasses}
-          >
-            {DAY_NAMES.map((d, i) => (
-              <option key={i} value={i}>{d}</option>
-            ))}
-          </select>
-        )}
-        {cadenceNeedsDayOfMonth(cadence) && (
-          <select
-            value={dayOfMonth}
-            onChange={(e) => onDayOfMonthChange(Number(e.target.value))}
-            className={inputClasses}
-          >
-            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-              <option key={d} value={d}>Day {d}</option>
-            ))}
-          </select>
-        )}
-      </div>
-      {scheduledTime && (
-        <p className="text-xs text-cyan-400 mt-1">Will appear on calendar at {scheduledTime}</p>
-      )}
-    </div>
-  );
-}
 
 export default function ProcessesPage() {
   const { data: session } = useSession();
@@ -201,97 +66,207 @@ export default function ProcessesPage() {
   const userId = session?.user?.id;
   const toast = useToast();
 
+  // ── Data fetching ──
   const { data: functionsData, isLoading: loading, mutate: mutateFunctions } = useSWR('/api/processes');
-  const functions = Array.isArray(functionsData) ? functionsData as BusinessFunction[] : [];
+  const functions = Array.isArray(functionsData) ? (functionsData as BusinessFunction[]) : [];
   const { data: usersData } = useSWR(isAdmin ? '/api/admin' : null);
-  const users = Array.isArray(usersData) ? usersData as UserOption[] : [];
+  const users = Array.isArray(usersData) ? (usersData as UserOption[]) : [];
+  const { data: processStreaks, mutate: mutateStreaks } = useSWR('/api/streaks?type=process');
 
-  // Assignee filter
+  // ── Filters ──
   const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [cadenceFilter, setCadenceFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const filteredFunctions = useMemo(() => {
-    if (!assigneeFilter) return functions;
-    return functions
-      .map((fn: BusinessFunction) => ({
-        ...fn,
-        processes: fn.processes.filter(
-          (p: ProcessData) => p.assigneeId === assigneeFilter || p.delegateId === assigneeFilter
-        ),
-      }))
-      .filter((fn: BusinessFunction) => fn.processes.length > 0);
-  }, [functions, assigneeFilter]);
+    let fns = functions;
+    if (assigneeFilter) {
+      fns = fns
+        .map((fn) => ({
+          ...fn,
+          processes: fn.processes.filter(
+            (p) => p.assigneeId === assigneeFilter || p.delegateId === assigneeFilter
+          ),
+        }))
+        .filter((fn) => fn.processes.length > 0);
+    }
+    if (cadenceFilter) {
+      fns = fns
+        .map((fn) => ({
+          ...fn,
+          processes: fn.processes.filter((p) => p.cadence === cadenceFilter),
+        }))
+        .filter((fn) => fn.processes.length > 0);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      fns = fns
+        .map((fn) => ({
+          ...fn,
+          processes: fn.processes.filter(
+            (p) =>
+              p.title.toLowerCase().includes(q) ||
+              p.description?.toLowerCase().includes(q)
+          ),
+        }))
+        .filter((fn) => fn.processes.length > 0 || fn.name.toLowerCase().includes(q));
+    }
+    return fns;
+  }, [functions, assigneeFilter, cadenceFilter, searchQuery]);
 
-  // Add function form
+  // ── UI state ──
   const [showAddFunction, setShowAddFunction] = useState(false);
-  const [newFnName, setNewFnName] = useState('');
-  const [newFnDesc, setNewFnDesc] = useState('');
-
-  // Edit function
+  const [showImport, setShowImport] = useState(false);
+  const [addingProcessFnId, setAddingProcessFnId] = useState<string | null>(null);
   const [editingFnId, setEditingFnId] = useState<string | null>(null);
   const [editFnName, setEditFnName] = useState('');
   const [editFnDesc, setEditFnDesc] = useState('');
-
-  // Add process form
-  const [addingProcessFnId, setAddingProcessFnId] = useState<string | null>(null);
-  const [newProcTitle, setNewProcTitle] = useState('');
-  const [newProcDesc, setNewProcDesc] = useState('');
-  const [newProcCadence, setNewProcCadence] = useState('WEEKLY');
-  const [newProcAssignee, setNewProcAssignee] = useState('');
-  const [newProcDuration, setNewProcDuration] = useState(60);
-  const [newProcScheduledTime, setNewProcScheduledTime] = useState('');
-  const [newProcDayOfWeek, setNewProcDayOfWeek] = useState(1);
-  const [newProcDayOfMonth, setNewProcDayOfMonth] = useState(1);
-  const [newProcMode, setNewProcMode] = useState<'BASIC' | 'ADVANCED'>('BASIC');
-  const [newProcSubtaskMode, setNewProcSubtaskMode] = useState<'PAIRED' | 'UNPAIRED'>('PAIRED');
-
-  // Expanded process
+  const [editingProcessId, setEditingProcessId] = useState<string | null>(null);
+  const [editingProcessData, setEditingProcessData] = useState<Partial<ProcessFormValues> | null>(null);
   const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null);
   const [expandedProcessData, setExpandedProcessData] = useState<any>(null);
-
-  // Add step form
-  const [showAddStep, setShowAddStep] = useState(false);
-  const [newStepTitle, setNewStepTitle] = useState('');
-  const [newStepDesc, setNewStepDesc] = useState('');
-  const [newStepUrl, setNewStepUrl] = useState('');
-
-  // Edit step
-  const [editingStepId, setEditingStepId] = useState<string | null>(null);
-  const [editStepTitle, setEditStepTitle] = useState('');
-  const [editStepDesc, setEditStepDesc] = useState('');
-  const [editStepUrl, setEditStepUrl] = useState('');
-
-  // Edit process (admin)
-  const [editingProcessId, setEditingProcessId] = useState<string | null>(null);
-  const [editProcTitle, setEditProcTitle] = useState('');
-  const [editProcDesc, setEditProcDesc] = useState('');
-  const [editProcCadence, setEditProcCadence] = useState('');
-  const [editProcAssignee, setEditProcAssignee] = useState('');
-  const [editProcDuration, setEditProcDuration] = useState(60);
-  const [editProcScheduledTime, setEditProcScheduledTime] = useState('');
-  const [editProcDayOfWeek, setEditProcDayOfWeek] = useState(1);
-  const [editProcDayOfMonth, setEditProcDayOfMonth] = useState(1);
-  const [editProcMode, setEditProcMode] = useState<'BASIC' | 'ADVANCED'>('BASIC');
-  const [editProcSubtaskMode, setEditProcSubtaskMode] = useState<'PAIRED' | 'UNPAIRED'>('PAIRED');
-
-  // Delegation
-  const [delegateUserId, setDelegateUserId] = useState('');
-  const [delegateUntil, setDelegateUntil] = useState('');
-
-  // Import
-  const [showImport, setShowImport] = useState(false);
-  const [importJson, setImportJson] = useState('');
-  const [importError, setImportError] = useState('');
-
-  // Process tasks (subtask feature)
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
-  const [addingSubtaskFor, setAddingSubtaskFor] = useState<string | null>(null);
-
-  // Process streaks
-  const { data: processStreaks, mutate: mutateStreaks } = useSWR('/api/streaks?type=process');
-
-  // Completing a basic process
+  const [schedulingProcess, setSchedulingProcess] = useState<ProcessData | null>(null);
+  const [confirmState, setConfirmState] = useState<ConfirmState>(CONFIRM_INITIAL);
   const [completingProcessId, setCompletingProcessId] = useState<string | null>(null);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [creatingTasks, setCreatingTasks] = useState(false);
+
+  // ── Process tasks (for expanded detail) ──
+  const { data: processTasks, mutate: mutateProcessTasks } = useSWR(
+    expandedProcessId ? `/api/tasks?processId=${expandedProcessId}&includeSubtasks=true` : null
+  );
+
+  // ── Helpers ──
+
+  const getProcessStreak = useCallback(
+    (processId: string): number => {
+      if (!Array.isArray(processStreaks)) return 0;
+      const streak = processStreaks.find((s: any) => s.streakType === `process_${processId}`);
+      return streak?.currentCount ?? 0;
+    },
+    [processStreaks]
+  );
+
+  const fetchProcessDetail = useCallback(async (processId: string) => {
+    const res = await fetch(`/api/processes/${processId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setExpandedProcessData(data);
+    }
+  }, []);
+
+  const requestConfirm = (title: string, message: string, confirmLabel: string, onConfirm: () => void) => {
+    setConfirmState({ open: true, title, message, confirmLabel, onConfirm });
+  };
+
+  // ── CRUD Handlers ──
+
+  const handleAddFunction = async (name: string, description: string) => {
+    const res = await fetch('/api/processes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description: description || null }),
+    });
+    if (res.ok) {
+      setShowAddFunction(false);
+      mutateFunctions();
+    }
+  };
+
+  const handleEditFunction = async (id: string) => {
+    const res = await fetch(`/api/processes/functions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editFnName, description: editFnDesc || null }),
+    });
+    if (res.ok) {
+      setEditingFnId(null);
+      mutateFunctions();
+    }
+  };
+
+  const handleDeleteFunction = (id: string) => {
+    requestConfirm(
+      'Delete Function',
+      'This will delete the function and all its processes. This cannot be undone.',
+      'Delete',
+      async () => {
+        const res = await fetch(`/api/processes/functions/${id}`, { method: 'DELETE' });
+        if (res.ok) mutateFunctions();
+        setConfirmState(CONFIRM_INITIAL);
+      }
+    );
+  };
+
+  const handleAddProcess = async (functionId: string, values: ProcessFormValues) => {
+    const res = await fetch(`/api/processes/functions/${functionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: values.title.trim(),
+        description: values.description.trim() || null,
+        cadence: values.cadence,
+        assigneeId: values.assigneeId || null,
+        defaultDurationMinutes: values.defaultDurationMinutes,
+        scheduledTime: values.scheduledTime || null,
+        scheduledDayOfWeek: cadenceNeedsDayOfWeek(values.cadence) ? values.scheduledDayOfWeek : null,
+        scheduledDayOfMonth: cadenceNeedsDayOfMonth(values.cadence) ? values.scheduledDayOfMonth : null,
+        mode: values.mode,
+        subtaskMode: values.subtaskMode,
+      }),
+    });
+    if (res.ok) {
+      setAddingProcessFnId(null);
+      mutateFunctions();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || 'Failed to create process');
+    }
+  };
+
+  const handleEditProcess = async (processId: string, values: ProcessFormValues) => {
+    const res = await fetch(`/api/processes/${processId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: values.title,
+        description: values.description || null,
+        cadence: values.cadence,
+        assigneeId: values.assigneeId || null,
+        defaultDurationMinutes: values.defaultDurationMinutes,
+        scheduledTime: values.scheduledTime || null,
+        scheduledDayOfWeek: cadenceNeedsDayOfWeek(values.cadence) ? values.scheduledDayOfWeek : null,
+        scheduledDayOfMonth: cadenceNeedsDayOfMonth(values.cadence) ? values.scheduledDayOfMonth : null,
+        mode: values.mode,
+        subtaskMode: values.subtaskMode,
+      }),
+    });
+    if (res.ok) {
+      setEditingProcessId(null);
+      setEditingProcessData(null);
+      mutateFunctions();
+      if (expandedProcessId === processId) fetchProcessDetail(processId);
+    }
+  };
+
+  const handleDeleteProcess = (processId: string) => {
+    requestConfirm(
+      'Delete Process',
+      'This will permanently delete this process. This cannot be undone.',
+      'Delete',
+      async () => {
+        const res = await fetch(`/api/processes/${processId}`, { method: 'DELETE' });
+        if (res.ok) {
+          if (expandedProcessId === processId) {
+            setExpandedProcessId(null);
+            setExpandedProcessData(null);
+          }
+          mutateFunctions();
+        }
+        setConfirmState(CONFIRM_INITIAL);
+      }
+    );
+  };
 
   const handleCompleteProcess = async (processId: string) => {
     setCompletingProcessId(processId);
@@ -317,50 +292,134 @@ export default function ProcessesPage() {
     }
   };
 
-  const getProcessStreak = (processId: string): number => {
-    if (!Array.isArray(processStreaks)) return 0;
-    const streak = processStreaks.find((s: any) => s.streakType === `process_${processId}`);
-    return streak?.currentCount ?? 0;
+  const handleRegenerateTasks = (processId: string) => {
+    requestConfirm(
+      'Regenerate Tasks',
+      'This will delete future TODO tasks and recreate them based on the current process steps.',
+      'Regenerate',
+      async () => {
+        setConfirmState(CONFIRM_INITIAL);
+        setRegeneratingId(processId);
+        try {
+          const res = await fetch(`/api/processes/${processId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ regenerate: true }),
+          });
+          if (res.ok) {
+            toast.success('Tasks regenerated');
+            mutateProcessTasks();
+            if (expandedProcessId === processId) fetchProcessDetail(processId);
+          }
+        } catch {
+          toast.error('Failed to regenerate tasks');
+        } finally {
+          setRegeneratingId(null);
+        }
+      }
+    );
   };
 
-  // Regenerate tasks (for ADVANCED mode)
-  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const handleScheduleProcess = async (
+    processId: string,
+    time: string,
+    dayOfWeek?: number,
+    dayOfMonth?: number,
+    date?: string
+  ) => {
+    const payload: Record<string, unknown> = { time };
+    if (dayOfWeek !== undefined) payload.dayOfWeek = dayOfWeek;
+    if (dayOfMonth !== undefined) payload.dayOfMonth = dayOfMonth;
+    if (date) payload.date = date;
 
-  const handleRegenerateTasks = async (processId: string) => {
-    if (!confirm('This will delete future TODO tasks and recreate them. Continue?')) return;
-    setRegeneratingId(processId);
-    try {
-      const res = await fetch(`/api/processes/${processId}`, {
+    const res = await fetch(`/api/processes/${processId}/schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      await fetch(`/api/processes/${processId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ regenerate: true }),
+        body: JSON.stringify({
+          scheduledTime: time,
+          scheduledDayOfWeek: dayOfWeek ?? null,
+          scheduledDayOfMonth: dayOfMonth ?? null,
+        }),
       });
-      if (res.ok) {
-        toast.success('Tasks regenerated');
-        mutateProcessTasks();
-        if (expandedProcessId === processId) fetchProcessDetail(processId);
-      }
-    } catch {
-      toast.error('Failed to regenerate tasks');
-    } finally {
-      setRegeneratingId(null);
+      toast.success(`Scheduled on the calendar`);
+      setSchedulingProcess(null);
+      mutateFunctions();
+      if (expandedProcessId === processId) fetchProcessDetail(processId);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || 'Failed to schedule process');
     }
   };
 
-  // Schedule popup
-  const [schedulingProcess, setSchedulingProcess] = useState<ProcessData | null>(null);
-  const [schedTime, setSchedTime] = useState('09:00');
-  const [schedDayOfWeek, setSchedDayOfWeek] = useState(1); // Monday
-  const [schedDayOfMonth, setSchedDayOfMonth] = useState(1);
-  const [schedDate, setSchedDate] = useState('');
-  const [schedSaving, setSchedSaving] = useState(false);
+  const handleImport = async (json: string): Promise<string | null> => {
+    let parsed;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return 'Invalid JSON';
+    }
+    const res = await fetch('/api/processes/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parsed),
+    });
+    if (res.ok) {
+      mutateFunctions();
+      return null;
+    }
+    const data = await res.json().catch(() => ({}));
+    return data.error || 'Import failed';
+  };
 
+  // Steps CRUD
+  const handleAddStep = async (title: string, description: string | null, url: string | null) => {
+    if (!expandedProcessId) return;
+    const res = await fetch(`/api/processes/${expandedProcessId}/steps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, url }),
+    });
+    if (res.ok) {
+      fetchProcessDetail(expandedProcessId);
+      mutateFunctions();
+    }
+  };
 
-  // Fetch tasks linked to the expanded process
-  const { data: processTasks, mutate: mutateProcessTasks } = useSWR(
-    expandedProcessId ? `/api/tasks?processId=${expandedProcessId}&includeSubtasks=true` : null,
-  );
+  const handleEditStep = async (stepId: string, title: string, description: string | null, url: string | null) => {
+    if (!expandedProcessId) return;
+    const res = await fetch(`/api/processes/${expandedProcessId}/steps/${stepId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, url }),
+    });
+    if (res.ok) fetchProcessDetail(expandedProcessId);
+  };
 
+  const handleDeleteStep = (stepId: string) => {
+    requestConfirm(
+      'Delete Step',
+      'This will permanently delete this step.',
+      'Delete',
+      async () => {
+        if (!expandedProcessId) return;
+        const res = await fetch(`/api/processes/${expandedProcessId}/steps/${stepId}`, { method: 'DELETE' });
+        if (res.ok) {
+          fetchProcessDetail(expandedProcessId);
+          mutateFunctions();
+        }
+        setConfirmState(CONFIRM_INITIAL);
+      }
+    );
+  };
+
+  // Task creation
   const addProcessTask = async (processId: string, title: string, parentId?: string) => {
     if (!title.trim()) return;
     const endOfWeek = new Date();
@@ -379,215 +438,7 @@ export default function ProcessesPage() {
     mutateProcessTasks();
   };
 
-  const fetchProcessDetail = async (processId: string) => {
-    const res = await fetch(`/api/processes/${processId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setExpandedProcessData(data);
-    }
-  };
-
-  const toggleProcess = (processId: string) => {
-    if (expandedProcessId === processId) {
-      setExpandedProcessId(null);
-      setExpandedProcessData(null);
-    } else {
-      setExpandedProcessId(processId);
-      fetchProcessDetail(processId);
-    }
-  };
-
-  // === CRUD handlers ===
-
-  const handleAddFunction = async () => {
-    if (!newFnName.trim()) return;
-    const res = await fetch('/api/processes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newFnName.trim(), description: newFnDesc.trim() || null }),
-    });
-    if (res.ok) {
-      setNewFnName('');
-      setNewFnDesc('');
-      setShowAddFunction(false);
-      mutateFunctions();
-    }
-  };
-
-  const handleEditFunction = async (id: string) => {
-    const res = await fetch(`/api/processes/functions/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editFnName, description: editFnDesc || null }),
-    });
-    if (res.ok) {
-      setEditingFnId(null);
-      mutateFunctions();
-    }
-  };
-
-  const handleDeleteFunction = async (id: string) => {
-    if (!confirm('Delete this function and all its processes?')) return;
-    const res = await fetch(`/api/processes/functions/${id}`, { method: 'DELETE' });
-    if (res.ok) mutateFunctions();
-  };
-
-  const handleAddProcess = async (functionId: string) => {
-    if (!newProcTitle.trim()) return;
-    const res = await fetch(`/api/processes/functions/${functionId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: newProcTitle.trim(),
-        description: newProcDesc.trim() || null,
-        cadence: newProcCadence,
-        assigneeId: newProcAssignee || null,
-        defaultDurationMinutes: newProcDuration,
-        scheduledTime: newProcScheduledTime || null,
-        scheduledDayOfWeek: cadenceNeedsDayOfWeek(newProcCadence) ? newProcDayOfWeek : null,
-        scheduledDayOfMonth: cadenceNeedsDayOfMonth(newProcCadence) ? newProcDayOfMonth : null,
-        mode: newProcMode,
-        subtaskMode: newProcSubtaskMode,
-      }),
-    });
-    if (res.ok) {
-      setNewProcTitle('');
-      setNewProcDesc('');
-      setNewProcCadence('WEEKLY');
-      setNewProcAssignee('');
-      setNewProcDuration(60);
-      setNewProcScheduledTime('');
-      setNewProcDayOfWeek(1);
-      setNewProcDayOfMonth(1);
-      setNewProcMode('BASIC');
-      setNewProcSubtaskMode('PAIRED');
-      setAddingProcessFnId(null);
-      mutateFunctions();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      toast.error(data.error || 'Failed to create process');
-    }
-  };
-
-  const handleEditProcess = async (processId: string) => {
-    const res = await fetch(`/api/processes/${processId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: editProcTitle,
-        description: editProcDesc || null,
-        cadence: editProcCadence,
-        assigneeId: editProcAssignee || null,
-        defaultDurationMinutes: editProcDuration,
-        scheduledTime: editProcScheduledTime || null,
-        scheduledDayOfWeek: cadenceNeedsDayOfWeek(editProcCadence) ? editProcDayOfWeek : null,
-        scheduledDayOfMonth: cadenceNeedsDayOfMonth(editProcCadence) ? editProcDayOfMonth : null,
-        mode: editProcMode,
-        subtaskMode: editProcSubtaskMode,
-      }),
-    });
-    if (res.ok) {
-      setEditingProcessId(null);
-      mutateFunctions();
-      if (expandedProcessId === processId) fetchProcessDetail(processId);
-    }
-  };
-
-  const handleDeleteProcess = async (processId: string) => {
-    if (!confirm('Delete this process?')) return;
-    const res = await fetch(`/api/processes/${processId}`, { method: 'DELETE' });
-    if (res.ok) {
-      if (expandedProcessId === processId) {
-        setExpandedProcessId(null);
-        setExpandedProcessData(null);
-      }
-      mutateFunctions();
-    }
-  };
-
-  const handleAddStep = async () => {
-    if (!newStepTitle.trim() || !expandedProcessId) return;
-    const res = await fetch(`/api/processes/${expandedProcessId}/steps`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: newStepTitle.trim(), description: newStepDesc.trim() || null, url: newStepUrl.trim() || null }),
-    });
-    if (res.ok) {
-      setNewStepTitle('');
-      setNewStepDesc('');
-      setNewStepUrl('');
-      setShowAddStep(false);
-      fetchProcessDetail(expandedProcessId);
-      mutateFunctions();
-    }
-  };
-
-  const handleEditStep = async (stepId: string) => {
-    if (!expandedProcessId) return;
-    const res = await fetch(`/api/processes/${expandedProcessId}/steps/${stepId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: editStepTitle, description: editStepDesc || null, url: editStepUrl || null }),
-    });
-    if (res.ok) {
-      setEditingStepId(null);
-      fetchProcessDetail(expandedProcessId);
-    }
-  };
-
-  const handleDeleteStep = async (stepId: string) => {
-    if (!expandedProcessId) return;
-    if (!confirm('Delete this step?')) return;
-    const res = await fetch(`/api/processes/${expandedProcessId}/steps/${stepId}`, { method: 'DELETE' });
-    if (res.ok) {
-      fetchProcessDetail(expandedProcessId);
-      mutateFunctions();
-    }
-  };
-
-  const handleDelegate = async (processId: string) => {
-    const res = await fetch(`/api/processes/${processId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        delegateId: delegateUserId || null,
-        delegateUntil: delegateUntil || null,
-      }),
-    });
-    if (res.ok) {
-      setDelegateUserId('');
-      setDelegateUntil('');
-      mutateFunctions();
-      if (expandedProcessId === processId) fetchProcessDetail(processId);
-    }
-  };
-
-  const handleImport = async () => {
-    setImportError('');
-    let parsed;
-    try {
-      parsed = JSON.parse(importJson);
-    } catch {
-      setImportError('Invalid JSON');
-      return;
-    }
-    const res = await fetch('/api/processes/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(parsed),
-    });
-    if (res.ok) {
-      setImportJson('');
-      setShowImport(false);
-      mutateFunctions();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setImportError(data.error || 'Import failed');
-    }
-  };
-
-  const [creatingTasks, setCreatingTasks] = useState(false);
-
+  // Create tasks from steps
   const createTasksFromSteps = async (proc: ProcessData) => {
     if (!expandedProcessData?.steps?.length) {
       toast.error('No steps defined for this process');
@@ -595,7 +446,6 @@ export default function ProcessesPage() {
     }
     setCreatingTasks(true);
     try {
-      // Create parent task
       const parentRes = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -612,10 +462,8 @@ export default function ProcessesPage() {
         return;
       }
       const parentTask = await parentRes.json();
-
-      // Create subtasks from each step
       await Promise.all(
-        expandedProcessData.steps.map((step: Step) =>
+        expandedProcessData.steps.map((step: any) =>
           fetch('/api/tasks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -636,75 +484,74 @@ export default function ProcessesPage() {
     }
   };
 
-  const openSchedulePopup = (proc: ProcessData) => {
-    setSchedulingProcess(proc);
-    setSchedTime(proc.scheduledTime || '09:00');
-    setSchedDayOfWeek(proc.scheduledDayOfWeek ?? 1);
-    setSchedDayOfMonth(proc.scheduledDayOfMonth ?? 1);
-    setSchedDate('');
-    setSchedSaving(false);
-  };
-
-  const handleScheduleProcess = async () => {
-    if (!schedulingProcess) return;
-    setSchedSaving(true);
-
-    const payload: Record<string, unknown> = { time: schedTime };
-    const cadence = schedulingProcess.cadence;
-
-    if (cadenceNeedsDayOfWeek(cadence)) payload.dayOfWeek = schedDayOfWeek;
-    if (cadenceNeedsDayOfMonth(cadence)) payload.dayOfMonth = schedDayOfMonth;
-    if (cadenceNeedsDate(cadence)) payload.date = schedDate;
-
-    const res = await fetch(`/api/processes/${schedulingProcess.id}/schedule`, {
-      method: 'POST',
+  // Delegation
+  const handleDelegate = async (processId: string, delegateUserId: string, delegateUntil: string) => {
+    const res = await fetch(`/api/processes/${processId}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        delegateId: delegateUserId || null,
+        delegateUntil: delegateUntil || null,
+      }),
     });
-
-    setSchedSaving(false);
-
     if (res.ok) {
-      // Also persist the scheduled time on the process for recurring calendar display
-      await fetch(`/api/processes/${schedulingProcess.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scheduledTime: schedTime,
-          scheduledDayOfWeek: cadenceNeedsDayOfWeek(cadence) ? schedDayOfWeek : null,
-          scheduledDayOfMonth: cadenceNeedsDayOfMonth(cadence) ? schedDayOfMonth : null,
-        }),
-      });
-      toast.success(`Scheduled "${schedulingProcess.title}" on the calendar`);
-      setSchedulingProcess(null);
       mutateFunctions();
-      if (expandedProcessId === schedulingProcess.id) {
-        fetchProcessDetail(schedulingProcess.id);
-      }
-    } else {
-      const data = await res.json().catch(() => ({}));
-      toast.error(data.error || 'Failed to schedule process');
+      if (expandedProcessId === processId) fetchProcessDetail(processId);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-[var(--text-muted)]">Loading processes...</div>
-      </div>
-    );
-  }
+  // Toggle expand
+  const toggleProcess = (processId: string) => {
+    if (expandedProcessId === processId) {
+      setExpandedProcessId(null);
+      setExpandedProcessData(null);
+    } else {
+      setExpandedProcessId(processId);
+      fetchProcessDetail(processId);
+    }
+  };
+
+  // ── Render ──
+
+  if (loading) return <ProcessSkeleton />;
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      {/* ── Header ── */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-          <ListChecks className="h-6 w-6 text-prism-indigo" />
+          <ListChecks className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
           Processes
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search processes..."
+              className={`pl-9 pr-3 py-2 w-52 ${INPUT_CLASSES}`}
+            />
+          </div>
+
+          {/* Cadence filter */}
+          <select
+            value={cadenceFilter}
+            onChange={(e) => setCadenceFilter(e.target.value)}
+            className={INPUT_CLASSES}
+          >
+            <option value="">All cadences</option>
+            {CADENCE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
           <AssigneeFilter value={assigneeFilter} onChange={setAssigneeFilter} />
+
           {isAdmin && (
             <>
               <button
@@ -726,1007 +573,372 @@ export default function ProcessesPage() {
         </div>
       </div>
 
-      {/* Import JSON panel */}
-      {showImport && isAdmin && (
-        <div className="mb-6 glass-panel p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Import from JSON</h3>
-            <button onClick={() => { setShowImport(false); setImportError(''); }} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <textarea
-            value={importJson}
-            onChange={(e) => setImportJson(e.target.value)}
-            placeholder='{"functions": [{"name": "Marketing", "processes": [...]}]}'
-            rows={8}
-            className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none font-mono"
+      {/* ── Import Panel ── */}
+      <AnimatePresence>
+        {showImport && isAdmin && (
+          <ImportPanel onImport={handleImport} onClose={() => setShowImport(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* ── Add Function Form ── */}
+      <AnimatePresence>
+        {showAddFunction && isAdmin && (
+          <FunctionForm
+            mode="create"
+            onSubmit={handleAddFunction}
+            onCancel={() => setShowAddFunction(false)}
           />
-          {importError && <p className="mt-2 text-sm text-red-400">{importError}</p>}
-          <div className="mt-3 flex gap-2">
-            <button onClick={handleImport} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors">
-              Import
-            </button>
-            <button onClick={() => { setShowImport(false); setImportJson(''); setImportError(''); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
-      {/* Add Function form */}
-      {showAddFunction && isAdmin && (
-        <div className="mb-6 glass-panel p-4">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">New Business Function</h3>
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={newFnName}
-              onChange={(e) => setNewFnName(e.target.value)}
-              placeholder="Function name"
-              autoFocus
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddFunction(); if (e.key === 'Escape') setShowAddFunction(false); }}
-              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-            />
-            <input
-              type="text"
-              value={newFnDesc}
-              onChange={(e) => setNewFnDesc(e.target.value)}
-              placeholder="Description (optional)"
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddFunction(); }}
-              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-            />
-            <div className="flex gap-2">
-              <button onClick={handleAddFunction} disabled={!newFnName.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-                Create
-              </button>
-              <button onClick={() => { setShowAddFunction(false); setNewFnName(''); setNewFnDesc(''); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Empty state with starter templates */}
+      {/* ── Empty state ── */}
       {functions.length === 0 && (
-        <div className="text-center py-12">
-          <ListChecks className="h-12 w-12 text-[var(--border-color)] mx-auto mb-4" />
-          <p className="text-[var(--text-muted)] mb-2">No business functions yet.</p>
-          <p className="text-[var(--text-muted)] text-sm mb-6">
-            {isAdmin ? 'Start with a template or create from scratch.' : 'Ask an admin to set up business functions and processes.'}
-          </p>
-          {isAdmin && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl mx-auto">
-              {[
-                { name: 'Marketing', desc: 'Ad campaigns, content creation, social media' },
-                { name: 'Sales', desc: 'Lead follow-up, proposals, client onboarding' },
-                { name: 'Operations', desc: 'Weekly planning, reporting, team meetings' },
-                { name: 'Product', desc: 'Feature development, bug triage, releases' },
-                { name: 'Finance', desc: 'Invoicing, budgeting, expense tracking' },
-                { name: 'HR', desc: 'Hiring, onboarding, performance reviews' },
-              ].map((tpl) => (
-                <button
-                  key={tpl.name}
-                  onClick={async () => {
-                    await fetch('/api/processes', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ name: tpl.name, description: tpl.desc }),
-                    });
-                    mutateFunctions();
-                  }}
-                  className="glass-panel p-4 text-left hover:border-indigo-500/30 transition-colors"
-                >
-                  <p className="text-sm font-medium text-[var(--text-primary)]">{tpl.name}</p>
-                  <p className="text-xs text-[var(--text-muted)] mt-1">{tpl.desc}</p>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <ProcessEmptyState
+          isAdmin={isAdmin}
+          onCreateFunction={async (name, desc) => {
+            await fetch('/api/processes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, description: desc }),
+            });
+            mutateFunctions();
+          }}
+        />
       )}
 
-      {/* Functions list */}
-      {filteredFunctions.map((fn) => (
-        <details key={fn.id} className="mb-4 glass-panel overflow-hidden" open>
-          <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-[var(--surface)] transition-colors list-none">
-            <div className="flex items-center gap-3">
-              <ChevronRight className="h-4 w-4 text-[var(--text-muted)] details-open-rotate" />
-              <div>
-                {editingFnId === fn.id ? (
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      value={editFnName}
-                      onChange={(e) => setEditFnName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleEditFunction(fn.id); if (e.key === 'Escape') setEditingFnId(null); }}
-                      className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                      autoFocus
-                    />
-                    <input
-                      value={editFnDesc}
-                      onChange={(e) => setEditFnDesc(e.target.value)}
-                      placeholder="Description"
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleEditFunction(fn.id); }}
-                      className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                    />
-                    <button onClick={(e) => { e.stopPropagation(); handleEditFunction(fn.id); }} className="text-indigo-400 hover:text-indigo-300 text-sm">Save</button>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingFnId(null); }} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm">Cancel</button>
-                  </div>
-                ) : (
-                  <>
-                    <h2 className="text-[var(--text-primary)] font-semibold">{fn.name}</h2>
-                    {fn.description && <p className="text-[var(--text-muted)] text-sm">{fn.description}</p>}
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-[var(--text-muted)]">{fn.processes.length} process{fn.processes.length !== 1 ? 'es' : ''}</span>
-              {isAdmin && editingFnId !== fn.id && (
-                <>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setEditingFnId(fn.id); setEditFnName(fn.name); setEditFnDesc(fn.description || ''); }}
-                    className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteFunction(fn.id); }}
-                    className="rounded p-1 text-[var(--text-muted)] hover:text-red-400 hover:bg-[var(--hover-bg)] transition-colors"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </>
-              )}
-            </div>
-          </summary>
-
-          <div className="border-t border-[var(--surface-raised)] p-4">
-            {/* Add process button */}
-            {isAdmin && addingProcessFnId !== fn.id && (
-              <button
-                onClick={() => setAddingProcessFnId(fn.id)}
-                className="mb-4 flex items-center gap-1 rounded-lg border border-dashed border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-muted)] hover:border-[var(--glass-border)] hover:text-[var(--text-secondary)] transition-colors"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Process
-              </button>
-            )}
-
-            {/* Add process form */}
-            {addingProcessFnId === fn.id && (
-              <div className="mb-4 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] p-4">
-                <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3">New Process</h4>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={newProcTitle}
-                    onChange={(e) => setNewProcTitle(e.target.value)}
-                    placeholder="Process title"
-                    autoFocus
-                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={newProcDesc}
-                    onChange={(e) => setNewProcDesc(e.target.value)}
-                    placeholder="Description (optional)"
-                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                  />
-                  <div className="flex gap-2">
-                    <select
-                      value={newProcCadence}
-                      onChange={(e) => setNewProcCadence(e.target.value)}
-                      className={inputClasses}
-                    >
-                      {CADENCE_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={newProcAssignee}
-                      onChange={(e) => setNewProcAssignee(e.target.value)}
-                      className={inputClasses}
-                    >
-                      <option value="">Unassigned</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>{u.name || u.email}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <DurationPicker selected={newProcDuration} onChange={setNewProcDuration} />
-                  <ScheduleFields
-                    cadence={newProcCadence}
-                    scheduledTime={newProcScheduledTime}
-                    dayOfWeek={newProcDayOfWeek}
-                    dayOfMonth={newProcDayOfMonth}
-                    onTimeChange={setNewProcScheduledTime}
-                    onDayOfWeekChange={setNewProcDayOfWeek}
-                    onDayOfMonthChange={setNewProcDayOfMonth}
-                    label="Calendar Schedule"
-                  />
-                  {/* Mode toggle */}
+      {/* ── Functions list (staggered) ── */}
+      <m.div
+        variants={staggerContainer}
+        initial="hidden"
+        animate="show"
+        className="space-y-4"
+      >
+        {filteredFunctions.map((fn) => (
+          <m.div key={fn.id} variants={staggerItem}>
+            <details className="glass-panel overflow-hidden" open>
+              <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-[var(--hover-bg)] transition-colors list-none">
+                <div className="flex items-center gap-3">
+                  <ChevronRight className="h-4 w-4 text-[var(--text-muted)] details-open-rotate" />
                   <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Mode</label>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setNewProcMode('BASIC')}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                          newProcMode === 'BASIC'
-                            ? 'bg-emerald-600 text-white border border-emerald-600'
-                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                        }`}
+                    {editingFnId === fn.id ? (
+                      <div
+                        className="flex items-center gap-2"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        Basic
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewProcMode('ADVANCED')}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                          newProcMode === 'ADVANCED'
-                            ? 'bg-blue-600 text-white border border-blue-600'
-                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                        }`}
-                      >
-                        Advanced
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                      {newProcMode === 'BASIC'
-                        ? 'Shows on calendar as a reminder. Mark complete to track streaks.'
-                        : 'Pre-creates tasks with subtasks for multiple periods ahead.'}
-                    </p>
-                  </div>
-                  {/* Subtask mode (only for ADVANCED) */}
-                  {newProcMode === 'ADVANCED' && (
-                    <div>
-                      <label className="block text-xs text-[var(--text-secondary)] mb-1">Subtask Mode</label>
-                      <div className="flex gap-1.5">
+                        <input
+                          value={editFnName}
+                          onChange={(e) => setEditFnName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleEditFunction(fn.id);
+                            if (e.key === 'Escape') setEditingFnId(null);
+                          }}
+                          className={INPUT_CLASSES}
+                          autoFocus
+                        />
+                        <input
+                          value={editFnDesc}
+                          onChange={(e) => setEditFnDesc(e.target.value)}
+                          placeholder="Description"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleEditFunction(fn.id);
+                          }}
+                          className={INPUT_CLASSES}
+                        />
                         <button
-                          type="button"
-                          onClick={() => setNewProcSubtaskMode('PAIRED')}
-                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                            newProcSubtaskMode === 'PAIRED'
-                              ? 'bg-indigo-600 text-white border border-indigo-600'
-                              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditFunction(fn.id);
+                          }}
+                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 text-sm"
                         >
-                          Paired (Checklist)
+                          Save
                         </button>
                         <button
-                          type="button"
-                          onClick={() => setNewProcSubtaskMode('UNPAIRED')}
-                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                            newProcSubtaskMode === 'UNPAIRED'
-                              ? 'bg-indigo-600 text-white border border-indigo-600'
-                              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingFnId(null);
+                          }}
+                          className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm"
                         >
-                          Unpaired (Separate)
+                          Cancel
                         </button>
                       </div>
-                      <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                        {newProcSubtaskMode === 'PAIRED'
-                          ? 'Steps appear as a checklist inside each task.'
-                          : 'Steps become independent tasks, schedulable separately.'}
-                      </p>
-                    </div>
-                  )}
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={() => handleAddProcess(fn.id)} disabled={!newProcTitle.trim() || !newProcScheduledTime} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-                      Create
-                    </button>
-                    <button onClick={() => { setAddingProcessFnId(null); setNewProcTitle(''); setNewProcDesc(''); setNewProcDuration(60); setNewProcScheduledTime(''); setNewProcMode('BASIC'); setNewProcSubtaskMode('PAIRED'); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                      Cancel
-                    </button>
+                    ) : (
+                      <>
+                        <h2 className="text-[var(--text-primary)] font-display font-semibold">
+                          {fn.name}
+                        </h2>
+                        {fn.description && (
+                          <p className="text-[var(--text-muted)] text-sm">{fn.description}</p>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Process cards */}
-            {fn.processes.length === 0 && (
-              <p className="text-[var(--text-muted)] text-sm py-2">No processes in this function yet.</p>
-            )}
-
-            <div className="space-y-2">
-              {fn.processes.map((proc) => (
-                <div key={proc.id} className="rounded-lg border border-[var(--surface-raised)] bg-background/80">
-                  {/* Process card header */}
-                  <div
-                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--surface)] transition-colors"
-                    onClick={() => toggleProcess(proc.id)}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {expandedProcessId === proc.id ? (
-                        <ChevronDown className="h-4 w-4 text-[var(--text-muted)] shrink-0" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-[var(--text-muted)] shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-medium text-[var(--text-primary)] truncate">{proc.title}</h3>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {proc.assignee && (
-                            <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
-                              <User className="h-3 w-3" />
-                              {proc.assignee.name || proc.assignee.email}
-                            </span>
-                          )}
-                          {proc.nextDueAt && (
-                            <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(proc.nextDueAt).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[proc.cadence] || CADENCE_FALLBACK}`}>
-                        {proc.cadence}
-                      </span>
-                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
-                        proc.mode === 'ADVANCED'
-                          ? 'bg-blue-900/50 text-blue-300 border-blue-800'
-                          : 'bg-emerald-900/50 text-emerald-300 border-emerald-800'
-                      }`}>
-                        {proc.mode || 'BASIC'}
-                      </span>
-                      {getProcessStreak(proc.id) > 0 && (
-                        <span className="flex items-center gap-0.5 text-xs text-amber-400" title={`${getProcessStreak(proc.id)}-period streak`}>
-                          <Flame className="h-3 w-3" />
-                          {getProcessStreak(proc.id)}
-                        </span>
-                      )}
-                      <span className="text-xs text-[var(--text-muted)]">{proc._count.steps} step{proc._count.steps !== 1 ? 's' : ''}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {fn.processes.length} process{fn.processes.length !== 1 ? 'es' : ''}
+                  </span>
+                  {isAdmin && editingFnId !== fn.id && (
+                    <>
                       <button
-                        onClick={(e) => { e.stopPropagation(); openSchedulePopup(proc); }}
-                        className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors ${
-                          proc.scheduledTime
-                            ? 'border-cyan-600/30 bg-cyan-600/10 text-cyan-400 hover:bg-cyan-600/20'
-                            : 'border-indigo-600/30 bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20'
-                        }`}
-                        title={proc.scheduledTime ? `Scheduled at ${proc.scheduledTime} — click to adjust` : 'Schedule on calendar'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingFnId(fn.id);
+                          setEditFnName(fn.name);
+                          setEditFnDesc(fn.description || '');
+                        }}
+                        className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
                       >
-                        {proc.scheduledTime ? (
-                          <>
-                            <Calendar className="h-3 w-3" />
-                            Scheduled · {proc.scheduledTime}
-                          </>
-                        ) : (
-                          <>
-                            <Clock className="h-3 w-3" />
-                            Schedule
-                          </>
-                        )}
+                        <Pencil className="h-3.5 w-3.5" />
                       </button>
-                      {isAdmin && (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingProcessId(proc.id);
-                              setEditProcTitle(proc.title);
-                              setEditProcDesc(proc.description || '');
-                              setEditProcCadence(proc.cadence);
-                              setEditProcAssignee(proc.assigneeId || '');
-                              setEditProcDuration(proc.defaultDurationMinutes ?? 60);
-                              setEditProcScheduledTime(proc.scheduledTime || '');
-                              setEditProcDayOfWeek(proc.scheduledDayOfWeek ?? 1);
-                              setEditProcDayOfMonth(proc.scheduledDayOfMonth ?? 1);
-                              setEditProcMode(proc.mode || 'BASIC');
-                              setEditProcSubtaskMode(proc.subtaskMode || 'PAIRED');
-                            }}
-                            className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteProcess(proc.id); }}
-                            className="rounded p-1 text-[var(--text-muted)] hover:text-red-400 hover:bg-[var(--hover-bg)] transition-colors"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteFunction(fn.id);
+                        }}
+                        className="rounded p-1 text-[var(--text-muted)] hover:text-red-600 dark:hover:text-red-400 hover:bg-[var(--hover-bg)] transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </summary>
 
-                  {/* Edit process form */}
-                  {editingProcessId === proc.id && (
-                    <div className="border-t border-[var(--surface-raised)] p-4" onClick={(e) => e.stopPropagation()}>
-                      <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3">Edit Process</h4>
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={editProcTitle}
-                          onChange={(e) => setEditProcTitle(e.target.value)}
-                          className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={editProcDesc}
-                          onChange={(e) => setEditProcDesc(e.target.value)}
-                          placeholder="Description"
-                          className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                        />
-                        <div className="flex gap-2">
-                          <select
-                            value={editProcCadence}
-                            onChange={(e) => setEditProcCadence(e.target.value)}
-                            className={inputClasses}
-                          >
-                            {CADENCE_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={editProcAssignee}
-                            onChange={(e) => setEditProcAssignee(e.target.value)}
-                            className={inputClasses}
-                          >
-                            <option value="">Unassigned</option>
-                            {users.map((u) => (
-                              <option key={u.id} value={u.id}>{u.name || u.email}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <DurationPicker selected={editProcDuration} onChange={setEditProcDuration} />
-                        <ScheduleFields
-                          cadence={editProcCadence}
-                          scheduledTime={editProcScheduledTime}
-                          dayOfWeek={editProcDayOfWeek}
-                          dayOfMonth={editProcDayOfMonth}
-                          onTimeChange={setEditProcScheduledTime}
-                          onDayOfWeekChange={setEditProcDayOfWeek}
-                          onDayOfMonthChange={setEditProcDayOfMonth}
-                          label="Calendar Schedule"
-                        />
-                        {/* Mode toggle */}
-                        <div>
-                          <label className="block text-xs text-[var(--text-secondary)] mb-1">Mode</label>
-                          <div className="flex gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setEditProcMode('BASIC')}
-                              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                                editProcMode === 'BASIC'
-                                  ? 'bg-emerald-600 text-white border border-emerald-600'
-                                  : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                              }`}
-                            >
-                              Basic
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditProcMode('ADVANCED')}
-                              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                                editProcMode === 'ADVANCED'
-                                  ? 'bg-blue-600 text-white border border-blue-600'
-                                  : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                              }`}
-                            >
-                              Advanced
-                            </button>
-                          </div>
-                        </div>
-                        {editProcMode === 'ADVANCED' && (
-                          <div>
-                            <label className="block text-xs text-[var(--text-secondary)] mb-1">Subtask Mode</label>
-                            <div className="flex gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setEditProcSubtaskMode('PAIRED')}
-                                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                                  editProcSubtaskMode === 'PAIRED'
-                                    ? 'bg-indigo-600 text-white border border-indigo-600'
-                                    : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                                }`}
-                              >
-                                Paired (Checklist)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditProcSubtaskMode('UNPAIRED')}
-                                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                                  editProcSubtaskMode === 'UNPAIRED'
-                                    ? 'bg-indigo-600 text-white border border-indigo-600'
-                                    : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                                }`}
-                              >
-                                Unpaired (Separate)
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex gap-2 pt-1">
-                          <button onClick={() => handleEditProcess(proc.id)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors">
-                            Save
-                          </button>
-                          <button onClick={() => setEditingProcessId(null)} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
+              <div className="border-t border-[var(--border-color)] p-4">
+                {/* Add process button */}
+                {isAdmin && addingProcessFnId !== fn.id && (
+                  <button
+                    onClick={() => setAddingProcessFnId(fn.id)}
+                    className="mb-4 flex items-center gap-1 rounded-lg border border-dashed border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-muted)] hover:border-[var(--glass-border)] hover:text-[var(--text-secondary)] transition-colors"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Process
+                  </button>
+                )}
+
+                {/* Add process form */}
+                <AnimatePresence>
+                  {addingProcessFnId === fn.id && (
+                    <div className="mb-4">
+                      <ProcessForm
+                        mode="create"
+                        users={users}
+                        onSubmit={(values) => handleAddProcess(fn.id, values)}
+                        onCancel={() => setAddingProcessFnId(null)}
+                      />
                     </div>
                   )}
+                </AnimatePresence>
 
-                  {/* Expanded process detail */}
-                  {expandedProcessId === proc.id && expandedProcessData && (
-                    <div className="border-t border-[var(--surface-raised)] p-4">
-                      {/* Description */}
-                      {expandedProcessData.description && (
-                        <p className="text-sm text-[var(--text-secondary)] mb-4">{expandedProcessData.description}</p>
-                      )}
+                {/* Empty state */}
+                {fn.processes.length === 0 && <ProcessListEmptyState />}
 
-                      {/* Delegate info */}
-                      {expandedProcessData.delegate && (
-                        <div className="mb-4 rounded-lg border border-amber-900/50 bg-amber-900/20 p-3">
-                          <p className="text-sm text-amber-300">
-                            Delegated to <span className="font-medium">{expandedProcessData.delegate.name || expandedProcessData.delegate.email}</span>
-                            {expandedProcessData.delegateUntil && (
-                              <> until {new Date(expandedProcessData.delegateUntil).toLocaleDateString()}</>
-                            )}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Delegation section for assignee */}
-                      {proc.assigneeId === userId && (
-                        <div className="mb-4 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] p-3">
-                          <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase mb-2">Delegate This Process</h4>
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={delegateUserId}
-                              onChange={(e) => setDelegateUserId(e.target.value)}
-                              className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-1.5 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                {/* Process cards (staggered) */}
+                <m.div
+                  variants={staggerContainer}
+                  initial="hidden"
+                  animate="show"
+                  className="space-y-2"
+                >
+                  {fn.processes.map((proc) => (
+                    <m.div key={proc.id} variants={staggerItem}>
+                      <m.div
+                        className="glass-panel overflow-hidden group"
+                        {...cardHoverProps}
+                      >
+                        {/* ── Process card header ── */}
+                        <div
+                          className="flex items-start justify-between p-4 cursor-pointer hover:bg-[var(--hover-bg)] transition-colors"
+                          onClick={() => toggleProcess(proc.id)}
+                        >
+                          {/* Left: title + metadata */}
+                          <div className="flex items-start gap-3 min-w-0">
+                            <m.div
+                              animate={{ rotate: expandedProcessId === proc.id ? 90 : 0 }}
+                              transition={springTransition}
+                              className="mt-0.5 shrink-0"
                             >
-                              <option value="">No delegate</option>
-                              {users.map((u) => (
-                                <option key={u.id} value={u.id}>{u.name || u.email}</option>
-                              ))}
-                            </select>
-                            <div className="flex flex-col">
-                              <label className="text-xs text-[var(--text-secondary)] mb-0.5">Delegate until</label>
-                              <input
-                                type="date"
-                                value={delegateUntil}
-                                onChange={(e) => setDelegateUntil(e.target.value)}
-                                className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-1.5 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                              />
-                            </div>
-                            <button
-                              onClick={() => handleDelegate(proc.id)}
-                              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-                            >
-                              Save
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* SOP Steps */}
-                      <div className="mb-3 flex items-center justify-between">
-                        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase">SOP Steps</h4>
-                        {isAdmin && (
-                          <button
-                            onClick={() => setShowAddStep(true)}
-                            className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                          >
-                            <Plus className="h-3 w-3" />
-                            Add Step
-                          </button>
-                        )}
-                      </div>
-
-                      {expandedProcessData.steps?.length === 0 && (
-                        <p className="text-sm text-[var(--text-muted)] py-2">No steps defined yet.</p>
-                      )}
-
-                      <ol className="space-y-2">
-                        {expandedProcessData.steps?.map((step: Step, idx: number) => (
-                          <li key={step.id} className="flex items-start gap-3 glass-panel p-3">
-                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600/20 text-xs font-medium text-indigo-400">
-                              {idx + 1}
-                            </span>
-                            {editingStepId === step.id ? (
-                              <div className="flex-1 space-y-2">
-                                <input
-                                  value={editStepTitle}
-                                  onChange={(e) => setEditStepTitle(e.target.value)}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') handleEditStep(step.id); if (e.key === 'Escape') setEditingStepId(null); }}
-                                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                                  autoFocus
-                                />
-                                <input
-                                  value={editStepDesc}
-                                  onChange={(e) => setEditStepDesc(e.target.value)}
-                                  placeholder="Description"
-                                  onKeyDown={(e) => { if (e.key === 'Enter') handleEditStep(step.id); }}
-                                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                                />
-                                <input
-                                  value={editStepUrl}
-                                  onChange={(e) => setEditStepUrl(e.target.value)}
-                                  placeholder="Link to SOP document (optional)"
-                                  onKeyDown={(e) => { if (e.key === 'Enter') handleEditStep(step.id); }}
-                                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                                />
-                                <div className="flex gap-2">
-                                  <button onClick={() => handleEditStep(step.id)} className="text-xs text-indigo-400 hover:text-indigo-300">Save</button>
-                                  <button onClick={() => setEditingStepId(null)} className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]">Cancel</button>
-                                </div>
+                              <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
+                            </m.div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-display text-sm font-semibold text-[var(--text-primary)] truncate">
+                                  {proc.title}
+                                </h3>
+                                <CadenceBadge cadence={proc.cadence} />
                               </div>
-                            ) : (
-                              <div className="flex-1 min-w-0">
-                                {step.url ? (
-                                  <a href={step.url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1">
-                                    {step.title}
-                                    <ExternalLink className="h-3 w-3" />
-                                  </a>
-                                ) : (
-                                  <p className="text-sm text-[var(--text-primary)]">{step.title}</p>
+                              {/* Secondary metadata */}
+                              <div className="flex items-center gap-3 mt-1">
+                                {proc.assignee && (
+                                  <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+                                    <User className="h-3 w-3" />
+                                    {proc.assignee.name || proc.assignee.email}
+                                  </span>
                                 )}
-                                {step.description && <p className="text-xs text-[var(--text-muted)] mt-0.5">{step.description}</p>}
+                                {proc.nextDueAt && (
+                                  <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+                                    <Calendar className="h-3 w-3" />
+                                    {new Date(proc.nextDueAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                                <span className="text-xs text-[var(--text-muted)]">
+                                  {proc._count.steps} step{proc._count.steps !== 1 ? 's' : ''}
+                                </span>
+                                {getProcessStreak(proc.id) > 0 && (
+                                  <span
+                                    className="flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400"
+                                    title={`${getProcessStreak(proc.id)}-period streak`}
+                                  >
+                                    <Flame className="h-3 w-3" />
+                                    {getProcessStreak(proc.id)}
+                                  </span>
+                                )}
                               </div>
-                            )}
-                            {isAdmin && editingStepId !== step.id && (
-                              <div className="flex items-center gap-1 shrink-0">
+                            </div>
+                          </div>
+
+                          {/* Right: schedule + actions */}
+                          <div className="flex items-center gap-2 shrink-0 ml-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSchedulingProcess(proc);
+                              }}
+                              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors ${
+                                proc.scheduledTime
+                                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20'
+                                  : 'border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/20'
+                              }`}
+                              title={
+                                proc.scheduledTime
+                                  ? `Scheduled at ${proc.scheduledTime}`
+                                  : 'Schedule on calendar'
+                              }
+                            >
+                              {proc.scheduledTime ? (
+                                <>
+                                  <Calendar className="h-3 w-3" />
+                                  {proc.scheduledTime}
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="h-3 w-3" />
+                                  Schedule
+                                </>
+                              )}
+                            </button>
+                            {isAdmin && (
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
-                                  onClick={() => { setEditingStepId(step.id); setEditStepTitle(step.title); setEditStepDesc(step.description || ''); setEditStepUrl(step.url || ''); }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingProcessId(proc.id);
+                                    setEditingProcessData({
+                                      title: proc.title,
+                                      description: proc.description || '',
+                                      cadence: proc.cadence,
+                                      assigneeId: proc.assigneeId || '',
+                                      defaultDurationMinutes: proc.defaultDurationMinutes ?? 60,
+                                      scheduledTime: proc.scheduledTime || '',
+                                      scheduledDayOfWeek: proc.scheduledDayOfWeek ?? 1,
+                                      scheduledDayOfMonth: proc.scheduledDayOfMonth ?? 1,
+                                      mode: proc.mode || 'BASIC',
+                                      subtaskMode: proc.subtaskMode || 'PAIRED',
+                                    });
+                                  }}
                                   className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"
                                 >
-                                  <Pencil className="h-3 w-3" />
+                                  <Pencil className="h-3.5 w-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => handleDeleteStep(step.id)}
-                                  className="rounded p-1 text-[var(--text-muted)] hover:text-red-400 hover:bg-[var(--hover-bg)] transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteProcess(proc.id);
+                                  }}
+                                  className="rounded p-1 text-[var(--text-muted)] hover:text-red-600 dark:hover:text-red-400 hover:bg-[var(--hover-bg)] transition-colors"
                                 >
-                                  <Trash2 className="h-3 w-3" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </div>
                             )}
-                          </li>
-                        ))}
-                      </ol>
+                          </div>
+                        </div>
 
-                      {/* Add step form */}
-                      {showAddStep && isAdmin && (
-                        <div className="mt-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] p-3">
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              value={newStepTitle}
-                              onChange={(e) => setNewStepTitle(e.target.value)}
-                              placeholder="Step title"
-                              autoFocus
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddStep(); if (e.key === 'Escape') setShowAddStep(false); }}
-                              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                            />
-                            <input
-                              type="text"
-                              value={newStepDesc}
-                              onChange={(e) => setNewStepDesc(e.target.value)}
-                              placeholder="Description (optional)"
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddStep(); }}
-                              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                            />
-                            <input
-                              type="text"
-                              value={newStepUrl}
-                              onChange={(e) => setNewStepUrl(e.target.value)}
-                              placeholder="Link to SOP document (optional)"
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddStep(); }}
-                              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                            />
-                            <div className="flex gap-2">
-                              <button onClick={handleAddStep} disabled={!newStepTitle.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-                                Add Step
-                              </button>
-                              <button onClick={() => { setShowAddStep(false); setNewStepTitle(''); setNewStepDesc(''); setNewStepUrl(''); }} className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                                Cancel
-                              </button>
+                        {/* ── Edit process form ── */}
+                        <AnimatePresence>
+                          {editingProcessId === proc.id && editingProcessData && (
+                            <div
+                              className="border-t border-[var(--border-color)] p-4"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ProcessForm
+                                mode="edit"
+                                initialValues={editingProcessData}
+                                users={users}
+                                onSubmit={(values) => handleEditProcess(proc.id, values)}
+                                onCancel={() => {
+                                  setEditingProcessId(null);
+                                  setEditingProcessData(null);
+                                }}
+                              />
                             </div>
-                          </div>
-                        </div>
-                      )}
+                          )}
+                        </AnimatePresence>
 
-                      {/* Mode-specific actions */}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {/* BASIC mode: Mark Complete button */}
-                        {proc.mode !== 'ADVANCED' && (
-                          <button
-                            onClick={() => handleCompleteProcess(proc.id)}
-                            disabled={completingProcessId === proc.id}
-                            className="flex items-center gap-1.5 rounded-lg bg-emerald-600/20 border border-emerald-600/30 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-600/30 transition-colors disabled:opacity-50"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            {completingProcessId === proc.id ? 'Saving...' : 'Mark Complete'}
-                          </button>
-                        )}
-
-                        {/* BASIC mode: Show streak */}
-                        {proc.mode !== 'ADVANCED' && getProcessStreak(proc.id) > 0 && (
-                          <span className="flex items-center gap-1.5 rounded-lg bg-amber-600/20 border border-amber-600/30 px-3 py-1.5 text-xs font-medium text-amber-400">
-                            <Flame className="h-3.5 w-3.5" />
-                            Streak: {getProcessStreak(proc.id)} consecutive {proc.cadence.toLowerCase().replace('_', ' ')} completions
-                          </span>
-                        )}
-
-                        {/* ADVANCED mode: Regenerate button */}
-                        {proc.mode === 'ADVANCED' && (
-                          <button
-                            onClick={() => handleRegenerateTasks(proc.id)}
-                            disabled={regeneratingId === proc.id}
-                            className="flex items-center gap-1.5 rounded-lg bg-blue-600/20 border border-blue-600/30 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-600/30 transition-colors disabled:opacity-50"
-                          >
-                            <RefreshCw className={`h-3.5 w-3.5 ${regeneratingId === proc.id ? 'animate-spin' : ''}`} />
-                            {regeneratingId === proc.id ? 'Regenerating...' : 'Regenerate Tasks'}
-                          </button>
-                        )}
-
-                        {/* Manual create tasks from steps (only for BASIC mode) */}
-                        {proc.mode !== 'ADVANCED' && expandedProcessData.steps?.length > 0 && (
-                          <button
-                            onClick={() => createTasksFromSteps(proc)}
-                            disabled={creatingTasks}
-                            className="flex items-center gap-1.5 rounded-lg bg-cyan-600/20 border border-cyan-600/30 px-3 py-1.5 text-xs font-medium text-cyan-400 hover:bg-cyan-600/30 transition-colors disabled:opacity-50"
-                          >
-                            <ListChecks className="h-3.5 w-3.5" />
-                            {creatingTasks ? 'Creating...' : 'Create tasks from steps'}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Current Cycle Tasks */}
-                      <div className="mt-4">
-                        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase mb-2">Current Tasks</h4>
-                        {Array.isArray(processTasks) && processTasks.length > 0 ? (
-                          <div className="space-y-1">
-                            {processTasks.map((task: any) => (
-                              <div key={task.id}>
-                                <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/[0.03]">
-                                  <span className={`h-2 w-2 rounded-full flex-shrink-0 ${task.status === 'DONE' ? 'bg-green-500' : task.status === 'IN_PROGRESS' ? 'bg-blue-500' : 'bg-gray-500'}`} />
-                                  <span className={`text-sm flex-1 ${task.status === 'DONE' ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
-                                    {task.title}
-                                  </span>
-                                  {task.dueDate && (
-                                    <span className="text-[10px] text-[var(--text-muted)]">
-                                      {new Date(task.dueDate).toLocaleDateString()}
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => { setAddingSubtaskFor(addingSubtaskFor === task.id ? null : task.id); setNewSubtaskTitle(''); }}
-                                    className="text-[10px] text-[var(--text-muted)] hover:text-indigo-400 transition-colors"
-                                    title="Add subtask"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </button>
-                                </div>
-                                {/* Children / subtasks */}
-                                {task.children?.length > 0 && (
-                                  <div className="ml-6 border-l border-[var(--border-color)] pl-2 space-y-0.5">
-                                    {task.children.map((child: any) => (
-                                      <div key={child.id} className="flex items-center gap-2 py-1 px-1">
-                                        <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${child.status === 'DONE' ? 'bg-green-500' : 'bg-gray-500'}`} />
-                                        <span className={`text-xs flex-1 ${child.status === 'DONE' ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-secondary)]'}`}>
-                                          {child.title}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {/* Inline subtask creation */}
-                                {addingSubtaskFor === task.id && (
-                                  <div className="ml-6 mt-1 flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      value={newSubtaskTitle}
-                                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                                      placeholder="Subtask title..."
-                                      className="flex-1 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                                      autoFocus
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && newSubtaskTitle.trim()) {
-                                          addProcessTask(proc.id, newSubtaskTitle, task.id);
-                                          setNewSubtaskTitle('');
-                                        }
-                                        if (e.key === 'Escape') { setAddingSubtaskFor(null); setNewSubtaskTitle(''); }
-                                      }}
-                                    />
-                                    <button
-                                      onClick={() => { addProcessTask(proc.id, newSubtaskTitle, task.id); setNewSubtaskTitle(''); }}
-                                      disabled={!newSubtaskTitle.trim()}
-                                      className="rounded bg-indigo-600 px-2 py-1 text-xs text-white disabled:opacity-50"
-                                    >
-                                      Add
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-[var(--text-muted)]">No tasks yet for this process.</p>
-                        )}
-                        {/* Add new top-level task */}
-                        <div className="mt-2 flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={newTaskTitle}
-                            onChange={(e) => setNewTaskTitle(e.target.value)}
-                            placeholder="Add a task..."
-                            className="flex-1 rounded border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && newTaskTitle.trim()) {
-                                addProcessTask(proc.id, newTaskTitle);
-                                setNewTaskTitle('');
-                              }
-                            }}
-                          />
-                          <button
-                            onClick={() => { addProcessTask(proc.id, newTaskTitle); setNewTaskTitle(''); }}
-                            disabled={!newTaskTitle.trim()}
-                            className="rounded bg-cyan-600 px-3 py-1.5 text-xs text-white disabled:opacity-50 hover:bg-cyan-500 transition-colors"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* KPI section */}
-                      <ProcessKpiSection processId={proc.id} isAdmin={isAdmin} />
-
-                      {/* Recent executions */}
-                      {expandedProcessData.executions?.length > 0 && (
-                        <div className="mt-4">
-                          <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase mb-2">Recent Executions</h4>
-                          <div className="space-y-1">
-                            {expandedProcessData.executions.map((exec: any) => (
-                              <div key={exec.id} className="flex items-center justify-between text-xs text-[var(--text-muted)] py-1">
-                                <span>{new Date(exec.scheduledDate).toLocaleDateString()}</span>
-                                <span>{exec.executedBy?.name || 'Unknown'}</span>
-                                <span className={exec.task?.completedAt ? 'text-green-400' : 'text-yellow-400'}>
-                                  {exec.task?.status || 'N/A'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </details>
-      ))}
-
-      {/* Schedule Process Popup */}
-      {schedulingProcess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSchedulingProcess(null)}>
-          <div className="w-full max-w-md rounded-xl border border-[var(--border-color)] bg-[var(--surface)] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Schedule Process</h3>
-              <button onClick={() => setSchedulingProcess(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <p className="text-sm font-medium text-[var(--text-primary)]">{schedulingProcess.title}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CADENCE_COLORS[schedulingProcess.cadence] || CADENCE_FALLBACK}`}>
-                  {schedulingProcess.cadence}
-                </span>
-                <span className="text-xs text-[var(--text-muted)]">{schedulingProcess.defaultDurationMinutes} min</span>
+                        {/* ── Expanded detail view ── */}
+                        <AnimatePresence initial={false}>
+                          {expandedProcessId === proc.id && expandedProcessData && (
+                            <ProcessDetailView
+                              proc={proc}
+                              expandedData={expandedProcessData}
+                              processTasks={Array.isArray(processTasks) ? processTasks : []}
+                              isAdmin={isAdmin}
+                              userId={userId}
+                              users={users}
+                              streak={getProcessStreak(proc.id)}
+                              completingProcessId={completingProcessId}
+                              regeneratingId={regeneratingId}
+                              creatingTasks={creatingTasks}
+                              onCompleteProcess={handleCompleteProcess}
+                              onRegenerateTasks={handleRegenerateTasks}
+                              onCreateTasksFromSteps={createTasksFromSteps}
+                              onAddStep={handleAddStep}
+                              onEditStep={handleEditStep}
+                              onDeleteStep={handleDeleteStep}
+                              onAddTask={addProcessTask}
+                              onDelegate={handleDelegate}
+                            />
+                          )}
+                        </AnimatePresence>
+                      </m.div>
+                    </m.div>
+                  ))}
+                </m.div>
               </div>
-            </div>
+            </details>
+          </m.div>
+        ))}
+      </m.div>
 
-            <div className="space-y-4">
-              {/* Day-of-week picker for WEEKLY / BIWEEKLY */}
-              {cadenceNeedsDayOfWeek(schedulingProcess.cadence) && (
-                <div>
-                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Day of Week</label>
-                  <div className="flex gap-1">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => setSchedDayOfWeek(i)}
-                        className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition-colors ${
-                          schedDayOfWeek === i
-                            ? 'bg-indigo-600 text-white border border-indigo-600'
-                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                        }`}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+      {/* ── Schedule Modal ── */}
+      <ScheduleModal
+        process={schedulingProcess}
+        onSchedule={handleScheduleProcess}
+        onClose={() => setSchedulingProcess(null)}
+      />
 
-              {/* Day-of-month picker for MONTHLY / QUARTERLY */}
-              {cadenceNeedsDayOfMonth(schedulingProcess.cadence) && (
-                <div>
-                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Day of Month</label>
-                  <div className="flex flex-wrap gap-1">
-                    {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => setSchedDayOfMonth(d)}
-                        className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${
-                          schedDayOfMonth === d
-                            ? 'bg-indigo-600 text-white border border-indigo-600'
-                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                        }`}
-                      >
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Date picker for YEARLY / ONE_TIME */}
-              {cadenceNeedsDate(schedulingProcess.cadence) && (
-                <div>
-                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Date</label>
-                  <input
-                    type="date"
-                    value={schedDate}
-                    onChange={(e) => setSchedDate(e.target.value)}
-                    className={`w-full ${inputClasses}`}
-                  />
-                </div>
-              )}
-
-              {/* Time picker -- always shown */}
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Time</label>
-                <input
-                  type="time"
-                  value={schedTime}
-                  onChange={(e) => setSchedTime(e.target.value)}
-                  className={`w-full ${inputClasses}`}
-                />
-              </div>
-
-              {/* Duration display */}
-              <div className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] p-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-[var(--text-secondary)]">Duration</span>
-                  <span className="text-[var(--text-primary)] font-medium">
-                    {formatDurationDisplay(schedulingProcess.defaultDurationMinutes)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-6">
-              <button
-                onClick={handleScheduleProcess}
-                disabled={schedSaving || (cadenceNeedsDate(schedulingProcess.cadence) && !schedDate)}
-                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-              >
-                <Calendar className="h-4 w-4" />
-                {schedSaving ? 'Scheduling...' : 'Schedule'}
-              </button>
-              <button
-                onClick={() => setSchedulingProcess(null)}
-                className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Confirm Dialog ── */}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant="danger"
+        onConfirm={confirmState.onConfirm}
+        onCancel={() => setConfirmState(CONFIRM_INITIAL)}
+      />
     </div>
   );
 }

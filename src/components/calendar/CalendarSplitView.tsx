@@ -372,8 +372,7 @@ export function CalendarSplitView({
 
       try {
         await onSchedule(itemId, itemType, snapStart, snapEnd);
-        await mutateEvents();
-        info.event.remove();
+        mutateEvents();
         onRefresh?.();
       } catch {
         info.event.remove();
