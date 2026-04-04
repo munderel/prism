@@ -35,4 +35,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# Claude Code
+.claude/
+
+# Docs (internal planning, not for GitHub)
+/docs/
