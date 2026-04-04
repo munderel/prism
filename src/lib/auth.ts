@@ -169,6 +169,7 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true,
 
       authorization: {
         params: {
@@ -247,14 +248,16 @@ export const authOptions: NextAuthOptions = {
         if (invitation) return true;
 
         // Allow the very first user (bootstrap admin)
-        const userCount = await prisma.user.count();
-        if (userCount <= 1) return true;
+        const adminCount = await prisma.user.count({ where: { isAdmin: true } });
+        if (adminCount === 0) return true;
 
         // No existing account, no valid invitation — block sign-in
         return false;
       } catch (error: any) {
         console.error('[auth] signIn callback error:', error.message, error.stack);
-        return false;
+        // Re-throw so NextAuth shows a generic "Callback" error rather than
+        // "AccessDenied" (which implies the user lacks an invitation).
+        throw new Error('SignInCallbackError');
       }
     },
   },
