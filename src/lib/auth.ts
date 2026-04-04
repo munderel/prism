@@ -5,6 +5,7 @@ import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import bcrypt from 'bcryptjs';
 import { encryptToken } from './crypto';
 import { prisma } from './prisma';
+import { INVITE_EXPIRY_MS } from './api-helpers';
 
 // Fields that exist on the Prisma Account model. NextAuth spreads the raw
 // OAuth token response (`...tokens`) into the data passed to linkAccount,
@@ -168,7 +169,7 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
+
       authorization: {
         params: {
           access_type: 'offline',
@@ -187,8 +188,8 @@ export const authOptions: NextAuthOptions = {
         token.adminCheckedAt = Date.now();
       }
 
-      // Re-fetch isAdmin and lockout status from DB every 5 minutes
-      const ADMIN_CACHE_TTL = 5 * 60 * 1000;
+      // Re-fetch isAdmin and lockout status from DB every minute
+      const ADMIN_CACHE_TTL = 60 * 1000;
       if (
         token.id &&
         (!token.adminCheckedAt ||
@@ -221,21 +222,36 @@ export const authOptions: NextAuthOptions = {
     },
     async signIn({ account, user }) {
       try {
-        // For credentials provider, lockout was already checked in authorize()
-        if (account?.provider === 'password-login') return true;
+        if (account?.provider === 'password-login' || account?.provider === 'dev-login') return true;
 
-        // Check lockout status for OAuth providers.
-        // Look up by email (not id) because for new OAuth users, user.id is
-        // a temporary Google profile ID that doesn't exist in the DB yet.
-        if (user.email) {
-          const dbUser = await prisma.user.findUnique({
-            where: { email: user.email },
-            select: { isLockedOut: true },
-          });
-          if (dbUser?.isLockedOut) return false;
-        }
+        if (!user.email) return false;
 
-        return true;
+        const normalizedEmail = user.email.trim().toLowerCase();
+
+        const dbUser = await prisma.user.findUnique({
+          where: { email: normalizedEmail },
+          select: { isLockedOut: true },
+        });
+
+        if (dbUser) return !dbUser.isLockedOut;
+
+        // New user — require a valid pending invitation
+        const invitation = await prisma.invitation.findFirst({
+          where: {
+            email: normalizedEmail,
+            status: 'PENDING',
+            createdAt: { gte: new Date(Date.now() - INVITE_EXPIRY_MS) },
+          },
+        });
+
+        if (invitation) return true;
+
+        // Allow the very first user (bootstrap admin)
+        const userCount = await prisma.user.count();
+        if (userCount === 0) return true;
+
+        // No existing account, no valid invitation — block sign-in
+        return false;
       } catch (error: any) {
         console.error('[auth] signIn callback error:', error.message, error.stack);
         return false;

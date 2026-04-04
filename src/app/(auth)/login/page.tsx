@@ -1,8 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
 import { Lock, Mail, KeyRound, Eye, EyeOff } from 'lucide-react';
+
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  AccessDenied: 'Access denied. You need an invitation to sign in.',
+  OAuthAccountNotLinked: 'Access denied. You need an invitation to sign in.',
+  access_revoked: 'Your access has been revoked. Contact your admin.',
+};
 
 const showDevLogin = process.env.NEXT_PUBLIC_DEV_LOGIN === 'true';
 
@@ -16,6 +22,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlError = params.get('error');
+    if (urlError && AUTH_ERROR_MESSAGES[urlError]) {
+      setError(AUTH_ERROR_MESSAGES[urlError]);
+      // Clean URL so error doesn't persist on refresh after issue is resolved
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   // Dev login
   const [devEmail, setDevEmail] = useState('admin@upwhiten.com');

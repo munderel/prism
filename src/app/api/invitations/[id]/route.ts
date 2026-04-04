@@ -1,13 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { notFoundResponse, NO_STORE } from '@/lib/api-helpers';
-
-const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-
-function isInviteExpired(inv: { status: string; createdAt: Date }): boolean {
-  return inv.status === 'PENDING' && Date.now() - new Date(inv.createdAt).getTime() > INVITE_EXPIRY_MS;
-}
+import { notFoundResponse, NO_STORE, isInviteExpired } from '@/lib/api-helpers';
 
 /** Public endpoint -- unauthenticated invitees can view basic invitation details. */
 export async function GET(
@@ -41,18 +35,73 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const invitation = await prisma.invitation.findUnique({ where: { id } });
 
-  if (!invitation) return notFoundResponse('Invitation');
+  const result = await prisma.$transaction(async (tx) => {
+    const invitation = await tx.invitation.findUnique({ where: { id } });
+    if (!invitation) return { error: 'not_found' as const };
+    if (invitation.status !== 'PENDING' && invitation.status !== 'ACCEPTED') {
+      return { error: 'invalid_status' as const };
+    }
 
-  if (invitation.status !== 'PENDING') {
-    return Response.json({ error: 'Only pending invitations can be revoked' }, { status: 400 });
-  }
+    const inv = await tx.invitation.update({
+      where: { id },
+      data: { status: 'REVOKED', revokedAt: new Date() },
+    });
 
-  const updated = await prisma.invitation.update({
-    where: { id },
-    data: { status: 'REVOKED', revokedAt: new Date() },
+    // Prevent continued access for the associated user
+    const existingUser = await tx.user.findUnique({
+      where: { email: invitation.email },
+      select: { id: true, isAdmin: true },
+    });
+    if (existingUser && !existingUser.isAdmin) {
+      await tx.user.update({
+        where: { id: existingUser.id },
+        data: { isLockedOut: true },
+      });
+    }
+
+    return { data: inv };
   });
 
-  return Response.json(updated, NO_STORE);
+  if ('error' in result) {
+    if (result.error === 'not_found') return notFoundResponse('Invitation');
+    return Response.json({ error: 'Only pending or accepted invitations can be revoked' }, { status: 400 });
+  }
+
+  return Response.json(result.data, NO_STORE);
+}
+
+/** Delete a revoked invitation and its associated user (admin-only cleanup). */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireAdmin();
+  if ('error' in auth) return authError(auth);
+
+  const { id } = await params;
+
+  const result = await prisma.$transaction(async (tx) => {
+    const invitation = await tx.invitation.findUnique({ where: { id } });
+    if (!invitation) return { error: 'not_found' as const };
+    if (invitation.status !== 'REVOKED') return { error: 'invalid_status' as const };
+
+    const existingUser = await tx.user.findUnique({
+      where: { email: invitation.email },
+      select: { id: true, isAdmin: true },
+    });
+    if (existingUser && !existingUser.isAdmin) {
+      await tx.user.delete({ where: { id: existingUser.id } });
+    }
+
+    await tx.invitation.delete({ where: { id } });
+    return { ok: true };
+  });
+
+  if ('error' in result) {
+    if (result.error === 'not_found') return notFoundResponse('Invitation');
+    return Response.json({ error: 'Only revoked invitations can be deleted' }, { status: 400 });
+  }
+
+  return new Response(null, { status: 204 });
 }
