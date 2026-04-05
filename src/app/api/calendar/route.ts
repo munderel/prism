@@ -433,17 +433,13 @@ export async function GET(request: NextRequest) {
     for (const s of pdSessions) {
       if (s.calendarEventId) syncedCalendarEventIds.add(s.calendarEventId);
     }
-    // Build overrides map — only include sessions where the user explicitly
-    // moved the time (not sessions auto-created by sync with the default time).
+    // Build overrides map — only from sessions the user explicitly dragged.
+    // Sessions with calendarEventId were created/updated by the sync route and
+    // may carry stale timeBlock values from an old default — never use those.
     const pdOverrides = new Map<string, { start: Date; end: Date }>();
     for (const s of pdSessions) {
       if (!s.timeBlockStart || !s.timeBlockEnd) continue;
-      // Check if this is a real override (different from default) or just a stale
-      // copy of the default time created by an older sync route
-      const zonedStart = toZonedTime(s.timeBlockStart, userTz);
-      const startH = zonedStart.getHours();
-      const startM = zonedStart.getMinutes();
-      if (startH === pdH && startM === pdM) continue; // matches default — not a real override
+      if (s.calendarEventId) continue; // sync-created — not a user override
 
       const override = { start: s.timeBlockStart, end: s.timeBlockEnd };
       const zoned = toZonedTime(s.sessionDate, userTz);
