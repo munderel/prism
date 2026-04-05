@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
-import { listGoogleEvents, createGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
+import { listGoogleEvents, createGoogleEvent } from '@/lib/calendar';
 import { getCompletionUrl, getAimCompletionUrl, getBaseUrl } from '@/lib/completion-token';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
@@ -93,17 +93,12 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'start and end are required' }, { status: 400 });
   }
 
-  const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
-  if (!hasGoogle) {
-    return Response.json(
-      { error: 'Google Calendar is not connected. Sign out and sign in with Google again to enable sync.' },
-      { status: 400 },
-    );
-  }
-
+  // Single query for all user settings needed by sync (avoids separate getGoogleSyncInfo call)
   const user = await prisma.user.findUnique({
     where: { id: auth.userId },
     select: {
+      googleRefreshToken: true,
+      syncTargetCalendarId: true,
       selectedCalendarIds: true,
       timezone: true,
       powerdownTime: true,
@@ -118,6 +113,14 @@ export async function POST(request: NextRequest) {
       yearlyReviewDuration: true,
     },
   });
+
+  if (!user?.googleRefreshToken) {
+    return Response.json(
+      { error: 'Google Calendar is not connected. Sign out and sign in with Google again to enable sync.' },
+      { status: 400 },
+    );
+  }
+  const targetCalendarId = user.syncTargetCalendarId || 'primary';
 
   const rawIds = Array.isArray(user?.selectedCalendarIds) ? (user.selectedCalendarIds as string[]) : undefined;
   const calendarIds = rawIds === undefined ? undefined
@@ -420,7 +423,7 @@ export async function POST(request: NextRequest) {
       const [h, m] = config.time.split(':').map(Number);
       const evStart = fromZonedTime(`${dateKey}T${pad2(h)}:${pad2(m)}:00`, userTz);
       const evEnd = new Date(evStart.getTime() + config.duration * 60_000);
-      if (evStart < rangeStart || evStart > rangeEnd) continue;
+      if (evStart < rangeStart || evStart >= rangeEnd) continue;
 
       // Upsert a Review record for this occurrence (skip if already exists with calendarEventId)
       const scheduledDate = fromZonedTime(`${dateKey}T00:00:00`, userTz);
@@ -478,8 +481,12 @@ export async function POST(request: NextRequest) {
           });
           updates.push(`Pushed review to Google: ${config.title} (${dateKey})`);
         }
-      } catch {
-        // Continue with other items
+      } catch (err: unknown) {
+        // Handle unique constraint violation gracefully — another sync created this record
+        const isUniqueViolation = typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
+        if (!isUniqueViolation) {
+          console.warn(`[sync] Failed to push review ${config.type} for ${dateKey}:`, err);
+        }
       }
     }
 

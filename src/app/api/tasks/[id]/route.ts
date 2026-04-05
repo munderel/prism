@@ -167,7 +167,7 @@ export async function PATCH(
         }
       }
     };
-    syncCalendar().catch((err) => console.warn('[tasks] Google Calendar sync failed:', err));
+    try { await syncCalendar(); } catch (err) { console.warn('[tasks] Google Calendar sync failed:', err); }
   }
 
   return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });
@@ -189,7 +189,8 @@ export async function DELETE(
   // Delete linked Google Calendar event before removing the task
   if (task.calendarEventId) {
     try {
-      await deleteGoogleEvent(task.ownerId, task.calendarEventId);
+      const { calendarId: targetCalendarId } = await getGoogleSyncInfo(task.ownerId);
+      await deleteGoogleEvent(task.ownerId, task.calendarEventId, targetCalendarId);
     } catch (err) {
       console.warn('[tasks] Google Calendar sync failed on delete:', err);
     }

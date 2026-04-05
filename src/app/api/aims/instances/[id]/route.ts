@@ -184,7 +184,7 @@ export async function PATCH(
         }
       }
     };
-    syncToGcal().catch((err) => console.warn('[aims] Google Calendar sync failed:', err));
+    try { await syncToGcal(); } catch (err) { console.warn('[aims] Google Calendar sync failed:', err); }
   }
 
   return Response.json(updated);
@@ -211,7 +211,9 @@ export async function DELETE(
   if (existing.calendarEventId) {
     const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(existing.userId);
     if (hasGoogle) {
-      await deleteGoogleEvent(existing.userId, existing.calendarEventId, targetCalendarId).catch(() => {});
+      await deleteGoogleEvent(existing.userId, existing.calendarEventId, targetCalendarId).catch((err) => {
+        console.warn('[aims] Failed to delete GCal event on aim delete:', err);
+      });
     }
   }
 

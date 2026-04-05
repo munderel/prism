@@ -130,6 +130,8 @@ export function ProcessForm({
             onDayOfWeekChange={(v) => updateField('scheduledDayOfWeek', v)}
             onDayOfMonthChange={(v) => updateField('scheduledDayOfMonth', v)}
             label="Calendar Schedule"
+            scheduleStartDate={form.scheduleStartDate}
+            onStartDateChange={(v) => updateField('scheduleStartDate', v)}
           />
 
           {/* Advanced settings toggle */}

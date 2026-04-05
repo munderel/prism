@@ -211,6 +211,7 @@ export default function ProcessesPage() {
         scheduledTime: values.scheduledTime || null,
         scheduledDayOfWeek: cadenceNeedsDayOfWeek(values.cadence) ? values.scheduledDayOfWeek : null,
         scheduledDayOfMonth: cadenceNeedsDayOfMonth(values.cadence) ? values.scheduledDayOfMonth : null,
+        scheduleStartDate: values.scheduleStartDate || null,
         mode: values.mode,
         subtaskMode: values.subtaskMode,
       }),
@@ -237,6 +238,7 @@ export default function ProcessesPage() {
         scheduledTime: values.scheduledTime || null,
         scheduledDayOfWeek: cadenceNeedsDayOfWeek(values.cadence) ? values.scheduledDayOfWeek : null,
         scheduledDayOfMonth: cadenceNeedsDayOfMonth(values.cadence) ? values.scheduledDayOfMonth : null,
+        scheduleStartDate: values.scheduleStartDate || null,
         mode: values.mode,
         subtaskMode: values.subtaskMode,
       }),
@@ -844,6 +846,9 @@ export default function ProcessesPage() {
                                       scheduledTime: proc.scheduledTime || '',
                                       scheduledDayOfWeek: proc.scheduledDayOfWeek ?? 1,
                                       scheduledDayOfMonth: proc.scheduledDayOfMonth ?? 1,
+                                      scheduleStartDate: proc.scheduleStartDate
+                                        ? new Date(proc.scheduleStartDate).toISOString().split('T')[0]
+                                        : '',
                                       mode: proc.mode || 'BASIC',
                                       subtaskMode: proc.subtaskMode || 'PAIRED',
                                     });

@@ -108,15 +108,35 @@ export async function generateAdvancedModeTasks(processId: string): Promise<numb
     select: { scheduledDate: true },
   });
 
-  let startFrom = latestExecution?.scheduledDate ?? process.nextDueAt ?? now;
-  // If startFrom is in the past, use now
-  if (startFrom < now) startFrom = now;
+  let startFrom: Date;
+  let firstTaskIsStartDate = false;
+
+  if (!latestExecution && process.scheduleStartDate) {
+    // Brand-new process with explicit start date: use it as anchor
+    const anchor = new Date(process.scheduleStartDate);
+    if (process.scheduledTime) {
+      const [h, m] = process.scheduledTime.split(':').map(Number);
+      anchor.setHours(h, m, 0, 0);
+    }
+    startFrom = anchor;
+    firstTaskIsStartDate = true;
+  } else {
+    startFrom = latestExecution?.scheduledDate ?? process.nextDueAt ?? now;
+    // If startFrom is in the past, use now
+    if (startFrom < now) startFrom = now;
+  }
 
   let created = 0;
   let currentDate = startFrom;
 
   for (let i = 0; i < periodsToCreate; i++) {
-    const dueDate = computeNextDueDate(process.cadence, currentDate);
+    let dueDate: Date;
+    if (firstTaskIsStartDate && i === 0) {
+      // First task lands ON the start date itself
+      dueDate = startFrom;
+    } else {
+      dueDate = computeNextDueDate(process.cadence, currentDate);
+    }
 
     await prisma.$transaction(async (tx) => {
       // Create parent MAINTENANCE task

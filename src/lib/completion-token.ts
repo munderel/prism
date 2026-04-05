@@ -48,5 +48,6 @@ export function getAimCompletionUrl(aimInstanceId: string, userId: string): stri
 // --- Shared helpers ---
 
 export function getBaseUrl(): string {
-  return process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+  const raw = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+  return raw.startsWith('http') ? raw : `https://${raw}`;
 }

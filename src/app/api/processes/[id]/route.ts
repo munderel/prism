@@ -115,6 +115,9 @@ export async function PATCH(
       // Admin-only fields
       ...(isAdmin && pickDefined(body, ['title', 'description', 'cadence', 'cadenceRule', 'defaultDurationMinutes', 'mode', 'subtaskMode'])),
       ...(isAdmin && body.assigneeId !== undefined && { assigneeId: body.assigneeId || null }),
+      ...(isAdmin && body.scheduleStartDate !== undefined && {
+        scheduleStartDate: body.scheduleStartDate ? new Date(body.scheduleStartDate) : null,
+      }),
     },
   });
 
@@ -124,8 +127,9 @@ export async function PATCH(
     const cadenceChanged = body.cadence !== undefined && body.cadence !== process.cadence;
     const subtaskModeChanged = body.subtaskMode !== undefined && body.subtaskMode !== process.subtaskMode;
     const forceRegenerate = body.regenerate === true;
+    const startDateChanged = body.scheduleStartDate !== undefined;
 
-    if (modeChanged || cadenceChanged || subtaskModeChanged || forceRegenerate) {
+    if (modeChanged || cadenceChanged || subtaskModeChanged || forceRegenerate || startDateChanged) {
       regenerateAdvancedModeTasks(id).catch((err) => {
         console.error('[process-update] Failed to regenerate tasks:', err);
       });

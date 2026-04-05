@@ -331,6 +331,7 @@ model Review {
   user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   answers ReviewAnswer[]
 
+  @@unique([userId, reviewType, scheduledDate])
   @@index([userId, reviewType])
   @@index([scheduledDate])
 }
@@ -531,6 +532,7 @@ model Process {
   scheduledTime       String?
   scheduledDayOfWeek  Int?
   scheduledDayOfMonth Int?
+  scheduleStartDate   DateTime?
   sortOrder     Int             @default(0)
   lastRunAt     DateTime?
   nextDueAt     DateTime?
