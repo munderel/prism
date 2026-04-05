@@ -333,13 +333,14 @@ export default function CalendarPage() {
         if (!res.ok) throw new Error('Failed to create work block');
       } else if (item.itemType === 'aim') {
         if (item.aimInstanceId) {
-          await fetch(`/api/aims/instances/${item.aimInstanceId}`, {
+          const res = await fetch(`/api/aims/instances/${item.aimInstanceId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
           });
+          if (!res.ok) throw new Error('Failed to schedule aim');
         } else if (item.aimCategoryId) {
-          await fetch('/api/aims/instances', {
+          const res = await fetch('/api/aims/instances', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -349,15 +350,17 @@ export default function CalendarPage() {
               timeBlockEnd: end.toISOString(),
             }),
           });
+          if (!res.ok) throw new Error('Failed to schedule aim');
         }
         mutateAims();
       } else {
         const taskId = item.taskId || item.id.replace('task-', '');
-        await fetch(`/api/tasks/${taskId}`, {
+        const res = await fetch(`/api/tasks/${taskId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString(), dueDate: start.toISOString() }),
         });
+        if (!res.ok) throw new Error('Failed to schedule task');
         mutateTasks(
           (current: any) => Array.isArray(current) ? current.filter((t: any) => t.id !== taskId) : current,
           { revalidate: false },
@@ -635,7 +638,7 @@ export default function CalendarPage() {
                 </div>
 
                 <p className="text-xs text-[var(--text-muted)] px-4 pt-3 pb-2">
-                  Tap an item, then tap a time slot on the calendar to schedule it.
+                  Tap an item to pick a date and time to schedule it.
                 </p>
 
                 {/* Scrollable item list */}
@@ -681,7 +684,7 @@ export default function CalendarPage() {
                         </div>
                       </div>
                       <div
-                        onClick={() => handleMobileItemTap({ id: '__deep_work_template__', itemType: 'work_block', title: 'Deep Work Block', duration: 120 } as UnscheduledItem)}
+                        onClick={() => handleMobileItemTap({ id: '__deep_work_template__', itemType: 'work_block', title: 'Deep Work Block', duration: 120, aimCategoryId: 'deep-work' } as UnscheduledItem)}
                         className={`cursor-pointer rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors min-h-[44px] ${
                           scheduleModalItem?.id === '__deep_work_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
                         }`}
@@ -748,8 +751,8 @@ function MobileScheduleModal({
   onSchedule: (start: Date, end: Date) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [date, setDate] = useState(getToday);
-  const [time, setTime] = useState(getDefaultTime);
+  const [date, setDate] = useState(() => getToday());
+  const [time, setTime] = useState(() => getDefaultTime());
   const [scheduling, setScheduling] = useState(false);
   const duration = item.duration ?? 60;
 
