@@ -41,14 +41,18 @@ export async function GET(request: NextRequest) {
       select: { id: true },
     });
     accessFilter.OR = [
-      { goalId: { in: companyGoals.map((g) => g.id) } },
-      { taskType: { in: ['REACT', 'MAINTENANCE'] } },
+      { goalId: { in: companyGoals.map((g) => g.id) }, assigneeId: null },
+      { goalId: { in: companyGoals.map((g) => g.id) }, assigneeId: auth.userId },
+      { taskType: { in: ['REACT', 'MAINTENANCE'] }, assigneeId: null },
+      { taskType: { in: ['REACT', 'MAINTENANCE'] }, assigneeId: auth.userId },
     ];
-  } else if (!auth.session.user.isAdmin) {
-    // Non-admins see tasks they own OR are assigned to
+  } else {
+    // Individual scope is the app-wide default: you see tasks assigned to you,
+    // plus your own unassigned tasks. Once a task is assigned away, it should
+    // stop appearing in your personal dashboard/reviews/calendar lists.
     accessFilter.OR = [
-      { ownerId: auth.userId },
       { assigneeId: auth.userId },
+      { ownerId: auth.userId, assigneeId: null },
     ];
   }
 
@@ -59,11 +63,17 @@ export async function GET(request: NextRequest) {
     const rangeEnd = endDate ? parseLocalDate(endDate) : new Date(rangeStart);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
 
-    const rangeCondition = { dueDate: { gte: rangeStart, lt: rangeEnd } };
+    const rangeConditions = [
+      { dueDate: { gte: rangeStart, lt: rangeEnd } },
+      { timeBlockStart: { gte: rangeStart, lt: rangeEnd } },
+    ];
     if (includeUnscheduled) {
-      dateFilter.OR = [rangeCondition, { dueDate: null }];
+      dateFilter.OR = [
+        ...rangeConditions,
+        { dueDate: null, timeBlockStart: null },
+      ];
     } else {
-      Object.assign(dateFilter, rangeCondition);
+      dateFilter.OR = rangeConditions;
     }
   }
 

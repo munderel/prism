@@ -39,7 +39,7 @@ export interface CalendarSplitViewProps {
   onRefresh?: () => void;
   showAimGrouping?: boolean;
   mode?: 'work_blocks' | 'schedule_tasks';
-  onCreateWorkBlock?: (start: Date, end: Date) => void | Promise<void>;
+  onCreateWorkBlock?: (start: Date, end: Date, title?: string) => void | Promise<void>;
   /** Duration in minutes for the Deep Work (AIM Block) template. Defaults to 60. */
   aimBlockDuration?: number;
   /** Show work block template cards at the bottom of the left panel (default mode only). */
@@ -338,11 +338,13 @@ export function CalendarSplitView({
   const [selectedEventPopover, setSelectedEventPopover] = useState<SelectedEventPopover | null>(null);
   const [completingEvent, setCompletingEvent] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
+  const [visibleRange, setVisibleRange] = useState<{ start: string; end: string } | null>(null);
 
-  // Fetch existing calendar events for the date range
+  // Match the main calendar's data flow: fetch the exact visible range
+  // reported by FullCalendar instead of a parent-supplied approximation.
   const { events: calendarEvents, refreshEvents: mutateEvents } = useCalendarEvents(
-    dateRange.start,
-    dateRange.end,
+    visibleRange?.start ?? null,
+    visibleRange?.end ?? null,
   );
 
   // Merge pending work block placeholders with server events.
@@ -405,6 +407,10 @@ export function CalendarSplitView({
     api.gotoDate(dateRange.start);
   }, [dateRange.start]);
 
+  const handleDatesSet = useCallback((info: { startStr: string; endStr: string }) => {
+    setVisibleRange({ start: info.startStr, end: info.endStr });
+  }, []);
+
   // Dismiss popover on outside click
   useEffect(() => {
     if (!selectedEventPopover) return;
@@ -420,8 +426,9 @@ export function CalendarSplitView({
   // Calculate scheduled hours within the date range
   const scheduledMinutes = useMemo(() => {
     if (!displayEvents.length) return 0;
-    const rangeStart = new Date(dateRange.start).getTime();
-    const rangeEnd = new Date(dateRange.end).getTime();
+    const activeRange = visibleRange ?? dateRange;
+    const rangeStart = new Date(activeRange.start).getTime();
+    const rangeEnd = new Date(activeRange.end).getTime();
 
     // Only count user-scheduled work events (tasks, aims) — exclude meetings, google, powerdown, etc.
     const workEvents = displayEvents.filter((evt: any) =>
@@ -438,7 +445,7 @@ export function CalendarSplitView({
       }
       return total;
     }, 0);
-  }, [displayEvents, dateRange]);
+  }, [displayEvents, visibleRange, dateRange]);
 
   // Group unscheduled items
   const groupedItems = useMemo(() => {
@@ -711,7 +718,7 @@ export function CalendarSplitView({
         mutateEvents((currentData: any) => currentData, { revalidate: false });
 
         try {
-          await onCreateWorkBlock?.(start, end);
+          await onCreateWorkBlock?.(start, end, title);
         } catch {
           toast.error('Failed to create work block.');
         }
@@ -970,6 +977,7 @@ export function CalendarSplitView({
             eventDrop={handleEventUpdate}
             eventClick={handleEventClick}
             eventContent={renderEventContent}
+            datesSet={handleDatesSet}
             eventDidMount={(info) => {
               const props = info.event.extendedProps || {};
               if (props.isPinned) {

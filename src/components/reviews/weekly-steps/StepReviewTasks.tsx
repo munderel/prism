@@ -33,9 +33,10 @@ async function getWeekStartDay(): Promise<number> {
 
 interface StepReviewTasksProps {
   reviewId: string;
+  isTeamReview?: boolean;
 }
 
-export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
+export function StepReviewTasks({ reviewId: _reviewId, isTeamReview }: StepReviewTasksProps) {
   const [tasks, setTasks] = useState<CategorizedTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [rescheduleTaskId, setRescheduleTaskId] = useState<string | null>(null);
@@ -45,7 +46,7 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
 
   useEffect(() => {
     fetchAllReviewTasks();
-  }, []);
+  }, [isTeamReview]);
 
   const fetchAllReviewTasks = async () => {
     try {
@@ -66,9 +67,10 @@ export function StepReviewTasks({ reviewId: _reviewId }: StepReviewTasksProps) {
       lastWeekEnd.setHours(23, 59, 59, 999);
 
       // Fetch both in parallel, then merge with deduplication
+      const scopeParam = isTeamReview ? '&scope=company' : '&scope=individual';
       const [lastWeekRes, allRes] = await Promise.all([
-        fetch(`/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}`),
-        fetch('/api/tasks?includeUnscheduled=true'),
+        fetch(`/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}${scopeParam}`),
+        fetch(`/api/tasks?includeUnscheduled=true${scopeParam}`),
       ]);
 
       const seen = new Set<string>();

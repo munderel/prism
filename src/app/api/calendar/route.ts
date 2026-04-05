@@ -119,11 +119,17 @@ export async function GET(request: NextRequest) {
 
   const userSettings = await prisma.user.findUnique({
     where: { id: auth.userId },
-    select: { timezone: true, selectedCalendarIds: true, calendarColorOverrides: true, googleSyncState: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
+    select: { timezone: true, selectedCalendarIds: true, syncTargetCalendarId: true, calendarColorOverrides: true, googleSyncState: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
   });
   const userTz = userSettings?.timezone ?? 'America/New_York';
   const googleSyncState = parseGoogleSyncState(userSettings?.googleSyncState);
-  const calendarIds = parseCalendarIds(userSettings?.selectedCalendarIds);
+  const targetCalendarId = userSettings?.syncTargetCalendarId || 'primary';
+  const parsedCalendarIds = parseCalendarIds(userSettings?.selectedCalendarIds);
+  const calendarIds = parsedCalendarIds === undefined
+    ? [targetCalendarId]
+    : parsedCalendarIds.length > 0
+      ? Array.from(new Set([targetCalendarId, ...parsedCalendarIds]))
+      : [targetCalendarId];
   const colorOverrides = (userSettings?.calendarColorOverrides && typeof userSettings.calendarColorOverrides === 'object' && !Array.isArray(userSettings.calendarColorOverrides))
     ? (userSettings.calendarColorOverrides as Record<string, string>)
     : {};
@@ -135,7 +141,10 @@ export async function GET(request: NextRequest) {
     const [tasks, meetings, googleEvents] = await Promise.all([
       prisma.task.findMany({
         where: {
-          ownerId: auth.userId,
+          OR: [
+            { assigneeId: auth.userId },
+            { ownerId: auth.userId, assigneeId: null },
+          ],
           timeBlockStart: { gte: rangeStart, lte: rangeEnd },
           timeBlockEnd: { not: null },
           status: { notIn: ['DONE', 'DROPPED'] },
@@ -211,10 +220,19 @@ export async function GET(request: NextRequest) {
     (fetchAll || source === 'tasks')
       ? prisma.task.findMany({
           where: {
-            ownerId: auth.userId,
-            OR: [
-              { timeBlockStart: { gte: rangeStart, lte: rangeEnd } },
-              { dueDate: { gte: rangeStart, lte: rangeEnd } },
+            AND: [
+              {
+                OR: [
+                  { assigneeId: auth.userId },
+                  { ownerId: auth.userId, assigneeId: null },
+                ],
+              },
+              {
+                OR: [
+                  { timeBlockStart: { gte: rangeStart, lte: rangeEnd } },
+                  { dueDate: { gte: rangeStart, lte: rangeEnd } },
+                ],
+              },
             ],
           },
           include: { goal: { select: { title: true } } },

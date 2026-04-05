@@ -435,14 +435,23 @@ export async function POST(request: NextRequest) {
   const timezone = user.timezone ?? 'America/New_York';
   const baseUrl = getBaseUrl();
 
-  const [gcalEvents, tasks, aimInstances, processes] = await Promise.all([
+  const [gcalEvents, tasks, aimInstances, processes, reviews, powerdownSessions] = await Promise.all([
     listGoogleEvents(auth.userId, start, end, calendarIds, { showDeleted: true }),
     prisma.task.findMany({
       where: {
-        ownerId: auth.userId,
-        OR: [
-          { calendarEventId: { not: null }, timeBlockStart: { gte: rangeStart, lte: rangeEnd } },
-          { calendarEventId: null, timeBlockStart: { not: null, gte: rangeStart, lte: rangeEnd }, timeBlockEnd: { not: null }, status: { notIn: ['DONE', 'DROPPED'] } },
+        AND: [
+          {
+            OR: [
+              { assigneeId: auth.userId },
+              { ownerId: auth.userId, assigneeId: null },
+            ],
+          },
+          {
+            OR: [
+              { calendarEventId: { not: null }, timeBlockStart: { gte: rangeStart, lte: rangeEnd } },
+              { calendarEventId: null, timeBlockStart: { not: null, gte: rangeStart, lte: rangeEnd }, timeBlockEnd: { not: null }, status: { notIn: ['DONE', 'DROPPED'] } },
+            ],
+          },
         ],
       },
       select: { id: true, title: true, description: true, calendarEventId: true, timeBlockStart: true, timeBlockEnd: true },
@@ -476,6 +485,26 @@ export async function POST(request: NextRequest) {
         scheduledDayOfMonth: true,
         defaultDurationMinutes: true,
       },
+    }),
+    prisma.review.findMany({
+      where: {
+        userId: auth.userId,
+        completedAt: null,
+        calendarEventId: { not: null },
+        OR: [
+          { scheduledDate: { gte: new Date(rangeStart.getTime() - 86400000), lte: new Date(rangeEnd.getTime() + 86400000) } },
+          { timeBlockStart: { gte: rangeStart, lte: rangeEnd } },
+        ],
+      },
+      select: { id: true, reviewType: true, calendarEventId: true },
+    }),
+    prisma.powerdownSession.findMany({
+      where: {
+        userId: auth.userId,
+        calendarEventId: { not: null },
+        sessionDate: { gte: new Date(rangeStart.getTime() - 86400000), lte: new Date(rangeEnd.getTime() + 86400000) },
+      },
+      select: { id: true, calendarEventId: true, sessionDate: true },
     }),
   ]);
 
@@ -572,6 +601,36 @@ export async function POST(request: NextRequest) {
     if (event?.id) {
       await prisma.aimInstance.update({ where: { id: aim.id }, data: { calendarEventId: event.id } });
       updates.push(`Pushed aim to Google: ${title}`);
+    }
+  }
+
+  // Remove legacy one-off review events now that reviews are managed as recurring series.
+  const activeRecurringReviewTypes = new Set<('WEEKLY' | 'MONTHLY' | 'YEARLY')>();
+  if (user.weeklyReviewDayOfWeek != null && user.weeklyReviewTime) activeRecurringReviewTypes.add('WEEKLY');
+  if (user.monthlyReviewRecurrenceRule && user.monthlyReviewTime) activeRecurringReviewTypes.add('MONTHLY');
+  if (user.yearlyReviewRecurrenceRule && user.yearlyReviewTime) activeRecurringReviewTypes.add('YEARLY');
+
+  for (const review of reviews) {
+    if (!review.calendarEventId) continue;
+    if (!activeRecurringReviewTypes.has(review.reviewType)) continue;
+    await deleteGoogleEvent(auth.userId, review.calendarEventId, targetCalendarId).catch(() => {});
+    await prisma.review.update({
+      where: { id: review.id },
+      data: { calendarEventId: null },
+    });
+    updates.push(`Removed legacy ${review.reviewType.toLowerCase()} review event`);
+  }
+
+  // Remove legacy one-off powerdown events now that powerdown is managed as a recurring series.
+  if (user.powerdownTime) {
+    for (const session of powerdownSessions) {
+      if (!session.calendarEventId) continue;
+      await deleteGoogleEvent(auth.userId, session.calendarEventId, targetCalendarId).catch(() => {});
+      await prisma.powerdownSession.update({
+        where: { id: session.id },
+        data: { calendarEventId: null },
+      });
+      updates.push('Removed legacy powerdown event');
     }
   }
 
