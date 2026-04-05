@@ -74,32 +74,6 @@ const passwordProvider = CredentialsProvider({
       const normalizedEmail = credentials.email.trim().toLowerCase();
       console.log('[auth] authorize — attempt for:', normalizedEmail);
 
-      // Rate limiting: check recent failed attempts for this email
-      const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-      const MAX_FAILURES_IN_WINDOW = 5;
-      const LOCKOUT_THRESHOLD = 10;
-      const windowStart = new Date(Date.now() - RATE_WINDOW_MS);
-
-      let recentFailures = 0;
-      try {
-        recentFailures = await prisma.loginAttempt.count({
-          where: {
-            email: normalizedEmail,
-            success: false,
-            createdAt: { gte: windowStart },
-          },
-        });
-      } catch (e: any) {
-        console.error('[auth] authorize — loginAttempt.count failed:', e.message);
-        recentFailures = 0; // Assume no failures if table doesn't exist
-      }
-      console.log('[auth] authorize — recentFailures:', recentFailures, 'threshold:', MAX_FAILURES_IN_WINDOW);
-
-    if (recentFailures >= MAX_FAILURES_IN_WINDOW) {
-      console.log('[auth] authorize — rate limited');
-      return null; // Too many recent failures — deny without checking password
-    }
-
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
     });
@@ -141,45 +115,28 @@ const passwordProvider = CredentialsProvider({
     const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
     console.log('[auth] authorize — password valid:', isValid);
     if (!isValid) {
-      // Record failed attempt
-      try {
-        await prisma.loginAttempt.create({
-          data: { email: normalizedEmail, success: false },
-        });
-      } catch (e: any) {
-        console.error('[auth] authorize — failed to record attempt:', e.message);
-      }
-
-      // Check for lockout: count consecutive failures since last success
-      const lastSuccess = await prisma.loginAttempt.findFirst({
-        where: { email: normalizedEmail, success: true },
-        orderBy: { createdAt: 'desc' },
-      });
-      const consecutiveFailures = await prisma.loginAttempt.count({
-        where: {
-          email: normalizedEmail,
-          success: false,
-          createdAt: { gte: lastSuccess?.createdAt ?? new Date(0) },
-        },
-      });
-      if (consecutiveFailures >= LOCKOUT_THRESHOLD) {
-        await prisma.user.update({
-          where: { email: normalizedEmail },
-          data: { isLockedOut: true },
-        });
-      }
+      // TODO: Record failed attempt (LoginAttempt table disabled)
+      // try {
+      //   await prisma.loginAttempt.create({
+      //     data: { email: normalizedEmail, success: false },
+      //   });
+      // } catch (e: any) {
+      //   console.error('[auth] authorize — failed to record attempt:', e.message);
+      // }
+      console.log('[auth] authorize — failed attempt (not recorded, LoginAttempt table disabled)');
 
       return null;
     }
 
-    // Record successful login
-    try {
-      await prisma.loginAttempt.create({
-        data: { email: normalizedEmail, success: true },
-      });
-    } catch (e: any) {
-      console.error('[auth] authorize — failed to record success:', e.message);
-    }
+    // TODO: Record successful login (LoginAttempt table disabled)
+    // try {
+    //   await prisma.loginAttempt.create({
+    //     data: { email: normalizedEmail, success: true },
+    //   });
+    // } catch (e: any) {
+    //   console.error('[auth] authorize — failed to record success:', e.message);
+    // }
+    console.log('[auth] authorize — successful auth (not recorded, LoginAttempt table disabled)');
 
     // Check 2FA if enabled
     if (user.is2FAEnabled && user.totpSecret) {
