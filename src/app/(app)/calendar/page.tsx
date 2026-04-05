@@ -253,6 +253,7 @@ export default function CalendarPage() {
   const isMobile = useMediaQuery('(max-width: 1023px)');
   const [showMobileSheet, setShowMobileSheet] = useState(false);
   const [scheduleModalItem, setScheduleModalItem] = useState<UnscheduledItem | null>(null);
+  const [calendarNavigateTo, setCalendarNavigateTo] = useState<string | undefined>();
   const [showMeetings, setShowMeetings] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const draggableRef = useRef<Draggable | null>(null);
@@ -547,6 +548,7 @@ export default function CalendarPage() {
               onExternalDrop={handleExternalDrop}
               unscheduledTasks={allUnscheduledItems}
               scheduleSettings={scheduleSettings}
+              navigateTo={calendarNavigateTo}
             />
           </ErrorBoundary>
 
@@ -713,6 +715,7 @@ export default function CalendarPage() {
           onSchedule={async (start, end) => {
             await scheduleMobileItem(scheduleModalItem, start, end);
             setScheduleModalItem(null);
+            setCalendarNavigateTo(start.toISOString());
           }}
           onCancel={() => setScheduleModalItem(null)}
         />
