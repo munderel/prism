@@ -324,12 +324,21 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Build set of synced calendar event IDs for dedup against Google Calendar
+  // Build set of synced calendar event IDs for dedup against Google Calendar.
+  // Any Prism item (task, aim, review, meeting) that has a calendarEventId should
+  // suppress the corresponding Google event to prevent duplicates.
   const syncedCalendarEventIds = new Set<string>();
+  for (const task of tasks) {
+    if (task.calendarEventId) syncedCalendarEventIds.add(task.calendarEventId);
+  }
+  for (const aim of aimInstances) {
+    if (aim.calendarEventId) syncedCalendarEventIds.add(aim.calendarEventId);
+  }
+  for (const review of reviews) {
+    if (review.calendarEventId) syncedCalendarEventIds.add(review.calendarEventId);
+  }
   for (const meeting of meetings) {
-    if (meeting.calendarEventId) {
-      syncedCalendarEventIds.add(meeting.calendarEventId);
-    }
+    if (meeting.calendarEventId) syncedCalendarEventIds.add(meeting.calendarEventId);
   }
 
   for (const meeting of meetings) {
@@ -412,14 +421,21 @@ export async function GET(request: NextRequest) {
         OR: [
           { timeBlockStart: { not: null } },
           { timeBlockEnd: { not: null } },
+          { calendarEventId: { not: null } },
         ],
       },
-      select: { sessionDate: true, timeBlockStart: true, timeBlockEnd: true },
+      select: { sessionDate: true, timeBlockStart: true, timeBlockEnd: true, calendarEventId: true },
     });
+    // Add powerdown calendarEventIds to dedup set
+    for (const s of pdSessions) {
+      if (s.calendarEventId) syncedCalendarEventIds.add(s.calendarEventId);
+    }
     const pdOverrides = new Map<string, { start: Date; end: Date }>();
     for (const s of pdSessions) {
       if (s.timeBlockStart && s.timeBlockEnd) {
-        const dateKey = s.sessionDate.toISOString().split('T')[0];
+        // Use timezone-aware date key to match forEachDayInRange
+        const zoned = toZonedTime(s.sessionDate, userTz);
+        const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
         pdOverrides.set(dateKey, { start: s.timeBlockStart, end: s.timeBlockEnd });
       }
     }
@@ -454,6 +470,16 @@ export async function GET(request: NextRequest) {
 
   // Generate recurring review events (weekly, monthly, yearly)
   if (shouldFetchReviews) {
+    // Build set of dates already covered by DB review records to avoid duplicates
+    const existingReviewDates = new Map<string, Set<string>>();
+    for (const review of reviews) {
+      const type = (review as any).reviewType as string;
+      if (!existingReviewDates.has(type)) existingReviewDates.set(type, new Set());
+      const zoned = toZonedTime(review.scheduledDate, userTz);
+      const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+      existingReviewDates.get(type)!.add(dateKey);
+    }
+
     const reviewConfigs: {
       matchFn: (d: Date) => boolean;
       time: string;
@@ -502,12 +528,15 @@ export async function GET(request: NextRequest) {
       const [h, m] = config.time.split(':').map(Number);
       forEachDayInRange(rangeStart, rangeEnd, userTz, (zonedCursor, dateKey) => {
         if (config.matchFn(zonedCursor)) {
+          // Skip if a DB Review record already exists for this date+type (prevents duplicates)
+          if (existingReviewDates.get(config.type)?.has(dateKey)) return;
           pushTimedEvent(events, rangeStart, rangeEnd, dateKey, h, m, config.duration, userTz, {
             id: `${config.idPrefix}-${dateKey}`,
             title: config.title,
             source: 'reviews',
             color: config.color,
             link: `/reviews?action=start&type=${config.type}&date=${dateKey}`,
+            editable: false,
           });
         }
       });
@@ -547,6 +576,7 @@ export async function GET(request: NextRequest) {
             source: 'reviews',
             color: '#ea580c',
             link: '/reviews',
+            editable: false,
           });
         }
       });

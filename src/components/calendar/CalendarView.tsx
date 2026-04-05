@@ -1180,6 +1180,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           longPressDelay={0}
           droppable={true}
           eventDrop={handleEventDrop}
+          eventResize={handleEventDrop}
           eventReceive={handleEventReceive}
           eventClick={handleEventClick}
           select={onDateSelect}
