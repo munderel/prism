@@ -223,7 +223,11 @@ export const authOptions: NextAuthOptions = {
     },
     async signIn({ account, user }) {
       try {
-        if (account?.provider === 'password-login' || account?.provider === 'dev-login') return true;
+        if (
+          account?.provider === 'password-login' ||
+          account?.provider === 'dev-login' ||
+          account?.type === 'credentials'
+        ) return true;
 
         if (!user.email) return false;
 
