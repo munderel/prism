@@ -212,10 +212,35 @@ export default function AimsPage() {
       const currentlyActive = isActive(catId);
       // Optimistic update
       mutateAims(
-        (current: UserAim[] | undefined) =>
-          (Array.isArray(current) ? current : []).map((ua) =>
-            ua.aimCategoryId === catId ? { ...ua, isActive: !currentlyActive } : ua
-          ),
+        (current: UserAim[] | undefined) => {
+          const list = Array.isArray(current) ? [...current] : [];
+          const index = list.findIndex((ua) => ua.aimCategoryId === catId);
+          if (index >= 0) {
+            list[index] = { ...list[index], isActive: !currentlyActive };
+            return list;
+          }
+
+          const category = categories?.find((cat) => cat.id === catId);
+          if (!category) return list;
+
+          list.push({
+            id: `optimistic-${catId}`,
+            userId: 'me',
+            aimCategoryId: catId,
+            isActive: !currentlyActive,
+            customDuration: null,
+            customFrequency: null,
+            customActivities: null,
+            currentPhase: 'SEED',
+            phaseStartedAt: new Date().toISOString(),
+            completionCount: 0,
+            currentStreak: 0,
+            bestStreak: 0,
+            aimCategory: category,
+          });
+
+          return list;
+        },
         { revalidate: false },
       );
       try {
@@ -226,12 +251,13 @@ export default function AimsPage() {
             aims: [{ aimCategoryId: catId, isActive: !currentlyActive }],
           }),
         });
+        mutateAims();
       } catch {
         mutateAims(); // Revert on error
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userAims, mutateAims]
+    [categories, userAims, mutateAims]
   );
 
   const resetToSeed = useCallback(
@@ -345,6 +371,26 @@ export default function AimsPage() {
     }
   };
 
+  const undoCompleteInstance = async (instanceId: string) => {
+    mutateTodayInstances(
+      (current: AimInstance[] | undefined) =>
+        (Array.isArray(current) ? current : []).map((inst) =>
+          inst.id === instanceId ? { ...inst, status: 'SCHEDULED', completedAt: null } : inst
+        ),
+      { revalidate: false },
+    );
+    try {
+      await fetch(`/api/aims/instances/${instanceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'SCHEDULED' }),
+      });
+      mutateAims();
+    } catch {
+      mutateTodayInstances();
+    }
+  };
+
   function renderSimplifiedSection(title: string, cats: AimCategory[]) {
     if (cats.length === 0) return null;
     const activeCats = cats.filter((cat) => isActive(cat.id));
@@ -372,6 +418,7 @@ export default function AimsPage() {
                 }}
                 todayInstance={inst ? { id: inst.id, status: inst.status } : undefined}
                 onComplete={completeInstance}
+                onUndo={undoCompleteInstance}
               />
             );
           })}
@@ -489,9 +536,14 @@ export default function AimsPage() {
                     editActivities={editActivities}
                     newActivity={newActivity}
                     completedToday={completedTodaySet.has(cat.id)}
+                    todayInstanceId={todayInstanceMap.get(cat.id)?.id}
                     completing={completingId === cat.id}
                     onToggle={() => toggleAim(cat.id)}
                     onComplete={() => completeToday(cat.id)}
+                    onUndoComplete={() => {
+                      const instanceId = todayInstanceMap.get(cat.id)?.id;
+                      if (instanceId) void undoCompleteInstance(instanceId);
+                    }}
                     onStartEdit={() => startEditing(cat)}
                     onSaveEdit={() => saveEditing(cat)}
                     onCancelEdit={() => setEditingId(null)}
@@ -530,9 +582,14 @@ export default function AimsPage() {
                   editActivities={editActivities}
                   newActivity={newActivity}
                   completedToday={completedTodaySet.has(cat.id)}
+                  todayInstanceId={todayInstanceMap.get(cat.id)?.id}
                   completing={completingId === cat.id}
                   onToggle={() => toggleAim(cat.id)}
                   onComplete={() => completeToday(cat.id)}
+                  onUndoComplete={() => {
+                    const instanceId = todayInstanceMap.get(cat.id)?.id;
+                    if (instanceId) void undoCompleteInstance(instanceId);
+                  }}
                   onStartEdit={() => startEditing(cat)}
                   onSaveEdit={() => saveEditing(cat)}
                   onCancelEdit={() => setEditingId(null)}
@@ -590,9 +647,11 @@ interface AimCardProps {
   editActivities: string[];
   newActivity: string;
   completedToday: boolean;
+  todayInstanceId?: string;
   completing: boolean;
   onToggle: () => void;
   onComplete: () => void;
+  onUndoComplete: () => void;
   onStartEdit: () => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
@@ -620,9 +679,11 @@ function AimCard({
   editActivities,
   newActivity,
   completedToday,
+  todayInstanceId,
   completing,
   onToggle,
   onComplete,
+  onUndoComplete,
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
@@ -825,10 +886,21 @@ function AimCard({
       {active && !isEditing && (
         <div className="mt-3 flex items-center gap-2">
           {completedToday ? (
-            <div className="flex items-center gap-1.5 text-xs font-medium text-green-500">
-              <CheckCircle2 className="h-4 w-4" />
-              Completed today
-            </div>
+            <>
+              <div className="flex items-center gap-1.5 text-xs font-medium text-green-500">
+                <CheckCircle2 className="h-4 w-4" />
+                Completed today
+              </div>
+              {todayInstanceId && (
+                <button
+                  onClick={onUndoComplete}
+                  className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Undo
+                </button>
+              )}
+            </>
           ) : (
             <button
               onClick={onComplete}

@@ -32,6 +32,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   // Time blocking is now managed via the calendar drag-to-schedule UI
   const [goals, setGoals] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? '');
   const [deliverable, setDeliverable] = useState(task?.deliverable ?? '');
   const [estimatedMinutes, setEstimatedMinutes] = useState(task?.estimatedMinutes ?? 60);
@@ -51,13 +52,16 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   }, []);
 
   const fetchUsers = async () => {
+    setUsersLoading(true);
     try {
-      const res = await fetch('/api/users');
+      const res = await fetch('/api/users', { cache: 'no-store' });
       if (!res.ok) { setError('Failed to load users'); return; }
       const data = await res.json();
       setUsers(Array.isArray(data) ? data : data.users ?? []);
     } catch {
       setError('Failed to load users');
+    } finally {
+      setUsersLoading(false);
     }
   };
 
@@ -304,23 +308,23 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             </div>
 
             {/* Assignee selector */}
-            {users.length > 0 && (
-              <div>
-                <label className="block text-sm text-[var(--text-secondary)] mb-1">Assignee</label>
-                <select
-                  value={assigneeId}
-                  onChange={(e) => setAssigneeId(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                >
-                  <option value="">Unassigned</option>
-                  {users.map((u: any) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name || u.email}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Assignee</label>
+              <select
+                value={assigneeId}
+                onChange={(e) => setAssigneeId(e.target.value)}
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="">
+                  {usersLoading ? 'Loading users...' : users.length > 0 ? 'Unassigned' : 'No users found'}
+                </option>
+                {users.map((u: any) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name || u.email}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             {/* Goal selector for IMPROVE */}
             {taskType === 'IMPROVE' && !isEditing && (
