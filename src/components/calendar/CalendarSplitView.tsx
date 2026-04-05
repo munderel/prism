@@ -371,13 +371,32 @@ export function CalendarSplitView({
 
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
+        // Remove the ghost — we'll inject a local placeholder into SWR instead
+        info.event.remove();
+        const placeholderId = `work-block-${Date.now()}`;
+        const placeholder = {
+          id: placeholderId,
+          title: title || 'Work Block',
+          start: start.toISOString(),
+          end: end.toISOString(),
+          allDay: false,
+          source: 'google',
+        };
+        // Inject placeholder into SWR cache so it renders immediately
+        mutateEvents((currentData: any) => {
+          if (!currentData) return currentData;
+          const events = Array.isArray(currentData) ? currentData : (currentData?.events ?? []);
+          const updated = [...events, placeholder];
+          return Array.isArray(currentData) ? updated : { ...currentData, events: updated };
+        }, { revalidate: false });
+
         try {
           await onCreateWorkBlock?.(start, end);
-          info.event.remove();
-          await mutateEvents();
+          // Revalidate after a short delay to allow Google API propagation
+          setTimeout(() => mutateEvents(), 2000);
         } catch {
-          info.event.remove();
-          await mutateEvents();
+          // Remove placeholder on failure
+          mutateEvents();
           toast.error('Failed to create work block.');
         }
         return;
