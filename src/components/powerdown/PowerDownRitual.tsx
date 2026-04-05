@@ -301,7 +301,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         }));
 
       const aimItems = aims.map((a: any) => ({
-        id: a.id,
+        id: `aim-instance-${a.id}`,
         itemType: 'aim' as const,
         title: a.title,
         duration: a.duration ?? 60,
@@ -438,6 +438,14 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const handleItemUnscheduled = useCallback(async (itemId: string, itemType: string) => {
     if (itemType === 'task') {
       await fetch(`/api/tasks/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
+      });
+    } else if (itemType === 'aim') {
+      const instanceId = itemId.startsWith('aim-instance-')
+        ? itemId.replace('aim-instance-', '') : itemId;
+      await fetch(`/api/aims/instances/${instanceId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),

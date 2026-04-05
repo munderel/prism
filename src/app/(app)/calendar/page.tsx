@@ -12,6 +12,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useToast } from '@/components/ui/ToastProvider';
 import { freshFetcher } from '@/lib/fetcher';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { fromZonedTime } from 'date-fns-tz';
 
 // FullCalendar needs dynamic import (no SSR)
 const CalendarView = dynamic(
@@ -391,7 +392,7 @@ export default function CalendarPage() {
       const taskId = itemId.replace('task-', '');
       mutateTasks(
         (current: any) => Array.isArray(current) ? current.filter((t: any) => t.id !== taskId) : current,
-        { revalidate: false }
+        { revalidate: true }
       );
     }
   };
@@ -737,7 +738,10 @@ function getDefaultTime(): string {
   } else {
     now.setHours(now.getHours() + 1, 0, 0, 0);
   }
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  // Clamp to 23:30 to prevent rolling over to next day's midnight
+  const hours = now.getHours();
+  if (hours === 0 && mins > 30) return '23:30';
+  return `${String(hours).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
 function getToday(): string {

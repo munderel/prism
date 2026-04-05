@@ -317,7 +317,8 @@ export async function createGoogleEvent(
     });
 
     return response.data;
-  } catch {
+  } catch (err) {
+    console.error('[calendar] createGoogleEvent failed:', err);
     return null;
   }
 }

@@ -4,6 +4,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 import { listGoogleEvents, createGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
 import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
+import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 const MAX_DAYS = 366;
@@ -55,56 +56,6 @@ function pushTimedEvent(
   }
 }
 
-function matchesMonthlyRule(d: Date, rule: string): boolean {
-  const day = d.getDay();
-  const date = d.getDate();
-  const month = d.getMonth();
-  const lastDay = new Date(d.getFullYear(), month + 1, 0).getDate();
-
-  switch (rule) {
-    case 'last-friday': {
-      const lastDate = new Date(d.getFullYear(), month + 1, 0);
-      const diff = (lastDate.getDay() - 5 + 7) % 7;
-      return date === lastDay - diff;
-    }
-    case 'last-monday': {
-      const lastDate = new Date(d.getFullYear(), month + 1, 0);
-      const diff = (lastDate.getDay() - 1 + 7) % 7;
-      return date === lastDay - diff;
-    }
-    case '1st-monday': return date <= 7 && day === 1;
-    case '1st-friday': return date <= 7 && day === 5;
-    case '15th': return date === 15;
-    default: return false;
-  }
-}
-
-function matchesYearlyRule(d: Date, rule: string): boolean {
-  const month = d.getMonth();
-  const date = d.getDate();
-
-  switch (rule) {
-    case 'dec-30': return month === 11 && date === 30;
-    case 'dec-31': return month === 11 && date === 31;
-    case 'last-sat-dec': {
-      if (month !== 11) return false;
-      const lastDate = new Date(d.getFullYear(), 12, 0);
-      const lastDay = lastDate.getDate();
-      const diff = (lastDate.getDay() - 6 + 7) % 7;
-      return date === lastDay - diff;
-    }
-    default: {
-      if (rule.startsWith('custom:')) {
-        const parts = rule.slice(7).split('-');
-        const ruleMonth = parseInt(parts[0]) - 1;
-        const ruleDay = parseInt(parts[1]);
-        return month === ruleMonth && date === ruleDay;
-      }
-      return false;
-    }
-  }
-}
-
 /** Convert selectedCalendarIds to a string array.
  *  Returns undefined only when the raw value is not an array (user never configured).
  *  Returns [] when the user explicitly deselected all calendars. */
@@ -137,6 +88,13 @@ export async function GET(request: NextRequest) {
 
   const rangeStart = new Date(start);
   const rangeEnd = new Date(end);
+
+  if (isNaN(rangeStart.getTime()) || isNaN(rangeEnd.getTime())) {
+    return Response.json({ error: 'Invalid date format for start or end' }, { status: 400 });
+  }
+  if (rangeStart >= rangeEnd) {
+    return Response.json({ error: 'start must be before end' }, { status: 400 });
+  }
 
   const userSettings = await prisma.user.findUnique({
     where: { id: auth.userId },
@@ -227,7 +185,7 @@ export async function GET(request: NextRequest) {
   let googleError: string | undefined;
 
   // Run independent queries in parallel
-  const [tasks, reviews, meetings, googleEvents, aimInstances] = await Promise.all([
+  const [tasks, reviews, meetings, googleEvents, pdSessions, aimInstances] = await Promise.all([
     (fetchAll || source === 'tasks')
       ? prisma.task.findMany({
           where: {
@@ -268,6 +226,21 @@ export async function GET(request: NextRequest) {
           googleError = err instanceof Error ? err.message : 'Failed to fetch Google Calendar events';
           console.error('[calendar] Google Calendar fetch failed:', err);
           return [];
+        })
+      : Promise.resolve([]),
+    // Powerdown sessions — needed early for Google Calendar dedup
+    (userSettings?.powerdownTime && source !== 'external')
+      ? prisma.powerdownSession.findMany({
+          where: {
+            userId: auth.userId,
+            sessionDate: { gte: new Date(rangeStart.getTime() - 2 * 86400000), lte: new Date(rangeEnd.getTime() + 2 * 86400000) },
+            OR: [
+              { timeBlockStart: { not: null } },
+              { timeBlockEnd: { not: null } },
+              { calendarEventId: { not: null } },
+            ],
+          },
+          select: { sessionDate: true, timeBlockStart: true, timeBlockEnd: true, calendarEventId: true },
         })
       : Promise.resolve([]),
     (fetchAll || source === 'aims')
@@ -339,6 +312,10 @@ export async function GET(request: NextRequest) {
   }
   for (const meeting of meetings) {
     if (meeting.calendarEventId) syncedCalendarEventIds.add(meeting.calendarEventId);
+  }
+  // Add powerdown calendarEventIds to dedup set BEFORE processing Google events
+  for (const s of pdSessions) {
+    if (s.calendarEventId) syncedCalendarEventIds.add(s.calendarEventId);
   }
 
   for (const meeting of meetings) {
@@ -414,25 +391,6 @@ export async function GET(request: NextRequest) {
   if (userSettings?.powerdownTime && !fetchExternal) {
     const [pdH, pdM] = userSettings.powerdownTime.split(':').map(Number);
 
-    // Widen the date range by 2 days to account for UTC/timezone boundary mismatches
-    const pdRangeStart = new Date(rangeStart.getTime() - 2 * 86400000);
-    const pdRangeEnd = new Date(rangeEnd.getTime() + 2 * 86400000);
-    const pdSessions = await prisma.powerdownSession.findMany({
-      where: {
-        userId: auth.userId,
-        sessionDate: { gte: pdRangeStart, lte: pdRangeEnd },
-        OR: [
-          { timeBlockStart: { not: null } },
-          { timeBlockEnd: { not: null } },
-          { calendarEventId: { not: null } },
-        ],
-      },
-      select: { sessionDate: true, timeBlockStart: true, timeBlockEnd: true, calendarEventId: true },
-    });
-    // Add powerdown calendarEventIds to dedup set
-    for (const s of pdSessions) {
-      if (s.calendarEventId) syncedCalendarEventIds.add(s.calendarEventId);
-    }
     // Build overrides map — only from sessions the user explicitly dragged.
     // Sessions with calendarEventId were created/updated by the sync route and
     // may carry stale timeBlock values from an old default — never use those.
@@ -540,7 +498,11 @@ export async function GET(request: NextRequest) {
 
     for (const config of reviewConfigs) {
       const [h, m] = config.time.split(':').map(Number);
-      forEachDayInRange(rangeStart, rangeEnd, userTz, (zonedCursor, dateKey) => {
+      // Widen iteration range by 1 day each side to handle UTC/timezone boundary mismatches
+      // (pushTimedEvent already filters events outside the actual rangeStart–rangeEnd)
+      const reviewIterStart = new Date(rangeStart.getTime() - 86400000);
+      const reviewIterEnd = new Date(rangeEnd.getTime() + 86400000);
+      forEachDayInRange(reviewIterStart, reviewIterEnd, userTz, (zonedCursor, dateKey) => {
         if (config.matchFn(zonedCursor)) {
           // Skip if a DB Review record already exists for this date+type (prevents duplicates)
           if (existingReviewDates.get(config.type)?.has(dateKey)) return;
@@ -661,7 +623,8 @@ export async function GET(request: NextRequest) {
           case 'BIWEEKLY': {
             const targetDow = proc.scheduledDayOfWeek ?? 1;
             if (dow === targetDow) {
-              const weekNum = Math.floor(new Date(`${dateKey}T00:00:00Z`).getTime() / (7 * 24 * 60 * 60 * 1000));
+              // Use UTC midnight of the zoned date for consistent epoch week parity (matches meeting-utils)
+              const weekNum = Math.floor(fromZonedTime(`${dateKey}T00:00:00`, userTz).getTime() / (7 * 24 * 60 * 60 * 1000));
               matches = weekNum % 2 === 0;
             }
             break;
