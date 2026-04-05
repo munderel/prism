@@ -65,9 +65,13 @@ const passwordProvider = CredentialsProvider({
     totpCode: { label: '2FA Code', type: 'text' },
   },
   async authorize(credentials) {
-    if (!credentials?.email || !credentials?.password) return null;
+    if (!credentials?.email || !credentials?.password) {
+      console.log('[auth] authorize — missing email or password');
+      return null;
+    }
 
     const normalizedEmail = credentials.email.trim().toLowerCase();
+    console.log('[auth] authorize — attempt for:', normalizedEmail);
 
     // Rate limiting: check recent failed attempts for this email
     const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -82,19 +86,29 @@ const passwordProvider = CredentialsProvider({
         createdAt: { gte: windowStart },
       },
     });
+    console.log('[auth] authorize — recentFailures:', recentFailures, 'threshold:', MAX_FAILURES_IN_WINDOW);
 
     if (recentFailures >= MAX_FAILURES_IN_WINDOW) {
+      console.log('[auth] authorize — rate limited');
       return null; // Too many recent failures — deny without checking password
     }
 
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
     });
+    console.log('[auth] authorize — user found:', !!user, 'hasPassword:', !!user?.passwordHash, 'locked:', !!user?.isLockedOut);
 
-    if (!user || !user.passwordHash) return null;
-    if (user.isLockedOut) return null;
+    if (!user || !user.passwordHash) {
+      console.log('[auth] authorize — user not found or no password hash');
+      return null;
+    }
+    if (user.isLockedOut) {
+      console.log('[auth] authorize — user locked out');
+      return null;
+    }
 
     const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
+    console.log('[auth] authorize — password valid:', isValid);
     if (!isValid) {
       // Record failed attempt
       await prisma.loginAttempt.create({
@@ -222,25 +236,35 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ account, user }) {
+      console.log('[auth] signIn callback — provider:', account?.provider, 'type:', account?.type, 'email:', user?.email);
       try {
         if (
           account?.provider === 'password-login' ||
           account?.provider === 'dev-login' ||
           account?.type === 'credentials'
-        ) return true;
+        ) {
+          console.log('[auth] signIn — credentials provider, allowing');
+          return true;
+        }
 
-        if (!user.email) return false;
+        if (!user.email) {
+          console.log('[auth] signIn — no email, blocking');
+          return false;
+        }
 
         const normalizedEmail = user.email.trim().toLowerCase();
+        console.log('[auth] signIn — looking up user:', normalizedEmail);
 
         const dbUser = await prisma.user.findUnique({
           where: { email: normalizedEmail },
           select: { isLockedOut: true },
         });
+        console.log('[auth] signIn — dbUser found:', !!dbUser, 'locked:', !!dbUser?.isLockedOut);
 
         if (dbUser) return !dbUser.isLockedOut;
 
         // New user — require a valid pending invitation
+        console.log('[auth] signIn — new user, checking invitation');
         const invitation = await prisma.invitation.findFirst({
           where: {
             email: normalizedEmail,
@@ -248,17 +272,23 @@ export const authOptions: NextAuthOptions = {
             createdAt: { gte: new Date(Date.now() - INVITE_EXPIRY_MS) },
           },
         });
+        console.log('[auth] signIn — invitation found:', !!invitation, 'id:', invitation?.id ?? 'none');
 
         if (invitation) return true;
 
         // Allow the very first user (bootstrap admin)
         const adminCount = await prisma.user.count({ where: { isAdmin: true } });
-        if (adminCount === 0) return true;
+        console.log('[auth] signIn — adminCount:', adminCount);
+        if (adminCount === 0) {
+          console.log('[auth] signIn — first user, allowing');
+          return true;
+        }
 
         // No existing account, no valid invitation — block sign-in
+        console.log('[auth] signIn — no invite, no admin slot, blocking');
         return false;
       } catch (error: any) {
-        console.error('[auth] signIn callback error:', error.message, error.stack);
+        console.error('[auth] signIn callback FAILED — message:', error.message, 'stack:', error.stack);
         // Re-throw so NextAuth shows a generic "Callback" error rather than
         // "AccessDenied" (which implies the user lacks an invitation).
         throw new Error('SignInCallbackError');
@@ -270,7 +300,11 @@ export const authOptions: NextAuthOptions = {
     // events.signIn fires AFTER the PrismaAdapter creates the user,
     // so user.id is always a valid DB record ID.
     async signIn({ user, account, profile }) {
-      if (account?.provider !== 'google') return;
+      console.log('[auth] events.signIn — provider:', account?.provider, 'email:', user?.email);
+      if (account?.provider !== 'google') {
+        console.log('[auth] events.signIn — not google, returning');
+        return;
+      }
 
       try {
         // Defense-in-depth: detect cross-user account linking.
@@ -299,6 +333,7 @@ export const authOptions: NextAuthOptions = {
 
         // Store Google refresh token (encrypted)
         if (account.refresh_token) {
+          console.log('[auth] events.signIn — storing google refresh token');
           if (!process.env.TOKEN_ENCRYPTION_KEY) {
             console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — skipping refresh token storage');
           } else {
@@ -311,7 +346,10 @@ export const authOptions: NextAuthOptions = {
                   : null,
               },
             });
+            console.log('[auth] events.signIn — refresh token stored');
           }
+        } else {
+          console.log('[auth] events.signIn — no refresh token in account');
         }
 
         // Auto-promote first user to admin
@@ -353,7 +391,7 @@ export const authOptions: NextAuthOptions = {
         }
       } catch (error: any) {
         // Log but don't throw — failing here should not block login
-        console.error('[auth] events.signIn error (non-fatal):', error.message);
+        console.error('[auth] events.signIn error (non-fatal) — message:', error.message, 'stack:', error.stack);
       }
     },
   },
@@ -364,14 +402,16 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days — persistent sessions
   },
-  debug: process.env.NEXTAUTH_DEBUG === 'true',
+  debug: true,
   logger: {
     error(code: string, metadata: any) {
-      console.error(`[nextauth][error] ${code}:`, metadata?.message ?? metadata?.error?.message ?? '');
+      console.error(`[nextauth][error] ${code}:`, JSON.stringify(metadata, null, 2));
     },
     warn(code: string) {
       console.warn(`[nextauth][warn] ${code}`);
     },
-    debug() {},
+    debug(code: string, metadata: any) {
+      console.log(`[nextauth][debug] ${code}:`, JSON.stringify(metadata, null, 2));
+    },
   },
 };

@@ -13,6 +13,17 @@ export async function GET() {
   try {
     results.userCount = await prisma.user.count();
     results.accountCount = await prisma.account.count();
+
+    // Check which tables exist (confirms migrations ran)
+    try {
+      const tables = await prisma.$queryRaw<{tablename: string}[]>`
+        SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename
+      `;
+      results.tables = tables.map(t => t.tablename);
+    } catch (tableErr: any) {
+      results.tables = 'error: ' + tableErr.message;
+    }
+
     results.dbStatus = 'connected';
   } catch (e: any) {
     results.dbStatus = 'error';
