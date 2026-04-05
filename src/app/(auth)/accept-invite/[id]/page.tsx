@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { signIn, useSession } from 'next-auth/react';
+import { signIn, signOut, useSession } from 'next-auth/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type InviteData = {
@@ -17,17 +17,30 @@ export default function AcceptInvitePage() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
-  const { status: sessionStatus } = useSession();
+  const { status: sessionStatus, data: session } = useSession();
   const router = useRouter();
   const [invite, setInvite] = useState<InviteData | null>(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState('');
   const [accepted, setAccepted] = useState(false);
+  const [showSwitchAccount, setShowSwitchAccount] = useState(false);
 
   useEffect(() => {
     fetchInvite();
   }, [id]);
+
+  // If the invitation was already accepted during the OAuth flow (by events.signIn)
+  // and the current user owns it, redirect to dashboard instead of showing an error.
+  useEffect(() => {
+    if (
+      invite?.status === 'ACCEPTED' &&
+      sessionStatus === 'authenticated' &&
+      session?.user?.email?.toLowerCase() === invite.email.toLowerCase()
+    ) {
+      router.push('/');
+    }
+  }, [invite, sessionStatus, session, router]);
 
   // If the user is already authenticated, auto-attempt to accept the invite
   useEffect(() => {
@@ -80,6 +93,7 @@ export default function AcceptInvitePage() {
       });
       if (!res.ok) {
         const data = await res.json();
+        if (res.status === 403) setShowSwitchAccount(true);
         setError(data.error || 'Failed to accept invitation');
         setAccepting(false);
         return;
@@ -95,16 +109,26 @@ export default function AcceptInvitePage() {
     }
   };
 
-  const handleAcceptClick = () => {
+  const buildCallbackUrl = () =>
+    token
+      ? `/accept-invite/${id}?token=${encodeURIComponent(token)}`
+      : `/accept-invite/${id}`;
+
+  const handleAcceptClick = async () => {
     if (sessionStatus === 'authenticated') {
       acceptInvitation();
     } else {
-      // Redirect to Google OAuth with callback back to this page
-      const callbackUrl = token
-        ? `/accept-invite/${id}?token=${encodeURIComponent(token)}`
-        : `/accept-invite/${id}`;
-      signIn('google', { callbackUrl });
+      // Clear any stale session cookie first to prevent NextAuth's
+      // callbackHandler from linking a new Google account to the
+      // previously-logged-in user (cross-user account linking bug).
+      await signOut({ redirect: false });
+      signIn('google', { callbackUrl: buildCallbackUrl() });
     }
+  };
+
+  const handleSwitchAccount = async () => {
+    await signOut({ redirect: false });
+    signIn('google', { callbackUrl: buildCallbackUrl() });
   };
 
   if (loading) {
@@ -165,12 +189,27 @@ export default function AcceptInvitePage() {
                 Unable to Accept Invitation
               </h2>
               <p className="text-gray-400 text-sm mb-6">{error}</p>
-              <a
-                href="/login"
-                className="inline-block rounded-lg bg-gray-800 px-6 py-3 text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"
-              >
-                Go to Login
-              </a>
+              {showSwitchAccount ? (
+                <button
+                  onClick={handleSwitchAccount}
+                  className="flex items-center justify-center gap-3 w-full px-6 py-3 bg-white text-gray-900 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                  </svg>
+                  Sign in with the correct Google account
+                </button>
+              ) : (
+                <a
+                  href="/login"
+                  className="inline-block rounded-lg bg-gray-800 px-6 py-3 text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"
+                >
+                  Go to Login
+                </a>
+              )}
             </>
           ) : invite ? (
             <>

@@ -16,6 +16,9 @@ vi.mock('@/lib/prisma', () => ({
     publicWin: {
       findMany: vi.fn(),
     },
+    processExecution: {
+      groupBy: vi.fn(),
+    },
   },
 }));
 
@@ -27,6 +30,7 @@ const mockRequireAuth = vi.mocked(requireAuth);
 const mockUserFindMany = vi.mocked(prisma.user.findMany);
 const mockAimInstanceGroupBy = vi.mocked(prisma.aimInstance.groupBy);
 const mockPublicWinFindMany = vi.mocked(prisma.publicWin.findMany);
+const mockProcessExecutionGroupBy = vi.mocked(prisma.processExecution.groupBy);
 
 describe('GET /api/leaderboard', () => {
   it('returns only public users ranked by computed score', async () => {
@@ -55,6 +59,7 @@ describe('GET /api/leaderboard', () => {
       { userId: 'user-2', _sum: { pointsEarned: 0 }, _count: 0 },
     ] as any);
     mockPublicWinFindMany.mockResolvedValue([] as any);
+    mockProcessExecutionGroupBy.mockResolvedValue([] as any);
 
     const response = await GET(new Request('http://localhost/api/leaderboard') as any);
     const body = await response.json();

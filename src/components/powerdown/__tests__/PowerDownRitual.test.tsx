@@ -1,14 +1,19 @@
 import { vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { render, userEvent, createMockFetch } from '@/test/utils';
+import { renderWithProviders, userEvent, createMockFetch } from '@/test/utils';
 import { PowerDownRitual } from '../PowerDownRitual';
 
 // Mock framer-motion so m.div / AnimatePresence render children
 vi.mock('framer-motion', () => ({
   m: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    div: ({ children, ...props }: any) => {
+      const { animate: _a, transition: _t, whileHover: _wh, whileTap: _wt, initial: _i, exit: _e, ...rest } = props;
+      return <div {...rest}>{children}</div>;
+    },
   },
   AnimatePresence: ({ children }: any) => <>{children}</>,
+  LazyMotion: ({ children }: any) => <>{children}</>,
+  domAnimation: {},
 }));
 
 function setup(fetchRoutes: Record<string, any> = {}) {
@@ -36,13 +41,13 @@ describe('PowerDownRitual', () => {
   it('shows loading state initially', () => {
     // Use a fetch that never resolves to keep loading visible
     global.fetch = vi.fn(() => new Promise(() => {}));
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
     expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 
   it('renders step 1 after loading', async () => {
     setup();
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 1/)).toBeInTheDocument();
@@ -57,7 +62,7 @@ describe('PowerDownRitual', () => {
         { id: 't2', title: 'Pending task', status: 'TODO' },
       ],
     });
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/1 of 2 tasks completed/)).toBeInTheDocument();
@@ -66,7 +71,7 @@ describe('PowerDownRitual', () => {
 
   it('shows Next Step button on steps 1-8', async () => {
     setup();
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Next Step/i })).toBeInTheDocument();
@@ -76,7 +81,7 @@ describe('PowerDownRitual', () => {
   it('advances from step 1 to step 2 on Next click', async () => {
     setup();
     const user = userEvent.setup();
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 1/)).toBeInTheDocument();
@@ -97,7 +102,7 @@ describe('PowerDownRitual', () => {
         return { id: 'session-1', currentStep: 9, tomorrowPlan: [] };
       },
     });
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 9/)).toBeInTheDocument();
@@ -113,7 +118,7 @@ describe('PowerDownRitual', () => {
       },
     });
     const user = userEvent.setup();
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 9/)).toBeInTheDocument();
@@ -135,7 +140,7 @@ describe('PowerDownRitual', () => {
       },
     });
     const user = userEvent.setup();
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 9/)).toBeInTheDocument();
@@ -165,7 +170,7 @@ describe('PowerDownRitual', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 1/)).toBeInTheDocument();
@@ -182,7 +187,7 @@ describe('PowerDownRitual', () => {
         { id: 't1', title: 'Tomorrow task', status: 'TODO' },
       ],
     });
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 5/)).toBeInTheDocument();
@@ -200,7 +205,7 @@ describe('PowerDownRitual', () => {
         { id: 't2', title: 'Tomorrow task B', status: 'TODO' },
       ],
     });
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 6/)).toBeInTheDocument();
@@ -215,7 +220,7 @@ describe('PowerDownRitual', () => {
         return { id: 'session-1', currentStep: 3, tomorrowPlan: [] };
       },
     });
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Step 3/)).toBeInTheDocument();
@@ -227,7 +232,7 @@ describe('PowerDownRitual', () => {
     setup({
       '/api/streaks': [{ streakType: 'powerdown', currentCount: 7 }],
     });
-    render(<PowerDownRitual onComplete={onComplete} />);
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
       expect(screen.getByText(/7-day PowerDown streak/)).toBeInTheDocument();
