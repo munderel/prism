@@ -65,28 +65,35 @@ const passwordProvider = CredentialsProvider({
     totpCode: { label: '2FA Code', type: 'text' },
   },
   async authorize(credentials) {
-    if (!credentials?.email || !credentials?.password) {
-      console.log('[auth] authorize — missing email or password');
-      return null;
-    }
+    try {
+      if (!credentials?.email || !credentials?.password) {
+        console.log('[auth] authorize — missing email or password');
+        return null;
+      }
 
-    const normalizedEmail = credentials.email.trim().toLowerCase();
-    console.log('[auth] authorize — attempt for:', normalizedEmail);
+      const normalizedEmail = credentials.email.trim().toLowerCase();
+      console.log('[auth] authorize — attempt for:', normalizedEmail);
 
-    // Rate limiting: check recent failed attempts for this email
-    const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-    const MAX_FAILURES_IN_WINDOW = 5;
-    const LOCKOUT_THRESHOLD = 10;
-    const windowStart = new Date(Date.now() - RATE_WINDOW_MS);
+      // Rate limiting: check recent failed attempts for this email
+      const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+      const MAX_FAILURES_IN_WINDOW = 5;
+      const LOCKOUT_THRESHOLD = 10;
+      const windowStart = new Date(Date.now() - RATE_WINDOW_MS);
 
-    const recentFailures = await prisma.loginAttempt.count({
-      where: {
-        email: normalizedEmail,
-        success: false,
-        createdAt: { gte: windowStart },
-      },
-    });
-    console.log('[auth] authorize — recentFailures:', recentFailures, 'threshold:', MAX_FAILURES_IN_WINDOW);
+      let recentFailures = 0;
+      try {
+        recentFailures = await prisma.loginAttempt.count({
+          where: {
+            email: normalizedEmail,
+            success: false,
+            createdAt: { gte: windowStart },
+          },
+        });
+      } catch (e: any) {
+        console.error('[auth] authorize — loginAttempt.count failed:', e.message);
+        recentFailures = 0; // Assume no failures if table doesn't exist
+      }
+      console.log('[auth] authorize — recentFailures:', recentFailures, 'threshold:', MAX_FAILURES_IN_WINDOW);
 
     if (recentFailures >= MAX_FAILURES_IN_WINDOW) {
       console.log('[auth] authorize — rate limited');
@@ -135,9 +142,13 @@ const passwordProvider = CredentialsProvider({
     console.log('[auth] authorize — password valid:', isValid);
     if (!isValid) {
       // Record failed attempt
-      await prisma.loginAttempt.create({
-        data: { email: normalizedEmail, success: false },
-      });
+      try {
+        await prisma.loginAttempt.create({
+          data: { email: normalizedEmail, success: false },
+        });
+      } catch (e: any) {
+        console.error('[auth] authorize — failed to record attempt:', e.message);
+      }
 
       // Check for lockout: count consecutive failures since last success
       const lastSuccess = await prisma.loginAttempt.findFirst({
@@ -162,9 +173,13 @@ const passwordProvider = CredentialsProvider({
     }
 
     // Record successful login
-    await prisma.loginAttempt.create({
-      data: { email: normalizedEmail, success: true },
-    });
+    try {
+      await prisma.loginAttempt.create({
+        data: { email: normalizedEmail, success: true },
+      });
+    } catch (e: any) {
+      console.error('[auth] authorize — failed to record success:', e.message);
+    }
 
     // Check 2FA if enabled
     if (user.is2FAEnabled && user.totpSecret) {
@@ -183,9 +198,14 @@ const passwordProvider = CredentialsProvider({
     }
 
     // Check if company enforces 2FA and user hasn't set it up yet
-    const companyAuth = await prisma.companyAuthSettings.findFirst();
-    if (companyAuth?.enforce2FA && !user.is2FAEnabled) {
-      throw new Error('2FA_SETUP_REQUIRED');
+    try {
+      const companyAuth = await prisma.companyAuthSettings.findFirst();
+      if (companyAuth?.enforce2FA && !user.is2FAEnabled) {
+        throw new Error('2FA_SETUP_REQUIRED');
+      }
+    } catch (e: any) {
+      if (e.message === '2FA_SETUP_REQUIRED') throw e;
+      console.error('[auth] authorize — failed to check company auth:', e.message);
     }
 
     return {
@@ -194,6 +214,10 @@ const passwordProvider = CredentialsProvider({
       name: user.name,
       isAdmin: user.isAdmin,
     };
+    } catch (error: any) {
+      console.error('[auth] authorize — EXCEPTION:', error.message, 'stack:', error.stack);
+      return null;
+    }
   },
 });
 
