@@ -52,7 +52,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/admin');
+      const res = await fetch('/api/users');
       if (!res.ok) { setError('Failed to load users'); return; }
       const data = await res.json();
       setUsers(Array.isArray(data) ? data : data.users ?? []);
