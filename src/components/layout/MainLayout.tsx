@@ -69,7 +69,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           />
           <div className={`relative z-10 transition-all duration-200 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'}`}>
             <TopBar onMenuToggle={() => setSidebarOpen(true)} />
-            <main className="p-6">
+            <main className="p-3 sm:p-4 lg:p-6">
               <m.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}

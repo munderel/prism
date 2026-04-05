@@ -6,6 +6,7 @@ import { Menu, MessageSquare } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRef, useState } from 'react';
 import { useClickOutside } from '@/hooks/useClickOutside';
+import { StreakCounter } from '@/components/dopamine/StreakCounter';
 
 interface TopBarProps {
   onMenuToggle?: () => void;
@@ -37,7 +38,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-color)] bg-background/80 backdrop-blur-sm px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-color)] bg-background/80 backdrop-blur-sm px-3 sm:px-6">
       <div className="flex items-center gap-3 lg:hidden">
         <button
           onClick={onMenuToggle}
@@ -51,6 +52,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
             Prism
           </h1>
         </Link>
+        <StreakCounter compact />
       </div>
       <div className="ml-auto flex items-center gap-4">
         {session?.user && (
@@ -66,7 +68,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
                 <span className="hidden sm:inline">Feedback</span>
               </button>
               {showFeedback && (
-                <div className="absolute right-0 top-10 w-72 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] p-3 shadow-xl z-50">
+                <div className="absolute right-0 top-10 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] p-3 shadow-xl z-50">
                   <textarea
                     value={feedbackText}
                     onChange={(e) => setFeedbackText(e.target.value)}
@@ -93,7 +95,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
                 </div>
               )}
             </div>
-            <span className="text-sm text-[var(--text-primary)]">{session.user.name}</span>
+            <span className="hidden sm:inline text-sm text-[var(--text-primary)]">{session.user.name}</span>
             {session.user.isAdmin && (
               <span className="text-[10px] font-medium bg-indigo-600 text-white rounded-md px-1.5 py-0.5">
                 Admin

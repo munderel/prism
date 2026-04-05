@@ -7,17 +7,18 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { type ProposedSlot } from '@/lib/scheduling-engine';
-import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2 } from 'lucide-react';
+import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 interface SelectedEventPopover {
   eventId: string;
   title: string;
-  source: 'aims' | 'task' | 'review' | 'powerdown' | 'meeting' | 'process';
+  source: 'aims' | 'task' | 'review' | 'powerdown' | 'meeting' | 'process' | 'google';
   status: string;
   position: { top: number; left: number };
   // Aim-specific
@@ -29,11 +30,14 @@ interface SelectedEventPopover {
   taskType?: string;
   priority?: string;
   goalTitle?: string;
-  // Review/powerdown/meeting/process
+  // Review/powerdown/meeting/process/google
   link?: string;
   description?: string;
   cadence?: string;
   createdBy?: string;
+  // Google Calendar event
+  gcalEventId?: string;
+  gcalCalendarId?: string;
 }
 
 interface AimTask {
@@ -112,6 +116,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const { events, error: calendarError, refreshEvents, googleStatus, googleError, isLoading: calendarLoading } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
   const { resolvedTheme } = useTheme();
+  const isMobile = useMediaQuery('(max-width: 1023px)');
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown', 'processes']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
   const [showGhosts, setShowGhosts] = useState(false);
@@ -223,6 +228,52 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     }
   }, [toast, refreshEvents]);
 
+  // --- Delete handlers ---
+  const handleDeleteTask = useCallback(async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Task deleted');
+        setSelectedEventPopover(null);
+        refreshEvents();
+      } else {
+        toast.error('Failed to delete task');
+      }
+    } catch {
+      toast.error('Failed to delete task');
+    }
+  }, [toast, refreshEvents]);
+
+  const handleDeleteAim = useCallback(async (aimInstanceId: string) => {
+    try {
+      const res = await fetch(`/api/aims/instances/${aimInstanceId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Aim removed');
+        setSelectedEventPopover(null);
+        refreshEvents();
+      } else {
+        toast.error('Failed to delete aim');
+      }
+    } catch {
+      toast.error('Failed to delete aim');
+    }
+  }, [toast, refreshEvents]);
+
+  const handleDeleteGoogleEvent = useCallback(async (gcalEventId: string, calendarId: string) => {
+    try {
+      const res = await fetch(`/api/calendar/events/${gcalEventId}?calendarId=${encodeURIComponent(calendarId)}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Event deleted from Google Calendar');
+        setSelectedEventPopover(null);
+        refreshEvents();
+      } else {
+        toast.error('Failed to delete Google Calendar event');
+      }
+    } catch {
+      toast.error('Failed to delete Google Calendar event');
+    }
+  }, [toast, refreshEvents]);
+
   // --- Task assignment handlers ---
   const handleEventClick = (info: any) => {
     const props = info.event.extendedProps || {};
@@ -324,6 +375,24 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         taskType: props.taskType,
         priority: props.priority,
         goalTitle: props.goalTitle,
+        description: props.description,
+      });
+      return;
+    }
+
+    // Google Calendar event → show popover with description + delete
+    if (info.event.id?.startsWith('google-')) {
+      const rawId = info.event.id.replace('google-', '');
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'google',
+        status: '',
+        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        description: props.description,
+        gcalEventId: rawId,
+        gcalCalendarId: props.calendarId || 'primary',
+        link: props.meetLink,
       });
       return;
     }
@@ -503,6 +572,14 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     } else if (eventId.startsWith('task-')) {
       const taskId = eventId.replace('task-', '');
       await scheduleItem('task', taskId, newStart, newEnd, { dueDate: newStart, isPinned: true });
+    } else if (eventId.startsWith('google-')) {
+      const gcalEventId = eventId.replace('google-', '');
+      const calendarId = info.event.extendedProps?.calendarId || 'primary';
+      await fetch(`/api/calendar/events/${gcalEventId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start: newStart, end: newEnd, calendarId }),
+      });
     } else {
       return;
     }
@@ -675,19 +752,20 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         </div>
       )}
       {/* Filter toggles */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-2 flex-wrap mb-4">
         {SOURCE_FILTERS.map(({ key, label, color }) => (
           <button
             key={key}
             onClick={() => toggleFilter(key)}
-            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            title={label}
+            className={`flex items-center gap-1.5 rounded-lg px-2 sm:px-3 py-1.5 text-sm font-medium transition-colors ${
               activeFilters.has(key)
                 ? 'bg-[var(--surface-raised)] text-[var(--text-primary)] border border-[var(--border-color)]'
                 : 'text-[var(--text-muted)] border border-[var(--surface-raised)] opacity-50'
             }`}
           >
             <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
-            {label}
+            <span className="hidden sm:inline">{label}</span>
           </button>
         ))}
       </div>
@@ -727,10 +805,17 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
       {/* Event Detail Popover */}
       {selectedEventPopover && (
+        <>
+        {isMobile && (
+          <div className="fixed inset-0 z-[59] bg-black/40" onClick={() => setSelectedEventPopover(null)} />
+        )}
         <div
           ref={popoverRef}
-          className="fixed z-[60] w-72 rounded-xl border border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm"
-          style={{
+          className={isMobile
+            ? 'fixed inset-x-0 bottom-0 z-[60] w-full rounded-t-xl border-t border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm pb-6'
+            : 'fixed z-[60] w-72 rounded-xl border border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm'
+          }
+          style={isMobile ? undefined : {
             top: Math.min(selectedEventPopover.position.top, window.innerHeight - 280),
             left: Math.min(selectedEventPopover.position.left, window.innerWidth - 300),
           }}
@@ -807,6 +892,30 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                     </div>
                   );
                 })()}
+                {selectedEventPopover.description && (
+                  <div className="text-xs text-[var(--text-secondary)] line-clamp-3 mt-1">
+                    {selectedEventPopover.description}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* GOOGLE EVENT popover */}
+            {selectedEventPopover.source === 'google' && (
+              <>
+                {selectedEventPopover.description && (
+                  <div className="text-xs text-[var(--text-secondary)] line-clamp-4">
+                    {selectedEventPopover.description}
+                  </div>
+                )}
+                {selectedEventPopover.link && (
+                  <div className="text-xs text-[var(--text-muted)]">
+                    <span className="font-medium">Meet:</span>{' '}
+                    <a href={selectedEventPopover.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                      Join
+                    </a>
+                  </div>
+                )}
               </>
             )}
 
@@ -869,14 +978,23 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </div>
             )}
             {selectedEventPopover.source === 'aims' && selectedEventPopover.aimInstanceId && (
-              <button
-                onClick={() => handleUnschedule(`/api/aims/instances/${selectedEventPopover.aimInstanceId}`, 'Aim')}
-                disabled={completingEvent}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
-              >
-                <CalendarX2 className="h-3.5 w-3.5" />
-                Unschedule
-              </button>
+              <>
+                <button
+                  onClick={() => handleUnschedule(`/api/aims/instances/${selectedEventPopover.aimInstanceId}`, 'Aim')}
+                  disabled={completingEvent}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+                >
+                  <CalendarX2 className="h-3.5 w-3.5" />
+                  Unschedule
+                </button>
+                <button
+                  onClick={() => selectedEventPopover.aimInstanceId && handleDeleteAim(selectedEventPopover.aimInstanceId)}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              </>
             )}
 
             {/* Task actions */}
@@ -919,14 +1037,23 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </div>
             )}
             {selectedEventPopover.source === 'task' && selectedEventPopover.taskId && (
-              <button
-                onClick={() => handleUnschedule(`/api/tasks/${selectedEventPopover.taskId}`, 'Task')}
-                disabled={completingEvent}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
-              >
-                <CalendarX2 className="h-3.5 w-3.5" />
-                Unschedule
-              </button>
+              <>
+                <button
+                  onClick={() => handleUnschedule(`/api/tasks/${selectedEventPopover.taskId}`, 'Task')}
+                  disabled={completingEvent}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+                >
+                  <CalendarX2 className="h-3.5 w-3.5" />
+                  Unschedule
+                </button>
+                <button
+                  onClick={() => selectedEventPopover.taskId && handleDeleteTask(selectedEventPopover.taskId)}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              </>
             )}
 
             {/* Review / Powerdown: Start + Settings */}
@@ -978,17 +1105,48 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </a>
             )}
 
+            {/* Google event actions */}
+            {selectedEventPopover.source === 'google' && (
+              <>
+                {selectedEventPopover.link && (
+                  <a
+                    href={selectedEventPopover.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
+                  >
+                    Join Meeting
+                  </a>
+                )}
+                <button
+                  onClick={() => selectedEventPopover.gcalEventId && handleDeleteGoogleEvent(
+                    selectedEventPopover.gcalEventId,
+                    selectedEventPopover.gcalCalendarId || 'primary'
+                  )}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete from Google Calendar
+                </button>
+              </>
+            )}
+
           </div>
         </div>
+        </>
       )}
 
       {/* Calendar */}
-      <div className={`${resolvedTheme === 'dark' ? 'fc-dark-theme' : 'fc-light-theme'} glass-panel p-4`}>
+      <div className={`${resolvedTheme === 'dark' ? 'fc-dark-theme' : 'fc-light-theme'} glass-panel p-2 sm:p-4`}>
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView="timeGridWeek"
-          headerToolbar={{
+          initialView={isMobile ? 'timeGridDay' : 'timeGridWeek'}
+          headerToolbar={isMobile ? {
+            left: 'prev,next',
+            center: 'title',
+            right: 'timeGridDay,timeGridWeek',
+          } : {
             left: 'prev,next today',
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,timeGridDay',

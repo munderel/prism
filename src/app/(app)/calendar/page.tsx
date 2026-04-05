@@ -3,13 +3,15 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import dynamic from 'next/dynamic';
-import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw } from 'lucide-react';
+import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw, X, CalendarPlus } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { Draggable } from '@fullcalendar/interaction';
+import { LazyMotion, domAnimation, m, AnimatePresence } from 'framer-motion';
 import { MeetingsManager } from '@/components/calendar/MeetingsManager';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useToast } from '@/components/ui/ToastProvider';
 import { freshFetcher } from '@/lib/fetcher';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 // FullCalendar needs dynamic import (no SSR)
 const CalendarView = dynamic(
@@ -98,7 +100,7 @@ const ITEM_TYPE_CONFIG: Record<string, ItemTypeConfig> = {
   },
 };
 
-function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
+function UnscheduledItemCard({ item, onTap, isSelected }: { item: UnscheduledItem; onTap?: (item: UnscheduledItem) => void; isSelected?: boolean }) {
   const cfg = ITEM_TYPE_CONFIG[item.itemType];
 
   // -- border colour --
@@ -163,7 +165,10 @@ function UnscheduledItemCard({ item }: { item: UnscheduledItem }) {
   return (
     <div
       key={item.id}
-      className={`fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-[var(--surface-raised)] border-l-4 ${borderClass} bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors`}
+      className={`fc-unscheduled-task rounded-lg border border-[var(--surface-raised)] border-l-4 ${borderClass} bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors min-h-[44px] ${
+        onTap ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
+      } ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''}`}
+      onClick={onTap ? () => onTap(item) : undefined}
       {...dataAttrs}
     >
       <div className="flex items-start gap-2">
@@ -245,13 +250,16 @@ export default function CalendarPage() {
     return items;
   }, [unscheduledTasks, aimsData]);
 
+  const isMobile = useMediaQuery('(max-width: 1023px)');
+  const [showMobileSheet, setShowMobileSheet] = useState(false);
+  const [pendingScheduleItem, setPendingScheduleItem] = useState<UnscheduledItem | null>(null);
   const [showMeetings, setShowMeetings] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const draggableRef = useRef<Draggable | null>(null);
 
-  // Initialize FullCalendar Draggable on the sidebar container
+  // Initialize FullCalendar Draggable on the sidebar container (desktop only)
   useEffect(() => {
-    if (!sidebarRef.current) return;
+    if (!sidebarRef.current || isMobile) return;
 
     // Clean up previous instance
     if (draggableRef.current) {
@@ -301,7 +309,7 @@ export default function CalendarPage() {
         draggableRef.current = null;
       }
     };
-  }, [allUnscheduledItems]); // Re-init when any items change
+  }, [allUnscheduledItems, isMobile]); // Re-init when any items change
 
   const handleEventClick = (info: any) => {
     const eventData = info.event.extendedProps;
@@ -311,6 +319,66 @@ export default function CalendarPage() {
       end: info.event.end,
       ...eventData,
     });
+  };
+
+  // Mobile tap-to-schedule: when user taps an item then taps a time slot
+  const handleMobileDateSelect = async (info: any) => {
+    if (!pendingScheduleItem) return;
+    const start = info.start as Date;
+    const durationMs = (pendingScheduleItem.duration ?? 60) * 60 * 1000;
+    const end = new Date(start.getTime() + durationMs);
+
+    const item = pendingScheduleItem;
+    setPendingScheduleItem(null);
+
+    try {
+      if (item.itemType === 'aim') {
+        if (item.aimInstanceId) {
+          await fetch(`/api/aims/instances/${item.aimInstanceId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
+          });
+        } else if (item.aimCategoryId) {
+          await fetch('/api/aims/instances', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              aimCategoryId: item.aimCategoryId,
+              scheduledDate: start.toISOString(),
+              timeBlockStart: start.toISOString(),
+              timeBlockEnd: end.toISOString(),
+            }),
+          });
+        }
+        mutateAims();
+      } else {
+        const taskId = item.taskId || item.id.replace('task-', '');
+        await fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString(), dueDate: start.toISOString() }),
+        });
+        mutateTasks(
+          (current: any) => Array.isArray(current) ? current.filter((t: any) => t.id !== taskId) : current,
+          { revalidate: false },
+        );
+      }
+      globalMutate(
+        (key: unknown) => typeof key === 'string' && key.startsWith('/api/calendar'),
+        undefined,
+        { revalidate: true },
+      );
+      toast.success(`Scheduled "${item.title}"`);
+    } catch {
+      toast.error('Failed to schedule item');
+    }
+  };
+
+  const handleMobileItemTap = (item: UnscheduledItem) => {
+    setPendingScheduleItem(item);
+    setShowMobileSheet(false);
+    toast.success('Tap a time slot on the calendar to schedule');
   };
 
   const handleExternalDrop = (itemId: string, _start: Date, _end: Date, itemType?: string) => {
@@ -363,16 +431,16 @@ export default function CalendarPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-          <CalendarDays className="h-6 w-6 text-prism-indigo" />
+      <div className="mb-4 sm:mb-6 flex items-center justify-between flex-wrap gap-2">
+        <h1 className="font-display text-xl sm:text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+          <CalendarDays className="h-5 w-5 sm:h-6 sm:w-6 text-prism-indigo" />
           Calendar
         </h1>
         <div className="flex items-center gap-2">
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="flex items-center gap-2 rounded-lg bg-[var(--surface-raised)] border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-[var(--surface-raised)] border border-[var(--border-color)] px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Syncing...' : 'Sync'}
@@ -380,20 +448,32 @@ export default function CalendarPage() {
         {isAdmin && (
           <button
             onClick={() => setShowMeetings(true)}
-            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-emerald-600 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white hover:bg-emerald-500 transition-colors"
           >
             <Users className="h-4 w-4" />
-            Manage Meetings
+            <span className="hidden sm:inline">Manage Meetings</span>
+            <span className="sm:hidden">Meetings</span>
           </button>
         )}
         </div>
       </div>
 
+      {/* Mobile: pending schedule indicator */}
+      {pendingScheduleItem && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm text-indigo-300 lg:hidden">
+          <CalendarPlus className="h-4 w-4 flex-shrink-0" />
+          <span className="flex-1 truncate">Tap a time slot to schedule &ldquo;{pendingScheduleItem.title}&rdquo;</span>
+          <button onClick={() => setPendingScheduleItem(null)} className="text-indigo-400 hover:text-indigo-300 flex-shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       <MeetingsManager open={showMeetings} onClose={() => setShowMeetings(false)} isAdmin={isAdmin} />
 
-      <div className="flex gap-6">
-        {/* Unscheduled Items Sidebar */}
-        <div className="w-72 flex-shrink-0" ref={sidebarRef}>
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+        {/* Unscheduled Items Sidebar — desktop only */}
+        <div className="hidden lg:block w-72 flex-shrink-0" ref={sidebarRef}>
           <div className="glass-panel p-4 sticky top-4">
             <div className="flex items-center gap-2 mb-4">
               <Clock className="h-4 w-4 text-indigo-400" />
@@ -475,6 +555,7 @@ export default function CalendarPage() {
             <CalendarView
               onEventClick={handleEventClick}
               onExternalDrop={handleExternalDrop}
+              onDateSelect={isMobile ? handleMobileDateSelect : undefined}
               unscheduledTasks={allUnscheduledItems}
               scheduleSettings={scheduleSettings}
             />
@@ -482,8 +563,8 @@ export default function CalendarPage() {
 
           {/* Event details panel */}
           {selectedEvent && (
-            <div className="mt-4 glass-panel p-4 space-y-3">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">{selectedEvent.title}</h3>
+            <div className="mt-4 glass-panel p-3 sm:p-4 space-y-3">
+              <h3 className="text-base sm:text-lg font-semibold text-[var(--text-primary)]">{selectedEvent.title}</h3>
               <div className="text-xs text-[var(--text-muted)] space-y-1">
                 <p>Source: {selectedEvent.source}</p>
                 {selectedEvent.start && (
@@ -514,6 +595,89 @@ export default function CalendarPage() {
           )}
         </div>
       </div>
+
+      {/* Mobile FAB — open unscheduled items sheet */}
+      {!showMobileSheet && (
+        <button
+          onClick={() => setShowMobileSheet(true)}
+          className="fixed bottom-6 left-4 z-40 lg:hidden flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-3 text-white shadow-lg hover:bg-indigo-500 transition-colors"
+        >
+          <Clock className="h-5 w-5" />
+          <span className="text-sm font-medium">{allUnscheduledItems.length}</span>
+        </button>
+      )}
+
+      {/* Mobile bottom sheet for unscheduled items */}
+      <LazyMotion features={domAnimation}>
+        <AnimatePresence>
+          {showMobileSheet && (
+            <>
+              <m.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 bg-black/40 lg:hidden"
+                onClick={() => setShowMobileSheet(false)}
+              />
+              <m.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="fixed inset-x-0 bottom-0 z-50 max-h-[75vh] rounded-t-xl border-t border-[var(--border-color)] bg-[var(--surface)] backdrop-blur-xl lg:hidden flex flex-col"
+              >
+                {/* Sheet handle */}
+                <div className="flex justify-center pt-3 pb-1">
+                  <div className="w-10 h-1 rounded-full bg-[var(--text-muted)]/30" />
+                </div>
+
+                {/* Sheet header */}
+                <div className="flex items-center justify-between px-4 pb-3 border-b border-[var(--border-color)]">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-indigo-400" />
+                    <h2 className="text-sm font-semibold text-[var(--text-primary)]">Unscheduled Items</h2>
+                    <span className="rounded-full bg-[var(--surface-raised)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
+                      {allUnscheduledItems.length}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowMobileSheet(false)}
+                    className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--hover-bg)]"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <p className="text-xs text-[var(--text-muted)] px-4 pt-3 pb-2">
+                  Tap an item, then tap a time slot on the calendar to schedule it.
+                </p>
+
+                {/* Scrollable item list */}
+                <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-2">
+                  {isLoading ? (
+                    <div className="text-center py-8">
+                      <div className="text-[var(--text-muted)] text-sm">Loading...</div>
+                    </div>
+                  ) : allUnscheduledItems.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-[var(--text-muted)] text-sm">Everything is scheduled!</p>
+                    </div>
+                  ) : (
+                    allUnscheduledItems.map((item) => (
+                      <UnscheduledItemCard
+                        key={item.id}
+                        item={item}
+                        onTap={handleMobileItemTap}
+                        isSelected={pendingScheduleItem?.id === item.id}
+                      />
+                    ))
+                  )}
+                </div>
+              </m.div>
+            </>
+          )}
+        </AnimatePresence>
+      </LazyMotion>
     </div>
   );
 }

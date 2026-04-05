@@ -315,6 +315,31 @@ html:not(.dark) .hover\:bg-purple-500:hover {
   }
 }
 
+/* FullCalendar mobile adjustments */
+@media (max-width: 1023px) {
+  .fc .fc-toolbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .fc .fc-toolbar-title {
+    font-size: 1rem;
+  }
+  .fc .fc-button {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+  }
+  .fc .fc-col-header-cell-cushion {
+    font-size: 0.7rem;
+    padding: 4px 2px;
+  }
+  .fc .fc-timegrid-slot-label-cushion {
+    font-size: 0.65rem;
+  }
+  .fc .fc-daygrid-day-number {
+    font-size: 0.75rem;
+  }
+}
+
 /* Sidebar active indicator */
 .nav-active-indicator::before {
   content: '';
