@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
-import { listGoogleEvents, createGoogleEvent } from '@/lib/calendar';
+import { listGoogleEvents, createGoogleEvent, deleteGoogleEvent } from '@/lib/calendar';
 import { getCompletionUrl, getAimCompletionUrl, getBaseUrl } from '@/lib/completion-token';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
@@ -247,6 +247,94 @@ export async function POST(request: NextRequest) {
       });
       updates.push(`Rescheduled powerdown session`);
     }
+  }
+
+  // === PHASE 1.5: CLEANUP — Remove stale/old GCal events for reviews & powerdown ===
+  // Delete past Google Calendar events and clear calendarEventId so future events
+  // get re-created with correct times from current user settings.
+
+  // Cleanup review events: completed reviews OR any past reviews
+  const staleReviews = await prisma.review.findMany({
+    where: {
+      userId: auth.userId,
+      calendarEventId: { not: null },
+      OR: [
+        { completedAt: { not: null } },
+        { scheduledDate: { lt: new Date() } },
+      ],
+    },
+    select: { id: true, calendarEventId: true },
+  });
+
+  for (const review of staleReviews) {
+    if (!review.calendarEventId) continue;
+    try {
+      await deleteGoogleEvent(auth.userId, review.calendarEventId, targetCalendarId);
+    } catch {
+      // Event may already be deleted in Google — that's fine
+    }
+    await prisma.review.update({ where: { id: review.id }, data: { calendarEventId: null } }).catch(() => {});
+    updates.push(`Cleaned up old review event from Google`);
+  }
+
+  // Cleanup powerdown events: all past sessions
+  const stalePowerdowns = await prisma.powerdownSession.findMany({
+    where: {
+      userId: auth.userId,
+      calendarEventId: { not: null },
+      sessionDate: { lt: new Date() },
+    },
+    select: { id: true, calendarEventId: true },
+  });
+
+  for (const session of stalePowerdowns) {
+    if (!session.calendarEventId) continue;
+    try {
+      await deleteGoogleEvent(auth.userId, session.calendarEventId, targetCalendarId);
+    } catch {
+      // Event may already be deleted in Google — that's fine
+    }
+    await prisma.powerdownSession.update({ where: { id: session.id }, data: { calendarEventId: null } }).catch(() => {});
+    updates.push(`Cleaned up old powerdown event from Google`);
+  }
+
+  // Also reset future review/powerdown events so they get re-synced with current settings.
+  // This ensures schedule changes (e.g., moving weekly review to a different day) take effect.
+  const futureReviewsToReset = await prisma.review.findMany({
+    where: {
+      userId: auth.userId,
+      calendarEventId: { not: null },
+      scheduledDate: { gte: new Date() },
+      completedAt: null,
+    },
+    select: { id: true, calendarEventId: true },
+  });
+
+  for (const review of futureReviewsToReset) {
+    if (!review.calendarEventId) continue;
+    try {
+      await deleteGoogleEvent(auth.userId, review.calendarEventId, targetCalendarId);
+    } catch { /* already deleted */ }
+    await prisma.review.update({ where: { id: review.id }, data: { calendarEventId: null } }).catch(() => {});
+    updates.push(`Reset future review event for re-sync`);
+  }
+
+  const futurePowerdownsToReset = await prisma.powerdownSession.findMany({
+    where: {
+      userId: auth.userId,
+      calendarEventId: { not: null },
+      sessionDate: { gte: new Date() },
+    },
+    select: { id: true, calendarEventId: true },
+  });
+
+  for (const session of futurePowerdownsToReset) {
+    if (!session.calendarEventId) continue;
+    try {
+      await deleteGoogleEvent(auth.userId, session.calendarEventId, targetCalendarId);
+    } catch { /* already deleted */ }
+    await prisma.powerdownSession.update({ where: { id: session.id }, data: { calendarEventId: null } }).catch(() => {});
+    updates.push(`Reset future powerdown event for re-sync`);
   }
 
   // === PHASE 2: PUSH (Prism → GCal) ===
