@@ -171,10 +171,6 @@ export async function listGoogleEvents(
     return [];
   }
   const ids = calendarIds?.length ? [...calendarIds] : ['primary'];
-  // Always include primary so synced events are found
-  if (!ids.includes('primary')) {
-    ids.unshift('primary');
-  }
 
   const results = await Promise.all(
     ids.map(async (calendarId) => {
