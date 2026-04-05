@@ -6,6 +6,7 @@ import { parseBody, updateTaskSchema } from '@/lib/schemas';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
+import { getCompletionUrl } from '@/lib/completion-token';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 
 export async function GET(
@@ -150,9 +151,14 @@ export async function PATCH(
           end: newEnd ? new Date(newEnd).toISOString() : undefined,
         }, targetCalendarId);
       } else if (!task.calendarEventId && newStart && newEnd && status !== 'DONE' && status !== 'DROPPED') {
+        const completionUrl = getCompletionUrl(id, task.ownerId);
+        const rawDesc = data.description ?? task.description;
+        const descWithLink = rawDesc
+          ? `${rawDesc}\n\nMark complete in Prism: ${completionUrl}`
+          : `Mark complete in Prism: ${completionUrl}`;
         const gcalEvent = await createGoogleEvent(task.ownerId, {
           summary: data.title ?? task.title,
-          description: data.description ?? task.description ?? undefined,
+          description: descWithLink,
           start: new Date(newStart).toISOString(),
           end: new Date(newEnd).toISOString(),
         }, targetCalendarId);

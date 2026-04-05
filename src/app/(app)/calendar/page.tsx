@@ -45,7 +45,7 @@ interface UnscheduledAim {
 
 type UnscheduledItem = {
   id: string;
-  itemType: 'task' | 'aim';
+  itemType: 'task' | 'aim' | 'work_block';
   title: string;
   duration: number; // minutes
   // Task-specific
@@ -332,7 +332,15 @@ export default function CalendarPage() {
     setPendingScheduleItem(null);
 
     try {
-      if (item.itemType === 'aim') {
+      if (item.itemType === 'work_block') {
+        // Create a Google Calendar event for work blocks
+        const res = await fetch('/api/calendar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ summary: item.title, start: start.toISOString(), end: end.toISOString() }),
+        });
+        if (!res.ok) throw new Error('Failed to create work block');
+      } else if (item.itemType === 'aim') {
         if (item.aimInstanceId) {
           await fetch(`/api/aims/instances/${item.aimInstanceId}`, {
             method: 'PATCH',
@@ -672,6 +680,44 @@ export default function CalendarPage() {
                       />
                     ))
                   )}
+
+                  {/* Work Block Templates */}
+                  <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Briefcase className="h-4 w-4 text-indigo-400" />
+                      <h3 className="text-sm font-semibold text-[var(--text-primary)]">Work Blocks</h3>
+                    </div>
+                    <div className="space-y-2">
+                      <div
+                        onClick={() => handleMobileItemTap({ id: '__work_block_template__', itemType: 'work_block', title: 'Work Block', duration: 60 } as UnscheduledItem)}
+                        className={`cursor-pointer rounded-lg border border-indigo-500/30 border-l-4 border-l-indigo-500 bg-indigo-500/10 p-3 hover:bg-indigo-500/20 transition-colors min-h-[44px] ${
+                          pendingScheduleItem?.id === '__work_block_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Briefcase className="h-4 w-4 text-indigo-400 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-sm text-[var(--text-primary)] font-medium">Normal Work Block</p>
+                            <p className="text-xs text-[var(--text-muted)] mt-0.5">60min</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        onClick={() => handleMobileItemTap({ id: '__deep_work_template__', itemType: 'work_block', title: 'Deep Work Block', duration: 120 } as UnscheduledItem)}
+                        className={`cursor-pointer rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors min-h-[44px] ${
+                          pendingScheduleItem?.id === '__deep_work_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Brain className="h-4 w-4 text-teal-400 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-sm text-[var(--text-primary)] font-medium">Deep Work Block</p>
+                            <p className="text-xs text-[var(--text-muted)] mt-0.5">120min</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </m.div>
             </>

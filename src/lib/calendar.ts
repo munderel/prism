@@ -160,7 +160,8 @@ export async function listGoogleEvents(
   userId: string,
   timeMin: string,
   timeMax: string,
-  calendarIds?: string[]
+  calendarIds?: string[],
+  options?: { showDeleted?: boolean }
 ) {
   const calendar = await getCalendarClient(userId);
   if (!calendar) return [];
@@ -187,6 +188,7 @@ export async function listGoogleEvents(
             orderBy: 'startTime',
             maxResults: 250,
             pageToken,
+            ...(options?.showDeleted && { showDeleted: true }),
           });
           const items = (response.data.items ?? []).map((ev) => ({
             ...ev,

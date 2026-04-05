@@ -9,6 +9,7 @@ import {
   type AimPhase,
 } from '@/lib/aim-phases';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
+import { getAimCompletionUrl } from '@/lib/completion-token';
 
 const INSTANCE_INCLUDE = {
   aimCategory: true,
@@ -171,8 +172,10 @@ export async function PATCH(
           end: newEnd ? newEnd.toISOString() : undefined,
         }, targetCalendarId);
       } else if (!existing.calendarEventId && newStart && newEnd && status !== 'COMPLETED' && status !== 'SKIPPED') {
+        const completionUrl = getAimCompletionUrl(id, existing.userId);
         const gcalEvent = await createGoogleEvent(existing.userId, {
           summary: title,
+          description: `Mark complete in Prism: ${completionUrl}`,
           start: newStart.toISOString(),
           end: newEnd.toISOString(),
         }, targetCalendarId);
@@ -185,4 +188,40 @@ export async function PATCH(
   }
 
   return Response.json(updated);
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
+
+  const { id } = await params;
+
+  const existing = await prisma.aimInstance.findUnique({ where: { id } });
+  if (!existing) {
+    return Response.json({ error: 'AimInstance not found' }, { status: 404 });
+  }
+  if (existing.userId !== auth.userId && !auth.session.user.isAdmin) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // Delete linked Google Calendar event
+  if (existing.calendarEventId) {
+    const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(existing.userId);
+    if (hasGoogle) {
+      await deleteGoogleEvent(existing.userId, existing.calendarEventId, targetCalendarId).catch(() => {});
+    }
+  }
+
+  // Disconnect any linked tasks before deleting
+  await prisma.task.updateMany({
+    where: { aimInstanceId: id },
+    data: { aimInstanceId: null },
+  });
+
+  await prisma.aimInstance.delete({ where: { id } });
+
+  return Response.json({ ok: true });
 }
