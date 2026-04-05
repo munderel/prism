@@ -813,11 +813,47 @@ export default function SettingsPage() {
                   className={inputClasses}
                 >
                   <option value="">Not scheduled</option>
-                  <option value="last-friday">Last Friday</option>
-                  <option value="last-monday">Last Monday</option>
-                  <option value="1st-monday">1st Monday</option>
-                  <option value="1st-friday">1st Friday</option>
-                  <option value="15th">15th of month</option>
+                  <optgroup label="Last week of month">
+                    <option value="last-sunday">Last Sunday</option>
+                    <option value="last-monday">Last Monday</option>
+                    <option value="last-tuesday">Last Tuesday</option>
+                    <option value="last-wednesday">Last Wednesday</option>
+                    <option value="last-thursday">Last Thursday</option>
+                    <option value="last-friday">Last Friday</option>
+                    <option value="last-saturday">Last Saturday</option>
+                  </optgroup>
+                  <optgroup label="First week of month">
+                    <option value="1st-sunday">1st Sunday</option>
+                    <option value="1st-monday">1st Monday</option>
+                    <option value="1st-tuesday">1st Tuesday</option>
+                    <option value="1st-wednesday">1st Wednesday</option>
+                    <option value="1st-thursday">1st Thursday</option>
+                    <option value="1st-friday">1st Friday</option>
+                    <option value="1st-saturday">1st Saturday</option>
+                  </optgroup>
+                  <optgroup label="Second week of month">
+                    <option value="2nd-sunday">2nd Sunday</option>
+                    <option value="2nd-monday">2nd Monday</option>
+                    <option value="2nd-tuesday">2nd Tuesday</option>
+                    <option value="2nd-wednesday">2nd Wednesday</option>
+                    <option value="2nd-thursday">2nd Thursday</option>
+                    <option value="2nd-friday">2nd Friday</option>
+                    <option value="2nd-saturday">2nd Saturday</option>
+                  </optgroup>
+                  <optgroup label="Third week of month">
+                    <option value="3rd-sunday">3rd Sunday</option>
+                    <option value="3rd-monday">3rd Monday</option>
+                    <option value="3rd-tuesday">3rd Tuesday</option>
+                    <option value="3rd-wednesday">3rd Wednesday</option>
+                    <option value="3rd-thursday">3rd Thursday</option>
+                    <option value="3rd-friday">3rd Friday</option>
+                    <option value="3rd-saturday">3rd Saturday</option>
+                  </optgroup>
+                  <optgroup label="Specific day of month">
+                    <option value="1st">1st</option>
+                    <option value="15th">15th</option>
+                    <option value="28th">28th</option>
+                  </optgroup>
                 </select>
               </div>
               <div>

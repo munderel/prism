@@ -4,6 +4,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 import { listGoogleEvents, createGoogleEvent } from '@/lib/calendar';
 import { getCompletionUrl, getAimCompletionUrl, getBaseUrl } from '@/lib/completion-token';
+import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 type GCalEntry = { start: string; end: string; summary: string; status: string };
@@ -22,58 +23,6 @@ function hasTimeDrifted(
     Math.abs(gcalStart.getTime() - prismStart.getTime()) > 60000 ||
     Math.abs(gcalEnd.getTime() - prismEnd.getTime()) > 60000
   );
-}
-
-// --- Review occurrence helpers (mirrored from calendar/route.ts) ---
-
-function matchesMonthlyRule(d: Date, rule: string): boolean {
-  const day = d.getDay();
-  const date = d.getDate();
-  const month = d.getMonth();
-  const lastDay = new Date(d.getFullYear(), month + 1, 0).getDate();
-
-  switch (rule) {
-    case 'last-friday': {
-      const lastDate = new Date(d.getFullYear(), month + 1, 0);
-      const diff = (lastDate.getDay() - 5 + 7) % 7;
-      return date === lastDay - diff;
-    }
-    case 'last-monday': {
-      const lastDate = new Date(d.getFullYear(), month + 1, 0);
-      const diff = (lastDate.getDay() - 1 + 7) % 7;
-      return date === lastDay - diff;
-    }
-    case '1st-monday': return date <= 7 && day === 1;
-    case '1st-friday': return date <= 7 && day === 5;
-    case '15th': return date === 15;
-    default: return false;
-  }
-}
-
-function matchesYearlyRule(d: Date, rule: string): boolean {
-  const month = d.getMonth();
-  const date = d.getDate();
-
-  switch (rule) {
-    case 'dec-30': return month === 11 && date === 30;
-    case 'dec-31': return month === 11 && date === 31;
-    case 'last-sat-dec': {
-      if (month !== 11) return false;
-      const lastDate = new Date(d.getFullYear(), 12, 0);
-      const lastDay = lastDate.getDate();
-      const diff = (lastDate.getDay() - 6 + 7) % 7;
-      return date === lastDay - diff;
-    }
-    default: {
-      if (rule.startsWith('custom:')) {
-        const parts = rule.slice(7).split('-');
-        const ruleMonth = parseInt(parts[0]) - 1;
-        const ruleDay = parseInt(parts[1]);
-        return month === ruleMonth && date === ruleDay;
-      }
-      return false;
-    }
-  }
 }
 
 /**

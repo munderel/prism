@@ -313,7 +313,7 @@ export function CalendarSplitView({
     });
 
     return () => draggable.destroy();
-  }, []);
+  }, [unscheduledItems?.length]);
 
   // Update calendar view when viewMode changes
   useEffect(() => {
@@ -335,7 +335,11 @@ export function CalendarSplitView({
     const rangeStart = new Date(dateRange.start).getTime();
     const rangeEnd = new Date(dateRange.end).getTime();
 
-    return calendarEvents.reduce((total: number, evt: any) => {
+    // Only count user-scheduled work events (tasks, aims) — exclude meetings, google, powerdown, etc.
+    const workEvents = calendarEvents.filter((evt: any) =>
+      evt.source === 'tasks' || evt.source === 'aims'
+    );
+    return workEvents.reduce((total: number, evt: any) => {
       const evtStart = new Date(evt.start).getTime();
       const evtEnd = new Date(evt.end).getTime();
       // Only count events within the date range

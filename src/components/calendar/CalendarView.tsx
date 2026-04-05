@@ -577,11 +577,22 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           timeBlockEnd: newEnd,
         }),
       });
+    } else if (eventId.startsWith('review-')) {
+      // Reschedule a review's time block
+      const reviewId = eventId.replace('review-', '');
+      await fetch(`/api/reviews/${reviewId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timeBlockStart: newStart,
+          timeBlockEnd: newEnd,
+        }),
+      });
     } else if (eventId.startsWith('process-')) {
       // Per-execution override: extract processId and date from "process-{cuid}-YYYY-MM-DD"
-      const parts = eventId.split('-');
-      const dateStr = parts.slice(-3).join('-');
-      const processId = parts.slice(1, -3).join('-');
+      const match = eventId.match(/^process-(.+)-(\d{4}-\d{2}-\d{2})$/);
+      const dateStr = match ? match[2] : '';
+      const processId = match ? match[1] : '';
       await fetch(`/api/processes/${processId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1180,7 +1191,10 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           longPressDelay={0}
           droppable={true}
           eventDrop={handleEventDrop}
-          eventResize={handleEventDrop}
+          eventResize={(info: any) => {
+            if (!info.event.end) { info.revert(); return; }
+            handleEventDrop(info);
+          }}
           eventReceive={handleEventReceive}
           eventClick={handleEventClick}
           select={onDateSelect}

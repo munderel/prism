@@ -97,6 +97,8 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
 
 
   // Upcoming week boundaries (Mon-Sun)
+  // Uses today's date string as dependency so it recomputes if the component stays mounted across midnight
+  const todayKey = new Date().toISOString().split('T')[0];
   const upcomingWeekStart = useMemo(() => {
     const now = new Date();
     const dow = now.getDay();
@@ -105,7 +107,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     d.setDate(now.getDate() + off);
     d.setHours(0, 0, 0, 0);
     return d;
-  }, []);
+  }, [todayKey]);
   const upcomingWeekEnd = useMemo(() => {
     const d = new Date(upcomingWeekStart);
     d.setDate(upcomingWeekStart.getDate() + 6);
