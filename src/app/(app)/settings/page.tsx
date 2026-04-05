@@ -456,22 +456,22 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="font-display text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-          <Settings className="h-6 w-6 text-prism-indigo" />
+      <div className="mb-4 sm:mb-6">
+        <h1 className="font-display text-xl sm:text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+          <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-prism-indigo" />
           Settings
         </h1>
       </div>
 
-      <div className="space-y-6 max-w-2xl">
+      <div className="space-y-4 sm:space-y-6 max-w-2xl w-full">
         {/* Appearance */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Sun className="h-5 w-5 text-amber-400" />
             Appearance
           </h2>
           {mounted && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {themeOptions.map((opt) => {
                 const isActive = theme === opt.value;
                 return (
@@ -494,7 +494,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Visible Features */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Eye className="h-5 w-5 text-indigo-400" />
             Visible Features
@@ -535,7 +535,7 @@ export default function SettingsPage() {
         </section>
 
         {/* MTP */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Compass className="h-5 w-5 text-indigo-400" />
             Massively Transformative Purpose
@@ -551,7 +551,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Timezone */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Globe className="h-5 w-5 text-indigo-400" />
             Timezone
@@ -568,7 +568,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Notifications */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Bell className="h-5 w-5 text-indigo-400" />
             Notifications
@@ -620,7 +620,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Scheduling */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Clock className="h-5 w-5 text-indigo-400" />
             Scheduling
@@ -629,7 +629,7 @@ export default function SettingsPage() {
             <div>
               <label className="text-sm text-[var(--text-secondary)]">Working Hours</label>
               <p className="text-xs text-[var(--text-muted)] mt-0.5 mb-2">Time range for work-related tasks and aims</p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <input
                   type="time"
                   value={workingHoursStart}
@@ -649,7 +649,7 @@ export default function SettingsPage() {
             <div>
               <label className="text-sm text-[var(--text-secondary)]">Casual Hours</label>
               <p className="text-xs text-[var(--text-muted)] mt-0.5 mb-2">Time range for personal activities like exercise and recovery</p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <input
                   type="time"
                   value={casualHoursStart}
@@ -683,7 +683,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Connected Calendars */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Calendar className="h-5 w-5 text-purple-400" />
             Connected Calendars
@@ -754,7 +754,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Powerdown Time */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Sunset className="h-5 w-5 text-violet-400" />
             Powerdown Time
@@ -770,7 +770,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Review Schedule */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Calendar className="h-5 w-5 text-blue-400" />
             Review Schedule
@@ -780,7 +780,7 @@ export default function SettingsPage() {
           {/* Weekly Review */}
           <div className="mb-6 pb-6 border-b border-[var(--border-color)]">
             <h3 className="text-sm font-semibold text-green-700 dark:text-green-400 mb-3">Weekly Review</h3>
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
               <div>
                 <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
                 <select
@@ -804,7 +804,7 @@ export default function SettingsPage() {
           {/* Monthly Review */}
           <div className="mb-6 pb-6 border-b border-[var(--border-color)]">
             <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-3">Monthly Review</h3>
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
               <div>
                 <label className="block text-xs text-[var(--text-secondary)] mb-1">Recurrence</label>
                 <select
@@ -831,7 +831,7 @@ export default function SettingsPage() {
           {/* Yearly Review */}
           <div className="mb-6">
             <h3 className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 mb-3">Yearly Review</h3>
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
               <div>
                 <label className="block text-xs text-[var(--text-secondary)] mb-1">Recurrence</label>
                 <select
@@ -864,7 +864,7 @@ export default function SettingsPage() {
               </div>
             </div>
             {yearlyReviewRecurrenceRule?.startsWith('custom:') && (
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
                 <div>
                   <label className="block text-xs text-[var(--text-secondary)] mb-1">Month</label>
                   <select
@@ -905,7 +905,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Onboarding */}
-        <section className="glass-panel p-6">
+        <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Onboarding Tour</h2>
           <button
             onClick={retriggerOnboarding}
@@ -918,7 +918,7 @@ export default function SettingsPage() {
 
         {/* Company MTP (admin only) */}
         {isAdmin && (
-          <section className="glass-panel p-6">
+          <section className="glass-panel p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
               <Compass className="h-5 w-5 text-purple-400" />
               Company MTP (Admin)
@@ -939,7 +939,7 @@ export default function SettingsPage() {
 
         {/* Admin panel */}
         {isAdmin && (
-          <section className="glass-panel p-6">
+          <section className="glass-panel p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
               <Shield className="h-5 w-5 text-red-400" />
               Admin Panel
@@ -1014,7 +1014,7 @@ export default function SettingsPage() {
 
         {/* Create User (Dev mode only) */}
         {isAdmin && isDevMode && (
-          <section className="glass-panel p-6">
+          <section className="glass-panel p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
               <UserPlus className="h-5 w-5 text-green-400" />
               Create User (Dev)
@@ -1056,7 +1056,7 @@ export default function SettingsPage() {
 
         {/* Invite User */}
         {isAdmin && (
-          <section className="glass-panel p-6">
+          <section className="glass-panel p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
               <Mail className="h-5 w-5 text-indigo-400" />
               Invite User

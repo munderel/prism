@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useRef, useEffect, useMemo, useCallback, useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING } from '@/lib/prism-colors';
 import type { ColorDef } from '@/lib/prism-colors';
 
@@ -278,6 +280,8 @@ export function CalendarSplitView({
   const calendarRef = useRef<FullCalendar>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme !== 'light';
+  const isMobile = useMediaQuery('(max-width: 1023px)');
+  const [mobileItemsExpanded, setMobileItemsExpanded] = useState(false);
 
   // Fetch existing calendar events for the date range
   const { events: calendarEvents, refreshEvents: mutateEvents } = useCalendarEvents(
@@ -476,21 +480,29 @@ export function CalendarSplitView({
   );
 
   return (
-    <div className="flex h-full w-full min-h-[500px] rounded-xl border border-[var(--border-color)] bg-[var(--surface)] overflow-hidden">
-      {/* Left Panel — Available Work Blocks / Available Work (35%) */}
-      <div className="w-[35%] flex flex-col border-r border-[var(--border-color)] bg-[var(--surface-raised)]/50">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
+    <div className="flex flex-col lg:flex-row h-full w-full min-h-[500px] rounded-xl border border-[var(--border-color)] bg-[var(--surface)] overflow-hidden">
+      {/* Left Panel — Available Work Blocks / Available Work */}
+      <div className={`w-full lg:w-[35%] flex flex-col border-b lg:border-b-0 lg:border-r border-[var(--border-color)] bg-[var(--surface-raised)]/50 ${isMobile && !mobileItemsExpanded ? '' : ''}`}>
+        {/* Header — collapsible on mobile */}
+        <button
+          onClick={() => isMobile && setMobileItemsExpanded(!mobileItemsExpanded)}
+          className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] lg:cursor-default"
+        >
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">
             {mode === 'work_blocks' ? 'Available Work Blocks' : 'Available Work'}
           </h3>
-          <span className="text-xs text-[var(--text-secondary)] tabular-nums">
-            {unscheduledItems.length} item{unscheduledItems.length !== 1 ? 's' : ''}
-          </span>
-        </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[var(--text-secondary)] tabular-nums">
+              {unscheduledItems.length} item{unscheduledItems.length !== 1 ? 's' : ''}
+            </span>
+            <span className="lg:hidden text-[var(--text-muted)]">
+              {mobileItemsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </span>
+          </div>
+        </button>
 
-        {/* Scrollable item list */}
-        <div ref={draggableContainerRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+        {/* Scrollable item list — hidden on mobile when collapsed */}
+        <div ref={draggableContainerRef} className={`overflow-y-auto px-3 py-3 space-y-4 ${isMobile && !mobileItemsExpanded ? 'hidden' : 'flex-1 max-h-[300px] lg:max-h-none'}`}>
           {mode === 'work_blocks' ? (
             <>
               {/* Deep Work (AIM Block) — always shown with reusable template */}
@@ -570,9 +582,9 @@ export function CalendarSplitView({
         <WeeklyHourBar scheduledMinutes={scheduledMinutes} />
       </div>
 
-      {/* Right Panel — Calendar (65%) */}
-      <div className="w-[65%] flex flex-col">
-        <div className="flex-1 p-2 overflow-hidden calendar-split-view">
+      {/* Right Panel — Calendar */}
+      <div className="w-full lg:w-[65%] flex flex-col min-h-[350px]">
+        <div className="flex-1 p-1 sm:p-2 overflow-hidden calendar-split-view">
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}

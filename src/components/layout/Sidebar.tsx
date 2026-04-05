@@ -103,7 +103,7 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
         {/* Mobile close button */}
         <button
           onClick={onClose}
-          className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors lg:hidden"
+          className="rounded-lg p-2.5 text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors lg:hidden"
           aria-label="Close navigation menu"
         >
           <X className="h-5 w-5" />
@@ -126,7 +126,7 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
                     href={item.href}
                     onClick={onClose}
                     title={collapsed ? item.label : undefined}
-                    className={`relative flex items-center rounded-lg mb-0.5 text-sm font-medium transition-colors ${
+                    className={`relative flex items-center rounded-lg mb-0.5 text-sm font-medium transition-colors min-h-[44px] ${
                       collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
                     } ${
                       isActive

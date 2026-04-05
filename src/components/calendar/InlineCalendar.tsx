@@ -207,14 +207,14 @@ export function InlineCalendar({
   };
 
   return (
-    <div className="flex gap-4">
+    <div className="flex flex-col lg:flex-row gap-4">
       {/* Unscheduled items sidebar */}
       {unscheduledItems.length > 0 && (
-        <div className="w-56 flex-shrink-0">
+        <div className="w-full lg:w-56 lg:flex-shrink-0">
           <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-2">
             Unscheduled ({unscheduledItems.length})
           </p>
-          <div ref={unscheduledListRef} className="space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
+          <div ref={unscheduledListRef} className="space-y-1.5 max-h-[200px] lg:max-h-[500px] overflow-y-auto pr-1">
             {unscheduledItems.map((item) => (
               <div
                 key={`${item.type}-${item.id}`}
