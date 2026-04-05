@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import dynamic from 'next/dynamic';
-import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw, X, CalendarPlus } from 'lucide-react';
+import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw, X, CalendarPlus, Loader2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { Draggable } from '@fullcalendar/interaction';
 import { LazyMotion, domAnimation, m, AnimatePresence } from 'framer-motion';
@@ -252,7 +252,7 @@ export default function CalendarPage() {
 
   const isMobile = useMediaQuery('(max-width: 1023px)');
   const [showMobileSheet, setShowMobileSheet] = useState(false);
-  const [pendingScheduleItem, setPendingScheduleItem] = useState<UnscheduledItem | null>(null);
+  const [scheduleModalItem, setScheduleModalItem] = useState<UnscheduledItem | null>(null);
   const [showMeetings, setShowMeetings] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const draggableRef = useRef<Draggable | null>(null);
@@ -321,19 +321,10 @@ export default function CalendarPage() {
     });
   };
 
-  // Mobile tap-to-schedule: when user taps an item then taps a time slot
-  const handleMobileDateSelect = async (info: any) => {
-    if (!pendingScheduleItem) return;
-    const start = info.start as Date;
-    const durationMs = (pendingScheduleItem.duration ?? 60) * 60 * 1000;
-    const end = new Date(start.getTime() + durationMs);
-
-    const item = pendingScheduleItem;
-    setPendingScheduleItem(null);
-
+  // Schedule an item to a specific time range (used by mobile modal)
+  const scheduleMobileItem = async (item: UnscheduledItem, start: Date, end: Date) => {
     try {
       if (item.itemType === 'work_block') {
-        // Create a Google Calendar event for work blocks
         const res = await fetch('/api/calendar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -384,9 +375,8 @@ export default function CalendarPage() {
   };
 
   const handleMobileItemTap = (item: UnscheduledItem) => {
-    setPendingScheduleItem(item);
+    setScheduleModalItem(item);
     setShowMobileSheet(false);
-    toast.success('Tap a time slot on the calendar to schedule');
   };
 
   const handleExternalDrop = (itemId: string, _start: Date, _end: Date, itemType?: string) => {
@@ -465,17 +455,6 @@ export default function CalendarPage() {
         )}
         </div>
       </div>
-
-      {/* Mobile: pending schedule indicator */}
-      {pendingScheduleItem && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm text-indigo-300 lg:hidden">
-          <CalendarPlus className="h-4 w-4 flex-shrink-0" />
-          <span className="flex-1 truncate">Tap a time slot to schedule &ldquo;{pendingScheduleItem.title}&rdquo;</span>
-          <button onClick={() => setPendingScheduleItem(null)} className="text-indigo-400 hover:text-indigo-300 flex-shrink-0">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
 
       <MeetingsManager open={showMeetings} onClose={() => setShowMeetings(false)} isAdmin={isAdmin} />
 
@@ -563,7 +542,6 @@ export default function CalendarPage() {
             <CalendarView
               onEventClick={handleEventClick}
               onExternalDrop={handleExternalDrop}
-              onDateSelect={isMobile ? handleMobileDateSelect : undefined}
               unscheduledTasks={allUnscheduledItems}
               scheduleSettings={scheduleSettings}
             />
@@ -676,7 +654,7 @@ export default function CalendarPage() {
                         key={item.id}
                         item={item}
                         onTap={handleMobileItemTap}
-                        isSelected={pendingScheduleItem?.id === item.id}
+                        isSelected={scheduleModalItem?.id === item.id}
                       />
                     ))
                   )}
@@ -691,7 +669,7 @@ export default function CalendarPage() {
                       <div
                         onClick={() => handleMobileItemTap({ id: '__work_block_template__', itemType: 'work_block', title: 'Work Block', duration: 60 } as UnscheduledItem)}
                         className={`cursor-pointer rounded-lg border border-indigo-500/30 border-l-4 border-l-indigo-500 bg-indigo-500/10 p-3 hover:bg-indigo-500/20 transition-colors min-h-[44px] ${
-                          pendingScheduleItem?.id === '__work_block_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
+                          scheduleModalItem?.id === '__work_block_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
                         }`}
                       >
                         <div className="flex items-start gap-2">
@@ -705,7 +683,7 @@ export default function CalendarPage() {
                       <div
                         onClick={() => handleMobileItemTap({ id: '__deep_work_template__', itemType: 'work_block', title: 'Deep Work Block', duration: 120 } as UnscheduledItem)}
                         className={`cursor-pointer rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors min-h-[44px] ${
-                          pendingScheduleItem?.id === '__deep_work_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
+                          scheduleModalItem?.id === '__deep_work_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
                         }`}
                       >
                         <div className="flex items-start gap-2">
@@ -724,6 +702,142 @@ export default function CalendarPage() {
           )}
         </AnimatePresence>
       </LazyMotion>
+
+      {/* Mobile Schedule Modal */}
+      {scheduleModalItem && (
+        <MobileScheduleModal
+          item={scheduleModalItem}
+          onSchedule={async (start, end) => {
+            await scheduleMobileItem(scheduleModalItem, start, end);
+            setScheduleModalItem(null);
+          }}
+          onCancel={() => setScheduleModalItem(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Mobile Schedule Modal                                              */
+/* ------------------------------------------------------------------ */
+
+function getDefaultTime(): string {
+  const now = new Date();
+  const mins = now.getMinutes();
+  // Round up to next 30-min slot
+  if (mins <= 30) {
+    now.setMinutes(30, 0, 0);
+  } else {
+    now.setHours(now.getHours() + 1, 0, 0, 0);
+  }
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+function getToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function MobileScheduleModal({
+  item,
+  onSchedule,
+  onCancel,
+}: {
+  item: UnscheduledItem;
+  onSchedule: (start: Date, end: Date) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = useState(getToday);
+  const [time, setTime] = useState(getDefaultTime);
+  const [scheduling, setScheduling] = useState(false);
+  const duration = item.duration ?? 60;
+
+  const handleConfirm = async () => {
+    setScheduling(true);
+    const start = new Date(`${date}T${time}:00`);
+    const end = new Date(start.getTime() + duration * 60 * 1000);
+    await onSchedule(start, end);
+    setScheduling(false);
+  };
+
+  const formatDuration = (mins: number) => {
+    if (mins < 60) return `${mins}min`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div
+        className="relative w-full sm:max-w-sm rounded-t-xl sm:rounded-xl border border-[var(--border-color)] bg-[var(--surface)] shadow-2xl backdrop-blur-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-color)]">
+          <div className="flex items-center gap-2 min-w-0">
+            <CalendarPlus className="h-5 w-5 text-indigo-400 flex-shrink-0" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] truncate">Schedule item</h3>
+          </div>
+          <button
+            onClick={onCancel}
+            className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          {/* Item name */}
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)]">{item.title}</p>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">{formatDuration(duration)}</p>
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2.5 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Time */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Start time</label>
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2.5 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 px-5 py-4 border-t border-[var(--border-color)]">
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-lg border border-[var(--border-color)] px-4 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={scheduling}
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+          >
+            {scheduling ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarPlus className="h-4 w-4" />}
+            Schedule
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
