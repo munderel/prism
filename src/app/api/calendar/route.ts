@@ -293,6 +293,7 @@ export async function GET(request: NextRequest) {
     events.push({
       id: `task-${task.id}`,
       title: task.title,
+      description: task.description,
       start: task.timeBlockStart?.toISOString() ?? task.dueDate?.toISOString(),
       end: task.timeBlockEnd?.toISOString() ?? undefined,
       allDay: !task.timeBlockStart,
@@ -302,6 +303,8 @@ export async function GET(request: NextRequest) {
       itemType: 'task',
       status: task.status,
       taskType: task.taskType,
+      priority: task.priority,
+      goalTitle: task.goal?.title,
       color: taskTypeColor(task.taskType),
     });
   }
@@ -362,6 +365,7 @@ export async function GET(request: NextRequest) {
     events.push({
       id: `google-${ge.id}`,
       title: ge.summary,
+      description: ge.description,
       start: ge.start?.dateTime ?? ge.start?.date,
       end: ge.end?.dateTime ?? ge.end?.date,
       allDay: !ge.start?.dateTime,
