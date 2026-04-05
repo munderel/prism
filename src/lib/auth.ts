@@ -98,8 +98,32 @@ const passwordProvider = CredentialsProvider({
     });
     console.log('[auth] authorize — user found:', !!user, 'hasPassword:', !!user?.passwordHash, 'locked:', !!user?.isLockedOut);
 
-    if (!user || !user.passwordHash) {
-      console.log('[auth] authorize — user not found or no password hash');
+    // Allow first user (bootstrap admin) to skip password check
+    const adminCount = await prisma.user.count({ where: { isAdmin: true } });
+    console.log('[auth] authorize — adminCount:', adminCount);
+
+    if (!user) {
+      console.log('[auth] authorize — user not found');
+      if (adminCount === 0) {
+        console.log('[auth] authorize — first user, allowing bootstrap');
+        // Bootstrap first admin user with this email and password
+        const bcryptPassword = await bcrypt.hash(credentials.password, 10);
+        const newUser = await prisma.user.create({
+          data: {
+            email: normalizedEmail,
+            name: normalizedEmail.split('@')[0],
+            isAdmin: true,
+            passwordHash: bcryptPassword,
+          },
+        });
+        console.log('[auth] authorize — bootstrap user created:', newUser.id);
+        return { id: newUser.id, email: newUser.email, name: newUser.name, isAdmin: true };
+      }
+      return null;
+    }
+
+    if (!user.passwordHash) {
+      console.log('[auth] authorize — user has no password hash');
       return null;
     }
     if (user.isLockedOut) {
