@@ -109,7 +109,7 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
           <X className="h-5 w-5" />
         </button>
       </div>
-      <nav className={`mt-4 flex-1 ${collapsed ? 'px-1.5' : 'px-3'}`}>
+      <nav className={`mt-4 flex-1 overflow-y-auto ${collapsed ? 'px-1.5' : 'px-3'}`}>
         {filteredNavSections.map((section, idx) => (
           <div key={section.label} className={idx > 0 ? 'mt-6' : ''}>
             {!collapsed && (
@@ -143,7 +143,7 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
           </div>
         ))}
       </nav>
-      <div className={`pb-4 border-t border-[var(--border-color)] pt-4 space-y-3 ${collapsed ? 'px-1.5' : 'px-4'}`}>
+      <div className={`flex-shrink-0 pb-4 border-t border-[var(--border-color)] pt-4 space-y-3 ${collapsed ? 'px-1.5' : 'px-4'}`}>
         {!collapsed && <StreakCounter />}
         {mounted && (
           <button
