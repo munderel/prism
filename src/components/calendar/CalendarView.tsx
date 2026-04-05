@@ -65,6 +65,8 @@ interface CalendarViewProps {
     casualHoursEnd: string;
     taskSchedulePeriod: string;
   };
+  /** ISO datetime string — when set, calendar navigates to this date and scrolls to the time */
+  navigateTo?: string;
 }
 
 const SOURCE_FILTERS = [
@@ -108,7 +110,7 @@ function scheduleItem(
   });
 }
 
-export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings: _scheduleSettings }: CalendarViewProps) {
+export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings: _scheduleSettings, navigateTo }: CalendarViewProps) {
   const router = useRouter();
   const toast = useToast();
   const calendarRef = useRef<any>(null);
@@ -125,6 +127,17 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     if (!api) return;
     api.changeView(isMobile ? 'timeGridDay' : 'timeGridWeek');
   }, [isMobile]);
+
+  // Navigate calendar to a specific date/time (e.g. after mobile scheduling)
+  useEffect(() => {
+    if (!navigateTo) return;
+    const api = calendarRef.current?.getApi();
+    if (!api) return;
+    const d = new Date(navigateTo);
+    api.gotoDate(d);
+    api.scrollToTime({ hours: d.getHours(), minutes: Math.max(0, d.getMinutes() - 15) });
+    refreshEvents();
+  }, [navigateTo, refreshEvents]);
 
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown', 'processes']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
