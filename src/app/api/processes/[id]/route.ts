@@ -3,6 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { regenerateAdvancedModeTasks, updateFutureTaskOwners } from '@/lib/process-task-generator';
+import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
+import { fromZonedTime } from 'date-fns-tz';
+
+function parseLocalDateKey(dateKey: string, timezone: string): Date {
+  return fromZonedTime(`${dateKey}T00:00:00`, timezone);
+}
 
 export async function GET(
   _request: NextRequest,
@@ -52,8 +58,12 @@ export async function PATCH(
 
   // Handle per-execution time override (drag-drop from calendar)
   if (body.scheduledDate && (body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined)) {
-    const date = new Date(body.scheduledDate);
-    date.setHours(0, 0, 0, 0);
+    const owner = await prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: { timezone: true },
+    });
+    const userTz = owner?.timezone ?? 'America/New_York';
+    const date = parseLocalDateKey(body.scheduledDate, userTz);
     const nextDay = new Date(date.getTime() + 86400000);
 
     let execution = await prisma.processExecution.findFirst({
@@ -80,6 +90,28 @@ export async function PATCH(
         ...(body.timeBlockEnd !== undefined && { timeBlockEnd: body.timeBlockEnd ? new Date(body.timeBlockEnd) : null }),
       },
     });
+
+    if (updated.timeBlockStart && updated.timeBlockEnd) {
+      try {
+        await syncManagedSeriesOverride({
+          userId: auth.userId,
+          date: updated.scheduledDate,
+          start: updated.timeBlockStart,
+          end: updated.timeBlockEnd,
+          selector: (state) => state.processes?.[id],
+          writer: (state, series) => {
+            state.processes = state.processes ?? {};
+            if (series) {
+              state.processes[id] = series;
+            } else {
+              delete state.processes[id];
+            }
+          },
+        });
+      } catch (err) {
+        console.warn('[processes] Google Calendar recurring sync failed:', err);
+      }
+    }
 
     return Response.json(updated, NO_STORE);
   }

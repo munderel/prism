@@ -47,6 +47,8 @@ export async function updateGoogleEvent(
     description?: string;
     start?: string;
     end?: string;
+    timeZone?: string;
+    recurrence?: string[];
   },
   calendarId: string = 'primary'
 ) {
@@ -57,8 +59,19 @@ export async function updateGoogleEvent(
     const requestBody: any = {
       ...event.summary !== undefined && { summary: event.summary },
       ...event.description !== undefined && { description: event.description },
-      ...event.start !== undefined && { start: { dateTime: event.start } },
-      ...event.end !== undefined && { end: { dateTime: event.end } },
+      ...event.start !== undefined && {
+        start: {
+          dateTime: event.start,
+          ...(event.timeZone ? { timeZone: event.timeZone } : {}),
+        },
+      },
+      ...event.end !== undefined && {
+        end: {
+          dateTime: event.end,
+          ...(event.timeZone ? { timeZone: event.timeZone } : {}),
+        },
+      },
+      ...event.recurrence !== undefined && { recurrence: event.recurrence },
     };
 
     const response = await calendar.events.patch({
@@ -329,6 +342,42 @@ export async function createGoogleEvent(
  */
 const RRULE_DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const;
 
+const MONTHLY_REVIEW_RULES: Record<string, string[]> = {
+  'last-friday': ['RRULE:FREQ=MONTHLY;BYDAY=FR;BYSETPOS=-1'],
+  'last-monday': ['RRULE:FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-1'],
+  '1st-monday': ['RRULE:FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1'],
+  '1st-friday': ['RRULE:FREQ=MONTHLY;BYDAY=FR;BYSETPOS=1'],
+  '15th': ['RRULE:FREQ=MONTHLY;BYMONTHDAY=15'],
+};
+
+export function buildMonthlyReviewRecurrence(rule?: string | null): string[] | undefined {
+  if (!rule) return undefined;
+  return MONTHLY_REVIEW_RULES[rule];
+}
+
+export function buildYearlyReviewRecurrence(rule?: string | null): string[] | undefined {
+  if (!rule) return undefined;
+  if (rule === 'dec-30') return ['RRULE:FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=30'];
+  if (rule === 'dec-31') return ['RRULE:FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=31'];
+  if (rule === 'last-sat-dec') return ['RRULE:FREQ=YEARLY;BYMONTH=12;BYDAY=SA;BYSETPOS=-1'];
+
+  const customMatch = /^custom:(\d{2})-(\d{2})$/.exec(rule);
+  if (customMatch) {
+    return [`RRULE:FREQ=YEARLY;BYMONTH=${parseInt(customMatch[1], 10)};BYMONTHDAY=${parseInt(customMatch[2], 10)}`];
+  }
+
+  return undefined;
+}
+
+export function buildWeeklyReviewRecurrence(dayOfWeek?: number | null): string[] | undefined {
+  if (dayOfWeek == null) return undefined;
+  return [`RRULE:FREQ=WEEKLY;BYDAY=${RRULE_DAYS[dayOfWeek]}`];
+}
+
+export function buildPowerdownRecurrence(): string[] {
+  return ['RRULE:FREQ=DAILY'];
+}
+
 export function buildMeetingRecurrence(
   cadence: string,
   dayOfWeek: number | null
@@ -353,6 +402,36 @@ export function buildMeetingRecurrence(
       return [`RRULE:FREQ=MONTHLY;INTERVAL=3;BYDAY=1${day}`];
     case 'YEARLY':
       return [`RRULE:FREQ=YEARLY;BYMONTH=1;BYDAY=1${day}`];
+    default:
+      return undefined;
+  }
+}
+
+export function buildProcessRecurrence(process: {
+  cadence: string;
+  scheduledDayOfWeek?: number | null;
+  scheduledDayOfMonth?: number | null;
+}): string[] | undefined {
+  const dayOfWeek = process.scheduledDayOfWeek ?? null;
+  const day = dayOfWeek != null ? RRULE_DAYS[dayOfWeek] : 'MO';
+
+  switch (process.cadence) {
+    case 'ONE_TIME':
+      return undefined;
+    case 'DAILY':
+      return dayOfWeek == null
+        ? ['RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR']
+        : ['RRULE:FREQ=DAILY'];
+    case 'WEEKLY':
+      return [`RRULE:FREQ=WEEKLY;BYDAY=${day}`];
+    case 'BIWEEKLY':
+      return [`RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=${day}`];
+    case 'MONTHLY':
+      return [`RRULE:FREQ=MONTHLY;BYMONTHDAY=${process.scheduledDayOfMonth ?? 1}`];
+    case 'QUARTERLY':
+      return [`RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=${process.scheduledDayOfMonth ?? 1}`];
+    case 'YEARLY':
+      return ['RRULE:FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=1'];
     default:
       return undefined;
   }

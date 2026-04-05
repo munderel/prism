@@ -5,6 +5,7 @@ import { safeParseJson } from '@/lib/api-helpers';
 import { listGoogleEvents, createGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
 import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
+import { parseGoogleSyncState, type GoogleEventOverride } from '@/lib/google-sync-state';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 const MAX_DAYS = 366;
@@ -72,6 +73,26 @@ function taskTypeColor(taskType: string): string {
   }
 }
 
+function applySeriesException(
+  dateKey: string,
+  defaults: { start: Date; end: Date },
+  series?: { overrides?: Record<string, GoogleEventOverride>; cancelledDates?: string[] }
+) {
+  if (!series) return { ...defaults, cancelled: false };
+  if ((series.cancelledDates ?? []).includes(dateKey)) {
+    return { ...defaults, cancelled: true };
+  }
+  const override = series.overrides?.[dateKey];
+  if (override) {
+    return {
+      start: new Date(override.start),
+      end: new Date(override.end),
+      cancelled: false,
+    };
+  }
+  return { ...defaults, cancelled: false };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
@@ -98,9 +119,10 @@ export async function GET(request: NextRequest) {
 
   const userSettings = await prisma.user.findUnique({
     where: { id: auth.userId },
-    select: { timezone: true, selectedCalendarIds: true, calendarColorOverrides: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
+    select: { timezone: true, selectedCalendarIds: true, calendarColorOverrides: true, googleSyncState: true, powerdownTime: true, weeklyReviewDayOfWeek: true, weeklyReviewTime: true, weeklyReviewDuration: true, monthlyReviewRecurrenceRule: true, monthlyReviewTime: true, monthlyReviewDuration: true, yearlyReviewRecurrenceRule: true, yearlyReviewTime: true, yearlyReviewDuration: true },
   });
   const userTz = userSettings?.timezone ?? 'America/New_York';
+  const googleSyncState = parseGoogleSyncState(userSettings?.googleSyncState);
   const calendarIds = parseCalendarIds(userSettings?.selectedCalendarIds);
   const colorOverrides = (userSettings?.calendarColorOverrides && typeof userSettings.calendarColorOverrides === 'object' && !Array.isArray(userSettings.calendarColorOverrides))
     ? (userSettings.calendarColorOverrides as Record<string, string>)
@@ -317,6 +339,22 @@ export async function GET(request: NextRequest) {
   for (const s of pdSessions) {
     if (s.calendarEventId) syncedCalendarEventIds.add(s.calendarEventId);
   }
+  for (const reviewSeries of Object.values(googleSyncState.recurringReviews ?? {})) {
+    if (reviewSeries?.eventId) syncedCalendarEventIds.add(reviewSeries.eventId);
+    for (const override of Object.values(reviewSeries?.overrides ?? {})) {
+      if (override.googleEventId) syncedCalendarEventIds.add(override.googleEventId);
+    }
+  }
+  if (googleSyncState.powerdown?.eventId) syncedCalendarEventIds.add(googleSyncState.powerdown.eventId);
+  for (const override of Object.values(googleSyncState.powerdown?.overrides ?? {})) {
+    if (override.googleEventId) syncedCalendarEventIds.add(override.googleEventId);
+  }
+  for (const processSeries of Object.values(googleSyncState.processes ?? {})) {
+    if (processSeries?.eventId) syncedCalendarEventIds.add(processSeries.eventId);
+    for (const override of Object.values(processSeries?.overrides ?? {})) {
+      if (override.googleEventId) syncedCalendarEventIds.add(override.googleEventId);
+    }
+  }
 
   for (const meeting of meetings) {
     if (!isUserInMeeting(meeting, auth.userId)) {
@@ -391,13 +429,12 @@ export async function GET(request: NextRequest) {
   if (userSettings?.powerdownTime && !fetchExternal) {
     const [pdH, pdM] = userSettings.powerdownTime.split(':').map(Number);
 
-    // Build overrides map — only from sessions the user explicitly dragged.
-    // Sessions with calendarEventId were created/updated by the sync route and
-    // may carry stale timeBlock values from an old default — never use those.
+    // Build overrides map from any stored session time blocks.
+    // Some older dragged sessions still carry calendarEventId values from the
+    // pre-series sync model, and excluding them makes Prism hide valid moves.
     const pdOverrides = new Map<string, { start: Date; end: Date }>();
     for (const s of pdSessions) {
       if (!s.timeBlockStart || !s.timeBlockEnd) continue;
-      if (s.calendarEventId) continue; // sync-created — not a user override
 
       const override = { start: s.timeBlockStart, end: s.timeBlockEnd };
       const zoned = toZonedTime(s.sessionDate, userTz);
@@ -426,6 +463,11 @@ export async function GET(request: NextRequest) {
         pdStart = fromZonedTime(`${dateKey}T${pad2(pdH)}:${pad2(pdM)}:00`, userTz);
         pdEnd = new Date(pdStart.getTime() + 30 * 60_000);
       }
+
+      const powerdownException = applySeriesException(dateKey, { start: pdStart, end: pdEnd }, googleSyncState.powerdown);
+      if (powerdownException.cancelled) return;
+      pdStart = powerdownException.start;
+      pdEnd = powerdownException.end;
 
       if (pdStart >= rangeStart && pdStart <= rangeEnd) {
         events.push({
@@ -513,9 +555,19 @@ export async function GET(request: NextRequest) {
         if (config.matchFn(zonedCursor)) {
           // Skip if a DB Review record already exists for this date+type (prevents duplicates)
           if (existingReviewDates.get(config.type)?.has(dateKey)) return;
-          pushTimedEvent(events, rangeStart, rangeEnd, dateKey, h, m, config.duration, userTz, {
+          const defaults = {
+            start: fromZonedTime(`${dateKey}T${pad2(h)}:${pad2(m)}:00`, userTz),
+            end: new Date(fromZonedTime(`${dateKey}T${pad2(h)}:${pad2(m)}:00`, userTz).getTime() + config.duration * 60_000),
+          };
+          const exception = applySeriesException(dateKey, defaults, googleSyncState.recurringReviews?.[config.type as 'WEEKLY' | 'MONTHLY' | 'YEARLY']);
+          if (exception.cancelled) return;
+          if (!(exception.start >= rangeStart && exception.start <= rangeEnd)) return;
+          events.push({
             id: `${config.idPrefix}-${dateKey}`,
             title: config.title,
+            start: exception.start.toISOString(),
+            end: exception.end.toISOString(),
+            allDay: false,
             source: 'reviews',
             color: config.color,
             link: `/reviews?action=start&type=${config.type}&date=${dateKey}`,
@@ -663,6 +715,11 @@ export async function GET(request: NextRequest) {
           evStart = fromZonedTime(`${dateKey}T${pad2(procH)}:${pad2(procM)}:00`, userTz);
           evEnd = new Date(evStart.getTime() + duration * 60_000);
         }
+
+        const processException = applySeriesException(dateKey, { start: evStart, end: evEnd }, googleSyncState.processes?.[proc.id]);
+        if (processException.cancelled) return;
+        evStart = processException.start;
+        evEnd = processException.end;
 
         if (evStart >= rangeStart && evStart <= rangeEnd) {
           const completionKey = `${proc.id}-${dateKey}`;

@@ -61,12 +61,16 @@ export function StepScheduleTasks({
     try {
       const now = new Date();
       const startDate = new Date(now);
+      const dow = now.getDay();
+      const mondayOffset = dow === 0 ? -6 : 1 - dow;
+      startDate.setDate(now.getDate() + mondayOffset);
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + 7);
+      endDate.setDate(endDate.getDate() + 13);
+      endDate.setHours(23, 59, 59, 999);
 
       const res = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO`
+        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO&includeUnscheduled=true`
       );
       if (res.ok) {
         const data: Task[] = await res.json();

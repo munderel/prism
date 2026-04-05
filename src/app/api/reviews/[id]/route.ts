@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { notFoundResponse, forbiddenResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
+import { cancelManagedSeriesInstance, syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
 
 type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
 
@@ -69,12 +70,42 @@ export async function PATCH(
       if (body.complete && review.calendarEventId) {
         await deleteGoogleEvent(review.userId, review.calendarEventId, targetCalendarId);
         await prisma.review.update({ where: { id }, data: { calendarEventId: null } });
+      } else if (body.complete && !review.calendarEventId && !review.isTeamReview) {
+        await cancelManagedSeriesInstance({
+          userId: review.userId,
+          date: updated.scheduledDate,
+          selector: (state) => state.recurringReviews?.[review.reviewType],
+          writer: (state, series) => {
+            state.recurringReviews = state.recurringReviews ?? {};
+            if (series) {
+              state.recurringReviews[review.reviewType] = series;
+            } else {
+              delete state.recurringReviews[review.reviewType];
+            }
+          },
+        });
       } else if (review.calendarEventId && (body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined)) {
         await updateGoogleEvent(review.userId, review.calendarEventId, {
           summary: title,
           start: newStart ? newStart.toISOString() : undefined,
           end: newEnd ? newEnd.toISOString() : undefined,
         }, targetCalendarId);
+      } else if (!review.calendarEventId && newStart && newEnd && !body.complete && !review.isTeamReview) {
+        await syncManagedSeriesOverride({
+          userId: review.userId,
+          date: updated.scheduledDate,
+          start: newStart,
+          end: newEnd,
+          selector: (state) => state.recurringReviews?.[review.reviewType],
+          writer: (state, series) => {
+            state.recurringReviews = state.recurringReviews ?? {};
+            if (series) {
+              state.recurringReviews[review.reviewType] = series;
+            } else {
+              delete state.recurringReviews[review.reviewType];
+            }
+          },
+        });
       } else if (!review.calendarEventId && newStart && newEnd && !body.complete) {
         const gcalEvent = await createGoogleEvent(review.userId, {
           summary: title,

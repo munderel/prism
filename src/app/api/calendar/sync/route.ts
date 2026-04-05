@@ -1,36 +1,391 @@
+import { Prisma } from '@prisma/client';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
-import { listGoogleEvents, createGoogleEvent, deleteGoogleEvent } from '@/lib/calendar';
+import {
+  listGoogleEvents,
+  createGoogleEvent,
+  deleteGoogleEvent,
+  updateGoogleEvent,
+  buildWeeklyReviewRecurrence,
+  buildMonthlyReviewRecurrence,
+  buildYearlyReviewRecurrence,
+  buildPowerdownRecurrence,
+  buildProcessRecurrence,
+} from '@/lib/calendar';
 import { getCompletionUrl, getAimCompletionUrl, getBaseUrl } from '@/lib/completion-token';
+import {
+  cloneGoogleSyncState,
+  parseGoogleSyncState,
+  type GoogleSyncState,
+  type ManagedRecurringSeriesState,
+} from '@/lib/google-sync-state';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
-type GCalEntry = { start: string; end: string; summary: string; status: string };
-
+const MAX_DAYS = 366;
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** Check if a GCal event's time differs from a Prism item's time by more than 1 minute. */
-function hasTimeDrifted(
-  gcalStart: Date,
-  gcalEnd: Date,
-  prismStart: Date | null,
-  prismEnd: Date | null,
-): boolean {
-  if (!prismStart || !prismEnd) return false;
+type GoogleEventLike = {
+  id?: string | null;
+  summary?: string | null;
+  status?: string | null;
+  start?: { dateTime?: string | null; date?: string | null } | null;
+  end?: { dateTime?: string | null; date?: string | null } | null;
+  recurringEventId?: string | null;
+  originalStartTime?: { dateTime?: string | null; date?: string | null } | null;
+};
+
+type SeriesConfig = {
+  key: string;
+  title: string;
+  description?: string;
+  start: string;
+  end: string;
+  timeZone: string;
+  recurrence: string[];
+  defaultsByDate: Map<string, { start: string; end: string }>;
+};
+
+function getEventStartString(event: GoogleEventLike) {
+  return event.start?.dateTime ?? event.start?.date ?? null;
+}
+
+function getEventEndString(event: GoogleEventLike) {
+  return event.end?.dateTime ?? event.end?.date ?? null;
+}
+
+function getOriginalDateKey(event: GoogleEventLike, timezone: string) {
+  const raw = event.originalStartTime?.dateTime ?? event.originalStartTime?.date ?? getEventStartString(event);
+  if (!raw) return null;
+  const zoned = toZonedTime(new Date(raw), timezone);
+  return `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+}
+
+function hasTimeDrifted(startA: string, endA: string, startB: string, endB: string) {
   return (
-    Math.abs(gcalStart.getTime() - prismStart.getTime()) > 60000 ||
-    Math.abs(gcalEnd.getTime() - prismEnd.getTime()) > 60000
+    Math.abs(new Date(startA).getTime() - new Date(startB).getTime()) > 60000 ||
+    Math.abs(new Date(endA).getTime() - new Date(endB).getTime()) > 60000
   );
 }
 
-/**
- * POST /api/calendar/sync
- * Bidirectional sync between Google Calendar and Prism.
- * Phase 1: Pull GCal changes → apply to Prism tasks/reviews/aims/powerdown.
- * Phase 2: Push unsynced Prism items → create in GCal (tasks, aims, reviews, powerdown).
- */
+function forEachDayInRange(rangeStart: Date, rangeEnd: Date, timezone: string, onDay: (dateKey: string, zonedDate: Date) => void) {
+  const cursor = new Date(rangeStart);
+  cursor.setUTCHours(0, 0, 0, 0);
+  let count = 0;
+
+  while (cursor <= rangeEnd && count < MAX_DAYS) {
+    count++;
+    const zoned = toZonedTime(cursor, timezone);
+    const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+    onDay(dateKey, zoned);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+}
+
+function buildTimedWindow(dateKey: string, time: string, duration: number, timezone: string) {
+  const [hours, minutes] = time.split(':').map(Number);
+  const start = fromZonedTime(`${dateKey}T${pad2(hours)}:${pad2(minutes)}:00`, timezone);
+  const end = new Date(start.getTime() + duration * 60_000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function findFirstMatchingWindow(
+  rangeStart: Date,
+  timezone: string,
+  matchFn: (zonedDate: Date) => boolean,
+  time: string,
+  duration: number,
+): { start: string; end: string } | null {
+  const searchEnd = new Date(rangeStart.getTime() + MAX_DAYS * 86400000);
+  let firstWindow: { start: string; end: string } | null = null;
+
+  forEachDayInRange(rangeStart, searchEnd, timezone, (dateKey, zonedDate) => {
+    if (firstWindow || !matchFn(zonedDate)) return;
+    firstWindow = buildTimedWindow(dateKey, time, duration, timezone);
+  });
+
+  return firstWindow;
+}
+
+function syncSeriesExceptions(
+  state: ManagedRecurringSeriesState | undefined,
+  matchingEvents: GoogleEventLike[],
+  defaultsByDate: Map<string, { start: string; end: string }>,
+  timezone: string,
+): ManagedRecurringSeriesState | undefined {
+  if (!state?.eventId) return state;
+
+  const nextState: ManagedRecurringSeriesState = {
+    ...state,
+    overrides: { ...(state.overrides ?? {}) },
+    cancelledDates: [...(state.cancelledDates ?? [])],
+    lastSyncedAt: new Date().toISOString(),
+  };
+  const cancelled = new Set(nextState.cancelledDates);
+
+  for (const event of matchingEvents) {
+    const dateKey = getOriginalDateKey(event, timezone);
+    if (!dateKey) continue;
+
+    const defaultWindow = defaultsByDate.get(dateKey);
+    if (!defaultWindow) continue;
+
+    if (event.status === 'cancelled') {
+      cancelled.add(dateKey);
+      delete nextState.overrides?.[dateKey];
+      continue;
+    }
+
+    const eventStart = getEventStartString(event);
+    const eventEnd = getEventEndString(event);
+    if (!eventStart || !eventEnd) continue;
+
+    if (hasTimeDrifted(eventStart, eventEnd, defaultWindow.start, defaultWindow.end)) {
+      nextState.overrides![dateKey] = {
+        googleEventId: event.id ?? undefined,
+        start: eventStart,
+        end: eventEnd,
+      };
+      cancelled.delete(dateKey);
+    } else {
+      delete nextState.overrides?.[dateKey];
+      cancelled.delete(dateKey);
+    }
+  }
+
+  nextState.cancelledDates = Array.from(cancelled).sort();
+  if (nextState.overrides && Object.keys(nextState.overrides).length === 0) delete nextState.overrides;
+  if (nextState.cancelledDates.length === 0) delete nextState.cancelledDates;
+  return nextState;
+}
+
+async function upsertRecurringSeries(
+  userId: string,
+  calendarId: string,
+  current: ManagedRecurringSeriesState | undefined,
+  config: SeriesConfig | null,
+) {
+  if (!config) {
+    if (current?.eventId) {
+      await deleteGoogleEvent(userId, current.eventId, calendarId).catch(() => {});
+    }
+    return undefined;
+  }
+
+  if (current?.eventId) {
+    const updated = await updateGoogleEvent(userId, current.eventId, {
+      summary: config.title,
+      description: config.description,
+      start: config.start,
+      end: config.end,
+      timeZone: config.timeZone,
+      recurrence: config.recurrence,
+    }, calendarId);
+
+    if (updated?.id) {
+      return {
+        ...current,
+        eventId: updated.id,
+        lastSyncedAt: new Date().toISOString(),
+      } satisfies ManagedRecurringSeriesState;
+    }
+  }
+
+  const created = await createGoogleEvent(userId, {
+    summary: config.title,
+    description: config.description,
+    start: config.start,
+    end: config.end,
+    timeZone: config.timeZone,
+    recurrence: config.recurrence,
+  }, calendarId);
+
+  if (!created?.id) return current;
+
+  return {
+    eventId: created.id,
+    lastSyncedAt: new Date().toISOString(),
+  } satisfies ManagedRecurringSeriesState;
+}
+
+function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date, rangeEnd: Date, baseUrl: string) {
+  const configs: Partial<Record<'WEEKLY' | 'MONTHLY' | 'YEARLY', SeriesConfig>> = {};
+
+  if (user.weeklyReviewDayOfWeek != null && user.weeklyReviewTime) {
+    const recurrence = buildWeeklyReviewRecurrence(user.weeklyReviewDayOfWeek);
+    const duration = user.weeklyReviewDuration ?? 60;
+    const first = findFirstMatchingWindow(
+      rangeStart,
+      timezone,
+      (date) => date.getDay() === user.weeklyReviewDayOfWeek,
+      user.weeklyReviewTime,
+      duration,
+    );
+
+    if (recurrence && first) {
+      const defaultsByDate = new Map<string, { start: string; end: string }>();
+      forEachDayInRange(rangeStart, rangeEnd, timezone, (dateKey, zonedDate) => {
+        if (zonedDate.getDay() !== user.weeklyReviewDayOfWeek) return;
+        defaultsByDate.set(dateKey, buildTimedWindow(dateKey, user.weeklyReviewTime, duration, timezone));
+      });
+      configs.WEEKLY = {
+        key: 'WEEKLY',
+        title: 'Weekly Review',
+        description: `Start your Weekly Review in Prism: ${baseUrl}/reviews`,
+        start: first.start,
+        end: first.end,
+        timeZone: timezone,
+        recurrence,
+        defaultsByDate,
+      };
+    }
+  }
+
+  if (user.monthlyReviewRecurrenceRule && user.monthlyReviewTime) {
+    const recurrence = buildMonthlyReviewRecurrence(user.monthlyReviewRecurrenceRule);
+    const duration = user.monthlyReviewDuration ?? 60;
+    const first = findFirstMatchingWindow(
+      rangeStart,
+      timezone,
+      (date) => matchesMonthlyRule(date, user.monthlyReviewRecurrenceRule),
+      user.monthlyReviewTime,
+      duration,
+    );
+
+    if (recurrence && first) {
+      const defaultsByDate = new Map<string, { start: string; end: string }>();
+      forEachDayInRange(rangeStart, rangeEnd, timezone, (dateKey, zonedDate) => {
+        if (!matchesMonthlyRule(zonedDate, user.monthlyReviewRecurrenceRule)) return;
+        defaultsByDate.set(dateKey, buildTimedWindow(dateKey, user.monthlyReviewTime, duration, timezone));
+      });
+      configs.MONTHLY = {
+        key: 'MONTHLY',
+        title: 'Monthly Review',
+        description: `Start your Monthly Review in Prism: ${baseUrl}/reviews`,
+        start: first.start,
+        end: first.end,
+        timeZone: timezone,
+        recurrence,
+        defaultsByDate,
+      };
+    }
+  }
+
+  if (user.yearlyReviewRecurrenceRule && user.yearlyReviewTime) {
+    const recurrence = buildYearlyReviewRecurrence(user.yearlyReviewRecurrenceRule);
+    const duration = user.yearlyReviewDuration ?? 90;
+    const first = findFirstMatchingWindow(
+      rangeStart,
+      timezone,
+      (date) => matchesYearlyRule(date, user.yearlyReviewRecurrenceRule),
+      user.yearlyReviewTime,
+      duration,
+    );
+
+    if (recurrence && first) {
+      const defaultsByDate = new Map<string, { start: string; end: string }>();
+      forEachDayInRange(rangeStart, rangeEnd, timezone, (dateKey, zonedDate) => {
+        if (!matchesYearlyRule(zonedDate, user.yearlyReviewRecurrenceRule)) return;
+        defaultsByDate.set(dateKey, buildTimedWindow(dateKey, user.yearlyReviewTime, duration, timezone));
+      });
+      configs.YEARLY = {
+        key: 'YEARLY',
+        title: 'Yearly Review',
+        description: `Start your Yearly Review in Prism: ${baseUrl}/reviews`,
+        start: first.start,
+        end: first.end,
+        timeZone: timezone,
+        recurrence,
+        defaultsByDate,
+      };
+    }
+  }
+
+  return configs;
+}
+
+function buildPowerdownSeriesConfig(user: any, timezone: string, rangeStart: Date, rangeEnd: Date, baseUrl: string): SeriesConfig | null {
+  if (!user.powerdownTime) return null;
+  const firstDateKey = `${toZonedTime(rangeStart, timezone).getFullYear()}-${pad2(toZonedTime(rangeStart, timezone).getMonth() + 1)}-${pad2(toZonedTime(rangeStart, timezone).getDate())}`;
+  const firstWindow = buildTimedWindow(firstDateKey, user.powerdownTime, 30, timezone);
+  const defaultsByDate = new Map<string, { start: string; end: string }>();
+
+  forEachDayInRange(rangeStart, rangeEnd, timezone, (dateKey) => {
+    defaultsByDate.set(dateKey, buildTimedWindow(dateKey, user.powerdownTime, 30, timezone));
+  });
+
+  return {
+    key: 'powerdown',
+    title: 'Power Down Ritual',
+    description: `Start your Power Down Ritual in Prism: ${baseUrl}/powerdown`,
+    start: firstWindow.start,
+    end: firstWindow.end,
+    timeZone: timezone,
+    recurrence: buildPowerdownRecurrence(),
+    defaultsByDate,
+  };
+}
+
+function processMatchesOnDate(process: any, zonedDate: Date) {
+  const dow = zonedDate.getDay();
+  switch (process.cadence) {
+    case 'DAILY':
+      return process.scheduledDayOfWeek == null ? dow >= 1 && dow <= 5 : true;
+    case 'WEEKLY':
+      return dow === (process.scheduledDayOfWeek ?? 1);
+    case 'BIWEEKLY': {
+      const targetDow = process.scheduledDayOfWeek ?? 1;
+      if (dow !== targetDow) return false;
+      const weekNum = Math.floor(zonedDate.getTime() / (7 * 24 * 60 * 60 * 1000));
+      return weekNum % 2 === 0;
+    }
+    case 'MONTHLY':
+      return zonedDate.getDate() === (process.scheduledDayOfMonth ?? 1);
+    case 'QUARTERLY':
+      return [0, 3, 6, 9].includes(zonedDate.getMonth()) && zonedDate.getDate() === (process.scheduledDayOfMonth ?? 1);
+    case 'YEARLY':
+      return zonedDate.getMonth() === 0 && zonedDate.getDate() === 1;
+    default:
+      return false;
+  }
+}
+
+function buildProcessSeriesConfig(process: any, timezone: string, rangeStart: Date, rangeEnd: Date): SeriesConfig | null {
+  if (!process.scheduledTime || process.cadence === 'ONE_TIME') return null;
+  const recurrence = buildProcessRecurrence(process);
+  if (!recurrence) return null;
+
+  const duration = process.defaultDurationMinutes ?? 60;
+  const first = findFirstMatchingWindow(
+    rangeStart,
+    timezone,
+    (date) => processMatchesOnDate(process, date),
+    process.scheduledTime,
+    duration,
+  );
+
+  if (!first) return null;
+
+  const defaultsByDate = new Map<string, { start: string; end: string }>();
+  forEachDayInRange(rangeStart, rangeEnd, timezone, (dateKey, zonedDate) => {
+    if (!processMatchesOnDate(process, zonedDate)) return;
+    defaultsByDate.set(dateKey, buildTimedWindow(dateKey, process.scheduledTime, duration, timezone));
+  });
+
+  return {
+    key: process.id,
+    title: process.title,
+    description: `Recurring process in Prism: ${process.title}`,
+    start: first.start,
+    end: first.end,
+    timeZone: timezone,
+    recurrence,
+    defaultsByDate,
+  };
+}
+
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
@@ -42,7 +397,9 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'start and end are required' }, { status: 400 });
   }
 
-  // Single query for all user settings needed by sync (avoids separate getGoogleSyncInfo call)
+  const rangeStart = new Date(start);
+  const rangeEnd = new Date(end);
+
   const user = await prisma.user.findUnique({
     where: { id: auth.userId },
     select: {
@@ -60,586 +417,241 @@ export async function POST(request: NextRequest) {
       yearlyReviewRecurrenceRule: true,
       yearlyReviewTime: true,
       yearlyReviewDuration: true,
+      googleSyncState: true,
     },
   });
 
   if (!user?.googleRefreshToken) {
-    return Response.json(
-      { error: 'Google Calendar is not connected. Sign out and sign in with Google again to enable sync.' },
-      { status: 400 },
-    );
+    return Response.json({ error: 'Google Calendar is not connected.' }, { status: 400 });
   }
+
   const targetCalendarId = user.syncTargetCalendarId || 'primary';
+  const rawIds = Array.isArray(user.selectedCalendarIds) ? (user.selectedCalendarIds as string[]) : undefined;
+  const calendarIds = rawIds === undefined
+    ? [targetCalendarId]
+    : rawIds.length > 0
+      ? Array.from(new Set([targetCalendarId, ...rawIds]))
+      : [targetCalendarId];
+  const timezone = user.timezone ?? 'America/New_York';
+  const baseUrl = getBaseUrl();
 
-  const rawIds = Array.isArray(user?.selectedCalendarIds) ? (user.selectedCalendarIds as string[]) : undefined;
-  const calendarIds = rawIds === undefined ? undefined
-    : rawIds.length > 0 ? (rawIds.includes('primary') ? rawIds : ['primary', ...rawIds])
-    : rawIds;
-
-  const userTz = user?.timezone ?? 'America/New_York';
-  const rangeStart = new Date(start);
-  const rangeEnd = new Date(end);
-
-  const [gcalEvents, tasks, aimInstances, reviews, powerdownSessions] = await Promise.all([
+  const [gcalEvents, tasks, aimInstances, processes] = await Promise.all([
     listGoogleEvents(auth.userId, start, end, calendarIds, { showDeleted: true }),
     prisma.task.findMany({
       where: {
         ownerId: auth.userId,
-        calendarEventId: { not: null },
-        timeBlockStart: { gte: rangeStart, lte: rangeEnd },
+        OR: [
+          { calendarEventId: { not: null }, timeBlockStart: { gte: rangeStart, lte: rangeEnd } },
+          { calendarEventId: null, timeBlockStart: { not: null, gte: rangeStart, lte: rangeEnd }, timeBlockEnd: { not: null }, status: { notIn: ['DONE', 'DROPPED'] } },
+        ],
       },
-      select: { id: true, calendarEventId: true, timeBlockStart: true, timeBlockEnd: true, title: true },
+      select: { id: true, title: true, description: true, calendarEventId: true, timeBlockStart: true, timeBlockEnd: true },
     }),
     prisma.aimInstance.findMany({
       where: {
         userId: auth.userId,
-        timeBlockStart: { gte: rangeStart, lte: rangeEnd },
+        OR: [
+          { calendarEventId: { not: null }, timeBlockStart: { gte: rangeStart, lte: rangeEnd } },
+          { calendarEventId: null, timeBlockStart: { not: null, gte: rangeStart, lte: rangeEnd }, timeBlockEnd: { not: null }, status: { not: 'SKIPPED' } },
+        ],
       },
       include: { aimCategory: { select: { name: true } } },
     }),
-    prisma.review.findMany({
+    prisma.process.findMany({
       where: {
-        userId: auth.userId,
-        calendarEventId: { not: null },
-        timeBlockStart: { gte: rangeStart, lte: rangeEnd },
+        scheduledTime: { not: null },
+        cadence: { not: 'ONE_TIME' },
+        OR: [
+          { assigneeId: auth.userId },
+          { delegateId: auth.userId },
+          { assigneeId: null },
+        ],
       },
-      select: { id: true, calendarEventId: true, timeBlockStart: true, timeBlockEnd: true, reviewType: true },
-    }),
-    prisma.powerdownSession.findMany({
-      where: {
-        userId: auth.userId,
-        calendarEventId: { not: null },
-        sessionDate: { gte: rangeStart, lte: rangeEnd },
+      select: {
+        id: true,
+        title: true,
+        cadence: true,
+        scheduledTime: true,
+        scheduledDayOfWeek: true,
+        scheduledDayOfMonth: true,
+        defaultDurationMinutes: true,
       },
-      select: { id: true, calendarEventId: true, timeBlockStart: true, timeBlockEnd: true, sessionDate: true },
     }),
   ]);
 
-  // Build lookup of GCal events by ID
-  const gcalMap = new Map<string, GCalEntry>();
-  for (const event of gcalEvents) {
-    if (event.id) {
-      gcalMap.set(event.id, {
-        start: event.start?.dateTime ?? event.start?.date ?? '',
-        end: event.end?.dateTime ?? event.end?.date ?? '',
-        summary: event.summary ?? '',
-        status: event.status ?? 'confirmed',
-      });
-    }
-  }
-
+  const googleSyncState = cloneGoogleSyncState(parseGoogleSyncState(user.googleSyncState));
   const updates: string[] = [];
 
-  // === PHASE 1: PULL (GCal → Prism) ===
+  const gcalById = new Map<string, GoogleEventLike>();
+  for (const event of gcalEvents as GoogleEventLike[]) {
+    if (event.id) gcalById.set(event.id, event);
+  }
 
-  // Sync tasks: if GCal event moved/cancelled, update Prism
-  for (const task of tasks) {
-    if (!task.calendarEventId) continue;
-    const gcalEvent = gcalMap.get(task.calendarEventId);
-
-    if (gcalEvent?.status === 'cancelled') {
+  // Pull one-off linked task changes from Google.
+  for (const task of tasks.filter((item) => item.calendarEventId)) {
+    const event = task.calendarEventId ? gcalById.get(task.calendarEventId) : null;
+    if (event?.status === 'cancelled') {
       await prisma.task.update({
         where: { id: task.id },
         data: { timeBlockStart: null, timeBlockEnd: null, calendarEventId: null },
       });
-      updates.push(`Unscheduled task (deleted in GCal): ${task.title}`);
+      updates.push(`Unscheduled task from Google deletion: ${task.title}`);
       continue;
     }
 
-    if (!gcalEvent) {
-      console.warn(`[sync] GCal event ${task.calendarEventId} for task "${task.title}" not found in batch -- skipping`);
-      continue;
-    }
+    const eventStart = event ? getEventStartString(event) : null;
+    const eventEnd = event ? getEventEndString(event) : null;
+    if (!eventStart || !eventEnd || !task.timeBlockStart || !task.timeBlockEnd) continue;
 
-    const gcalStart = new Date(gcalEvent.start);
-    const gcalEnd = new Date(gcalEvent.end);
-    if (hasTimeDrifted(gcalStart, gcalEnd, task.timeBlockStart, task.timeBlockEnd)) {
+    if (hasTimeDrifted(eventStart, eventEnd, task.timeBlockStart.toISOString(), task.timeBlockEnd.toISOString())) {
       await prisma.task.update({
         where: { id: task.id },
-        data: { timeBlockStart: gcalStart, timeBlockEnd: gcalEnd, dueDate: gcalStart },
+        data: { timeBlockStart: new Date(eventStart), timeBlockEnd: new Date(eventEnd), dueDate: new Date(eventStart) },
       });
-      updates.push(`Rescheduled task: ${task.title}`);
+      updates.push(`Pulled task move from Google: ${task.title}`);
     }
   }
 
-  // Sync reviews: if GCal event moved/cancelled, update Prism
-  for (const review of reviews) {
-    if (!review.calendarEventId) continue;
-    const gcalEvent = gcalMap.get(review.calendarEventId);
+  // Pull one-off linked aim changes from Google.
+  for (const aim of aimInstances.filter((item) => item.calendarEventId)) {
+    const event = aim.calendarEventId ? gcalById.get(aim.calendarEventId) : null;
+    const aimTitle = aim.selectedActivity ? `${aim.aimCategory.name}: ${aim.selectedActivity}` : aim.aimCategory.name;
 
-    if (gcalEvent?.status === 'cancelled') {
-      await prisma.review.update({
-        where: { id: review.id },
-        data: { timeBlockStart: null, timeBlockEnd: null, calendarEventId: null },
-      });
-      updates.push(`Unscheduled review (deleted in GCal)`);
-      continue;
-    }
-
-    if (!gcalEvent) {
-      console.warn(`[sync] GCal event ${review.calendarEventId} for review not found in batch -- skipping`);
-      continue;
-    }
-
-    const gcalStart = new Date(gcalEvent.start);
-    const gcalEnd = new Date(gcalEvent.end);
-    if (hasTimeDrifted(gcalStart, gcalEnd, review.timeBlockStart, review.timeBlockEnd)) {
-      await prisma.review.update({
-        where: { id: review.id },
-        data: { timeBlockStart: gcalStart, timeBlockEnd: gcalEnd },
-      });
-      updates.push(`Rescheduled review`);
-    }
-  }
-
-  // Sync aim instances: if GCal event moved/cancelled, update Prism
-  for (const aim of aimInstances) {
-    if (!aim.calendarEventId) continue;
-    const gcalEvent = gcalMap.get(aim.calendarEventId);
-
-    if (gcalEvent?.status === 'cancelled') {
+    if (event?.status === 'cancelled') {
       await prisma.aimInstance.update({
         where: { id: aim.id },
         data: { timeBlockStart: null, timeBlockEnd: null, calendarEventId: null },
       });
-      updates.push(`Unscheduled aim (deleted in GCal): ${aim.aimCategory.name}`);
+      updates.push(`Unscheduled aim from Google deletion: ${aimTitle}`);
       continue;
     }
 
-    if (!gcalEvent) {
-      console.warn(`[sync] GCal event ${aim.calendarEventId} for aim "${aim.aimCategory.name}" not found in batch -- skipping`);
-      continue;
-    }
+    const eventStart = event ? getEventStartString(event) : null;
+    const eventEnd = event ? getEventEndString(event) : null;
+    if (!eventStart || !eventEnd || !aim.timeBlockStart || !aim.timeBlockEnd) continue;
 
-    const gcalStart = new Date(gcalEvent.start);
-    const gcalEnd = new Date(gcalEvent.end);
-    if (hasTimeDrifted(gcalStart, gcalEnd, aim.timeBlockStart, aim.timeBlockEnd)) {
+    if (hasTimeDrifted(eventStart, eventEnd, aim.timeBlockStart.toISOString(), aim.timeBlockEnd.toISOString())) {
       await prisma.aimInstance.update({
         where: { id: aim.id },
-        data: { timeBlockStart: gcalStart, timeBlockEnd: gcalEnd },
+        data: { timeBlockStart: new Date(eventStart), timeBlockEnd: new Date(eventEnd) },
       });
-      updates.push(`Rescheduled aim: ${aim.aimCategory.name}`);
+      updates.push(`Pulled aim move from Google: ${aimTitle}`);
     }
   }
 
-  // Sync powerdown sessions: if GCal event cancelled, clear calendarEventId
-  for (const session of powerdownSessions) {
-    if (!session.calendarEventId) continue;
-    const gcalEvent = gcalMap.get(session.calendarEventId);
+  // Push one-off unsynced tasks.
+  for (const task of tasks.filter((item) => !item.calendarEventId && item.timeBlockStart && item.timeBlockEnd)) {
+    const completionUrl = getCompletionUrl(task.id, auth.userId);
+    const description = task.description
+      ? `${task.description}\n\nMark complete in Prism: ${completionUrl}`
+      : `Mark complete in Prism: ${completionUrl}`;
+    const event = await createGoogleEvent(auth.userId, {
+      summary: task.title,
+      description,
+      start: task.timeBlockStart!.toISOString(),
+      end: task.timeBlockEnd!.toISOString(),
+    }, targetCalendarId);
 
-    if (gcalEvent?.status === 'cancelled') {
-      await prisma.powerdownSession.update({
-        where: { id: session.id },
-        data: { calendarEventId: null },
-      });
-      updates.push(`Unlinked powerdown session (deleted in GCal)`);
-      continue;
-    }
-
-    if (!gcalEvent) continue;
-
-    const gcalStart = new Date(gcalEvent.start);
-    const gcalEnd = new Date(gcalEvent.end);
-    if (hasTimeDrifted(gcalStart, gcalEnd, session.timeBlockStart, session.timeBlockEnd)) {
-      await prisma.powerdownSession.update({
-        where: { id: session.id },
-        data: { timeBlockStart: gcalStart, timeBlockEnd: gcalEnd },
-      });
-      updates.push(`Rescheduled powerdown session`);
+    if (event?.id) {
+      await prisma.task.update({ where: { id: task.id }, data: { calendarEventId: event.id } });
+      updates.push(`Pushed task to Google: ${task.title}`);
     }
   }
 
-  // === PHASE 1.5: CLEANUP — Remove stale/old GCal events for reviews & powerdown ===
-  // Delete past Google Calendar events and clear calendarEventId so future events
-  // get re-created with correct times from current user settings.
+  // Push one-off unsynced aims.
+  for (const aim of aimInstances.filter((item) => !item.calendarEventId && item.timeBlockStart && item.timeBlockEnd)) {
+    const title = aim.selectedActivity ? `${aim.aimCategory.name}: ${aim.selectedActivity}` : aim.aimCategory.name;
+    const completionUrl = getAimCompletionUrl(aim.id, auth.userId);
+    const event = await createGoogleEvent(auth.userId, {
+      summary: title,
+      description: `Mark complete in Prism: ${completionUrl}`,
+      start: aim.timeBlockStart!.toISOString(),
+      end: aim.timeBlockEnd!.toISOString(),
+    }, targetCalendarId);
 
-  // Cleanup review events: completed reviews OR any past reviews
-  const staleReviews = await prisma.review.findMany({
-    where: {
-      userId: auth.userId,
-      calendarEventId: { not: null },
-      OR: [
-        { completedAt: { not: null } },
-        { scheduledDate: { lt: new Date() } },
-      ],
-    },
-    select: { id: true, calendarEventId: true },
-  });
-
-  for (const review of staleReviews) {
-    if (!review.calendarEventId) continue;
-    try {
-      await deleteGoogleEvent(auth.userId, review.calendarEventId, targetCalendarId);
-    } catch {
-      // Event may already be deleted in Google — that's fine
+    if (event?.id) {
+      await prisma.aimInstance.update({ where: { id: aim.id }, data: { calendarEventId: event.id } });
+      updates.push(`Pushed aim to Google: ${title}`);
     }
-    await prisma.review.update({ where: { id: review.id }, data: { calendarEventId: null } }).catch(() => {});
-    updates.push(`Cleaned up old review event from Google`);
   }
 
-  // Cleanup powerdown events: all past sessions
-  const stalePowerdowns = await prisma.powerdownSession.findMany({
-    where: {
-      userId: auth.userId,
-      calendarEventId: { not: null },
-      sessionDate: { lt: new Date() },
-    },
-    select: { id: true, calendarEventId: true },
-  });
+  // Recurring review series.
+  const reviewConfigs = buildReviewSeriesConfigs(user, timezone, rangeStart, rangeEnd, baseUrl);
+  googleSyncState.recurringReviews = googleSyncState.recurringReviews ?? {};
 
-  for (const session of stalePowerdowns) {
-    if (!session.calendarEventId) continue;
-    try {
-      await deleteGoogleEvent(auth.userId, session.calendarEventId, targetCalendarId);
-    } catch {
-      // Event may already be deleted in Google — that's fine
-    }
-    await prisma.powerdownSession.update({ where: { id: session.id }, data: { calendarEventId: null } }).catch(() => {});
-    updates.push(`Cleaned up old powerdown event from Google`);
-  }
+  for (const reviewType of ['WEEKLY', 'MONTHLY', 'YEARLY'] as const) {
+    const currentSeries = googleSyncState.recurringReviews[reviewType];
+    const config = reviewConfigs[reviewType] ?? null;
+    const nextSeries = await upsertRecurringSeries(auth.userId, targetCalendarId, currentSeries, config);
 
-  // Also reset future review/powerdown events so they get re-synced with current settings.
-  // This ensures schedule changes (e.g., moving weekly review to a different day) take effect.
-  const futureReviewsToReset = await prisma.review.findMany({
-    where: {
-      userId: auth.userId,
-      calendarEventId: { not: null },
-      scheduledDate: { gte: new Date() },
-      completedAt: null,
-    },
-    select: { id: true, calendarEventId: true },
-  });
-
-  for (const review of futureReviewsToReset) {
-    if (!review.calendarEventId) continue;
-    try {
-      await deleteGoogleEvent(auth.userId, review.calendarEventId, targetCalendarId);
-    } catch { /* already deleted */ }
-    await prisma.review.update({ where: { id: review.id }, data: { calendarEventId: null } }).catch(() => {});
-    updates.push(`Reset future review event for re-sync`);
-  }
-
-  const futurePowerdownsToReset = await prisma.powerdownSession.findMany({
-    where: {
-      userId: auth.userId,
-      calendarEventId: { not: null },
-      sessionDate: { gte: new Date() },
-    },
-    select: { id: true, calendarEventId: true },
-  });
-
-  for (const session of futurePowerdownsToReset) {
-    if (!session.calendarEventId) continue;
-    try {
-      await deleteGoogleEvent(auth.userId, session.calendarEventId, targetCalendarId);
-    } catch { /* already deleted */ }
-    await prisma.powerdownSession.update({ where: { id: session.id }, data: { calendarEventId: null } }).catch(() => {});
-    updates.push(`Reset future powerdown event for re-sync`);
-  }
-
-  // === PHASE 2: PUSH (Prism → GCal) ===
-
-  const baseUrl = getBaseUrl();
-
-  // Push unsynced tasks (with completion link)
-  const unsyncedTasks = await prisma.task.findMany({
-    where: {
-      ownerId: auth.userId,
-      calendarEventId: null,
-      timeBlockStart: { not: null, gte: rangeStart, lte: rangeEnd },
-      timeBlockEnd: { not: null },
-      status: { notIn: ['DONE', 'DROPPED'] },
-    },
-    select: { id: true, title: true, description: true, timeBlockStart: true, timeBlockEnd: true },
-  });
-
-  for (const task of unsyncedTasks) {
-    if (!task.timeBlockStart || !task.timeBlockEnd) continue;
-    try {
-      const completionUrl = getCompletionUrl(task.id, auth.userId);
-      const description = task.description
-        ? `${task.description}\n\nMark complete in Prism: ${completionUrl}`
-        : `Mark complete in Prism: ${completionUrl}`;
-      const gcalEvent = await createGoogleEvent(auth.userId, {
-        summary: task.title,
-        description,
-        start: task.timeBlockStart.toISOString(),
-        end: task.timeBlockEnd.toISOString(),
-      }, targetCalendarId);
-      if (gcalEvent?.id) {
-        await prisma.task.update({ where: { id: task.id }, data: { calendarEventId: gcalEvent.id } });
-        updates.push(`Pushed task to Google: ${task.title}`);
+    if (config && nextSeries?.eventId) {
+      const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextSeries.eventId);
+      const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
+      if (syncedSeries) {
+        googleSyncState.recurringReviews[reviewType] = syncedSeries;
+        updates.push(`Synced ${reviewType.toLowerCase()} review series`);
       }
-    } catch {
-      // Continue with other items
+    } else {
+      delete googleSyncState.recurringReviews[reviewType];
     }
   }
 
-  // Push unsynced aim instances (with completion link)
-  const unsyncedAims = await prisma.aimInstance.findMany({
-    where: {
-      userId: auth.userId,
-      calendarEventId: null,
-      timeBlockStart: { not: null, gte: rangeStart, lte: rangeEnd },
-      timeBlockEnd: { not: null },
-      status: { not: 'SKIPPED' },
-    },
-    include: { aimCategory: { select: { name: true } } },
+  // Recurring powerdown series.
+  const powerdownConfig = buildPowerdownSeriesConfig(user, timezone, rangeStart, rangeEnd, baseUrl);
+  const nextPowerdown = await upsertRecurringSeries(auth.userId, targetCalendarId, googleSyncState.powerdown, powerdownConfig);
+  if (powerdownConfig && nextPowerdown?.eventId) {
+    const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextPowerdown.eventId);
+    const syncedPowerdown = syncSeriesExceptions(nextPowerdown, matchingEvents, powerdownConfig.defaultsByDate, timezone);
+    if (syncedPowerdown) {
+      googleSyncState.powerdown = syncedPowerdown;
+      updates.push('Synced powerdown series');
+    }
+  } else {
+    delete googleSyncState.powerdown;
+  }
+
+  // Recurring process series.
+  googleSyncState.processes = googleSyncState.processes ?? {};
+  const liveProcessIds = new Set<string>();
+
+  for (const process of processes) {
+    liveProcessIds.add(process.id);
+    const config = buildProcessSeriesConfig(process, timezone, rangeStart, rangeEnd);
+    const nextSeries = await upsertRecurringSeries(auth.userId, targetCalendarId, googleSyncState.processes[process.id], config);
+
+    if (config && nextSeries?.eventId) {
+      const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextSeries.eventId);
+      const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
+      if (syncedSeries) {
+        googleSyncState.processes[process.id] = syncedSeries;
+        updates.push(`Synced process series: ${process.title}`);
+      }
+    } else {
+      delete googleSyncState.processes[process.id];
+    }
+  }
+
+  for (const staleProcessId of Object.keys(googleSyncState.processes)) {
+    if (liveProcessIds.has(staleProcessId)) continue;
+    const stale = googleSyncState.processes[staleProcessId];
+    if (stale?.eventId) {
+      await deleteGoogleEvent(auth.userId, stale.eventId, targetCalendarId).catch(() => {});
+    }
+    delete googleSyncState.processes[staleProcessId];
+  }
+
+  await prisma.user.update({
+    where: { id: auth.userId },
+    data: { googleSyncState: googleSyncState as Prisma.InputJsonValue },
   });
-
-  for (const aim of unsyncedAims) {
-    if (!aim.timeBlockStart || !aim.timeBlockEnd) continue;
-    try {
-      const title = aim.selectedActivity ? `${aim.aimCategory.name}: ${aim.selectedActivity}` : aim.aimCategory.name;
-      const completionUrl = getAimCompletionUrl(aim.id, auth.userId);
-      const gcalEvent = await createGoogleEvent(auth.userId, {
-        summary: title,
-        description: `Mark complete in Prism: ${completionUrl}`,
-        start: aim.timeBlockStart.toISOString(),
-        end: aim.timeBlockEnd.toISOString(),
-      }, targetCalendarId);
-      if (gcalEvent?.id) {
-        await prisma.aimInstance.update({ where: { id: aim.id }, data: { calendarEventId: gcalEvent.id } });
-        updates.push(`Pushed aim to Google: ${title}`);
-      }
-    } catch {
-      // Continue with other items
-    }
-  }
-
-  // Push unsynced reviews (existing stored reviews + materialize upcoming occurrences)
-  // Step 1: Materialize upcoming review occurrences as Review records
-  const reviewConfigs: {
-    matchFn: (d: Date) => boolean;
-    time: string;
-    duration: number;
-    title: string;
-    type: 'WEEKLY' | 'MONTHLY' | 'YEARLY';
-  }[] = [];
-
-  if (user?.weeklyReviewDayOfWeek != null && user?.weeklyReviewTime) {
-    reviewConfigs.push({
-      matchFn: (d) => d.getDay() === user.weeklyReviewDayOfWeek!,
-      time: user.weeklyReviewTime,
-      duration: user.weeklyReviewDuration ?? 60,
-      title: 'Weekly Review',
-      type: 'WEEKLY',
-    });
-  }
-  if (user?.monthlyReviewRecurrenceRule && user?.monthlyReviewTime) {
-    reviewConfigs.push({
-      matchFn: (d) => matchesMonthlyRule(d, user.monthlyReviewRecurrenceRule!),
-      time: user.monthlyReviewTime,
-      duration: user.monthlyReviewDuration ?? 60,
-      title: 'Monthly Review',
-      type: 'MONTHLY',
-    });
-  }
-  if (user?.yearlyReviewRecurrenceRule && user?.yearlyReviewTime) {
-    reviewConfigs.push({
-      matchFn: (d) => matchesYearlyRule(d, user.yearlyReviewRecurrenceRule!),
-      time: user.yearlyReviewTime,
-      duration: user.yearlyReviewDuration ?? 60,
-      title: 'Yearly Review',
-      type: 'YEARLY',
-    });
-  }
-
-  // Iterate through the sync range and create Review records for upcoming dates
-  const cursor = new Date(rangeStart);
-  cursor.setUTCHours(0, 0, 0, 0);
-  let dayCount = 0;
-  while (cursor <= rangeEnd && dayCount < 366) {
-    dayCount++;
-    const zoned = toZonedTime(cursor, userTz);
-    const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-
-    for (const config of reviewConfigs) {
-      if (!config.matchFn(zoned)) continue;
-
-      const [h, m] = config.time.split(':').map(Number);
-      const evStart = fromZonedTime(`${dateKey}T${pad2(h)}:${pad2(m)}:00`, userTz);
-      const evEnd = new Date(evStart.getTime() + config.duration * 60_000);
-      if (evStart < rangeStart || evStart >= rangeEnd) continue;
-
-      // Upsert a Review record for this occurrence (skip if already exists with calendarEventId)
-      const scheduledDate = fromZonedTime(`${dateKey}T00:00:00`, userTz);
-      const existingReview = await prisma.review.findFirst({
-        where: {
-          userId: auth.userId,
-          reviewType: config.type,
-          scheduledDate: { gte: new Date(scheduledDate.getTime() - 86400000), lte: new Date(scheduledDate.getTime() + 86400000) },
-        },
-      });
-
-      if (existingReview?.calendarEventId) continue; // Already synced
-
-      try {
-        const reviewLink = `${baseUrl}/reviews?action=start&type=${config.type}&date=${dateKey}`;
-        const description = `Start your ${config.title} in Prism: ${reviewLink}\n\nClicking this link will open your ${config.title} in Prism where you can review progress, update goals, and plan ahead.`;
-
-        if (existingReview && !existingReview.calendarEventId) {
-          // Existing record without GCal link — push to GCal
-          const gcalEvent = await createGoogleEvent(auth.userId, {
-            summary: config.title,
-            description,
-            start: (existingReview.timeBlockStart ?? evStart).toISOString(),
-            end: (existingReview.timeBlockEnd ?? evEnd).toISOString(),
-          }, targetCalendarId);
-          if (gcalEvent?.id) {
-            await prisma.review.update({
-              where: { id: existingReview.id },
-              data: {
-                calendarEventId: gcalEvent.id,
-                timeBlockStart: existingReview.timeBlockStart ?? evStart,
-                timeBlockEnd: existingReview.timeBlockEnd ?? evEnd,
-              },
-            });
-            updates.push(`Pushed review to Google: ${config.title} (${dateKey})`);
-          }
-        } else if (!existingReview) {
-          // No record yet — create Review + push to GCal
-          const gcalEvent = await createGoogleEvent(auth.userId, {
-            summary: config.title,
-            description,
-            start: evStart.toISOString(),
-            end: evEnd.toISOString(),
-          }, targetCalendarId);
-
-          await prisma.review.create({
-            data: {
-              userId: auth.userId,
-              reviewType: config.type,
-              scheduledDate,
-              timeBlockStart: evStart,
-              timeBlockEnd: evEnd,
-              calendarEventId: gcalEvent?.id ?? null,
-            },
-          });
-          updates.push(`Pushed review to Google: ${config.title} (${dateKey})`);
-        }
-      } catch (err: unknown) {
-        // Handle unique constraint violation gracefully — another sync created this record
-        const isUniqueViolation = typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
-        if (!isUniqueViolation) {
-          console.warn(`[sync] Failed to push review ${config.type} for ${dateKey}:`, err);
-        }
-      }
-    }
-
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  // Push remaining unsynced stored reviews (those with timeBlock but no calendarEventId)
-  const unsyncedReviews = await prisma.review.findMany({
-    where: {
-      userId: auth.userId,
-      calendarEventId: null,
-      timeBlockStart: { not: null, gte: rangeStart, lte: rangeEnd },
-      timeBlockEnd: { not: null },
-      completedAt: null,
-    },
-    select: { id: true, reviewType: true, timeBlockStart: true, timeBlockEnd: true, scheduledDate: true },
-  });
-
-  for (const review of unsyncedReviews) {
-    if (!review.timeBlockStart || !review.timeBlockEnd) continue;
-    try {
-      const title = `${review.reviewType} Review`;
-      const dateKey = review.scheduledDate.toISOString().split('T')[0];
-      const reviewLink = `${baseUrl}/reviews?action=start&type=${review.reviewType}&date=${dateKey}`;
-      const description = `Start your ${title} in Prism: ${reviewLink}\n\nClicking this link will open your ${title} in Prism where you can review progress, update goals, and plan ahead.`;
-      const gcalEvent = await createGoogleEvent(auth.userId, {
-        summary: title,
-        description,
-        start: review.timeBlockStart.toISOString(),
-        end: review.timeBlockEnd.toISOString(),
-      }, targetCalendarId);
-      if (gcalEvent?.id) {
-        await prisma.review.update({ where: { id: review.id }, data: { calendarEventId: gcalEvent.id } });
-        updates.push(`Pushed review to Google: ${title}`);
-      }
-    } catch {
-      // Continue with other items
-    }
-  }
-
-  // Push powerdown events to GCal
-  if (user?.powerdownTime) {
-    const [pdH, pdM] = user.powerdownTime.split(':').map(Number);
-    const pdCursor = new Date(rangeStart);
-    pdCursor.setUTCHours(0, 0, 0, 0);
-    let pdDayCount = 0;
-
-    while (pdCursor <= rangeEnd && pdDayCount < 366) {
-      pdDayCount++;
-      const zoned = toZonedTime(pdCursor, userTz);
-      const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-
-      const pdStart = fromZonedTime(`${dateKey}T${pad2(pdH)}:${pad2(pdM)}:00`, userTz);
-      const pdEnd = new Date(pdStart.getTime() + 30 * 60_000);
-
-      if (pdStart >= rangeStart && pdStart <= rangeEnd) {
-        // Find or create a PowerdownSession for this date
-        const sessionDate = fromZonedTime(`${dateKey}T00:00:00`, userTz);
-        const existingSession = await prisma.powerdownSession.findFirst({
-          where: {
-            userId: auth.userId,
-            sessionDate: { gte: new Date(sessionDate.getTime() - 86400000), lte: new Date(sessionDate.getTime() + 86400000) },
-          },
-        });
-
-        if (existingSession?.calendarEventId) {
-          // Already synced
-        } else {
-          try {
-            const description = `Start your Power Down Ritual in Prism: ${baseUrl}/powerdown\n\nClicking this link will open your end-of-day Power Down Ritual in Prism where you can review your day, capture ideas, and close out cleanly.`;
-
-            const effectiveStart = existingSession?.timeBlockStart ?? pdStart;
-            const effectiveEnd = existingSession?.timeBlockEnd ?? pdEnd;
-
-            const gcalEvent = await createGoogleEvent(auth.userId, {
-              summary: 'Power Down Ritual',
-              description,
-              start: effectiveStart.toISOString(),
-              end: effectiveEnd.toISOString(),
-            }, targetCalendarId);
-
-            if (gcalEvent?.id) {
-              if (existingSession) {
-                // Only store calendarEventId; preserve existing user overrides (if any)
-                await prisma.powerdownSession.update({
-                  where: { id: existingSession.id },
-                  data: { calendarEventId: gcalEvent.id },
-                });
-              } else {
-                // timeBlockStart/End intentionally omitted — null means "use the user's default powerdownTime"
-                // Only set when user explicitly overrides via drag
-                await prisma.powerdownSession.create({
-                  data: {
-                    userId: auth.userId,
-                    sessionDate,
-                    calendarEventId: gcalEvent.id,
-                  },
-                });
-              }
-              updates.push(`Pushed powerdown to Google: ${dateKey}`);
-            }
-          } catch {
-            // Continue with other items
-          }
-        }
-      }
-
-      pdCursor.setUTCDate(pdCursor.getUTCDate() + 1);
-    }
-  }
 
   return Response.json({
     synced: true,
     updates,
-    gcalEventsCount: gcalEvents.length,
-    prismItemsChecked: tasks.length + aimInstances.length + reviews.length + powerdownSessions.length,
-    prismItemsPushed: unsyncedTasks.length + unsyncedAims.length + unsyncedReviews.length,
+    googleEventCount: gcalEvents.length,
+    oneOffTasksChecked: tasks.length,
+    oneOffAimsChecked: aimInstances.length,
+    recurringReviewSeries: Object.keys(googleSyncState.recurringReviews ?? {}).length,
+    recurringProcessSeries: Object.keys(googleSyncState.processes ?? {}).length,
   });
 }
