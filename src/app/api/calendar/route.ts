@@ -696,7 +696,14 @@ export async function GET(request: NextRequest) {
     console.warn(`[calendar] 0 events returned for user ${auth.userId}, range ${start} – ${end}, source=${source}`);
   }
 
-  return Response.json({ events, googleStatus, googleError });
+  // Debug: count events by source
+  const sourceCounts: Record<string, number> = {};
+  for (const e of events) {
+    const s = (e as any).source ?? 'unknown';
+    sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+  }
+
+  return Response.json({ events, googleStatus, googleError, _debug: { sourceCounts, total: events.length, range: `${start} – ${end}` } });
 
   } catch (err) {
     console.error('[calendar] Unhandled error in GET /api/calendar:', err);
