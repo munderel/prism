@@ -45,7 +45,10 @@ export async function PATCH(
     return Response.json({ error: 'start and end are required' }, { status: 400 });
   }
 
-  const updated = await updateGoogleEvent(auth.userId, eventId, { start, end }, calendarId);
+  const updated = await updateGoogleEvent(auth.userId, eventId, {
+    start: new Date(start).toISOString(),
+    end: new Date(end).toISOString(),
+  }, calendarId);
   if (!updated) {
     return Response.json({ error: 'Failed to update Google Calendar event' }, { status: 500 });
   }

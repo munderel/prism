@@ -50,21 +50,32 @@ export async function POST(
   const hasDelegation = process.delegateId && process.delegateUntil && process.delegateUntil >= today;
   const responsibleUserId = (hasDelegation ? process.delegateId : process.assigneeId) ?? auth.userId;
 
-  // Compute the next occurrence based on cadence + user inputs
-  let scheduledStart = computeScheduledDate(
-    process.cadence,
-    now,
-    hours,
-    minutes,
-    dayOfWeek,
-    dayOfMonth,
-    dateStr
-  );
+  // Check if this is the first scheduling with an explicit start date
+  const isFirstScheduleWithStartDate = process.scheduleStartDate && !process.lastRunAt;
 
-  // If the computed date is in the past, push it forward one period
-  if (isBefore(scheduledStart, now)) {
-    const pushed = computeNextDueDate(process.cadence, scheduledStart);
-    scheduledStart = setHours(setMinutes(pushed, minutes), hours);
+  let scheduledStart: Date;
+
+  if (isFirstScheduleWithStartDate) {
+    // Use the explicit start date as the first occurrence
+    const anchor = startOfDay(new Date(process.scheduleStartDate!));
+    scheduledStart = setHours(setMinutes(anchor, minutes), hours);
+  } else {
+    // Compute the next occurrence based on cadence + user inputs
+    scheduledStart = computeScheduledDate(
+      process.cadence,
+      now,
+      hours,
+      minutes,
+      dayOfWeek,
+      dayOfMonth,
+      dateStr
+    );
+
+    // If the computed date is in the past, push it forward one period
+    if (isBefore(scheduledStart, now)) {
+      const pushed = computeNextDueDate(process.cadence, scheduledStart);
+      scheduledStart = setHours(setMinutes(pushed, minutes), hours);
+    }
   }
 
   const scheduledEnd = addMinutes(scheduledStart, process.defaultDurationMinutes);

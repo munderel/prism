@@ -15,7 +15,7 @@ export async function POST(
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { title, description, cadence, assigneeId, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth, mode, subtaskMode } = body;
+  const { title, description, cadence, assigneeId, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth, scheduleStartDate, mode, subtaskMode } = body;
 
   if (!title || typeof title !== 'string') {
     return Response.json({ error: 'title is required' }, { status: 400 });
@@ -34,6 +34,15 @@ export async function POST(
     return Response.json({ error: 'ADVANCED mode requires an assignee' }, { status: 400 });
   }
 
+  // Compute initial nextDueAt if a start date is provided
+  let initialNextDueAt: Date | undefined;
+  if (scheduleStartDate && scheduledTime) {
+    const [h, m] = scheduledTime.split(':').map(Number);
+    const start = new Date(scheduleStartDate);
+    start.setHours(h, m, 0, 0);
+    initialNextDueAt = start;
+  }
+
   const process = await prisma.process.create({
     data: {
       functionId: id,
@@ -47,6 +56,8 @@ export async function POST(
       ...(scheduledTime !== undefined && { scheduledTime: scheduledTime || null }),
       ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
       ...(scheduledDayOfMonth !== undefined && { scheduledDayOfMonth: scheduledDayOfMonth ?? null }),
+      ...(scheduleStartDate && { scheduleStartDate: new Date(scheduleStartDate) }),
+      ...(initialNextDueAt && { nextDueAt: initialNextDueAt }),
     },
     include: {
       assignee: { select: { id: true, name: true, email: true } },

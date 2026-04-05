@@ -9,6 +9,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useToast } from '@/components/ui/ToastProvider';
 import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING } from '@/lib/prism-colors';
 import type { ColorDef } from '@/lib/prism-colors';
 
@@ -182,6 +183,13 @@ function getEventColor(event: any, isDark: boolean): { bg: string; border: strin
     return colorFromDef(PRISM_COLORS[colorKey], isDark);
   }
 
+  // Match by event source (meetings, powerdown)
+  const SOURCE_MAP: Record<string, keyof typeof PRISM_COLORS> = { meetings: 'MEETING', powerdown: 'POWER_DOWN' };
+  const sourceKey = SOURCE_MAP[props.source];
+  if (sourceKey) {
+    return colorFromDef(PRISM_COLORS[sourceKey], isDark);
+  }
+
   return isDark ? DEFAULT_EVENT_COLOR_DARK : DEFAULT_EVENT_COLOR_LIGHT;
 }
 
@@ -281,6 +289,7 @@ export function CalendarSplitView({
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme !== 'light';
   const isMobile = useMediaQuery('(max-width: 1023px)');
+  const toast = useToast();
   const [mobileItemsExpanded, setMobileItemsExpanded] = useState(false);
 
   // Fetch existing calendar events for the date range
@@ -355,7 +364,7 @@ export function CalendarSplitView({
         const events = Array.isArray(currentData) ? currentData : (currentData?.events ?? []);
         const updated = [...events, newEvent];
         return Array.isArray(currentData) ? updated : { ...currentData, events: updated };
-      }, { revalidate: true });
+      }, { revalidate: false });
     },
     [mutateEvents],
   );
@@ -372,7 +381,6 @@ export function CalendarSplitView({
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
         info.event.remove();
-        await onCreateWorkBlock?.(start, end);
         addOptimisticEvent({
           id: `google-pending-${Date.now()}`,
           title: title || 'Work Block',
@@ -381,6 +389,12 @@ export function CalendarSplitView({
           allDay: false,
           source: 'google',
         });
+        try {
+          await onCreateWorkBlock?.(start, end);
+        } catch {
+          toast.error('Failed to create work block.');
+        }
+        mutateEvents();
         return;
       }
 
@@ -400,29 +414,34 @@ export function CalendarSplitView({
         }
       }
 
+      // Remove FullCalendar ghost and add optimistic event in the same sync cycle
+      const idPrefix = itemType === 'aim' ? 'aim' : 'task';
+      const source = itemType === 'aim' ? 'aims' : 'tasks';
+      info.event.remove();
+      addOptimisticEvent({
+        id: `${idPrefix}-${itemId}`,
+        title,
+        start: snapStart.toISOString(),
+        end: snapEnd.toISOString(),
+        allDay: false,
+        source,
+        itemId,
+        itemType,
+        taskType: info.event.extendedProps?.taskType,
+      });
+
       try {
-        info.event.remove();
         await onSchedule(itemId, itemType, snapStart, snapEnd);
-        const idPrefix = itemType === 'aim' ? 'aim' : 'task';
-        const source = itemType === 'aim' ? 'aims' : 'tasks';
-        addOptimisticEvent({
-          id: `${idPrefix}-${itemId}`,
-          title,
-          start: snapStart.toISOString(),
-          end: snapEnd.toISOString(),
-          allDay: false,
-          source,
-          itemId,
-          itemType,
-          taskType: info.event.extendedProps?.taskType,
-        });
+        mutateEvents();
         onRefresh?.();
       } catch {
-        // Re-fetch to restore correct state on error
+        // Re-fetch to remove optimistic event and restore left panel
         mutateEvents();
+        onRefresh?.();
+        toast.error('Failed to schedule item. Please try again.');
       }
     },
-    [onSchedule, onCreateWorkBlock, mutateEvents, addOptimisticEvent, onRefresh, mode, calendarEvents],
+    [onSchedule, onCreateWorkBlock, mutateEvents, addOptimisticEvent, onRefresh, mode, calendarEvents, toast],
   );
 
   // Shared handler for event resize and internal drag-move
@@ -584,7 +603,7 @@ export function CalendarSplitView({
 
       {/* Right Panel — Calendar */}
       <div className="w-full lg:w-[65%] flex flex-col min-h-[350px]">
-        <div className="flex-1 p-1 sm:p-2 overflow-hidden calendar-split-view">
+        <div className={`flex-1 p-1 sm:p-2 overflow-hidden calendar-split-view ${isDark ? 'fc-dark-theme' : 'fc-light-theme'}`}>
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -604,8 +623,9 @@ export function CalendarSplitView({
             eventResize={handleEventUpdate}
             eventDrop={handleEventUpdate}
             eventContent={renderEventContent}
-            slotMinTime="06:00:00"
-            slotMaxTime="22:00:00"
+            slotMinTime="00:00:00"
+            slotMaxTime="24:00:00"
+            scrollTime="06:00:00"
             slotDuration="00:30:00"
             allDaySlot={false}
             nowIndicator
