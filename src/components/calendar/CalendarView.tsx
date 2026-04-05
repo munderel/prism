@@ -117,6 +117,15 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const { events, error: calendarError, refreshEvents, googleStatus, googleError, isLoading: calendarLoading } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
   const { resolvedTheme } = useTheme();
   const isMobile = useMediaQuery('(max-width: 1023px)');
+
+  // FullCalendar only reads initialView once at mount (when isMobile is still false).
+  // Imperatively switch view after isMobile resolves so mobile gets day view.
+  useEffect(() => {
+    const api = calendarRef.current?.getApi();
+    if (!api) return;
+    api.changeView(isMobile ? 'timeGridDay' : 'timeGridWeek');
+  }, [isMobile]);
+
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown', 'processes']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
   const [showGhosts, setShowGhosts] = useState(false);
@@ -1154,6 +1163,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           events={allDisplayEvents}
           editable={true}
           selectable={true}
+          selectLongPressDelay={0}
+          longPressDelay={0}
           droppable={true}
           eventDrop={handleEventDrop}
           eventReceive={handleEventReceive}
