@@ -433,17 +433,24 @@ export async function GET(request: NextRequest) {
     for (const s of pdSessions) {
       if (s.calendarEventId) syncedCalendarEventIds.add(s.calendarEventId);
     }
+    // Build overrides map — only include sessions where the user explicitly
+    // moved the time (not sessions auto-created by sync with the default time).
     const pdOverrides = new Map<string, { start: Date; end: Date }>();
     for (const s of pdSessions) {
-      if (s.timeBlockStart && s.timeBlockEnd) {
-        const override = { start: s.timeBlockStart, end: s.timeBlockEnd };
-        // Add both timezone-aware and raw UTC date keys to handle both storage formats
-        const zoned = toZonedTime(s.sessionDate, userTz);
-        const zonedKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-        const utcKey = s.sessionDate.toISOString().split('T')[0];
-        pdOverrides.set(zonedKey, override);
-        pdOverrides.set(utcKey, override);
-      }
+      if (!s.timeBlockStart || !s.timeBlockEnd) continue;
+      // Check if this is a real override (different from default) or just a stale
+      // copy of the default time created by an older sync route
+      const zonedStart = toZonedTime(s.timeBlockStart, userTz);
+      const startH = zonedStart.getHours();
+      const startM = zonedStart.getMinutes();
+      if (startH === pdH && startM === pdM) continue; // matches default — not a real override
+
+      const override = { start: s.timeBlockStart, end: s.timeBlockEnd };
+      const zoned = toZonedTime(s.sessionDate, userTz);
+      const zonedKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+      const utcKey = s.sessionDate.toISOString().split('T')[0];
+      pdOverrides.set(zonedKey, override);
+      pdOverrides.set(utcKey, override);
     }
 
     forEachDayInRange(rangeStart, rangeEnd, userTz, (_zonedCursor, dateKey) => {
