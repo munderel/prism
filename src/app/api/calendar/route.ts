@@ -414,10 +414,13 @@ export async function GET(request: NextRequest) {
   if (userSettings?.powerdownTime && !fetchExternal) {
     const [pdH, pdM] = userSettings.powerdownTime.split(':').map(Number);
 
+    // Widen the date range by 2 days to account for UTC/timezone boundary mismatches
+    const pdRangeStart = new Date(rangeStart.getTime() - 2 * 86400000);
+    const pdRangeEnd = new Date(rangeEnd.getTime() + 2 * 86400000);
     const pdSessions = await prisma.powerdownSession.findMany({
       where: {
         userId: auth.userId,
-        sessionDate: { gte: rangeStart, lte: rangeEnd },
+        sessionDate: { gte: pdRangeStart, lte: pdRangeEnd },
         OR: [
           { timeBlockStart: { not: null } },
           { timeBlockEnd: { not: null } },
@@ -433,10 +436,13 @@ export async function GET(request: NextRequest) {
     const pdOverrides = new Map<string, { start: Date; end: Date }>();
     for (const s of pdSessions) {
       if (s.timeBlockStart && s.timeBlockEnd) {
-        // Use timezone-aware date key to match forEachDayInRange
+        const override = { start: s.timeBlockStart, end: s.timeBlockEnd };
+        // Add both timezone-aware and raw UTC date keys to handle both storage formats
         const zoned = toZonedTime(s.sessionDate, userTz);
-        const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-        pdOverrides.set(dateKey, { start: s.timeBlockStart, end: s.timeBlockEnd });
+        const zonedKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+        const utcKey = s.sessionDate.toISOString().split('T')[0];
+        pdOverrides.set(zonedKey, override);
+        pdOverrides.set(utcKey, override);
       }
     }
 
