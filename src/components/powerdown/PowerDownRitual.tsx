@@ -243,6 +243,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
     setSession(data);
     setCurrentStep(data.currentStep ?? 1);
+    setCompleted(!!data.completedAt);
     setTomorrowPlan(data.tomorrowPlan ?? []);
     // Restore distractions — handle both old string[] format and new DistractionEntry[] format
     const rawDistractions = data.distractions ?? [];
@@ -1170,6 +1171,12 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 <p className="text-sm text-[var(--text-secondary)] mb-3">
                   For each task, add specific outcomes you&apos;ll achieve. e.g., &quot;Complete first draft of proposal sections 1-3&quot;
                 </p>
+                <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
+                  <p className="text-sm font-medium text-[var(--text-primary)]">Clear Goal Guide</p>
+                  <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                    Write the exact result you want, break it into a short checklist, and make the first action obvious enough to start immediately tomorrow.
+                  </p>
+                </div>
                 {scheduledPlanTasks.length === 0 && (
                   <p className="text-sm text-[var(--text-secondary)]">Nothing is scheduled for tomorrow.</p>
                 )}

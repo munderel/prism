@@ -176,19 +176,6 @@ export async function POST(request: NextRequest) {
     if ('error' in adminAuth) return authError(adminAuth);
   }
 
-  const existingWhere: any = {
-    reviewType,
-    completedAt: null,
-    isTeamReview: !!isTeamReview,
-    ...(!isTeamReview && { userId: auth.userId }),
-  };
-
-  const existing = await prisma.review.findFirst({ where: existingWhere });
-
-  if (existing) {
-    return Response.json({ error: 'An incomplete review of this type already exists', existingId: existing.id }, { status: 409 });
-  }
-
   const now = new Date();
 
   let scheduledDate: Date;
@@ -204,6 +191,30 @@ export async function POST(request: NextRequest) {
     scheduledDate = new Date(startDate);
   } else {
     scheduledDate = getNextReviewDate(reviewType);
+  }
+
+  const scheduledDayStart = new Date(scheduledDate);
+  scheduledDayStart.setHours(0, 0, 0, 0);
+  const scheduledDayEnd = new Date(scheduledDayStart);
+  scheduledDayEnd.setDate(scheduledDayEnd.getDate() + 1);
+
+  const existingWhere: any = {
+    reviewType,
+    isTeamReview: !!isTeamReview,
+    scheduledDate: {
+      gte: scheduledDayStart,
+      lt: scheduledDayEnd,
+    },
+    ...(!isTeamReview && { userId: auth.userId }),
+  };
+
+  const existing = await prisma.review.findFirst({
+    where: existingWhere,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (existing) {
+    return Response.json({ error: 'A review for this cadence already exists', existingId: existing.id }, { status: 409 });
   }
 
   const timeBlock = computeTimeBlock(scheduledDate, scheduleConfig?.time, scheduleConfig?.duration);

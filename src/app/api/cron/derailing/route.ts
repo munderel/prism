@@ -3,6 +3,7 @@ import { requireCronSecret } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 import { checkTaskDerailStatus } from '@/lib/derailing';
 import { notifyUser } from '@/lib/notifications';
+import { toZonedTime } from 'date-fns-tz';
 
 export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
@@ -10,14 +11,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const todayUTC = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z');
-    const tomorrowUTC = new Date(todayUTC);
-    tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
-
-    // Find all tasks due today that are not done
     const tasks = await prisma.task.findMany({
       where: {
-        dueDate: { gte: todayUTC, lt: tomorrowUTC },
+        dueDate: { not: null },
         status: { notIn: ['DONE', 'DROPPED'] },
       },
       include: {
@@ -25,10 +21,18 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Process all tasks in parallel instead of sequentially
-    const derailingTasks = tasks.filter(
-      (task) => checkTaskDerailStatus(task, task.owner.timezone) === 'derailing'
-    );
+    const derailingTasks = tasks.filter((task) => {
+      if (!task.dueDate) return false;
+      const timezone = task.owner.timezone || 'America/New_York';
+      const dueLocal = toZonedTime(task.dueDate, timezone);
+      const nowLocal = toZonedTime(new Date(), timezone);
+      const sameLocalDay =
+        dueLocal.getFullYear() === nowLocal.getFullYear() &&
+        dueLocal.getMonth() === nowLocal.getMonth() &&
+        dueLocal.getDate() === nowLocal.getDate();
+
+      return sameLocalDay && checkTaskDerailStatus(task, timezone) === 'derailing';
+    });
 
     // Batch-fetch notification preferences for all derailing task owners
     const ownerIds = Array.from(new Set(derailingTasks.map((t) => t.owner.id)));

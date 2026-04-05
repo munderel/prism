@@ -5,11 +5,13 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { useRouter } from 'next/navigation';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useToast } from '@/components/ui/ToastProvider';
+import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING } from '@/lib/prism-colors';
 import type { ColorDef } from '@/lib/prism-colors';
 
@@ -43,6 +45,44 @@ export interface CalendarSplitViewProps {
   /** Show work block template cards at the bottom of the left panel (default mode only). */
   showWorkBlockTemplates?: boolean;
 }
+
+interface SelectedEventPopover {
+  eventId: string;
+  title: string;
+  source: 'aims' | 'task' | 'review' | 'powerdown' | 'meeting' | 'process' | 'google';
+  status: string;
+  position: { top: number; left: number };
+  aimInstanceId?: string;
+  aimCategoryName?: string;
+  selectedActivity?: string;
+  taskId?: string;
+  taskType?: string;
+  priority?: string;
+  goalTitle?: string;
+  link?: string;
+  description?: string;
+  cadence?: string;
+  createdBy?: string;
+  gcalEventId?: string;
+  gcalCalendarId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const TASK_TYPE_BADGE_STYLES: Record<string, string> = {
+  IMPROVE: 'bg-indigo-500/15 text-indigo-400',
+  REACT: 'bg-yellow-500/15 text-yellow-400',
+  MAINTENANCE: 'bg-cyan-500/15 text-cyan-400',
+};
+
+const TASK_STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
+  DONE: { dot: 'bg-emerald-400', label: 'Done' },
+  IN_PROGRESS: { dot: 'bg-blue-400', label: 'In Progress' },
+};
+
+const DEFAULT_TASK_STATUS = { dot: 'bg-gray-400', label: 'To Do' };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -287,11 +327,17 @@ export function CalendarSplitView({
   const draggableContainerRef = useRef<HTMLDivElement>(null);
   const calendarRef = useRef<FullCalendar>(null);
   const pendingWorkBlocks = useRef<any[]>([]);
+  const pendingScheduledItems = useRef<any[]>([]);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme !== 'light';
   const isMobile = useMediaQuery('(max-width: 1023px)');
   const toast = useToast();
+  const router = useRouter();
   const [mobileItemsExpanded, setMobileItemsExpanded] = useState(false);
+  const [selectedEventPopover, setSelectedEventPopover] = useState<SelectedEventPopover | null>(null);
+  const [completingEvent, setCompletingEvent] = useState(false);
+  const [editingTask, setEditingTask] = useState<any>(null);
 
   // Fetch existing calendar events for the date range
   const { events: calendarEvents, refreshEvents: mutateEvents } = useCalendarEvents(
@@ -303,6 +349,18 @@ export function CalendarSplitView({
   // Placeholders are auto-removed once a matching server event appears (by time overlap).
   const displayEvents = useMemo(() => {
     const serverEvents = calendarEvents ?? [];
+    const stillPendingScheduled = pendingScheduledItems.current.filter((pending) => {
+      return !serverEvents.some((evt: any) => {
+        const sameItem = evt.itemId === pending.itemId && evt.itemType === pending.itemType;
+        if (!sameItem) return false;
+        const evtStart = evt.start ? new Date(evt.start).getTime() : 0;
+        const evtEnd = evt.end ? new Date(evt.end).getTime() : 0;
+        const pendingStart = new Date(pending.start).getTime();
+        const pendingEnd = new Date(pending.end).getTime();
+        return Math.abs(evtStart - pendingStart) < 60000 && Math.abs(evtEnd - pendingEnd) < 60000;
+      });
+    });
+
     const stillPending = pendingWorkBlocks.current.filter((wb) => {
       return !serverEvents.some((evt: any) =>
         evt.source === 'google' &&
@@ -310,8 +368,10 @@ export function CalendarSplitView({
         Math.abs(new Date(evt.end).getTime() - new Date(wb.end).getTime()) < 60000
       );
     });
+
+    pendingScheduledItems.current = stillPendingScheduled;
     pendingWorkBlocks.current = stillPending;
-    return [...serverEvents, ...stillPending];
+    return [...serverEvents, ...stillPendingScheduled, ...stillPending];
   }, [calendarEvents]);
 
   // Initialize FullCalendar Draggable on the left panel
@@ -345,6 +405,18 @@ export function CalendarSplitView({
     api.gotoDate(dateRange.start);
   }, [dateRange.start]);
 
+  // Dismiss popover on outside click
+  useEffect(() => {
+    if (!selectedEventPopover) return;
+    const handleClick = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setSelectedEventPopover(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [selectedEventPopover]);
+
   // Calculate scheduled hours within the date range
   const scheduledMinutes = useMemo(() => {
     if (!displayEvents.length) return 0;
@@ -375,6 +447,243 @@ export function CalendarSplitView({
       items: unscheduledItems.filter(group.filter),
     })).filter((g) => g.items.length > 0);
   }, [unscheduledItems]);
+
+  // --- Completion handler ---
+  const handleComplete = useCallback(async (
+    endpoint: string,
+    status: string,
+    label: string,
+  ) => {
+    setCompletingEvent(true);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        toast.success(`${label} completed!`);
+        setSelectedEventPopover(null);
+        mutateEvents();
+        onRefresh?.();
+      } else {
+        toast.error(`Failed to complete ${label.toLowerCase()}`);
+      }
+    } catch {
+      toast.error(`Failed to complete ${label.toLowerCase()}`);
+    } finally {
+      setCompletingEvent(false);
+    }
+  }, [toast, mutateEvents, onRefresh]);
+
+  const handleCompleteAim = useCallback(
+    (aimInstanceId: string) => handleComplete(`/api/aims/instances/${aimInstanceId}`, 'COMPLETED', 'Aim'),
+    [handleComplete],
+  );
+
+  const handleCompleteTask = useCallback(
+    (taskId: string) => handleComplete(`/api/tasks/${taskId}`, 'DONE', 'Task'),
+    [handleComplete],
+  );
+
+  // --- Unschedule from popover ---
+  const handleUnscheduleFromPopover = useCallback(async (
+    endpoint: string,
+    label: string,
+  ) => {
+    setCompletingEvent(true);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
+      });
+      if (res.ok) {
+        toast.success(`${label} unscheduled`);
+        setSelectedEventPopover(null);
+        mutateEvents();
+        onRefresh?.();
+      } else {
+        toast.error(`Failed to unschedule ${label.toLowerCase()}`);
+      }
+    } catch {
+      toast.error(`Failed to unschedule ${label.toLowerCase()}`);
+    } finally {
+      setCompletingEvent(false);
+    }
+  }, [toast, mutateEvents, onRefresh]);
+
+  // --- Delete handlers ---
+  const handleDeleteTask = useCallback(async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Task deleted');
+        setSelectedEventPopover(null);
+        mutateEvents();
+        onRefresh?.();
+      } else {
+        toast.error('Failed to delete task');
+      }
+    } catch {
+      toast.error('Failed to delete task');
+    }
+  }, [toast, mutateEvents, onRefresh]);
+
+  const handleDeleteAim = useCallback(async (aimInstanceId: string) => {
+    try {
+      const res = await fetch(`/api/aims/instances/${aimInstanceId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Aim removed');
+        setSelectedEventPopover(null);
+        mutateEvents();
+        onRefresh?.();
+      } else {
+        toast.error('Failed to delete aim');
+      }
+    } catch {
+      toast.error('Failed to delete aim');
+    }
+  }, [toast, mutateEvents, onRefresh]);
+
+  const handleDeleteGoogleEvent = useCallback(async (gcalEventId: string, calendarId: string) => {
+    try {
+      const res = await fetch(`/api/calendar/events/${gcalEventId}?calendarId=${encodeURIComponent(calendarId)}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Event deleted from Google Calendar');
+        setSelectedEventPopover(null);
+        mutateEvents();
+        onRefresh?.();
+      } else {
+        toast.error('Failed to delete Google Calendar event');
+      }
+    } catch {
+      toast.error('Failed to delete Google Calendar event');
+    }
+  }, [toast, mutateEvents, onRefresh]);
+
+  // --- Event click handler ---
+  const handleEventClick = useCallback((info: any) => {
+    const props = info.event.extendedProps || {};
+    const rect = info.el.getBoundingClientRect();
+    const position = { top: rect.top + window.scrollY, left: rect.right + 8 };
+
+    // Powerdown event
+    if (props.link === '/powerdown' || info.event.id?.startsWith('powerdown-')) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'powerdown',
+        status: '',
+        position,
+        link: '/powerdown',
+      });
+      return;
+    }
+
+    // Review events
+    if (info.event.id?.startsWith('weekly-review-') || info.event.id?.startsWith('monthly-review-') || info.event.id?.startsWith('yearly-review-') || info.event.id?.startsWith('team-review-')) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'review',
+        status: '',
+        position,
+        link: props.link || '/reviews',
+      });
+      return;
+    }
+
+    // Stored review event
+    if (info.event.id?.startsWith('review-')) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'review',
+        status: props.completed ? 'completed' : '',
+        position,
+        link: props.reviewId ? `/reviews/${props.reviewId}/complete` : '/reviews',
+      });
+      return;
+    }
+
+    // Process event
+    if (info.event.id?.startsWith('process-')) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'process',
+        status: '',
+        position,
+        link: '/processes',
+      });
+      return;
+    }
+
+    // Meeting event
+    if (info.event.id?.startsWith('meeting-')) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'meeting',
+        status: '',
+        position,
+        description: props.description,
+        cadence: props.cadence,
+        createdBy: props.createdBy,
+        link: props.meetLink,
+      });
+      return;
+    }
+
+    // Aim event
+    if (props.aimInstanceId) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'aims',
+        status: props.status || 'SCHEDULED',
+        position,
+        aimInstanceId: props.aimInstanceId,
+        aimCategoryName: props.aimCategoryName,
+        selectedActivity: props.selectedActivity,
+      });
+      return;
+    }
+
+    // Task event
+    if (props.taskId || info.event.id?.startsWith('task-')) {
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'task',
+        status: props.status || 'TODO',
+        position,
+        taskId: props.taskId || info.event.id?.replace('task-', ''),
+        taskType: props.taskType,
+        priority: props.priority,
+        goalTitle: props.goalTitle,
+        description: props.description,
+      });
+      return;
+    }
+
+    // Google Calendar event
+    if (info.event.id?.startsWith('google-')) {
+      const rawId = info.event.id.replace('google-', '');
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'google',
+        status: '',
+        position,
+        description: props.description,
+        gcalEventId: rawId,
+        gcalCalendarId: props.calendarId || 'primary',
+        link: props.meetLink,
+      });
+    }
+  }, []);
 
   // FullCalendar event receive handler (external drop)
   const handleEventReceive = useCallback(
@@ -429,6 +738,21 @@ export function CalendarSplitView({
 
       try {
         await onSchedule(itemId, itemType, snapStart, snapEnd);
+        pendingScheduledItems.current = [
+          ...pendingScheduledItems.current.filter((evt) => !(evt.itemId === itemId && evt.itemType === itemType)),
+          {
+            id: `pending-${itemType}-${itemId}`,
+            title,
+            start: snapStart.toISOString(),
+            end: snapEnd.toISOString(),
+            allDay: false,
+            source: itemType === 'aim' ? 'aims' : 'tasks',
+            itemId,
+            itemType,
+            ...(itemType === 'aim' ? { aimInstanceId: itemId } : { taskId: itemId }),
+          },
+        ];
+        mutateEvents((currentData: any) => currentData, { revalidate: false });
         // After successful schedule, remove the FullCalendar ghost (server data takes over)
         info.event.remove();
         // Refetch calendar events and sidebar items from server
@@ -452,10 +776,31 @@ export function CalendarSplitView({
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
       const end = info.event.end as Date;
-      await onSchedule(itemId, itemType, start, end);
-      mutateEvents();
+      try {
+        await onSchedule(itemId, itemType, start, end);
+        pendingScheduledItems.current = [
+          ...pendingScheduledItems.current.filter((evt) => !(evt.itemId === itemId && evt.itemType === itemType)),
+          {
+            id: `pending-${itemType}-${itemId}`,
+            title: info.event.title,
+            start: start.toISOString(),
+            end: end.toISOString(),
+            allDay: false,
+            source: itemType === 'aim' ? 'aims' : 'tasks',
+            itemId,
+            itemType,
+            ...(itemType === 'aim' ? { aimInstanceId: itemId } : { taskId: itemId }),
+          },
+        ];
+        mutateEvents((currentData: any) => currentData, { revalidate: false });
+        await mutateEvents();
+        onRefresh?.();
+      } catch {
+        info.revert();
+        toast.error('Failed to update scheduled item. Please try again.');
+      }
     },
-    [onSchedule, mutateEvents],
+    [onSchedule, mutateEvents, onRefresh, toast],
   );
 
   // Custom event content renderer with unschedule button
@@ -623,9 +968,28 @@ export function CalendarSplitView({
             eventReceive={handleEventReceive}
             eventResize={handleEventUpdate}
             eventDrop={handleEventUpdate}
+            eventClick={handleEventClick}
             eventContent={renderEventContent}
-            slotMinTime="00:00:00"
-            slotMaxTime="24:00:00"
+            eventDidMount={(info) => {
+              const props = info.event.extendedProps || {};
+              if (props.isPinned) {
+                const pinEl = document.createElement('span');
+                pinEl.textContent = '\u{1F4CC}';
+                pinEl.style.cssText = 'position:absolute;top:2px;right:4px;font-size:10px;';
+                info.el.style.position = 'relative';
+                info.el.appendChild(pinEl);
+              }
+              if (props.aimInstanceId && props.tasks && props.tasks.length > 0) {
+                const badge = document.createElement('span');
+                const doneCount = props.tasks.filter((t: any) => t.status === 'DONE').length;
+                badge.textContent = `${doneCount}/${props.tasks.length}`;
+                badge.style.cssText = 'position:absolute;bottom:2px;right:4px;font-size:9px;background:rgba(0,0,0,0.4);color:#fff;border-radius:4px;padding:0 4px;line-height:1.4;';
+                info.el.style.position = 'relative';
+                info.el.appendChild(badge);
+              }
+            }}
+            slotMinTime="06:00:00"
+            slotMaxTime="22:00:00"
             scrollTime="06:00:00"
             slotDuration="00:30:00"
             allDaySlot={false}
@@ -636,6 +1000,341 @@ export function CalendarSplitView({
           />
         </div>
       </div>
+
+      {/* Event Popover */}
+      {selectedEventPopover && (
+        <>
+          {isMobile && (
+            <div className="fixed inset-0 z-[59] bg-black/40" onClick={() => setSelectedEventPopover(null)} />
+          )}
+          <div
+            ref={popoverRef}
+            className={isMobile
+              ? 'fixed inset-x-0 bottom-0 z-[60] w-full rounded-t-xl border-t border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm pb-6'
+              : 'fixed z-[60] w-72 rounded-xl border border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm'
+            }
+            style={isMobile ? undefined : {
+              top: Math.min(selectedEventPopover.position.top, window.innerHeight - 280),
+              left: Math.min(selectedEventPopover.position.left, window.innerWidth - 300),
+            }}
+          >
+            {/* Popover Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
+              <h4 className="text-sm font-semibold text-[var(--text-primary)] truncate pr-2">
+                {selectedEventPopover.title}
+              </h4>
+              <button
+                onClick={() => setSelectedEventPopover(null)}
+                className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors flex-shrink-0"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* Popover Body */}
+            <div className="px-4 py-3 space-y-2.5">
+              {/* AIM popover */}
+              {selectedEventPopover.source === 'aims' && (
+                <>
+                  {selectedEventPopover.aimCategoryName && (
+                    <div className="text-xs text-[var(--text-muted)]">
+                      <span className="font-medium">Aim:</span> {selectedEventPopover.aimCategoryName}
+                    </div>
+                  )}
+                  {selectedEventPopover.selectedActivity && (
+                    <div className="text-xs text-[var(--text-muted)]">
+                      <span className="font-medium">Activity:</span> {selectedEventPopover.selectedActivity}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <span className={`h-2 w-2 rounded-full ${
+                      selectedEventPopover.status === 'COMPLETED' ? 'bg-emerald-400' : 'bg-teal-400'
+                    }`} />
+                    <span className="text-xs font-medium text-[var(--text-secondary)]">
+                      {selectedEventPopover.status === 'COMPLETED' ? 'Completed' : 'Scheduled'}
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {/* TASK popover */}
+              {selectedEventPopover.source === 'task' && (
+                <>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {selectedEventPopover.taskType && (
+                      <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        TASK_TYPE_BADGE_STYLES[selectedEventPopover.taskType] ?? 'bg-cyan-500/15 text-cyan-400'
+                      }`}>
+                        {selectedEventPopover.taskType}
+                      </span>
+                    )}
+                    {selectedEventPopover.priority && (
+                      <span className="inline-flex items-center rounded-md bg-[var(--surface-raised)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide">
+                        {selectedEventPopover.priority}
+                      </span>
+                    )}
+                  </div>
+                  {selectedEventPopover.goalTitle && (
+                    <div className="text-xs text-[var(--text-muted)]">
+                      <span className="font-medium">Goal:</span> {selectedEventPopover.goalTitle}
+                    </div>
+                  )}
+                  {(() => {
+                    const statusConfig = TASK_STATUS_CONFIG[selectedEventPopover.status] ?? DEFAULT_TASK_STATUS;
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        <span className={`h-2 w-2 rounded-full ${statusConfig.dot}`} />
+                        <span className="text-xs font-medium text-[var(--text-secondary)]">
+                          {statusConfig.label}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                  {selectedEventPopover.description && (
+                    <div className="text-xs text-[var(--text-secondary)] line-clamp-3 mt-1">
+                      {selectedEventPopover.description}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* GOOGLE EVENT popover */}
+              {selectedEventPopover.source === 'google' && (
+                <>
+                  {selectedEventPopover.description && (
+                    <div className="text-xs text-[var(--text-secondary)] line-clamp-4">
+                      {selectedEventPopover.description}
+                    </div>
+                  )}
+                  {selectedEventPopover.link && (
+                    <div className="text-xs text-[var(--text-muted)]">
+                      <span className="font-medium">Meet:</span>{' '}
+                      <a href={selectedEventPopover.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                        Join
+                      </a>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* REVIEW / POWERDOWN / PROCESS popover */}
+              {(selectedEventPopover.source === 'review' || selectedEventPopover.source === 'powerdown' || selectedEventPopover.source === 'process') && (
+                <div className="text-xs text-[var(--text-muted)]">
+                  {selectedEventPopover.source === 'review' && 'Scheduled review session'}
+                  {selectedEventPopover.source === 'powerdown' && 'Daily shutdown ritual'}
+                  {selectedEventPopover.source === 'process' && 'Recurring process'}
+                </div>
+              )}
+
+              {/* MEETING popover */}
+              {selectedEventPopover.source === 'meeting' && (
+                <>
+                  {selectedEventPopover.cadence && (
+                    <div className="text-xs text-[var(--text-muted)]">
+                      <span className="font-medium">Cadence:</span> {selectedEventPopover.cadence.toLowerCase().replace('_', ' ')}
+                    </div>
+                  )}
+                  {selectedEventPopover.createdBy && (
+                    <div className="text-xs text-[var(--text-muted)]">
+                      <span className="font-medium">Created by:</span> {selectedEventPopover.createdBy}
+                    </div>
+                  )}
+                  {selectedEventPopover.description && (
+                    <div className="text-xs text-[var(--text-secondary)] mt-1">{selectedEventPopover.description}</div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Popover Actions */}
+            <div className="px-4 py-3 border-t border-[var(--border-color)] flex flex-col gap-2">
+              {/* Aim actions */}
+              {selectedEventPopover.source === 'aims' && selectedEventPopover.status !== 'COMPLETED' && (
+                <button
+                  onClick={() => selectedEventPopover.aimInstanceId && handleCompleteAim(selectedEventPopover.aimInstanceId)}
+                  disabled={completingEvent}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                >
+                  {completingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  Complete
+                </button>
+              )}
+              {selectedEventPopover.source === 'aims' && selectedEventPopover.status === 'COMPLETED' && (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Already completed
+                </div>
+              )}
+              {selectedEventPopover.source === 'aims' && selectedEventPopover.aimInstanceId && (
+                <>
+                  <button
+                    onClick={() => handleUnscheduleFromPopover(`/api/aims/instances/${selectedEventPopover.aimInstanceId}`, 'Aim')}
+                    disabled={completingEvent}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+                  >
+                    <CalendarX2 className="h-3.5 w-3.5" />
+                    Unschedule
+                  </button>
+                  <button
+                    onClick={() => selectedEventPopover.aimInstanceId && handleDeleteAim(selectedEventPopover.aimInstanceId)}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                </>
+              )}
+
+              {/* Task actions */}
+              {selectedEventPopover.source === 'task' && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      const taskId = selectedEventPopover.taskId;
+                      if (!taskId) return;
+                      try {
+                        const res = await fetch(`/api/tasks/${taskId}`);
+                        if (res.ok) {
+                          const task = await res.json();
+                          setEditingTask(task);
+                          setSelectedEventPopover(null);
+                        }
+                      } catch { /* ignore */ }
+                    }}
+                    className="flex items-center justify-center gap-1.5 rounded-lg bg-[var(--surface-raised)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                  {selectedEventPopover.status !== 'DONE' && (
+                    <button
+                      onClick={() => selectedEventPopover.taskId && handleCompleteTask(selectedEventPopover.taskId)}
+                      disabled={completingEvent}
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                    >
+                      {completingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                      Complete
+                    </button>
+                  )}
+                  {selectedEventPopover.status === 'DONE' && (
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Done
+                    </div>
+                  )}
+                </div>
+              )}
+              {selectedEventPopover.source === 'task' && selectedEventPopover.taskId && (
+                <>
+                  <button
+                    onClick={() => handleUnscheduleFromPopover(`/api/tasks/${selectedEventPopover.taskId}`, 'Task')}
+                    disabled={completingEvent}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+                  >
+                    <CalendarX2 className="h-3.5 w-3.5" />
+                    Unschedule
+                  </button>
+                  <button
+                    onClick={() => selectedEventPopover.taskId && handleDeleteTask(selectedEventPopover.taskId)}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                </>
+              )}
+
+              {/* Review / Powerdown: Start + Settings */}
+              {(selectedEventPopover.source === 'review' || selectedEventPopover.source === 'powerdown') && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      router.push(selectedEventPopover.link || (selectedEventPopover.source === 'review' ? '/reviews' : '/powerdown'));
+                      setSelectedEventPopover(null);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors"
+                  >
+                    Start
+                  </button>
+                  <button
+                    onClick={() => {
+                      router.push('/settings');
+                      setSelectedEventPopover(null);
+                    }}
+                    className="flex items-center justify-center gap-1.5 rounded-lg bg-[var(--surface-raised)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
+                  >
+                    Settings
+                  </button>
+                </div>
+              )}
+
+              {/* Process: Open */}
+              {selectedEventPopover.source === 'process' && (
+                <button
+                  onClick={() => {
+                    router.push('/processes');
+                    setSelectedEventPopover(null);
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors"
+                >
+                  Open
+                </button>
+              )}
+
+              {/* Meeting: Join (if meet link) */}
+              {selectedEventPopover.source === 'meeting' && selectedEventPopover.link && (
+                <a
+                  href={selectedEventPopover.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
+                >
+                  Join Meeting
+                </a>
+              )}
+
+              {/* Google event actions */}
+              {selectedEventPopover.source === 'google' && (
+                <>
+                  {selectedEventPopover.link && (
+                    <a
+                      href={selectedEventPopover.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
+                    >
+                      Join Meeting
+                    </a>
+                  )}
+                  <button
+                    onClick={() => selectedEventPopover.gcalEventId && handleDeleteGoogleEvent(
+                      selectedEventPopover.gcalEventId,
+                      selectedEventPopover.gcalCalendarId || 'primary'
+                    )}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete from Google Calendar
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Task Editor Modal */}
+      {editingTask && (
+        <TaskEditor
+          task={editingTask}
+          onSave={() => {
+            setEditingTask(null);
+            mutateEvents();
+            onRefresh?.();
+          }}
+          onClose={() => setEditingTask(null)}
+        />
+      )}
     </div>
   );
 }

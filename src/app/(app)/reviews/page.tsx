@@ -124,9 +124,14 @@ function ReviewsPageInner() {
         });
 
         if (res.status === 409) {
+          const conflict = await res.json().catch(() => null);
+          if (conflict?.existingId) {
+            router.replace(`/reviews/${conflict.existingId}/complete`);
+            return;
+          }
           // Already exists — find and navigate to it
           const existing = allReviews.find(
-            (r) => r.reviewType === type && !r.completedAt && !r.isTeamReview
+            (r) => r.reviewType === type && r.scheduledDate?.startsWith(date) && !r.isTeamReview
           );
           if (existing) {
             router.replace(`/reviews/${existing.id}/complete`);
@@ -134,7 +139,7 @@ function ReviewsPageInner() {
             // Refetch and try again
             const refreshed = await mutateReviews();
             const found = (refreshed || []).find(
-              (r: ReviewData) => r.reviewType === type && !r.completedAt && !r.isTeamReview
+              (r: ReviewData) => r.reviewType === type && r.scheduledDate?.startsWith(date) && !r.isTeamReview
             );
             if (found) router.replace(`/reviews/${found.id}/complete`);
           }

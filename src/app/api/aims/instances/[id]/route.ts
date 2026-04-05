@@ -18,6 +18,67 @@ const INSTANCE_INCLUDE = {
 
 const VALID_STATUSES = ['SCHEDULED', 'COMPLETED', 'SKIPPED'] as const;
 
+async function recalculateUserAimProgress(userId: string, aimCategoryId: string) {
+  const userAim = await prisma.userAim.findUnique({
+    where: {
+      userId_aimCategoryId: {
+        userId,
+        aimCategoryId,
+      },
+    },
+  });
+
+  if (!userAim) return;
+
+  const completedInstances = await prisma.aimInstance.findMany({
+    where: {
+      userId,
+      aimCategoryId,
+      status: 'COMPLETED',
+    },
+    orderBy: { scheduledDate: 'asc' },
+    select: { scheduledDate: true, completedAt: true },
+  });
+
+  const uniqueCompletionDates: string[] = [];
+  for (const instance of completedInstances) {
+    const date = new Date(instance.scheduledDate);
+    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+    if (uniqueCompletionDates[uniqueCompletionDates.length - 1] !== key) {
+      uniqueCompletionDates.push(key);
+    }
+  }
+
+  let currentStreak = 0;
+  let bestStreak = 0;
+  let runningStreak = 0;
+  let previousDate: Date | null = null;
+
+  for (const key of uniqueCompletionDates) {
+    const [year, month, day] = key.split('-').map(Number);
+    const currentDate = new Date(year, month, day);
+    if (!previousDate) {
+      runningStreak = 1;
+    } else {
+      const diffDays = Math.round((currentDate.getTime() - previousDate.getTime()) / 86400000);
+      runningStreak = diffDays === 1 ? runningStreak + 1 : 1;
+    }
+    bestStreak = Math.max(bestStreak, runningStreak);
+    currentStreak = runningStreak;
+    previousDate = currentDate;
+  }
+
+  await prisma.userAim.update({
+    where: { id: userAim.id },
+    data: {
+      completionCount: completedInstances.length,
+      currentStreak,
+      bestStreak,
+      lastCompletedAt: completedInstances[completedInstances.length - 1]?.completedAt ?? null,
+    },
+  });
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -149,6 +210,10 @@ export async function PATCH(
     data: updateData,
     include: INSTANCE_INCLUDE,
   });
+
+  if (status !== undefined && status !== existing.status) {
+    await recalculateUserAimProgress(existing.userId, existing.aimCategoryId);
+  }
 
   // Google Calendar sync — fire-and-forget
   const calendarFieldsChanged = status !== undefined || timeBlockStart !== undefined || timeBlockEnd !== undefined;

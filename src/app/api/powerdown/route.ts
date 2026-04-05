@@ -72,8 +72,8 @@ export async function POST() {
     where: {
       userId: auth.userId,
       sessionDate: { gte: today },
-      completedAt: null,
     },
+    orderBy: { createdAt: 'desc' },
   });
 
   if (existing) {
@@ -163,7 +163,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const data: Record<string, unknown> = pickDefined(body, SESSION_UPDATABLE_FIELDS);
-  if (body.complete) data.completedAt = new Date();
+  if (body.complete && !session.completedAt) data.completedAt = new Date();
   if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
 

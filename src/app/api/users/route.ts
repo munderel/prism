@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { NO_STORE } from '@/lib/api-helpers';
 
 export async function GET(_request: NextRequest) {
   const auth = await requireAuth();
@@ -11,5 +12,5 @@ export async function GET(_request: NextRequest) {
     orderBy: { name: 'asc' },
   });
 
-  return Response.json(users);
+  return Response.json(users, NO_STORE);
 }

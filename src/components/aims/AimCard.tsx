@@ -23,6 +23,7 @@ interface AimCardProps {
     timeBlockEnd?: string;
   };
   onComplete?: (instanceId: string) => void;
+  onUndo?: (instanceId: string) => void;
   onExpand?: (aimId: string) => void;
 }
 
@@ -40,7 +41,7 @@ function formatTime(isoOrTime?: string): string | null {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export function AimCard({ aim, todayInstance, onComplete, onExpand }: AimCardProps) {
+export function AimCard({ aim, todayInstance, onComplete, onUndo, onExpand }: AimCardProps) {
   const phase = phaseConfig[aim.currentPhase] ?? phaseConfig.SEED;
   const isCompleted = todayInstance?.status === 'COMPLETED';
   const scheduledTime = formatTime(todayInstance?.timeBlockStart);
@@ -49,6 +50,13 @@ export function AimCard({ aim, todayInstance, onComplete, onExpand }: AimCardPro
     e.stopPropagation();
     if (todayInstance && onComplete && !isCompleted) {
       onComplete(todayInstance.id);
+    }
+  };
+
+  const handleUndo = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (todayInstance && onUndo && isCompleted) {
+      onUndo(todayInstance.id);
     }
   };
 
@@ -65,7 +73,7 @@ export function AimCard({ aim, todayInstance, onComplete, onExpand }: AimCardPro
       {/* Complete checkbox */}
       {todayInstance && (
         <button
-          onClick={handleComplete}
+          onClick={isCompleted ? handleUndo : handleComplete}
           className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
             isCompleted
               ? 'border-teal-500 bg-teal-500 text-white'

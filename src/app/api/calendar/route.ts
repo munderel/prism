@@ -391,17 +391,30 @@ export async function GET(request: NextRequest) {
   if (userSettings?.powerdownTime && !fetchExternal) {
     const [pdH, pdM] = userSettings.powerdownTime.split(':').map(Number);
 
+    // Build overrides map — only from sessions the user explicitly dragged.
+    // Sessions with calendarEventId were created/updated by the sync route and
+    // may carry stale timeBlock values from an old default — never use those.
     const pdOverrides = new Map<string, { start: Date; end: Date }>();
     for (const s of pdSessions) {
-      if (s.timeBlockStart && s.timeBlockEnd) {
-        // Use timezone-aware date key to match forEachDayInRange
-        const zoned = toZonedTime(s.sessionDate, userTz);
-        const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-        pdOverrides.set(dateKey, { start: s.timeBlockStart, end: s.timeBlockEnd });
-      }
+      if (!s.timeBlockStart || !s.timeBlockEnd) continue;
+      if (s.calendarEventId) continue; // sync-created — not a user override
+
+      const override = { start: s.timeBlockStart, end: s.timeBlockEnd };
+      const zoned = toZonedTime(s.sessionDate, userTz);
+      const zonedKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+      const utcKey = s.sessionDate.toISOString().split('T')[0];
+      pdOverrides.set(zonedKey, override);
+      pdOverrides.set(utcKey, override);
     }
 
-    forEachDayInRange(rangeStart, rangeEnd, userTz, (_zonedCursor, dateKey) => {
+    // Widen iteration by 1 day each side to handle timezone boundary mismatches
+    const pdIterStart = new Date(rangeStart.getTime() - 86400000);
+    const pdIterEnd = new Date(rangeEnd.getTime() + 86400000);
+    const pdSeenDates = new Set<string>();
+    forEachDayInRange(pdIterStart, pdIterEnd, userTz, (_zonedCursor, dateKey) => {
+      if (pdSeenDates.has(dateKey)) return;
+      pdSeenDates.add(dateKey);
+
       const override = pdOverrides.get(dateKey);
 
       let pdStart: Date;
