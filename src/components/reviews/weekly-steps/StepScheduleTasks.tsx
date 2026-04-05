@@ -35,6 +35,7 @@ interface StepScheduleTasksProps {
   workBlocks: WorkBlock[];
   initialAssignments?: Record<string, string>;
   onAssignmentsChange: (assignments: Record<string, string>) => void;
+  isTeamReview?: boolean;
 }
 
 export function StepScheduleTasks({
@@ -43,6 +44,7 @@ export function StepScheduleTasks({
   workBlocks,
   initialAssignments,
   onAssignmentsChange,
+  isTeamReview,
 }: StepScheduleTasksProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,8 +71,9 @@ export function StepScheduleTasks({
       endDate.setDate(endDate.getDate() + 13);
       endDate.setHours(23, 59, 59, 999);
 
+      const scopeParam = isTeamReview ? '&scope=company' : '&scope=individual';
       const res = await fetch(
-        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO&includeUnscheduled=true`
+        `/api/tasks?startDate=${getLocalDateString(startDate)}&endDate=${getLocalDateString(endDate)}&status=TODO&includeUnscheduled=true${scopeParam}`
       );
       if (res.ok) {
         const data: Task[] = await res.json();

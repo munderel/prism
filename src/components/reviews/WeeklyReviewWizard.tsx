@@ -125,8 +125,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const nextWeekEndStr = getLocalDateString(nextWeekEnd);
 
   // Fetch the same task pool the calendar should care about here: current week + next week.
-  const weekTasksSWRKey = `/api/tasks?startDate=${upcomingWeekStartStr}&endDate=${nextWeekEndStr}&includeUnscheduled=true`;
-  const weekAimsSWRKey = `/api/aims/instances?start=${upcomingWeekStartStr}T00:00:00&end=${upcomingWeekEndStr}T23:59:59`;
+  const reviewScopeParam = isTeamReview ? '&scope=company' : '&scope=individual';
+  const weekTasksSWRKey = `/api/tasks?startDate=${upcomingWeekStartStr}&endDate=${nextWeekEndStr}&includeUnscheduled=true${reviewScopeParam}`;
+  const weekAimsSWRKey = `/api/aims/instances?start=${upcomingWeekStartStr}T00:00:00&end=${nextWeekEndStr}T23:59:59`;
   const { data: weekTasks } = useSWR(weekTasksSWRKey);
   const { data: weekAims } = useSWR(weekAimsSWRKey);
 
@@ -310,18 +311,44 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     setLoading(false);
   };
 
-  const handleCreateWorkBlock = useCallback(async (start: Date, end: Date) => {
+  const handleCreateWorkBlock = useCallback(async (start: Date, end: Date, title = 'Work Block') => {
     try {
       const res = await fetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          summary: 'Work Block',
+          summary: title,
           start: start.toISOString(),
           end: end.toISOString(),
         }),
       });
-      if (!res.ok) toast.error('Failed to create work block. Is Google Calendar connected?');
+
+      if (!res.ok) {
+        toast.error('Failed to create work block. Is Google Calendar connected?');
+        return;
+      }
+
+      const created = await res.json().catch(() => null);
+      const durationMinutes = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60000));
+      const preferredTime = start.toISOString().slice(11, 16);
+      const normalizedTitle = title || 'Work Block';
+      const type: WorkBlock['type'] = normalizedTitle.toLowerCase().includes('aim')
+        ? 'aim'
+        : normalizedTitle.toLowerCase().includes('deep')
+          ? 'deep_work'
+          : 'normal';
+
+      setWorkBlocks((current) => {
+        const nextBlock: WorkBlock = {
+          id: created?.id ?? `work-block-${start.toISOString()}-${end.toISOString()}`,
+          name: normalizedTitle,
+          type,
+          durationMinutes,
+          preferredTime,
+        };
+        if (current.some((block) => block.id === nextBlock.id)) return current;
+        return [...current, nextBlock];
+      });
     } catch {
       toast.error('Failed to create work block.');
     }
@@ -571,7 +598,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
               <StepCurrentGoals reviewId={reviewId} isTeamReview={isTeamReview} />
             )}
             {step.key === 'review_tasks' && (
-              <StepReviewTasks reviewId={reviewId} />
+              <StepReviewTasks reviewId={reviewId} isTeamReview={isTeamReview} />
             )}
             {step.key === 'kpi_progress' && (
               <StepKpiProgress
@@ -617,7 +644,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 calendarModalOpen={calendarModalOpen}
                 onOpenModal={() => setCalendarModalOpen(true)}
                 onCloseModal={() => setCalendarModalOpen(false)}
-                dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${upcomingWeekEndStr}T23:59:59` }}
+                dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${nextWeekEndStr}T23:59:59` }}
                 unscheduledItems={unscheduledForCalendar}
                 aimBlockDuration={step.key === 'work_blocks' ? aimBlockDuration : undefined}
                 onCreateWorkBlock={step.key === 'work_blocks' ? handleCreateWorkBlock : undefined}
@@ -683,7 +710,7 @@ interface CalendarStepContentProps {
   dateRange: { start: string; end: string };
   unscheduledItems: any[];
   aimBlockDuration?: number;
-  onCreateWorkBlock?: (start: Date, end: Date) => Promise<void>;
+  onCreateWorkBlock?: (start: Date, end: Date, title?: string) => Promise<void>;
   onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => Promise<void>;
   onUnschedule: (itemId: string, itemType: string) => Promise<void>;
   onRefresh?: () => void;

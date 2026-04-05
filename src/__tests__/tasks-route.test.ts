@@ -16,7 +16,7 @@ vi.mock('@/lib/prisma', () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
-    goal: { findUnique: vi.fn() },
+    goal: { findUnique: vi.fn(), findMany: vi.fn() },
     goalStack: { findMany: vi.fn() },
     process: { findUnique: vi.fn() },
   },
@@ -86,10 +86,13 @@ const mockRequireAuth = vi.mocked(requireAuth);
 const mockCheckStackAccess = vi.mocked(checkStackAccess);
 const mockParseBody = vi.mocked(parseBody);
 const mockTaskCreate = vi.mocked(prisma.task.create);
+const mockTaskFindMany = vi.mocked(prisma.task.findMany);
 const mockTaskFindUnique = vi.mocked(prisma.task.findUnique);
 const mockTaskUpdate = vi.mocked(prisma.task.update);
 const mockTaskDelete = vi.mocked(prisma.task.delete);
 const mockGoalFindUnique = vi.mocked(prisma.goal.findUnique);
+const mockGoalFindMany = vi.mocked(prisma.goal.findMany);
+const mockGoalStackFindMany = vi.mocked(prisma.goalStack.findMany);
 const mockProcessFindUnique = vi.mocked(prisma.process.findUnique);
 const mockParseRRule = vi.mocked(parseRRule);
 const mockSyncTaskCalendar = vi.mocked(syncTaskCalendarEvent);
@@ -99,8 +102,108 @@ const authedResult = { session: { user: { id: 'user1', isAdmin: false } }, userI
 const adminResult = { session: { user: { id: 'admin1', isAdmin: true } }, userId: 'admin1' };
 
 // We need to import the route handlers
-// POST is from the main route, PATCH/DELETE from [id] route
-import { POST } from '@/app/api/tasks/route';
+// GET/POST are from the main route, PATCH/DELETE from [id] route
+import { GET, POST } from '@/app/api/tasks/route';
+
+describe('GET /api/tasks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(authedResult as any);
+    mockTaskFindMany.mockResolvedValue([] as any);
+    mockGoalStackFindMany.mockResolvedValue([] as any);
+    mockGoalFindMany.mockResolvedValue([] as any);
+  });
+
+  it('limits individual scope to assigned tasks and own unassigned tasks', async () => {
+    const req = new Request('http://localhost/api/tasks?includeUnscheduled=true') as any;
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(mockTaskFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              OR: [
+                { assigneeId: 'user1' },
+                { ownerId: 'user1', assigneeId: null },
+              ],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('includes tasks scheduled into the requested date by time block', async () => {
+    const req = new Request('http://localhost/api/tasks?date=2026-04-05') as any;
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(mockTaskFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                { dueDate: { gte: new Date('2026-04-05'), lt: new Date('2026-04-06') } },
+                { timeBlockStart: { gte: new Date('2026-04-05'), lt: new Date('2026-04-06') } },
+              ]),
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('applies the same individual scope for admins by default', async () => {
+    mockRequireAuth.mockResolvedValue(adminResult as any);
+
+    const req = new Request('http://localhost/api/tasks?date=2026-04-05') as any;
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(mockTaskFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              OR: [
+                { assigneeId: 'admin1' },
+                { ownerId: 'admin1', assigneeId: null },
+              ],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('uses company scope only when explicitly requested', async () => {
+    mockGoalStackFindMany.mockResolvedValue([{ id: 'stack-1' }] as any);
+    mockTaskFindMany.mockResolvedValue([] as any);
+    mockGoalFindMany.mockResolvedValue([{ id: 'goal-1' }] as any);
+
+    const req = new Request('http://localhost/api/tasks?scope=company') as any;
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(mockTaskFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                { goalId: { in: ['goal-1'] }, assigneeId: null },
+                { goalId: { in: ['goal-1'] }, assigneeId: 'user1' },
+              ]),
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+});
 
 describe('POST /api/tasks', () => {
   beforeEach(() => {
