@@ -470,14 +470,19 @@ export async function GET(request: NextRequest) {
 
   // Generate recurring review events (weekly, monthly, yearly)
   if (shouldFetchReviews) {
-    // Build set of dates already covered by DB review records to avoid duplicates
+    // Build set of dates already covered by DB review records to avoid duplicates.
+    // Reviews may store scheduledDate as UTC midnight OR local midnight (via fromZonedTime),
+    // so we add both the timezone-aware key and the raw UTC key to handle both formats.
     const existingReviewDates = new Map<string, Set<string>>();
     for (const review of reviews) {
       const type = (review as any).reviewType as string;
       if (!existingReviewDates.has(type)) existingReviewDates.set(type, new Set());
+      const set = existingReviewDates.get(type)!;
+      // Timezone-aware key (matches forEachDayInRange when scheduledDate is local midnight in UTC)
       const zoned = toZonedTime(review.scheduledDate, userTz);
-      const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-      existingReviewDates.get(type)!.add(dateKey);
+      set.add(`${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`);
+      // Raw UTC date key (matches when scheduledDate was stored as UTC midnight directly)
+      set.add(review.scheduledDate.toISOString().split('T')[0]);
     }
 
     const reviewConfigs: {
