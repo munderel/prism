@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { renderWithProviders, createMockFetch, createMockFetchError, userEvent } from '@/test/utils';
 import { createGoal } from '@/test/fixtures';
 import { GoalEditor } from '../GoalEditor';
@@ -67,6 +67,10 @@ describe('GoalEditor', () => {
     renderWithProviders(<GoalEditor stackId={stackId} onSave={onSave} onClose={onClose} />);
 
     await user.type(screen.getByPlaceholderText('What do you want to achieve?'), 'New goal');
+    // Fill required date fields (root goal create mode requires start/end dates)
+    const dateInputs = document.querySelectorAll('input[type="date"]');
+    fireEvent.change(dateInputs[0], { target: { value: '2026-01-01' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2027-01-01' } });
     await user.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => {
@@ -97,6 +101,10 @@ describe('GoalEditor', () => {
 
     renderWithProviders(<GoalEditor stackId={stackId} onSave={onSave} onClose={onClose} />);
     await user.type(screen.getByPlaceholderText('What do you want to achieve?'), 'Bad goal');
+    // Fill required date fields so form can submit
+    const dateInputs = document.querySelectorAll('input[type="date"]');
+    fireEvent.change(dateInputs[0], { target: { value: '2026-01-01' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2027-01-01' } });
     await user.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => {
