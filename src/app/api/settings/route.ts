@@ -6,6 +6,7 @@ import { pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateSettingsSchema } from '@/lib/schemas';
 import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
+import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
 
 const USER_SETTINGS_SELECT = {
   mtp: true,
@@ -47,6 +48,77 @@ const USER_UPDATABLE_FIELDS = [
 const NOTIFICATION_PREF_FIELDS = [
   'emailEnabled', 'pushEnabled', 'derailingAlerts', 'mentionAlerts', 'reviewNags',
 ] as const;
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+function getDateKey(date: Date, timezone: string) {
+  const zoned = toZonedTime(date, timezone);
+  return `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+}
+
+function buildZonedWindow(dateKey: string, time: string, duration: number, timezone: string) {
+  const [hours, minutes] = time.split(':').map(Number);
+  const start = fromZonedTime(`${dateKey}T${pad2(hours)}:${pad2(minutes)}:00`, timezone);
+  const end = new Date(start.getTime() + duration * 60_000);
+  return { start, end };
+}
+
+function reviewMatchesCadence(
+  reviewType: 'WEEKLY' | 'MONTHLY' | 'YEARLY',
+  scheduledDate: Date,
+  config: {
+    timezone: string;
+    weeklyReviewDayOfWeek?: number | null;
+    monthlyReviewRecurrenceRule?: string | null;
+    yearlyReviewRecurrenceRule?: string | null;
+  },
+) {
+  const zoned = toZonedTime(scheduledDate, config.timezone);
+
+  switch (reviewType) {
+    case 'WEEKLY':
+      return config.weeklyReviewDayOfWeek != null && zoned.getDay() === config.weeklyReviewDayOfWeek;
+    case 'MONTHLY':
+      return !!config.monthlyReviewRecurrenceRule && matchesMonthlyRule(zoned, config.monthlyReviewRecurrenceRule);
+    case 'YEARLY':
+      return !!config.yearlyReviewRecurrenceRule && matchesYearlyRule(zoned, config.yearlyReviewRecurrenceRule);
+    default:
+      return false;
+  }
+}
+
+function getReviewConfig(
+  reviewType: 'WEEKLY' | 'MONTHLY' | 'YEARLY',
+  config: {
+    timezone: string;
+    weeklyReviewDayOfWeek?: number | null;
+    weeklyReviewTime?: string | null;
+    weeklyReviewDuration?: number | null;
+    monthlyReviewRecurrenceRule?: string | null;
+    monthlyReviewTime?: string | null;
+    monthlyReviewDuration?: number | null;
+    yearlyReviewRecurrenceRule?: string | null;
+    yearlyReviewTime?: string | null;
+    yearlyReviewDuration?: number | null;
+  },
+) {
+  switch (reviewType) {
+    case 'WEEKLY':
+      return config.weeklyReviewTime
+        ? { time: config.weeklyReviewTime, duration: config.weeklyReviewDuration ?? 60 }
+        : null;
+    case 'MONTHLY':
+      return config.monthlyReviewTime && config.monthlyReviewRecurrenceRule
+        ? { time: config.monthlyReviewTime, duration: config.monthlyReviewDuration ?? 60 }
+        : null;
+    case 'YEARLY':
+      return config.yearlyReviewTime && config.yearlyReviewRecurrenceRule
+        ? { time: config.yearlyReviewTime, duration: config.yearlyReviewDuration ?? 90 }
+        : null;
+    default:
+      return null;
+  }
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -100,9 +172,37 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  // Fetch current powerdownTime before update for cascade comparison
-  const oldUser = body.powerdownTime !== undefined
-    ? await prisma.user.findUnique({ where: { id: auth.userId }, select: { powerdownTime: true, timezone: true } })
+  const shouldCascadeRecurringSettings = [
+    'powerdownTime',
+    'weeklyReviewDayOfWeek',
+    'weeklyReviewTime',
+    'weeklyReviewDuration',
+    'monthlyReviewRecurrenceRule',
+    'monthlyReviewTime',
+    'monthlyReviewDuration',
+    'yearlyReviewRecurrenceRule',
+    'yearlyReviewTime',
+    'yearlyReviewDuration',
+    'timezone',
+  ].some((field) => field in body);
+
+  const oldUser = shouldCascadeRecurringSettings
+    ? await prisma.user.findUnique({
+        where: { id: auth.userId },
+        select: {
+          powerdownTime: true,
+          timezone: true,
+          weeklyReviewDayOfWeek: true,
+          weeklyReviewTime: true,
+          weeklyReviewDuration: true,
+          monthlyReviewRecurrenceRule: true,
+          monthlyReviewTime: true,
+          monthlyReviewDuration: true,
+          yearlyReviewRecurrenceRule: true,
+          yearlyReviewTime: true,
+          yearlyReviewDuration: true,
+        },
+      })
     : null;
 
   await prisma.user.update({
@@ -112,7 +212,6 @@ export async function PATCH(request: NextRequest) {
 
   // Cascade powerdownTime change to future sessions + GCal events
   if (body.powerdownTime !== undefined && oldUser && body.powerdownTime !== oldUser.powerdownTime) {
-    const pad2 = (n: number) => String(n).padStart(2, '0');
     const cascadePowerdown = async () => {
       const now = new Date();
       const userTz = body.timezone ?? oldUser.timezone ?? 'America/New_York';
@@ -179,6 +278,111 @@ export async function PATCH(request: NextRequest) {
       }
     };
     cascadePowerdown().catch(err => console.warn('[settings] powerdown cascade failed:', err));
+  }
+
+  const reviewSettingsChanged = oldUser && (
+    body.timezone !== undefined ||
+    body.weeklyReviewDayOfWeek !== undefined ||
+    body.weeklyReviewTime !== undefined ||
+    body.weeklyReviewDuration !== undefined ||
+    body.monthlyReviewRecurrenceRule !== undefined ||
+    body.monthlyReviewTime !== undefined ||
+    body.monthlyReviewDuration !== undefined ||
+    body.yearlyReviewRecurrenceRule !== undefined ||
+    body.yearlyReviewTime !== undefined ||
+    body.yearlyReviewDuration !== undefined
+  );
+
+  if (reviewSettingsChanged && oldUser) {
+    const cascadeReviews = async () => {
+      const now = new Date();
+      const previousConfig = {
+        timezone: oldUser.timezone ?? 'America/New_York',
+        weeklyReviewDayOfWeek: oldUser.weeklyReviewDayOfWeek,
+        weeklyReviewTime: oldUser.weeklyReviewTime,
+        weeklyReviewDuration: oldUser.weeklyReviewDuration,
+        monthlyReviewRecurrenceRule: oldUser.monthlyReviewRecurrenceRule,
+        monthlyReviewTime: oldUser.monthlyReviewTime,
+        monthlyReviewDuration: oldUser.monthlyReviewDuration,
+        yearlyReviewRecurrenceRule: oldUser.yearlyReviewRecurrenceRule,
+        yearlyReviewTime: oldUser.yearlyReviewTime,
+        yearlyReviewDuration: oldUser.yearlyReviewDuration,
+      };
+      const nextConfig = {
+        timezone: body.timezone ?? previousConfig.timezone,
+        weeklyReviewDayOfWeek: body.weeklyReviewDayOfWeek ?? previousConfig.weeklyReviewDayOfWeek,
+        weeklyReviewTime: body.weeklyReviewTime ?? previousConfig.weeklyReviewTime,
+        weeklyReviewDuration: body.weeklyReviewDuration ?? previousConfig.weeklyReviewDuration,
+        monthlyReviewRecurrenceRule: body.monthlyReviewRecurrenceRule ?? previousConfig.monthlyReviewRecurrenceRule,
+        monthlyReviewTime: body.monthlyReviewTime ?? previousConfig.monthlyReviewTime,
+        monthlyReviewDuration: body.monthlyReviewDuration ?? previousConfig.monthlyReviewDuration,
+        yearlyReviewRecurrenceRule: body.yearlyReviewRecurrenceRule ?? previousConfig.yearlyReviewRecurrenceRule,
+        yearlyReviewTime: body.yearlyReviewTime ?? previousConfig.yearlyReviewTime,
+        yearlyReviewDuration: body.yearlyReviewDuration ?? previousConfig.yearlyReviewDuration,
+      };
+
+      const futureReviews = await prisma.review.findMany({
+        where: {
+          userId: auth.userId,
+          isTeamReview: false,
+          completedAt: null,
+          scheduledDate: { gte: now },
+          reviewType: { in: ['WEEKLY', 'MONTHLY', 'YEARLY'] },
+        },
+        select: {
+          id: true,
+          reviewType: true,
+          scheduledDate: true,
+          timeBlockStart: true,
+          timeBlockEnd: true,
+          calendarEventId: true,
+        },
+      });
+
+      if (futureReviews.length === 0) return;
+
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+
+      for (const review of futureReviews) {
+        const reviewType = review.reviewType as 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+        if (!reviewMatchesCadence(reviewType, review.scheduledDate, previousConfig)) continue;
+        if (!reviewMatchesCadence(reviewType, review.scheduledDate, nextConfig)) continue;
+
+        const prevTiming = getReviewConfig(reviewType, previousConfig);
+        const nextTiming = getReviewConfig(reviewType, nextConfig);
+        if (!prevTiming || !nextTiming) continue;
+
+        const previousDateKey = getDateKey(review.scheduledDate, previousConfig.timezone);
+        const nextDateKey = getDateKey(review.scheduledDate, nextConfig.timezone);
+        const previousWindow = buildZonedWindow(previousDateKey, prevTiming.time, prevTiming.duration, previousConfig.timezone);
+        const nextWindow = buildZonedWindow(nextDateKey, nextTiming.time, nextTiming.duration, nextConfig.timezone);
+
+        const matchesPreviousDefault =
+          !!review.timeBlockStart &&
+          !!review.timeBlockEnd &&
+          Math.abs(review.timeBlockStart.getTime() - previousWindow.start.getTime()) < 60000 &&
+          Math.abs(review.timeBlockEnd.getTime() - previousWindow.end.getTime()) < 60000;
+
+        if (!matchesPreviousDefault) continue;
+
+        await prisma.review.update({
+          where: { id: review.id },
+          data: {
+            timeBlockStart: nextWindow.start,
+            timeBlockEnd: nextWindow.end,
+          },
+        });
+
+        if (review.calendarEventId && hasGoogle) {
+          await updateGoogleEvent(auth.userId, review.calendarEventId, {
+            start: nextWindow.start.toISOString(),
+            end: nextWindow.end.toISOString(),
+          }, targetCalendarId).catch(() => {});
+        }
+      }
+    };
+
+    cascadeReviews().catch(err => console.warn('[settings] review cascade failed:', err));
   }
 
   // Update notification preferences (whitelist valid boolean fields only)
