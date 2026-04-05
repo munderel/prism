@@ -286,6 +286,7 @@ export function CalendarSplitView({
 }: CalendarSplitViewProps) {
   const draggableContainerRef = useRef<HTMLDivElement>(null);
   const calendarRef = useRef<FullCalendar>(null);
+  const pendingWorkBlocks = useRef<any[]>([]);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme !== 'light';
   const isMobile = useMediaQuery('(max-width: 1023px)');
@@ -297,6 +298,21 @@ export function CalendarSplitView({
     dateRange.start,
     dateRange.end,
   );
+
+  // Merge pending work block placeholders with server events.
+  // Placeholders are auto-removed once a matching server event appears (by time overlap).
+  const displayEvents = useMemo(() => {
+    const serverEvents = calendarEvents ?? [];
+    const stillPending = pendingWorkBlocks.current.filter((wb) => {
+      return !serverEvents.some((evt: any) =>
+        evt.source === 'google' &&
+        Math.abs(new Date(evt.start).getTime() - new Date(wb.start).getTime()) < 60000 &&
+        Math.abs(new Date(evt.end).getTime() - new Date(wb.end).getTime()) < 60000
+      );
+    });
+    pendingWorkBlocks.current = stillPending;
+    return [...serverEvents, ...stillPending];
+  }, [calendarEvents]);
 
   // Initialize FullCalendar Draggable on the left panel
   useEffect(() => {
@@ -331,12 +347,12 @@ export function CalendarSplitView({
 
   // Calculate scheduled hours within the date range
   const scheduledMinutes = useMemo(() => {
-    if (!calendarEvents) return 0;
+    if (!displayEvents.length) return 0;
     const rangeStart = new Date(dateRange.start).getTime();
     const rangeEnd = new Date(dateRange.end).getTime();
 
     // Only count user-scheduled work events (tasks, aims) — exclude meetings, google, powerdown, etc.
-    const workEvents = calendarEvents.filter((evt: any) =>
+    const workEvents = displayEvents.filter((evt: any) =>
       evt.source === 'tasks' || evt.source === 'aims'
     );
     return workEvents.reduce((total: number, evt: any) => {
@@ -350,7 +366,7 @@ export function CalendarSplitView({
       }
       return total;
     }, 0);
-  }, [calendarEvents, dateRange]);
+  }, [displayEvents, dateRange]);
 
   // Group unscheduled items
   const groupedItems = useMemo(() => {
@@ -371,42 +387,35 @@ export function CalendarSplitView({
 
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
-        // Remove the ghost — we'll inject a local placeholder into SWR instead
         info.event.remove();
-        const placeholderId = `work-block-${Date.now()}`;
+        // Store a persistent placeholder that survives SWR revalidation
         const placeholder = {
-          id: placeholderId,
+          id: `work-block-${Date.now()}`,
           title: title || 'Work Block',
           start: start.toISOString(),
           end: end.toISOString(),
           allDay: false,
           source: 'google',
         };
-        // Inject placeholder into SWR cache so it renders immediately
-        mutateEvents((currentData: any) => {
-          if (!currentData) return currentData;
-          const events = Array.isArray(currentData) ? currentData : (currentData?.events ?? []);
-          const updated = [...events, placeholder];
-          return Array.isArray(currentData) ? updated : { ...currentData, events: updated };
-        }, { revalidate: false });
+        pendingWorkBlocks.current = [...pendingWorkBlocks.current, placeholder];
+        // Force a re-render so displayEvents includes the placeholder
+        mutateEvents((currentData: any) => currentData, { revalidate: false });
 
         try {
           await onCreateWorkBlock?.(start, end);
-          // Revalidate after a short delay to allow Google API propagation
-          setTimeout(() => mutateEvents(), 2000);
         } catch {
-          // Remove placeholder on failure
-          mutateEvents();
           toast.error('Failed to create work block.');
         }
+        // Revalidate — displayEvents merges pending blocks until server catches up
+        mutateEvents();
         return;
       }
 
       // Snap to containing work block if dropping a task in schedule_tasks mode
       let snapStart = start;
       let snapEnd = end;
-      if (mode === 'schedule_tasks' && calendarEvents) {
-        const block = calendarEvents.find((evt: any) => {
+      if (mode === 'schedule_tasks' && displayEvents.length) {
+        const block = displayEvents.find((evt: any) => {
           if (evt.source !== 'google') return false;
           const evtStart = new Date(evt.start);
           const evtEnd = new Date(evt.end);
@@ -433,7 +442,7 @@ export function CalendarSplitView({
         toast.error('Failed to schedule item. Please try again.');
       }
     },
-    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, calendarEvents, toast],
+    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast],
   );
 
   // Shared handler for event resize and internal drag-move
@@ -606,7 +615,7 @@ export function CalendarSplitView({
               center: 'title',
               right: '',
             }}
-            events={calendarEvents ?? []}
+            events={displayEvents}
             editable
             droppable
             eventResizableFromStart
