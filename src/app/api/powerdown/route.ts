@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { pickDefined, safeParseJson } from '@/lib/api-helpers';
+import { getGoogleSyncInfo, updateGoogleEvent, createGoogleEvent } from '@/lib/calendar';
+import { getBaseUrl } from '@/lib/completion-token';
 
 function startOfToday(): Date {
   const d = new Date();
@@ -117,6 +119,37 @@ export async function PATCH(request: NextRequest) {
       ['timeBlockStart', 'timeBlockEnd']
     );
     const updated = await prisma.powerdownSession.update({ where: { id: session.id }, data: updateData });
+
+    // Google Calendar sync — fire-and-forget
+    if (updated.timeBlockStart && updated.timeBlockEnd) {
+      const syncToGcal = async () => {
+        const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+        if (!hasGoogle) return;
+
+        if (updated.calendarEventId) {
+          await updateGoogleEvent(auth.userId, updated.calendarEventId, {
+            start: updated.timeBlockStart!.toISOString(),
+            end: updated.timeBlockEnd!.toISOString(),
+          }, targetCalendarId);
+        } else {
+          const baseUrl = getBaseUrl();
+          const gcalEvent = await createGoogleEvent(auth.userId, {
+            summary: 'Power Down Ritual',
+            description: `Start your Power Down Ritual in Prism: ${baseUrl}/powerdown`,
+            start: updated.timeBlockStart!.toISOString(),
+            end: updated.timeBlockEnd!.toISOString(),
+          }, targetCalendarId);
+          if (gcalEvent?.id) {
+            await prisma.powerdownSession.update({
+              where: { id: updated.id },
+              data: { calendarEventId: gcalEvent.id },
+            });
+          }
+        }
+      };
+      try { await syncToGcal(); } catch (err) { console.warn('[powerdown] Google Calendar sync failed:', err); }
+    }
+
     return Response.json(updated);
   }
 

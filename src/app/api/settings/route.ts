@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateSettingsSchema } from '@/lib/schemas';
+import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 const USER_SETTINGS_SELECT = {
   mtp: true,
@@ -98,10 +100,86 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
+  // Fetch current powerdownTime before update for cascade comparison
+  const oldUser = body.powerdownTime !== undefined
+    ? await prisma.user.findUnique({ where: { id: auth.userId }, select: { powerdownTime: true, timezone: true } })
+    : null;
+
   await prisma.user.update({
     where: { id: auth.userId },
     data,
   });
+
+  // Cascade powerdownTime change to future sessions + GCal events
+  if (body.powerdownTime !== undefined && oldUser && body.powerdownTime !== oldUser.powerdownTime) {
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const cascadePowerdown = async () => {
+      const now = new Date();
+      const userTz = body.timezone ?? oldUser.timezone ?? 'America/New_York';
+      const [pdH, pdM] = body.powerdownTime!.split(':').map(Number);
+
+      // Find future sessions with GCal links
+      const futureSessions = await prisma.powerdownSession.findMany({
+        where: {
+          userId: auth.userId,
+          sessionDate: { gte: now },
+          calendarEventId: { not: null },
+        },
+        select: { id: true, calendarEventId: true, sessionDate: true, timeBlockStart: true },
+      });
+
+      if (futureSessions.length === 0) return;
+
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+      if (!hasGoogle) return;
+
+      // Compute what the old default time would be to identify legacy sync-created overrides
+      let oldDefaultStart: { hours: number; minutes: number } | null = null;
+      if (oldUser.powerdownTime) {
+        const [oldH, oldM] = oldUser.powerdownTime.split(':').map(Number);
+        oldDefaultStart = { hours: oldH, minutes: oldM };
+      }
+
+      for (const session of futureSessions) {
+        try {
+          const zoned = toZonedTime(session.sessionDate, userTz);
+          const dateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+          const newStart = fromZonedTime(`${dateKey}T${pad2(pdH)}:${pad2(pdM)}:00`, userTz);
+          const newEnd = new Date(newStart.getTime() + 30 * 60_000);
+
+          if (!session.timeBlockStart) {
+            // Group A: sync-created session (post-fix) — no stored times, just update GCal
+            await updateGoogleEvent(auth.userId, session.calendarEventId!, {
+              start: newStart.toISOString(),
+              end: newEnd.toISOString(),
+            }, targetCalendarId);
+          } else if (oldDefaultStart) {
+            // Group B: legacy sync-created session — check if stored time matches old default
+            const storedZoned = toZonedTime(session.timeBlockStart, userTz);
+            const matchesOldDefault =
+              storedZoned.getHours() === oldDefaultStart.hours &&
+              storedZoned.getMinutes() === oldDefaultStart.minutes;
+
+            if (matchesOldDefault) {
+              // Stale override from old sync — clear it and update GCal
+              await prisma.powerdownSession.update({
+                where: { id: session.id },
+                data: { timeBlockStart: null, timeBlockEnd: null },
+              });
+              await updateGoogleEvent(auth.userId, session.calendarEventId!, {
+                start: newStart.toISOString(),
+                end: newEnd.toISOString(),
+              }, targetCalendarId);
+            }
+            // else: true user override — leave untouched
+          }
+        } catch {
+          // Continue with other sessions
+        }
+      }
+    };
+    cascadePowerdown().catch(err => console.warn('[settings] powerdown cascade failed:', err));
+  }
 
   // Update notification preferences (whitelist valid boolean fields only)
   if (body.notificationPrefs && typeof body.notificationPrefs === 'object') {

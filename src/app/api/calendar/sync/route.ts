@@ -570,17 +570,18 @@ export async function POST(request: NextRequest) {
 
             if (gcalEvent?.id) {
               if (existingSession) {
+                // Only store calendarEventId; preserve existing user overrides (if any)
                 await prisma.powerdownSession.update({
                   where: { id: existingSession.id },
-                  data: { calendarEventId: gcalEvent.id, timeBlockStart: effectiveStart, timeBlockEnd: effectiveEnd },
+                  data: { calendarEventId: gcalEvent.id },
                 });
               } else {
+                // timeBlockStart/End intentionally omitted — null means "use the user's default powerdownTime"
+                // Only set when user explicitly overrides via drag
                 await prisma.powerdownSession.create({
                   data: {
                     userId: auth.userId,
                     sessionDate,
-                    timeBlockStart: pdStart,
-                    timeBlockEnd: pdEnd,
                     calendarEventId: gcalEvent.id,
                   },
                 });
