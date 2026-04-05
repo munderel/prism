@@ -1,0 +1,2 @@
+ALTER TABLE "User"
+ADD COLUMN "googleSyncState" JSONB NOT NULL DEFAULT '{}';

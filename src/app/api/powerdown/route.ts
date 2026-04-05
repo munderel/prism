@@ -2,8 +2,9 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { pickDefined, safeParseJson } from '@/lib/api-helpers';
-import { getGoogleSyncInfo, updateGoogleEvent, createGoogleEvent } from '@/lib/calendar';
-import { getBaseUrl } from '@/lib/completion-token';
+import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
+import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
+import { fromZonedTime } from 'date-fns-tz';
 
 function startOfToday(): Date {
   const d = new Date();
@@ -13,6 +14,10 @@ function startOfToday(): Date {
 
 function toDateOrNull(value: string | null | undefined): Date | null {
   return value ? new Date(value) : null;
+}
+
+function parseLocalDateKey(dateKey: string, timezone: string): Date {
+  return fromZonedTime(`${dateKey}T00:00:00`, timezone);
 }
 
 export async function GET(request: NextRequest) {
@@ -102,8 +107,12 @@ export async function PATCH(request: NextRequest) {
 
   // Support creating/updating a session by date (for calendar drag one-time overrides)
   if (!body.sessionId && body.sessionDate && (body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined)) {
-    const date = new Date(body.sessionDate);
-    date.setHours(0, 0, 0, 0);
+    const user = await prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: { timezone: true },
+    });
+    const userTz = user?.timezone ?? 'America/New_York';
+    const date = parseLocalDateKey(body.sessionDate, userTz);
 
     let session = await prisma.powerdownSession.findFirst({
       where: { userId: auth.userId, sessionDate: { gte: date, lt: new Date(date.getTime() + 86400000) } },
@@ -120,32 +129,29 @@ export async function PATCH(request: NextRequest) {
     );
     const updated = await prisma.powerdownSession.update({ where: { id: session.id }, data: updateData });
 
-    // Google Calendar sync — fire-and-forget
+    // Google Calendar sync — keep legacy one-off events working, but prefer recurring-series exceptions.
     if (updated.timeBlockStart && updated.timeBlockEnd) {
       const syncToGcal = async () => {
-        const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
-        if (!hasGoogle) return;
-
         if (updated.calendarEventId) {
+          const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+          if (!hasGoogle) return;
           await updateGoogleEvent(auth.userId, updated.calendarEventId, {
             start: updated.timeBlockStart!.toISOString(),
             end: updated.timeBlockEnd!.toISOString(),
           }, targetCalendarId);
-        } else {
-          const baseUrl = getBaseUrl();
-          const gcalEvent = await createGoogleEvent(auth.userId, {
-            summary: 'Power Down Ritual',
-            description: `Start your Power Down Ritual in Prism: ${baseUrl}/powerdown`,
-            start: updated.timeBlockStart!.toISOString(),
-            end: updated.timeBlockEnd!.toISOString(),
-          }, targetCalendarId);
-          if (gcalEvent?.id) {
-            await prisma.powerdownSession.update({
-              where: { id: updated.id },
-              data: { calendarEventId: gcalEvent.id },
-            });
-          }
+          return;
         }
+
+        await syncManagedSeriesOverride({
+          userId: auth.userId,
+          date: updated.sessionDate,
+          start: updated.timeBlockStart!,
+          end: updated.timeBlockEnd!,
+          selector: (state) => state.powerdown,
+          writer: (state, series) => {
+            state.powerdown = series;
+          },
+        });
       };
       try { await syncToGcal(); } catch (err) { console.warn('[powerdown] Google Calendar sync failed:', err); }
     }
@@ -168,5 +174,32 @@ export async function PATCH(request: NextRequest) {
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
 
   const updated = await prisma.powerdownSession.update({ where: { id: body.sessionId }, data });
+
+  if (updated.timeBlockStart && updated.timeBlockEnd) {
+    const syncToGcal = async () => {
+      if (updated.calendarEventId) {
+        const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+        if (!hasGoogle) return;
+        await updateGoogleEvent(auth.userId, updated.calendarEventId, {
+          start: updated.timeBlockStart!.toISOString(),
+          end: updated.timeBlockEnd!.toISOString(),
+        }, targetCalendarId);
+        return;
+      }
+
+      await syncManagedSeriesOverride({
+        userId: auth.userId,
+        date: updated.sessionDate,
+        start: updated.timeBlockStart!,
+        end: updated.timeBlockEnd!,
+        selector: (state) => state.powerdown,
+        writer: (state, series) => {
+          state.powerdown = series;
+        },
+      });
+    };
+    try { await syncToGcal(); } catch (err) { console.warn('[powerdown] Google Calendar sync failed:', err); }
+  }
+
   return Response.json(updated);
 }

@@ -114,11 +114,18 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     d.setHours(23, 59, 59, 999);
     return d;
   }, [upcomingWeekStart]);
+  const nextWeekEnd = useMemo(() => {
+    const d = new Date(upcomingWeekEnd);
+    d.setDate(upcomingWeekEnd.getDate() + 7);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  }, [upcomingWeekEnd]);
   const upcomingWeekStartStr = getLocalDateString(upcomingWeekStart);
   const upcomingWeekEndStr = getLocalDateString(upcomingWeekEnd);
+  const nextWeekEndStr = getLocalDateString(nextWeekEnd);
 
-  // Fetch unscheduled tasks and AIM instances for calendar steps
-  const weekTasksSWRKey = '/api/tasks?includeUnscheduled=true';
+  // Fetch the same task pool the calendar should care about here: current week + next week.
+  const weekTasksSWRKey = `/api/tasks?startDate=${upcomingWeekStartStr}&endDate=${nextWeekEndStr}&includeUnscheduled=true`;
   const weekAimsSWRKey = `/api/aims/instances?start=${upcomingWeekStartStr}T00:00:00&end=${upcomingWeekEndStr}T23:59:59`;
   const { data: weekTasks } = useSWR(weekTasksSWRKey);
   const { data: weekAims } = useSWR(weekAimsSWRKey);
@@ -181,15 +188,15 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       for (const t of weekTasks) {
         if (t.status === 'DONE' || t.status === 'DROPPED') continue;
         if (t.timeBlockStart) continue;
-        const dueDateInWeek = t.dueDate &&
+        const dueDateInPlanningWindow = t.dueDate &&
           new Date(t.dueDate) >= upcomingWeekStart &&
-          new Date(t.dueDate) <= upcomingWeekEnd;
+          new Date(t.dueDate) <= nextWeekEnd;
         const include =
           (t.goalId && upcomingWeekGoalIds.has(t.goalId)) || // linked to upcoming week goal
-          (t.taskType === 'MAINTENANCE' && dueDateInWeek) || // maintenance due this week
-          t.taskType === 'REACT' ||                          // all open react tasks
+          (t.taskType === 'MAINTENANCE' && dueDateInPlanningWindow) || // maintenance due this/next week
+          (t.taskType === 'REACT' && dueDateInPlanningWindow) ||       // react tasks due this/next week
           (t.goalId && personalGoalIds.has(t.goalId)) ||     // part of personal goal stack
-          dueDateInWeek ||                                   // any task due this week
+          dueDateInPlanningWindow ||                         // any task due this/next week
           (!t.goalId && !t.dueDate && t.status === 'TODO');  // unlinked TODO tasks
         if (include) {
           items.push({ id: t.id, itemType: 'task', title: t.title, duration: t.estimatedMinutes || 60, taskType: t.taskType, priority: t.priority });
@@ -220,7 +227,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       }
     }
     return items;
-  }, [weekTasks, weekAims, upcomingWeekGoalIds, personalGoalIds, upcomingWeekStart, upcomingWeekEnd]);
+  }, [weekTasks, weekAims, upcomingWeekGoalIds, personalGoalIds, upcomingWeekStart, nextWeekEnd]);
 
   useEffect(() => {
     fetchReviewAndAnswers();
