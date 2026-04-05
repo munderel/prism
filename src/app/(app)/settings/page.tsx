@@ -203,11 +203,30 @@ export default function SettingsPage() {
         throw new Error(data.error || 'Failed to save settings');
       }
 
+      const now = new Date();
+      const syncStart = new Date(now.getTime() - 30 * 86400000).toISOString();
+      const syncEnd = new Date(now.getTime() + 395 * 86400000).toISOString();
+      const syncRes = await fetch('/api/calendar/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start: syncStart, end: syncEnd }),
+      });
+
       await Promise.all([
         fetchSettings(),
         fetchCalendars(),
         globalMutate('/api/settings?scope=user'),
+        globalMutate(
+          (key: unknown) => typeof key === 'string' && key.startsWith('/api/calendar'),
+          undefined,
+          { revalidate: true },
+        ),
       ]);
+
+      if (!syncRes.ok) {
+        const syncData = await syncRes.json().catch(() => ({}));
+        throw new Error(syncData.error || 'Settings saved, but calendar sync failed');
+      }
 
       toast.success('Settings saved!');
     } catch (error) {
