@@ -11,23 +11,16 @@ export async function GET() {
   };
 
   try {
-    results.userCount = await prisma.user.count();
-    results.accountCount = await prisma.account.count();
-
-    // Check which tables exist (confirms migrations ran)
-    try {
-      const tables = await prisma.$queryRaw<{tablename: string}[]>`
-        SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename
-      `;
-      results.tables = tables.map(t => t.tablename);
-    } catch (tableErr: any) {
-      results.tables = 'error: ' + tableErr.message;
-    }
-
+    const userCount = await prisma.user.count();
+    const accountCount = await prisma.account.count();
+    results.userCount = userCount;
+    results.accountCount = accountCount;
     results.dbStatus = 'connected';
+    console.log('[health] DB queries successful, userCount:', userCount, 'accountCount:', accountCount);
   } catch (e: any) {
     results.dbStatus = 'error';
     results.dbError = e.message;
+    console.error('[health] DB error:', e.message);
   }
 
   return Response.json(results);
