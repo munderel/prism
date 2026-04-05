@@ -360,19 +360,6 @@ export function CalendarSplitView({
     })).filter((g) => g.items.length > 0);
   }, [unscheduledItems]);
 
-  // Optimistically add an event to the SWR cache, handling both response shapes
-  const addOptimisticEvent = useCallback(
-    (newEvent: Record<string, any>) => {
-      mutateEvents((currentData: any) => {
-        if (!currentData) return currentData;
-        const events = Array.isArray(currentData) ? currentData : (currentData?.events ?? []);
-        const updated = [...events, newEvent];
-        return Array.isArray(currentData) ? updated : { ...currentData, events: updated };
-      }, { revalidate: false });
-    },
-    [mutateEvents],
-  );
-
   // FullCalendar event receive handler (external drop)
   const handleEventReceive = useCallback(
     async (info: any) => {
@@ -384,21 +371,15 @@ export function CalendarSplitView({
 
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
-        info.event.remove();
-        addOptimisticEvent({
-          id: `google-pending-${Date.now()}`,
-          title: title || 'Work Block',
-          start: start.toISOString(),
-          end: end.toISOString(),
-          allDay: false,
-          source: 'google',
-        });
         try {
           await onCreateWorkBlock?.(start, end);
+          info.event.remove();
+          await mutateEvents();
         } catch {
+          info.event.remove();
+          await mutateEvents();
           toast.error('Failed to create work block.');
         }
-        mutateEvents();
         return;
       }
 
@@ -418,34 +399,22 @@ export function CalendarSplitView({
         }
       }
 
-      // Remove FullCalendar ghost and add optimistic event in the same sync cycle
-      const idPrefix = itemType === 'aim' ? 'aim' : 'task';
-      const source = itemType === 'aim' ? 'aims' : 'tasks';
-      info.event.remove();
-      addOptimisticEvent({
-        id: `${idPrefix}-${itemId}`,
-        title,
-        start: snapStart.toISOString(),
-        end: snapEnd.toISOString(),
-        allDay: false,
-        source,
-        itemId,
-        itemType,
-        taskType: info.event.extendedProps?.taskType,
-      });
-
       try {
         await onSchedule(itemId, itemType, snapStart, snapEnd);
-        mutateEvents();
+        // After successful schedule, remove the FullCalendar ghost (server data takes over)
+        info.event.remove();
+        // Refetch calendar events and sidebar items from server
+        await mutateEvents();
         onRefresh?.();
       } catch {
-        // Re-fetch to remove optimistic event and restore left panel
-        mutateEvents();
+        // Remove the ghost on failure too so it doesn't linger
+        info.event.remove();
+        await mutateEvents();
         onRefresh?.();
         toast.error('Failed to schedule item. Please try again.');
       }
     },
-    [onSchedule, onCreateWorkBlock, mutateEvents, addOptimisticEvent, onRefresh, mode, calendarEvents, toast],
+    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, calendarEvents, toast],
   );
 
   // Shared handler for event resize and internal drag-move

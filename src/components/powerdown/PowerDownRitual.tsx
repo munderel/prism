@@ -282,8 +282,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const fetchUnscheduledTomorrow = useCallback(async () => {
     try {
+      // Fetch tasks due this week or upcoming week (plus unscheduled tasks with no due date)
+      const today = new Date();
+      const startDate = today.toISOString().split('T')[0];
+      // End date: 14 days from now covers this week + next week
+      const endDate = new Date(today.getTime() + 14 * 86400000).toISOString().split('T')[0];
       const [taskRes, aimRes] = await Promise.all([
-        fetch('/api/tasks?status=TODO'),
+        fetch(`/api/tasks?status=TODO&startDate=${startDate}&endDate=${endDate}&includeUnscheduled=true`),
         fetch('/api/aims/unscheduled'),
       ]);
       const tasks = taskRes.ok ? await taskRes.json() : [];
