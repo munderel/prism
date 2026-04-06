@@ -566,7 +566,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await safeParseJson(request);
   if ('error' in parsed) return parsed.error;
-  const { start, end } = parsed.data;
+  const { start, end, force } = parsed.data;
   if (!start || !end) {
     return Response.json({ error: 'start and end are required' }, { status: 400 });
   }
@@ -608,6 +608,48 @@ export async function POST(request: NextRequest) {
       : [targetCalendarId];
   const timezone = user.timezone ?? 'America/New_York';
   const baseUrl = getBaseUrl();
+
+  // Force resync: delete all managed recurring series from Google and clear all sync state.
+  // This ensures a clean slate — all recurring series will be recreated fresh below.
+  if (force) {
+    const oldState = parseGoogleSyncState(user.googleSyncState);
+
+    // Delete old recurring review series from Google
+    for (const series of Object.values(oldState.recurringReviews ?? {})) {
+      if (series?.eventId) {
+        await deleteGoogleEvent(auth.userId, series.eventId, targetCalendarId).catch(() => {});
+      }
+    }
+    // Delete old powerdown series from Google
+    if (oldState.powerdown?.eventId) {
+      await deleteGoogleEvent(auth.userId, oldState.powerdown.eventId, targetCalendarId).catch(() => {});
+    }
+    // Delete old process series from Google
+    for (const series of Object.values(oldState.processes ?? {})) {
+      if (series?.eventId) {
+        await deleteGoogleEvent(auth.userId, series.eventId, targetCalendarId).catch(() => {});
+      }
+    }
+
+    // Clear all sync state and legacy calendarEventIds in parallel
+    await Promise.all([
+      prisma.user.update({
+        where: { id: auth.userId },
+        data: { googleSyncState: {} },
+      }),
+      prisma.review.updateMany({
+        where: { userId: auth.userId, calendarEventId: { not: null } },
+        data: { calendarEventId: null },
+      }),
+      prisma.powerdownSession.updateMany({
+        where: { userId: auth.userId, calendarEventId: { not: null } },
+        data: { calendarEventId: null },
+      }),
+    ]);
+
+    // Re-fetch user to get cleared state
+    user.googleSyncState = {};
+  }
 
   const [gcalEvents, tasks, aimInstances, processes, reviews, powerdownSessions] = await Promise.all([
     listGoogleEvents(auth.userId, start, end, calendarIds, { showDeleted: true }),

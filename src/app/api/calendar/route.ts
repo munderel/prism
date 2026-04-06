@@ -397,12 +397,21 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Build a set of Prism-managed event titles for fallback dedup.
+  // If Google returns events with these exact titles on the sync target calendar,
+  // they are almost certainly Prism-created recurring events with stale/missing sync state.
+  const prismManagedTitles = new Set<string>(['Weekly Review', 'Monthly Review', 'Yearly Review', 'Power Down Ritual']);
+
   for (const ge of googleEvents) {
-    // Skip Google Calendar events that are already represented by Prism meetings
+    // Skip Google Calendar events that are already represented by Prism items (by ID)
     if (ge.id && syncedCalendarEventIds.has(ge.id)) continue;
     if ((ge as any).recurringEventId && syncedCalendarEventIds.has((ge as any).recurringEventId)) continue;
 
+    // Fallback dedup: skip Google events from the sync target calendar that match
+    // Prism-managed titles. These are likely orphaned recurring events from stale sync state.
     const sourceCalId = (ge as any)._sourceCalendarId;
+    if (sourceCalId === targetCalendarId && ge.summary && prismManagedTitles.has(ge.summary)) continue;
+
     const eventColor = colorOverrides[sourceCalId] || (ge as any).colorId || '#9333ea';
     events.push({
       id: `google-${ge.id}`,
