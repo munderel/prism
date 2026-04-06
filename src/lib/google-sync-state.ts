@@ -2,6 +2,7 @@ export interface GoogleEventOverride {
   googleEventId?: string;
   start: string;
   end: string;
+  updatedAt?: string;
 }
 
 export interface ManagedRecurringSeriesState {
