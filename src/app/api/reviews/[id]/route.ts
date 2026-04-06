@@ -117,7 +117,7 @@ export async function PATCH(
         }
       }
     };
-    syncToGcal().catch((err) => console.warn('[reviews] Google Calendar sync failed:', err));
+    syncToGcal().catch((err) => console.warn(`[reviews] Google Calendar sync failed for user=${review.userId} reviewType=${review.reviewType} reviewId=${id}:`, err));
   }
 
   return Response.json(updated, NO_STORE);

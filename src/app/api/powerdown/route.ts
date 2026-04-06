@@ -153,7 +153,7 @@ export async function PATCH(request: NextRequest) {
           },
         });
       };
-      try { await syncToGcal(); } catch (err) { console.warn('[powerdown] Google Calendar sync failed:', err); }
+      try { await syncToGcal(); } catch (err) { console.warn(`[powerdown] Google Calendar sync failed for user=${auth.userId} sessionDate=${body.sessionDate}:`, err); }
     }
 
     return Response.json(updated);
@@ -198,7 +198,7 @@ export async function PATCH(request: NextRequest) {
         },
       });
     };
-    try { await syncToGcal(); } catch (err) { console.warn('[powerdown] Google Calendar sync failed:', err); }
+    try { await syncToGcal(); } catch (err) { console.warn(`[powerdown] Google Calendar sync failed for user=${auth.userId} sessionId=${body.sessionId}:`, err); }
   }
 
   return Response.json(updated);
