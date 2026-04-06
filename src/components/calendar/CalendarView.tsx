@@ -558,66 +558,93 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     const newStart = info.event.start?.toISOString();
     const newEnd = info.event.end?.toISOString();
 
-    if (eventId.startsWith('aim-instance-') || eventId.startsWith('aim-new-') || eventId.startsWith('aim-')) {
-      // One-time adjustment: PATCH the specific aim instance
-      const aimInstanceId = info.event.extendedProps?.aimInstanceId;
-      if (aimInstanceId) {
-        await scheduleItem('aim', aimInstanceId, newStart, newEnd);
-      }
-    } else if (eventId.startsWith('powerdown-')) {
-      // One-time adjustment for this specific day only (not the recurring default)
-      // Extract the date from the event ID (format: powerdown-YYYY-MM-DD)
-      const dateStr = eventId.replace('powerdown-', '');
-      await fetch('/api/powerdown', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionDate: dateStr,
-          timeBlockStart: newStart,
-          timeBlockEnd: newEnd,
-        }),
-      });
-    } else if (eventId.startsWith('review-')) {
-      // Reschedule a review's time block
-      const reviewId = eventId.replace('review-', '');
-      await fetch(`/api/reviews/${reviewId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          timeBlockStart: newStart,
-          timeBlockEnd: newEnd,
-        }),
-      });
-    } else if (eventId.startsWith('process-')) {
-      // Per-execution override: extract processId and date from "process-{cuid}-YYYY-MM-DD"
-      const match = eventId.match(/^process-(.+)-(\d{4}-\d{2}-\d{2})$/);
-      const dateStr = match ? match[2] : '';
-      const processId = match ? match[1] : '';
-      await fetch(`/api/processes/${processId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scheduledDate: dateStr,
-          timeBlockStart: newStart,
-          timeBlockEnd: newEnd,
-        }),
-      });
-    } else if (eventId.startsWith('task-')) {
-      const taskId = eventId.replace('task-', '');
-      await scheduleItem('task', taskId, newStart, newEnd, { dueDate: newStart, isPinned: true });
-    } else if (eventId.startsWith('google-')) {
-      const gcalEventId = eventId.replace('google-', '');
-      const calendarId = info.event.extendedProps?.calendarId || 'primary';
-      await fetch(`/api/calendar/events/${gcalEventId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start: newStart, end: newEnd, calendarId }),
-      });
-    } else {
-      return;
-    }
+    // Optimistically update the SWR cache so any re-render during the API call
+    // shows the new times instead of snapping back to old positions.
+    refreshEvents(
+      (currentData: any) => {
+        if (!currentData) return currentData;
+        const eventsList = Array.isArray(currentData) ? currentData : (currentData?.events ?? []);
+        const updatedEvents = eventsList.map((e: any) =>
+          e.id === eventId ? { ...e, start: newStart, end: newEnd } : e
+        );
+        return Array.isArray(currentData) ? updatedEvents : { ...currentData, events: updatedEvents };
+      },
+      { revalidate: false }
+    );
 
-    refreshEvents();
+    try {
+      let res: Response | undefined;
+
+      if (eventId.startsWith('aim-instance-') || eventId.startsWith('aim-new-') || eventId.startsWith('aim-')) {
+        // One-time adjustment: PATCH the specific aim instance
+        const aimInstanceId = info.event.extendedProps?.aimInstanceId;
+        if (aimInstanceId) {
+          res = await scheduleItem('aim', aimInstanceId, newStart, newEnd);
+        }
+      } else if (eventId.startsWith('powerdown-')) {
+        // One-time adjustment for this specific day only (not the recurring default)
+        // Extract the date from the event ID (format: powerdown-YYYY-MM-DD)
+        const dateStr = eventId.replace('powerdown-', '');
+        res = await fetch('/api/powerdown', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionDate: dateStr,
+            timeBlockStart: newStart,
+            timeBlockEnd: newEnd,
+          }),
+        });
+      } else if (eventId.startsWith('review-')) {
+        // Reschedule a review's time block
+        const reviewId = eventId.replace('review-', '');
+        res = await fetch(`/api/reviews/${reviewId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            timeBlockStart: newStart,
+            timeBlockEnd: newEnd,
+          }),
+        });
+      } else if (eventId.startsWith('process-')) {
+        // Per-execution override: extract processId and date from "process-{cuid}-YYYY-MM-DD"
+        const match = eventId.match(/^process-(.+)-(\d{4}-\d{2}-\d{2})$/);
+        const dateStr = match ? match[2] : '';
+        const processId = match ? match[1] : '';
+        res = await fetch(`/api/processes/${processId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scheduledDate: dateStr,
+            timeBlockStart: newStart,
+            timeBlockEnd: newEnd,
+          }),
+        });
+      } else if (eventId.startsWith('task-')) {
+        const taskId = eventId.replace('task-', '');
+        res = await scheduleItem('task', taskId, newStart, newEnd, { dueDate: newStart, isPinned: true });
+      } else if (eventId.startsWith('google-')) {
+        const gcalEventId = eventId.replace('google-', '');
+        const calendarId = info.event.extendedProps?.calendarId || 'primary';
+        res = await fetch(`/api/calendar/events/${gcalEventId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start: newStart, end: newEnd, calendarId }),
+        });
+      } else {
+        return;
+      }
+
+      if (res && !res.ok) {
+        throw new Error(`API returned ${res.status}`);
+      }
+
+      // Revalidate to get authoritative data from the server
+      await refreshEvents();
+    } catch {
+      info.revert();
+      toast.error('Failed to update event. Please try again.');
+      await refreshEvents();
+    }
   };
 
   // Auto-schedule feature removed — users schedule manually via drag-and-drop
@@ -1191,9 +1218,9 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           longPressDelay={0}
           droppable={true}
           eventDrop={handleEventDrop}
-          eventResize={(info: any) => {
+          eventResize={async (info: any) => {
             if (!info.event.end) { info.revert(); return; }
-            handleEventDrop(info);
+            await handleEventDrop(info);
           }}
           eventReceive={handleEventReceive}
           eventClick={handleEventClick}
