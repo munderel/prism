@@ -35,6 +35,7 @@ type GoogleEventLike = {
   end?: { dateTime?: string | null; date?: string | null } | null;
   recurringEventId?: string | null;
   originalStartTime?: { dateTime?: string | null; date?: string | null } | null;
+  updated?: string | null;
 };
 
 type SeriesConfig = {
@@ -147,6 +148,7 @@ function syncSeriesExceptions(
         googleEventId: event.id ?? undefined,
         start: eventStart,
         end: eventEnd,
+        updatedAt: event.updated ?? undefined,
       };
       cancelled.delete(dateKey);
     } else {
