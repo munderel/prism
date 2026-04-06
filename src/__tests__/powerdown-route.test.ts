@@ -24,6 +24,9 @@ vi.mock('@/lib/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    user: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
@@ -138,6 +141,7 @@ describe('PATCH /api/powerdown', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequireAuth.mockResolvedValue(authedResult as any);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ timezone: 'America/New_York' } as any);
   });
 
   it('updates session by sessionId', async () => {
