@@ -250,6 +250,88 @@ async function applyReviewOverridesToPrism(
   }
 }
 
+async function applyPowerdownOverridesToPrism(
+  userId: string,
+  series: ManagedRecurringSeriesState | undefined,
+  timezone: string,
+  updates: string[],
+) {
+  if (!series) return;
+
+  // Apply overrides (moved instances) back to PowerdownSession records
+  if (series.overrides) {
+    for (const [dateKey, override] of Object.entries(series.overrides)) {
+      const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);
+      const dayEnd = new Date(dayStart.getTime() + 86400000);
+
+      const session = await prisma.powerdownSession.findFirst({
+        where: {
+          userId,
+          sessionDate: { gte: dayStart, lt: dayEnd },
+        },
+        select: { id: true, updatedAt: true, timeBlockStart: true, timeBlockEnd: true },
+      });
+
+      if (!session) continue;
+
+      const googleUpdatedAt = override.updatedAt ? new Date(override.updatedAt) : null;
+      const prismUpdatedAt = session.updatedAt;
+
+      // Last-write-wins: only apply Google's change if it's newer
+      if (googleUpdatedAt && prismUpdatedAt && googleUpdatedAt <= prismUpdatedAt) continue;
+
+      const newStart = new Date(override.start);
+      const newEnd = new Date(override.end);
+
+      // Skip if times already match
+      if (
+        session.timeBlockStart &&
+        session.timeBlockEnd &&
+        !hasTimeDrifted(
+          session.timeBlockStart.toISOString(),
+          session.timeBlockEnd.toISOString(),
+          override.start,
+          override.end,
+        )
+      ) continue;
+
+      await prisma.powerdownSession.update({
+        where: { id: session.id },
+        data: { timeBlockStart: newStart, timeBlockEnd: newEnd },
+      });
+      updates.push(`Pulled powerdown time change from Google (${dateKey})`);
+    }
+  }
+
+  // Apply cancellations back to PowerdownSession records
+  if (series.cancelledDates) {
+    for (const dateKey of series.cancelledDates) {
+      const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);
+      const dayEnd = new Date(dayStart.getTime() + 86400000);
+
+      const session = await prisma.powerdownSession.findFirst({
+        where: {
+          userId,
+          sessionDate: { gte: dayStart, lt: dayEnd },
+          OR: [
+            { timeBlockStart: { not: null } },
+            { timeBlockEnd: { not: null } },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (!session) continue;
+
+      await prisma.powerdownSession.update({
+        where: { id: session.id },
+        data: { timeBlockStart: null, timeBlockEnd: null },
+      });
+      updates.push(`Cleared powerdown time block from Google cancellation (${dateKey})`);
+    }
+  }
+}
+
 async function upsertRecurringSeries(
   userId: string,
   calendarId: string,
@@ -756,6 +838,7 @@ export async function POST(request: NextRequest) {
     const syncedPowerdown = syncSeriesExceptions(nextPowerdown, matchingEvents, powerdownConfig.defaultsByDate, timezone);
     if (syncedPowerdown) {
       googleSyncState.powerdown = syncedPowerdown;
+      await applyPowerdownOverridesToPrism(auth.userId, syncedPowerdown, timezone, updates);
       updates.push('Synced powerdown series');
     }
   } else {
