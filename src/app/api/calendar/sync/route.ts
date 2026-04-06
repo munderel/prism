@@ -813,36 +813,48 @@ export async function POST(request: NextRequest) {
   googleSyncState.recurringReviews = googleSyncState.recurringReviews ?? {};
 
   for (const reviewType of ['WEEKLY', 'MONTHLY', 'YEARLY'] as const) {
-    const currentSeries = googleSyncState.recurringReviews[reviewType];
-    const config = reviewConfigs[reviewType] ?? null;
-    const nextSeries = await upsertRecurringSeries(auth.userId, targetCalendarId, currentSeries, config);
+    try {
+      const currentSeries = googleSyncState.recurringReviews[reviewType];
+      const config = reviewConfigs[reviewType] ?? null;
+      const nextSeries = await upsertRecurringSeries(auth.userId, targetCalendarId, currentSeries, config);
 
-    if (config && nextSeries?.eventId) {
-      const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextSeries.eventId);
-      const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
-      if (syncedSeries) {
-        googleSyncState.recurringReviews[reviewType] = syncedSeries;
-        await applyReviewOverridesToPrism(auth.userId, reviewType, syncedSeries, timezone, updates);
-        updates.push(`Synced ${reviewType.toLowerCase()} review series`);
+      if (config && nextSeries?.eventId) {
+        const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextSeries.eventId);
+        const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
+        if (syncedSeries) {
+          googleSyncState.recurringReviews[reviewType] = syncedSeries;
+          await applyReviewOverridesToPrism(auth.userId, reviewType, syncedSeries, timezone, updates);
+          updates.push(`Synced ${reviewType.toLowerCase()} review series`);
+        }
+      } else {
+        delete googleSyncState.recurringReviews[reviewType];
       }
-    } else {
-      delete googleSyncState.recurringReviews[reviewType];
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[calendar] Failed to sync ${reviewType} review series for user ${auth.userId}:`, err);
+      updates.push(`Failed to sync ${reviewType.toLowerCase()} review series: ${msg}`);
     }
   }
 
   // Recurring powerdown series.
-  const powerdownConfig = buildPowerdownSeriesConfig(user, timezone, rangeStart, rangeEnd, baseUrl);
-  const nextPowerdown = await upsertRecurringSeries(auth.userId, targetCalendarId, googleSyncState.powerdown, powerdownConfig);
-  if (powerdownConfig && nextPowerdown?.eventId) {
-    const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextPowerdown.eventId);
-    const syncedPowerdown = syncSeriesExceptions(nextPowerdown, matchingEvents, powerdownConfig.defaultsByDate, timezone);
-    if (syncedPowerdown) {
-      googleSyncState.powerdown = syncedPowerdown;
-      await applyPowerdownOverridesToPrism(auth.userId, syncedPowerdown, timezone, updates);
-      updates.push('Synced powerdown series');
+  try {
+    const powerdownConfig = buildPowerdownSeriesConfig(user, timezone, rangeStart, rangeEnd, baseUrl);
+    const nextPowerdown = await upsertRecurringSeries(auth.userId, targetCalendarId, googleSyncState.powerdown, powerdownConfig);
+    if (powerdownConfig && nextPowerdown?.eventId) {
+      const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextPowerdown.eventId);
+      const syncedPowerdown = syncSeriesExceptions(nextPowerdown, matchingEvents, powerdownConfig.defaultsByDate, timezone);
+      if (syncedPowerdown) {
+        googleSyncState.powerdown = syncedPowerdown;
+        await applyPowerdownOverridesToPrism(auth.userId, syncedPowerdown, timezone, updates);
+        updates.push('Synced powerdown series');
+      }
+    } else {
+      delete googleSyncState.powerdown;
     }
-  } else {
-    delete googleSyncState.powerdown;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[calendar] Failed to sync powerdown series for user ${auth.userId}:`, err);
+    updates.push(`Failed to sync powerdown series: ${msg}`);
   }
 
   // Recurring process series.
@@ -850,19 +862,25 @@ export async function POST(request: NextRequest) {
   const liveProcessIds = new Set<string>();
 
   for (const process of processes) {
-    liveProcessIds.add(process.id);
-    const config = buildProcessSeriesConfig(process, timezone, rangeStart, rangeEnd);
-    const nextSeries = await upsertRecurringSeries(auth.userId, targetCalendarId, googleSyncState.processes[process.id], config);
+    try {
+      liveProcessIds.add(process.id);
+      const config = buildProcessSeriesConfig(process, timezone, rangeStart, rangeEnd);
+      const nextSeries = await upsertRecurringSeries(auth.userId, targetCalendarId, googleSyncState.processes[process.id], config);
 
-    if (config && nextSeries?.eventId) {
-      const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextSeries.eventId);
-      const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
-      if (syncedSeries) {
-        googleSyncState.processes[process.id] = syncedSeries;
-        updates.push(`Synced process series: ${process.title}`);
+      if (config && nextSeries?.eventId) {
+        const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextSeries.eventId);
+        const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
+        if (syncedSeries) {
+          googleSyncState.processes[process.id] = syncedSeries;
+          updates.push(`Synced process series: ${process.title}`);
+        }
+      } else {
+        delete googleSyncState.processes[process.id];
       }
-    } else {
-      delete googleSyncState.processes[process.id];
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[calendar] Failed to sync process series "${process.title}" for user ${auth.userId}:`, err);
+      updates.push(`Failed to sync process series "${process.title}": ${msg}`);
     }
   }
 
