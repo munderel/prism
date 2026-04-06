@@ -397,7 +397,7 @@ export default function CalendarPage() {
     }
   };
 
-  const handleSync = async () => {
+  const handleSync = async (forceResync = false) => {
     setSyncing(true);
     try {
       const now = new Date();
@@ -406,12 +406,18 @@ export default function CalendarPage() {
       const res = await fetch('/api/calendar/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start, end }),
+        body: JSON.stringify({ start, end, ...(forceResync && { force: true }) }),
       });
       if (res.ok) {
         const data = await res.json();
         const count = data.updates?.length ?? 0;
-        toast.success(count > 0 ? `Synced ${count} change${count === 1 ? '' : 's'} from Google Calendar` : 'Calendar is up to date');
+        toast.success(
+          forceResync
+            ? `Force resync complete — ${count} change${count === 1 ? '' : 's'} applied`
+            : count > 0
+              ? `Synced ${count} change${count === 1 ? '' : 's'} from Google Calendar`
+              : 'Calendar is up to date'
+        );
         // Invalidate all calendar SWR caches (any date range) so CalendarView refreshes
         globalMutate(
           (key: unknown) => typeof key === 'string' && key.startsWith('/api/calendar'),
@@ -441,12 +447,21 @@ export default function CalendarPage() {
         </h1>
         <div className="flex items-center gap-2">
           <button
-            onClick={handleSync}
+            onClick={() => handleSync(false)}
             disabled={syncing}
             className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-[var(--surface-raised)] border border-[var(--border-color)] px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Syncing...' : 'Sync'}
+          </button>
+          <button
+            onClick={() => handleSync(true)}
+            disabled={syncing}
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-[var(--surface-raised)] border border-[var(--border-color)] px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-amber-400 hover:text-amber-300 hover:bg-[var(--surface-hover)] transition-colors disabled:opacity-50"
+            title="Clear all sync state and recreate recurring events from scratch. Use if you see duplicates."
+          >
+            <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Resyncing...' : 'Force Resync'}
           </button>
         {isAdmin && (
           <button
