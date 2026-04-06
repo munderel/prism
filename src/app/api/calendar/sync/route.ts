@@ -193,6 +193,9 @@ async function upsertRecurringSeries(
         lastSyncedAt: new Date().toISOString(),
       } satisfies ManagedRecurringSeriesState;
     }
+
+    // Event no longer exists in Google — clear stale override/cancellation state
+    console.warn(`[calendar] Recurring event ${current.eventId} not found in Google, creating fresh series for ${config.key}`);
   }
 
   const created = await createGoogleEvent(userId, {
@@ -204,7 +207,7 @@ async function upsertRecurringSeries(
     recurrence: config.recurrence,
   }, calendarId);
 
-  if (!created?.id) return current;
+  if (!created?.id) return undefined;
 
   return {
     eventId: created.id,
