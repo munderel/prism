@@ -163,6 +163,93 @@ function syncSeriesExceptions(
   return nextState;
 }
 
+async function applyReviewOverridesToPrism(
+  userId: string,
+  reviewType: 'WEEKLY' | 'MONTHLY' | 'YEARLY',
+  series: ManagedRecurringSeriesState | undefined,
+  timezone: string,
+  updates: string[],
+) {
+  if (!series) return;
+
+  // Apply overrides (moved instances) back to Review records
+  if (series.overrides) {
+    for (const [dateKey, override] of Object.entries(series.overrides)) {
+      const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);
+      const dayEnd = new Date(dayStart.getTime() + 86400000);
+
+      const review = await prisma.review.findFirst({
+        where: {
+          userId,
+          reviewType,
+          completedAt: null,
+          scheduledDate: { gte: dayStart, lt: dayEnd },
+        },
+        select: { id: true, updatedAt: true, timeBlockStart: true, timeBlockEnd: true },
+      });
+
+      if (!review) continue;
+
+      const googleUpdatedAt = override.updatedAt ? new Date(override.updatedAt) : null;
+      const prismUpdatedAt = review.updatedAt;
+
+      // Last-write-wins: only apply Google's change if it's newer
+      if (googleUpdatedAt && prismUpdatedAt && googleUpdatedAt <= prismUpdatedAt) continue;
+
+      const newStart = new Date(override.start);
+      const newEnd = new Date(override.end);
+
+      // Skip if times already match
+      if (
+        review.timeBlockStart &&
+        review.timeBlockEnd &&
+        !hasTimeDrifted(
+          review.timeBlockStart.toISOString(),
+          review.timeBlockEnd.toISOString(),
+          override.start,
+          override.end,
+        )
+      ) continue;
+
+      await prisma.review.update({
+        where: { id: review.id },
+        data: { timeBlockStart: newStart, timeBlockEnd: newEnd },
+      });
+      updates.push(`Pulled ${reviewType.toLowerCase()} review time change from Google (${dateKey})`);
+    }
+  }
+
+  // Apply cancellations back to Review records
+  if (series.cancelledDates) {
+    for (const dateKey of series.cancelledDates) {
+      const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);
+      const dayEnd = new Date(dayStart.getTime() + 86400000);
+
+      const review = await prisma.review.findFirst({
+        where: {
+          userId,
+          reviewType,
+          completedAt: null,
+          scheduledDate: { gte: dayStart, lt: dayEnd },
+          OR: [
+            { timeBlockStart: { not: null } },
+            { timeBlockEnd: { not: null } },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (!review) continue;
+
+      await prisma.review.update({
+        where: { id: review.id },
+        data: { timeBlockStart: null, timeBlockEnd: null },
+      });
+      updates.push(`Cleared ${reviewType.toLowerCase()} review time block from Google cancellation (${dateKey})`);
+    }
+  }
+}
+
 async function upsertRecurringSeries(
   userId: string,
   calendarId: string,
@@ -653,6 +740,7 @@ export async function POST(request: NextRequest) {
       const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
       if (syncedSeries) {
         googleSyncState.recurringReviews[reviewType] = syncedSeries;
+        await applyReviewOverridesToPrism(auth.userId, reviewType, syncedSeries, timezone, updates);
         updates.push(`Synced ${reviewType.toLowerCase()} review series`);
       }
     } else {
