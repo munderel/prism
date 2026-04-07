@@ -10,6 +10,7 @@ import {
 } from '@/lib/aim-phases';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { getAimCompletionUrl } from '@/lib/completion-token';
+import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
 
 const INSTANCE_INCLUDE = {
   aimCategory: true,
@@ -203,6 +204,10 @@ export async function PATCH(
         },
       });
     }
+
+    // Update streak records (fire-and-forget; don't block response)
+    updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch(() => {});
+    updateDailyStreak(existing.userId, 'aims').catch(() => {});
   }
 
   const updated = await prisma.aimInstance.update({
