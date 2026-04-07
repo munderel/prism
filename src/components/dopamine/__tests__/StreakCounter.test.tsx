@@ -33,7 +33,7 @@ describe('StreakCounter', () => {
     renderWithProviders(<StreakCounter />, {
       swrData: {
         '/api/streaks': [
-          { streakType: 'daily_completion', currentCount: 7 },
+          { streakType: 'daily', currentCount: 7 },
         ],
       },
     });
@@ -48,7 +48,7 @@ describe('StreakCounter', () => {
     const { container } = renderWithProviders(<StreakCounter atRisk={true} />, {
       swrData: {
         '/api/streaks': [
-          { streakType: 'daily_completion', currentCount: 3 },
+          { streakType: 'daily', currentCount: 3 },
         ],
       },
     });
@@ -64,7 +64,7 @@ describe('StreakCounter', () => {
     renderWithProviders(<StreakCounter streakType="weekly_review" />, {
       swrData: {
         '/api/streaks': [
-          { streakType: 'daily_completion', currentCount: 3 },
+          { streakType: 'daily', currentCount: 3 },
           { streakType: 'weekly_review', currentCount: 12 },
         ],
       },

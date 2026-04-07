@@ -21,7 +21,7 @@ function getStreakStyle(atRisk: boolean, count: number): { container: string; fl
   return { container: 'border-[var(--border-color)] bg-[var(--surface)]', flame: 'text-[var(--text-muted)]' };
 }
 
-export function StreakCounter({ streakType = 'daily_completion', atRisk = false, compact = false }: StreakCounterProps) {
+export function StreakCounter({ streakType = 'daily', atRisk = false, compact = false }: StreakCounterProps) {
   const { data: streaks } = useSWR('/api/streaks');
   const streak = useMemo(
     () => Array.isArray(streaks) ? streaks.find((s: any) => s.streakType === streakType) : null,

@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
   const where: Record<string, unknown> = { userId: auth.userId };
   if (typeFilter === 'process') {
     where.streakType = { startsWith: 'process_' };
+  } else if (typeFilter === 'aim') {
+    where.streakType = { startsWith: 'aim_' };
   }
 
   const streaks = await prisma.streak.findMany({ where });
