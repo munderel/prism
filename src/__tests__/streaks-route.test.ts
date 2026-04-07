@@ -68,7 +68,7 @@ function createPostRequest() {
   return new Request('http://localhost/api/streaks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ streakType: 'daily_completion' }),
+    body: JSON.stringify({ streakType: 'daily' }),
   }) as any;
 }
 
@@ -79,7 +79,7 @@ describe('GET /api/streaks', () => {
   });
 
   it('returns user streaks', async () => {
-    const streaks = [{ id: 's1', streakType: 'daily_completion', currentCount: 5 }];
+    const streaks = [{ id: 's1', streakType: 'daily', currentCount: 5 }];
     mockStreakFindMany.mockResolvedValue(streaks as any);
     const res = await GET(createGetRequest());
     expect(res.status).toBe(200);
@@ -94,6 +94,18 @@ describe('GET /api/streaks', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           streakType: { startsWith: 'process_' },
+        }),
+      })
+    );
+  });
+
+  it('filters by type=aim prefix', async () => {
+    mockStreakFindMany.mockResolvedValue([] as any);
+    await GET(createGetRequest('aim'));
+    expect(mockStreakFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          streakType: { startsWith: 'aim_' },
         }),
       })
     );
@@ -121,7 +133,7 @@ describe('POST /api/streaks', () => {
   });
 
   it('creates new streak with count 1', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily_completion' } } as any);
+    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
     mockStreakFindUnique.mockResolvedValue(null);
     mockStreakCreate.mockResolvedValue({ id: 's1', currentCount: 1 } as any);
     const res = await POST(createPostRequest());
@@ -137,7 +149,7 @@ describe('POST /api/streaks', () => {
   });
 
   it('returns existing streak without increment when already updated today', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily_completion' } } as any);
+    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
     const existing = { id: 's1', currentCount: 5, bestCount: 5, lastActiveDate: today() };
     mockStreakFindUnique.mockResolvedValue(existing as any);
     const res = await POST(createPostRequest());
@@ -146,7 +158,7 @@ describe('POST /api/streaks', () => {
   });
 
   it('continues streak when last active yesterday', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily_completion' } } as any);
+    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
     const existing = { id: 's1', currentCount: 5, bestCount: 5, lastActiveDate: yesterday() };
     mockStreakFindUnique.mockResolvedValue(existing as any);
     mockStreakUpdate.mockResolvedValue({ ...existing, currentCount: 6 } as any);
@@ -163,7 +175,7 @@ describe('POST /api/streaks', () => {
   });
 
   it('resets streak to 1 when day was skipped', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily_completion' } } as any);
+    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
     const existing = { id: 's1', currentCount: 10, bestCount: 10, lastActiveDate: twoDaysAgo() };
     mockStreakFindUnique.mockResolvedValue(existing as any);
     mockStreakUpdate.mockResolvedValue({ ...existing, currentCount: 1 } as any);
@@ -180,7 +192,7 @@ describe('POST /api/streaks', () => {
   });
 
   it('creates publicWin at milestone (7-day streak)', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily_completion' } } as any);
+    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
     const existing = { id: 's1', currentCount: 6, bestCount: 6, lastActiveDate: yesterday() };
     mockStreakFindUnique.mockResolvedValue(existing as any);
     mockStreakUpdate.mockResolvedValue({ ...existing, currentCount: 7 } as any);
@@ -197,7 +209,7 @@ describe('POST /api/streaks', () => {
   });
 
   it('does NOT create publicWin for non-milestone count', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily_completion' } } as any);
+    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
     const existing = { id: 's1', currentCount: 5, bestCount: 5, lastActiveDate: yesterday() };
     mockStreakFindUnique.mockResolvedValue(existing as any);
     mockStreakUpdate.mockResolvedValue({ ...existing, currentCount: 6 } as any);
