@@ -1229,7 +1229,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           height="auto"
           nowIndicator={true}
           slotMinTime="06:00:00"
-          slotMaxTime="00:00:00"
+          slotMaxTime="24:00:00"
           eventDidMount={(info) => {
             const props = info.event.extendedProps || {};
             // Show pin icon on pinned events
