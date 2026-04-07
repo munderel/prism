@@ -1234,8 +1234,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           slotMaxTime="24:00:00"
           eventDidMount={(info) => {
             const props = info.event.extendedProps || {};
-            // Dim and strike-through DONE task events
-            if (props.status === 'DONE') {
+            // Dim and strike-through DONE/DROPPED task events
+            if (props.status === 'DONE' || props.status === 'DROPPED') {
               info.el.style.opacity = '0.45';
               const titleEl = info.el.querySelector('.fc-event-title') as HTMLElement | null;
               if (titleEl) titleEl.style.textDecoration = 'line-through';
