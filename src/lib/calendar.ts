@@ -81,9 +81,14 @@ export async function updateGoogleEvent(
     });
 
     return response.data;
-  } catch (err) {
-    console.warn('[calendar] Failed to update Google event:', err);
-    return null;
+  } catch (err: any) {
+    const status = err?.code ?? err?.status ?? err?.response?.status;
+    if (status === 404 || status === 410) {
+      // Event genuinely gone — caller should create a replacement
+      return null;
+    }
+    // Transient error — re-throw so caller doesn't accidentally create a duplicate
+    throw err;
   }
 }
 

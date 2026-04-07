@@ -346,25 +346,31 @@ async function upsertRecurringSeries(
   }
 
   if (current?.eventId) {
-    const updated = await updateGoogleEvent(userId, current.eventId, {
-      summary: config.title,
-      description: config.description,
-      start: config.start,
-      end: config.end,
-      timeZone: config.timeZone,
-      recurrence: config.recurrence,
-    }, calendarId);
+    try {
+      const updated = await updateGoogleEvent(userId, current.eventId, {
+        summary: config.title,
+        description: config.description,
+        start: config.start,
+        end: config.end,
+        timeZone: config.timeZone,
+        recurrence: config.recurrence,
+      }, calendarId);
 
-    if (updated?.id) {
-      return {
-        ...current,
-        eventId: updated.id,
-        lastSyncedAt: new Date().toISOString(),
-      } satisfies ManagedRecurringSeriesState;
+      if (updated?.id) {
+        return {
+          ...current,
+          eventId: updated.id,
+          lastSyncedAt: new Date().toISOString(),
+        } satisfies ManagedRecurringSeriesState;
+      }
+
+      // null return means 404/410 — event genuinely gone, fall through to recreate
+      console.warn(`[calendar] Recurring event ${current.eventId} not found in Google, creating fresh series for ${config.key}`);
+    } catch (err) {
+      // Transient error (network, rate limit, auth) — keep existing state to avoid creating a duplicate
+      console.warn(`[calendar] Transient error updating ${config.key} series, keeping existing event ID:`, err);
+      return current;
     }
-
-    // Event no longer exists in Google — clear stale override/cancellation state
-    console.warn(`[calendar] Recurring event ${current.eventId} not found in Google, creating fresh series for ${config.key}`);
   }
 
   const created = await createGoogleEvent(userId, {
@@ -939,6 +945,31 @@ export async function POST(request: NextRequest) {
     where: { id: auth.userId },
     data: { googleSyncState: googleSyncState as Prisma.InputJsonValue },
   });
+
+  // After force resync: delete any Prism-managed events in Google that are not part of the
+  // newly created sync state. This cleans up orphans left by silent delete failures above.
+  if (force) {
+    const prismManagedTitles = new Set(['Weekly Review', 'Monthly Review', 'Yearly Review', 'Power Down Ritual']);
+    const newKnownIds = new Set<string>();
+    for (const s of Object.values(googleSyncState.recurringReviews ?? {})) {
+      if (s?.eventId) newKnownIds.add(s.eventId);
+    }
+    if (googleSyncState.powerdown?.eventId) newKnownIds.add(googleSyncState.powerdown.eventId);
+    for (const s of Object.values(googleSyncState.processes ?? {})) {
+      if (s?.eventId) newKnownIds.add(s.eventId);
+    }
+
+    for (const ge of gcalEvents as GoogleEventLike[]) {
+      if (!ge.id || ge.status === 'cancelled') continue;
+      if (newKnownIds.has(ge.id)) continue;
+      if (ge.recurringEventId && newKnownIds.has(ge.recurringEventId)) continue;
+      if (ge.summary && prismManagedTitles.has(ge.summary)) {
+        await deleteGoogleEvent(auth.userId, ge.id, targetCalendarId).catch((e) =>
+          console.warn('[calendar] Force resync cleanup: failed to delete orphaned event', ge.id, e)
+        );
+      }
+    }
+  }
 
   return Response.json({
     synced: true,
