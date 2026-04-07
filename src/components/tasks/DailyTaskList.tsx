@@ -58,6 +58,7 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   const data = prefetchedTasks ?? swrData;
   const tasks = Array.isArray(data) ? data : [];
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [showCompleted, setShowCompleted] = useState(false);
   const { kpiPromptState, checkAndPrompt, dismiss } = useKpiCompletionPrompt();
 
   const toggleCollapse = useCallback((key: string) => {
@@ -149,20 +150,30 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
     [patchTask, tasks, checkAndPrompt]
   );
 
-  const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => ({
-    key,
-    label,
-    color,
-    tasks: tasks.filter((t: DailyTask) => t.taskType === key),
-  })), [tasks]);
+  const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => {
+    const all = tasks.filter((t: DailyTask) => t.taskType === key);
+    const active = all.filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED');
+    const done = all.filter((t) => t.status === 'DONE' || t.status === 'DROPPED');
+    return { key, label, color, tasks: showCompleted ? all : active, doneCount: done.length };
+  }), [tasks, showCompleted]);
 
   if (isLoading) {
     return <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>;
   }
 
+  const totalDone = grouped.reduce((sum, g) => sum + g.doneCount, 0);
+
   return (
     <>
     <div className="space-y-4">
+      {totalDone > 0 && (
+        <button
+          onClick={() => setShowCompleted((v) => !v)}
+          className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+        >
+          {showCompleted ? `Hide completed (${totalDone})` : `Show completed (${totalDone})`}
+        </button>
+      )}
       {grouped.map(({ key, label, color, tasks: sectionTasks }) => (
         <div key={key}>
           <button
