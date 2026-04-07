@@ -525,16 +525,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     if (next > 9) {
       // Complete session
       await persistStep(9, { complete: true });
-      // Update powerdown streak
-      try {
-        await fetch('/api/streaks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ streakType: 'powerdown' }),
-        });
-      } catch {
-        // Streak update is non-critical
-      }
       // Auto-save captured ideas to /api/ideas
       for (const idea of ideas) {
         if (!idea.trim()) continue;

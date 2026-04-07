@@ -4,6 +4,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { pickDefined, safeParseJson } from '@/lib/api-helpers';
 import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
+import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
 import { fromZonedTime } from 'date-fns-tz';
 
 function startOfToday(): Date {
@@ -170,6 +171,10 @@ export async function PATCH(request: NextRequest) {
 
   const data: Record<string, unknown> = pickDefined(body, SESSION_UPDATABLE_FIELDS);
   if (body.complete && !session.completedAt) data.completedAt = new Date();
+  if (body.complete && !session.completedAt) {
+    updateSpecificStreak(auth.userId, 'powerdown').catch(() => {});
+    updateDailyStreak(auth.userId, 'powerdown').catch(() => {});
+  }
   if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
 
