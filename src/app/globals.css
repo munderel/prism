@@ -262,7 +262,18 @@ html:not(.dark) .hover\:bg-purple-500:hover {
   line-height: 1;
 }
 
-.fc-dark-theme .fc .fc-button-active,
+.fc-dark-theme .fc .fc-button {
+  color: #e5e7eb;
+}
+
+.fc-dark-theme .fc .fc-button-active {
+  color: #ffffff !important;
+}
+
+.fc-light-theme .fc .fc-button {
+  color: #374151;
+}
+
 .fc-light-theme .fc .fc-button-active {
   color: #ffffff !important;
 }
