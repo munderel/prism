@@ -479,7 +479,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     const props = info.event.extendedProps || {};
     const itemType = props.itemType || 'task';
     const start = info.event.start;
-    const end = info.event.end || new Date(start.getTime() + 60 * 60 * 1000);
+    const fallbackMs = (props.durationMin ?? 60) * 60 * 1000;
+    const end = info.event.end || new Date(start.getTime() + fallbackMs);
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
@@ -738,7 +739,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     }
 
     const start = info.event.start;
-    const end = info.event.end || new Date(start.getTime() + 60 * 60 * 1000);
+    const fallbackMs = (props.durationMin ?? 60) * 60 * 1000;
+    const end = info.event.end || new Date(start.getTime() + fallbackMs);
 
     setShowActivityModal(false);
     setPendingAimDrop(null);
