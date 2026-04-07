@@ -16,6 +16,8 @@ import {
   Calendar,
   User,
   Flame,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react';
 import { AssigneeFilter } from '@/components/shared/AssigneeFilter';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -138,13 +140,29 @@ export default function ProcessesPage() {
 
   // ── Helpers ──
 
-  const getProcessStreak = useCallback(
-    (processId: string): number => {
-      if (!Array.isArray(processStreaks)) return 0;
+  const getProcessStreakData = useCallback(
+    (processId: string): { count: number; id: string | null; isActive: boolean } => {
+      if (!Array.isArray(processStreaks)) return { count: 0, id: null, isActive: true };
       const streak = processStreaks.find((s: any) => s.streakType === `process_${processId}`);
-      return streak?.currentCount ?? 0;
+      return {
+        count: streak?.currentCount ?? 0,
+        id: streak?.id ?? null,
+        isActive: streak?.isActive ?? true,
+      };
     },
     [processStreaks]
+  );
+
+  const handleToggleProcessStreak = useCallback(
+    async (streakId: string, newIsActive: boolean) => {
+      await fetch(`/api/streaks/${streakId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: newIsActive }),
+      });
+      mutateStreaks();
+    },
+    [mutateStreaks]
   );
 
   const fetchProcessDetail = useCallback(async (processId: string) => {
@@ -788,15 +806,36 @@ export default function ProcessesPage() {
                                 <span className="text-xs text-[var(--text-muted)]">
                                   {proc._count.steps} step{proc._count.steps !== 1 ? 's' : ''}
                                 </span>
-                                {getProcessStreak(proc.id) > 0 && (
-                                  <span
-                                    className="flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400"
-                                    title={`${getProcessStreak(proc.id)}-period streak`}
-                                  >
-                                    <Flame className="h-3 w-3" />
-                                    {getProcessStreak(proc.id)}
-                                  </span>
-                                )}
+                                {(() => {
+                                  const sd = getProcessStreakData(proc.id);
+                                  if (sd.count === 0 && !sd.id) return null;
+                                  return (
+                                    <span className="flex items-center gap-0.5">
+                                      {sd.count > 0 && (
+                                        <span
+                                          className={`flex items-center gap-0.5 text-xs ${sd.isActive ? 'text-amber-700 dark:text-amber-400' : 'text-[var(--text-muted)]'}`}
+                                          title={`${sd.count}-period streak${sd.isActive ? '' : ' (paused)'}`}
+                                        >
+                                          <Flame className="h-3 w-3" />
+                                          {sd.count}
+                                        </span>
+                                      )}
+                                      {sd.id && (
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); handleToggleProcessStreak(sd.id!, !sd.isActive); }}
+                                          className="ml-0.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                                          title={sd.isActive ? 'Pause streak tracking' : 'Resume streak tracking'}
+                                        >
+                                          {sd.isActive ? (
+                                            <PauseCircle className="h-3 w-3" />
+                                          ) : (
+                                            <PlayCircle className="h-3 w-3" />
+                                          )}
+                                        </button>
+                                      )}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>
@@ -902,7 +941,7 @@ export default function ProcessesPage() {
                               isAdmin={isAdmin}
                               userId={userId}
                               users={users}
-                              streak={getProcessStreak(proc.id)}
+                              streak={getProcessStreakData(proc.id).count}
                               completingProcessId={completingProcessId}
                               regeneratingId={regeneratingId}
                               creatingTasks={creatingTasks}
