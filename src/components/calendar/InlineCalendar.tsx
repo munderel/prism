@@ -108,7 +108,8 @@ export function InlineCalendar({
     const props = info.event.extendedProps || {};
     const itemType = props.itemType || 'task';
     const start = info.event.start;
-    const end = info.event.end || new Date(start.getTime() + 60 * 60 * 1000);
+    const fallbackMs = (props.durationMin ?? 60) * 60 * 1000;
+    const end = info.event.end || new Date(start.getTime() + fallbackMs);
 
     const taskId = props.taskId || info.event.id?.replace('task-', '');
 

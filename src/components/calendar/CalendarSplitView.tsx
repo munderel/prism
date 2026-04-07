@@ -695,10 +695,11 @@ export function CalendarSplitView({
   // FullCalendar event receive handler (external drop)
   const handleEventReceive = useCallback(
     async (info: any) => {
-      const { itemId, itemType } = info.event.extendedProps ?? {};
+      const { itemId, itemType, durationMin } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
-      const end = info.event.end ?? new Date(start.getTime() + 60 * 60 * 1000);
+      const fallbackMs = (durationMin ?? 60) * 60 * 1000;
+      const end = info.event.end ?? new Date(start.getTime() + fallbackMs);
       const title = info.event.title;
 
       // Work block template: create a Google Calendar event rather than scheduling a task

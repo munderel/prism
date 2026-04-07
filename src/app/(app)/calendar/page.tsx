@@ -195,6 +195,12 @@ export default function CalendarPage() {
   const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?status=TODO');
   const { data: aimsData, isLoading: loadingAims, mutate: mutateAims } = useSWR<UnscheduledAim[]>('/api/aims/unscheduled');
   const { data: settingsData } = useSWR('/api/settings?scope=user');
+  const { data: deepWorkEffective } = useSWR<{
+    active: boolean;
+    effectiveDuration?: number;
+    currentPhase?: string;
+  }>('/api/aims/categories/deep-work/effective');
+  const deepWorkDuration = deepWorkEffective?.active ? deepWorkEffective.effectiveDuration : undefined;
 
   const scheduleSettings = useMemo(() => {
     if (!settingsData) return undefined;
@@ -293,6 +299,7 @@ export default function CalendarPage() {
           duration,
           extendedProps: {
             itemType,
+            durationMin,
             taskId: eventEl.getAttribute('data-task-id') || undefined,
             aimCategoryId: eventEl.getAttribute('data-aim-category-id') || undefined,
             aimInstanceId: eventEl.getAttribute('data-aim-instance-id') || undefined,
@@ -535,22 +542,24 @@ export default function CalendarPage() {
                     </div>
                   </div>
                 </div>
-                <div
-                  className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors"
-                  data-item-type="aim"
-                  data-item-id="__deep_work_template__"
-                  data-item-title="Deep Work Block"
-                  data-duration="120"
-                  data-aim-category-id="deep-work"
-                >
-                  <div className="flex items-start gap-2">
-                    <Brain className="h-4 w-4 text-teal-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-[var(--text-primary)] font-medium">Deep Work Block</p>
-                      <p className="text-xs text-[var(--text-muted)] mt-0.5">120min</p>
+                {deepWorkDuration != null && (
+                  <div
+                    className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors"
+                    data-item-type="aim"
+                    data-item-id="__deep_work_template__"
+                    data-item-title="Deep Work Block"
+                    data-duration={String(deepWorkDuration)}
+                    data-aim-category-id="deep-work"
+                  >
+                    <div className="flex items-start gap-2">
+                      <Brain className="h-4 w-4 text-teal-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm text-[var(--text-primary)] font-medium">Deep Work Block</p>
+                        <p className="text-xs text-[var(--text-muted)] mt-0.5">{deepWorkDuration}min</p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -701,20 +710,22 @@ export default function CalendarPage() {
                           </div>
                         </div>
                       </div>
-                      <div
-                        onClick={() => handleMobileItemTap({ id: '__deep_work_template__', itemType: 'work_block', title: 'Deep Work Block', duration: 120, aimCategoryId: 'deep-work' } as UnscheduledItem)}
-                        className={`cursor-pointer rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors min-h-[44px] ${
-                          scheduleModalItem?.id === '__deep_work_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <Brain className="h-4 w-4 text-teal-400 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <p className="text-sm text-[var(--text-primary)] font-medium">Deep Work Block</p>
-                            <p className="text-xs text-[var(--text-muted)] mt-0.5">120min</p>
+                      {deepWorkDuration != null && (
+                        <div
+                          onClick={() => handleMobileItemTap({ id: '__deep_work_template__', itemType: 'aim', title: 'Deep Work Block', duration: deepWorkDuration, aimCategoryId: 'deep-work' } as UnscheduledItem)}
+                          className={`cursor-pointer rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors min-h-[44px] ${
+                            scheduleModalItem?.id === '__deep_work_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <Brain className="h-4 w-4 text-teal-400 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm text-[var(--text-primary)] font-medium">Deep Work Block</p>
+                              <p className="text-xs text-[var(--text-muted)] mt-0.5">{deepWorkDuration}min</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
