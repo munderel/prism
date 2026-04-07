@@ -5,6 +5,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { notFoundResponse, forbiddenResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { cancelManagedSeriesInstance, syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
+import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
 
 type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
 
@@ -54,6 +55,11 @@ export async function PATCH(
   if (body.timeBlockStart !== undefined) data.timeBlockStart = body.timeBlockStart ? new Date(body.timeBlockStart) : null;
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = body.timeBlockEnd ? new Date(body.timeBlockEnd) : null;
   if (body.complete) data.completedAt = new Date();
+
+  if (body.complete && !review.completedAt) {
+    updateSpecificStreak(auth.userId, 'review').catch(() => {});
+    updateDailyStreak(auth.userId, 'reviews').catch(() => {});
+  }
 
   const updated = await prisma.review.update({ where: { id }, data });
 
