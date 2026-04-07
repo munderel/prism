@@ -53,6 +53,10 @@ model User {
   is2FAEnabled          Boolean   @default(false)
   isLockedOut           Boolean   @default(false)
   isPublicOnLeaderboard Boolean   @default(true)
+  streakCountAims      Boolean @default(true)
+  streakCountProcesses Boolean @default(true)
+  streakCountReviews   Boolean @default(true)
+  streakCountPowerdown Boolean @default(true)
   taskSchedulePeriod    String?   // "working" | "casual" | "both"
   selectedCalendarIds   Json      @default("[]") // String[] of Google Calendar IDs to sync
   syncTargetCalendarId  String?   // Google Calendar ID to push events to (null = 'primary')
@@ -277,14 +281,15 @@ model Task {
 }
 
 model Streak {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   userId         String
   streakType     String
-  currentCount   Int      @default(0)
-  bestCount      Int      @default(0)
+  currentCount   Int       @default(0)
+  bestCount      Int       @default(0)
   lastActiveDate DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
