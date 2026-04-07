@@ -318,7 +318,7 @@ export default function CalendarPage() {
         draggableRef.current = null;
       }
     };
-  }, [allUnscheduledItems, isMobile]); // Re-init when any items change
+  }, [allUnscheduledItems, isMobile, deepWorkDuration]); // Re-init when any items change
 
   const handleEventClick = (info: any) => {
     const eventData = info.event.extendedProps;
