@@ -137,6 +137,7 @@ export default function DashboardPage() {
   };
 
   const [showWinCelebration, setShowWinCelebration] = useState(false);
+  const [showDoneTasks, setShowDoneTasks] = useState(false);
 
   // Calculate week range for weekly view
   // Week starts on Sunday (consistent with Calendar page)
@@ -309,7 +310,8 @@ export default function DashboardPage() {
       MAINTENANCE: [],
       REVIEW: [],
     };
-    for (const t of list) {
+    const visible = showDoneTasks ? list : list.filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED');
+    for (const t of visible) {
       const type = t.taskType || 'IMPROVE';
       if (groups[type]) {
         groups[type].push(t);
@@ -318,7 +320,12 @@ export default function DashboardPage() {
       }
     }
     return groups;
-  }, [list]);
+  }, [list, showDoneTasks]);
+
+  const doneTotalDashboard = useMemo(
+    () => list.filter((t) => t.status === 'DONE' || t.status === 'DROPPED').length,
+    [list],
+  );
 
   const refresh = useCallback(() => {
     mutate();
@@ -606,6 +613,14 @@ export default function DashboardPage() {
 
           {/* Grouped task checklists */}
           <div className="space-y-6 mb-6">
+            {doneTotalDashboard > 0 && (
+              <button
+                onClick={() => setShowDoneTasks((v) => !v)}
+                className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+              >
+                {showDoneTasks ? `Hide completed (${doneTotalDashboard})` : `Show completed (${doneTotalDashboard})`}
+              </button>
+            )}
             {Object.entries(groupedTasks).map(([type, typeTasks]) => {
               const colorKey = type as keyof typeof PRISM_COLORS;
               const colors = PRISM_COLORS[colorKey];

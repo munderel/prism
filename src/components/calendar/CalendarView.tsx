@@ -1234,6 +1234,12 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           slotMaxTime="24:00:00"
           eventDidMount={(info) => {
             const props = info.event.extendedProps || {};
+            // Dim and strike-through DONE task events
+            if (props.status === 'DONE') {
+              info.el.style.opacity = '0.45';
+              const titleEl = info.el.querySelector('.fc-event-title') as HTMLElement | null;
+              if (titleEl) titleEl.style.textDecoration = 'line-through';
+            }
             // Show pin icon on pinned events
             if (props.isPinned) {
               const pinEl = document.createElement('span');
