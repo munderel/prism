@@ -154,14 +154,46 @@ export default function KpiDashboardPage() {
       />
 
       {/* Date range label */}
-      <p className="text-sm font-medium text-[var(--text-secondary)]">
-        {formatDateRangeLabel(timeLevel, dateRange.start, dateRange.end)}
-      </p>
+      <div className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-color)] bg-[var(--hover-bg)] px-2.5 py-1">
+        <span className="text-xs font-medium text-[var(--text-secondary)]">
+          {formatDateRangeLabel(timeLevel, dateRange.start, dateRange.end)}
+        </span>
+      </div>
 
       {/* Loading state */}
       {isLoading && (
-        <div className="flex items-center justify-center py-16">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--border-color)] border-t-indigo-500" />
+        <div className="space-y-6">
+          {/* Summary row skeleton */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="glass-panel p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-16 rounded progress-shimmer" />
+                  <div className="h-7 w-7 rounded-lg progress-shimmer" />
+                </div>
+                <div className="h-8 w-10 rounded progress-shimmer" />
+              </div>
+            ))}
+          </div>
+          {/* Process row skeletons */}
+          {[3, 2, 2].map((kpiCount, i) => (
+            <div key={i} className="glass-panel p-4 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1.5">
+                  <div className="h-2.5 w-20 rounded progress-shimmer" />
+                  <div className="h-4 w-36 rounded progress-shimmer" />
+                </div>
+                <div className="h-6 w-20 rounded-full progress-shimmer" />
+              </div>
+              {[...Array(kpiCount)].map((_, j) => (
+                <div key={j} className="space-y-1.5">
+                  <div className="h-3 w-48 rounded progress-shimmer" />
+                  <div className="h-2 w-full rounded-full progress-shimmer" />
+                  <div className="h-2.5 w-32 rounded progress-shimmer" />
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       )}
 
@@ -173,9 +205,17 @@ export default function KpiDashboardPage() {
           {/* Process KPI rows */}
           {processes.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[var(--border-color)] px-6 py-16 text-center">
-              <TrendingUp className="mx-auto mb-3 h-8 w-8 text-[var(--text-muted)]" />
-              <p className="text-sm text-[var(--text-muted)]">
-                No KPI data found for this period.
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/10">
+                <TrendingUp className="h-6 w-6 text-indigo-400" />
+              </div>
+              <p className="text-sm font-medium text-[var(--text-primary)] mb-1">
+                No KPI data for this period
+              </p>
+              <p className="text-xs text-[var(--text-muted)] mb-1">
+                Try switching to a different time period or view mode.
+              </p>
+              <p className="text-xs text-[var(--text-muted)]">
+                KPIs are tracked per process — make sure KPIs are configured in your processes.
               </p>
             </div>
           ) : (

@@ -525,6 +525,14 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     if (next > 9) {
       // Complete session
       await persistStep(9, { complete: true });
+      // Apply Win The Day flags for tomorrow from tomorrowPlan
+      if (tomorrowPlan.length > 0) {
+        await fetch('/api/tasks/batch-win-the-day', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskIds: tomorrowPlan, dueDate: sessionTomorrow }),
+        }).catch((err) => console.error('[powerdown] Failed to apply WTD flags:', err));
+      }
       // Auto-save captured ideas to /api/ideas
       for (const idea of ideas) {
         if (!idea.trim()) continue;
@@ -1082,7 +1090,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                       </div>
                       {isSelected && (
                         <span className="ml-auto text-xs rounded-full bg-indigo-600/20 px-2 py-0.5 text-indigo-600 dark:text-indigo-300 font-medium flex-shrink-0">
-                          Most Important
+                          {tomorrowPlan.indexOf(t.id) === 0 ? '1st' : tomorrowPlan.indexOf(t.id) === 1 ? '2nd' : '3rd'}
                         </span>
                       )}
                     </button>

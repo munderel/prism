@@ -47,6 +47,7 @@ interface DashboardTask {
   isPinned: boolean;
   isAutoScheduled: boolean;
   isWinTheDay: boolean;
+  winTheDayRank: number | null;
   startedAt: string | null;
   completedAt: string | null;
   failedAt: string | null;
@@ -275,17 +276,24 @@ export default function DashboardPage() {
     return blocks;
   }, [list, aimList, userSettings, powerdownSession, calendarEvents]);
 
-  // Win the Day: top 3 ranked tasks from power-down
+  // Win the Day: top 3 ranked tasks from power-down (excludes completed tasks)
   const winTheDayTasks = useMemo(() => {
-    const wtdTasks = list.filter((t) => t.isWinTheDay);
-    // Sort by priority: URGENT > HIGH > MEDIUM > LOW
+    const wtdTasks = list.filter(
+      (t) => t.isWinTheDay && t.status !== 'DONE' && t.status !== 'DROPPED',
+    );
+    // Sort by user-selected rank; fall back to priority for tasks without a stored rank
     const priorityOrder: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-    wtdTasks.sort((a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99));
+    wtdTasks.sort((a, b) => {
+      const ra = a.winTheDayRank ?? 99;
+      const rb = b.winTheDayRank ?? 99;
+      if (ra !== rb) return ra - rb;
+      return (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99);
+    });
     return wtdTasks.slice(0, 3).map((t, i) => ({
       id: t.id,
       title: t.title,
       status: t.status,
-      rank: i + 1,
+      rank: t.winTheDayRank ?? i + 1,
       timeBlockStart: t.timeBlockStart ?? undefined,
       timeBlockEnd: t.timeBlockEnd ?? undefined,
     }));

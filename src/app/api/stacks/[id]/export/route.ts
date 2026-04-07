@@ -34,6 +34,9 @@ export async function GET(
         orderBy: { sortOrder: 'asc' },
         include: { linkedKpi: { select: { name: true } } },
       },
+      tasks: {
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+      },
     },
   });
 

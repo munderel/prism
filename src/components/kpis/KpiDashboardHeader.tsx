@@ -19,10 +19,10 @@ const TIME_LEVELS = [
 ];
 
 function toggleBtnClass(isActive: boolean): string {
-  return `rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+  return `rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-150 ${
     isActive
       ? 'bg-indigo-600 text-white shadow-sm'
-      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)]'
   }`;
 }
 

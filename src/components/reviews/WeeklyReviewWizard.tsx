@@ -406,12 +406,12 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         break;
       case 'mit':
         await persistAnswer('mit', 'priority_ranking', { taskIds: mitTaskIds });
-        // Flag selected tasks as Win the Day so dashboard shows them
-        for (const taskId of mitTaskIds) {
-          await fetch(`/api/tasks/${taskId}`, {
-            method: 'PATCH',
+        // Apply Win The Day flags + ranks for the upcoming week's top tasks
+        if (mitTaskIds.length > 0) {
+          await fetch('/api/tasks/batch-win-the-day', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ isWinTheDay: true }),
+            body: JSON.stringify({ taskIds: mitTaskIds }),
           });
         }
         break;

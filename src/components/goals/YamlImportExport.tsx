@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
-import { Download, Upload, X, Check } from 'lucide-react';
+import { Download, Upload, X, Check, FileText } from 'lucide-react';
 
 interface DiffSectionProps {
   items: any[];
@@ -57,6 +57,19 @@ export function YamlImportExport({
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadExample = async () => {
+    const res = await fetch('/example-goal-stack-full.yaml');
+    if (!res.ok) return;
+    const yaml = await res.text();
+    const blob = new Blob([yaml], { type: 'text/yaml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'example-goal-stack-full.yaml';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -105,6 +118,15 @@ export function YamlImportExport({
         >
           <Download className="h-4 w-4" />
           Export YAML
+        </button>
+
+        <button
+          onClick={handleDownloadExample}
+          title="Download an example YAML with every field documented"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:border-[var(--glass-border)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <FileText className="h-4 w-4" />
+          Example
         </button>
 
         <button
@@ -166,8 +188,36 @@ export function YamlImportExport({
               </div>
             )}
 
+            {diff.taskChanges?.length > 0 && (
+              <div className="mb-2">
+                <span className="text-xs font-medium text-cyan-400">
+                  Task changes in {diff.taskChanges.length} goal{diff.taskChanges.length !== 1 ? 's' : ''}
+                </span>
+                {diff.taskChanges.map((entry: any, i: number) => (
+                  <div key={i} className="ml-4 mt-1">
+                    <span className="text-xs text-[var(--text-secondary)]">{entry.goalTitle}:</span>
+                    {entry.added.map((t: any, j: number) => (
+                      <div key={`a${j}`} className="text-xs text-green-300/70 ml-2">
+                        + Task: {t.title}
+                      </div>
+                    ))}
+                    {entry.removed.map((t: any, j: number) => (
+                      <div key={`r${j}`} className="text-xs text-red-300/70 ml-2">
+                        - Task: {t.title}
+                      </div>
+                    ))}
+                    {entry.modified.map((t: any, j: number) => (
+                      <div key={`m${j}`} className="text-xs text-yellow-300/70 ml-2">
+                        ~ Task: {t.title}: {Object.keys(t.changes).join(', ')}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {diff.added.length === 0 && diff.deleted.length === 0 &&
-              diff.modified.length === 0 && !diff.kpiChanges?.length && (
+              diff.modified.length === 0 && !diff.kpiChanges?.length && !diff.taskChanges?.length && (
                 <p className="text-xs text-[var(--text-muted)]">No changes detected.</p>
               )}
 

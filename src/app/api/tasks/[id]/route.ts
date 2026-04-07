@@ -64,7 +64,7 @@ export async function PATCH(
 
   const data: any = pickDefined(body, [
     'title', 'description', 'priority', 'deliverable', 'estimatedMinutes',
-    'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay',
+    'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay', 'winTheDayRank',
     'assigneeId',
   ]);
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;

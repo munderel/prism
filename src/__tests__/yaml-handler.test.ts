@@ -148,4 +148,273 @@ describe('buildGoalTree', () => {
     expect(tree[0].children).toHaveLength(1);
     expect(tree[0].children![0].title).toBe('Strat');
   });
+
+  it('populates node.tasks from flat DB input including task editor fields', () => {
+    const flat = [
+      {
+        id: 'g1',
+        parentId: null,
+        level: 'WEEKLY',
+        title: 'Week 1',
+        description: null,
+        status: 'IN_PROGRESS',
+        dueDate: null,
+        sortOrder: 0,
+        tasks: [
+          {
+            id: 't1',
+            title: 'Do the thing',
+            description: 'the desc',
+            deliverable: 'the deliverable',
+            status: 'IN_PROGRESS',
+            priority: 'HIGH',
+            dueDate: new Date('2026-04-10T00:00:00Z'),
+            estimatedMinutes: 90,
+            timeBlockStart: new Date('2026-04-08T14:00:00Z'),
+            timeBlockEnd: new Date('2026-04-08T15:30:00Z'),
+            recurrenceRule: 'FREQ=WEEKLY;BYDAY=MO',
+            isWinTheDay: true,
+            preferredTimeStart: '09:00',
+            preferredTimeEnd: '11:00',
+          },
+        ],
+      },
+    ];
+    const tree = buildGoalTree(flat as any);
+    expect(tree[0].tasks).toHaveLength(1);
+    const task = tree[0].tasks![0];
+    expect(task.id).toBe('t1');
+    expect(task.deliverable).toBe('the deliverable');
+    expect(task.priority).toBe('HIGH');
+    expect(task.estimatedMinutes).toBe(90);
+    expect(task.timeBlockStart).toBe('2026-04-08T14:00:00.000Z');
+    expect(task.timeBlockEnd).toBe('2026-04-08T15:30:00.000Z');
+    expect(task.recurrenceRule).toBe('FREQ=WEEKLY;BYDAY=MO');
+    expect(task.isWinTheDay).toBe(true);
+    expect(task.preferredTimeStart).toBe('09:00');
+    expect(task.preferredTimeEnd).toBe('11:00');
+  });
+
+  it('populates goal startDate and endDate from DB input', () => {
+    const flat = [
+      {
+        id: 'g1',
+        parentId: null,
+        level: 'STRATEGIC',
+        title: 'Strat',
+        description: null,
+        status: 'IN_PROGRESS',
+        dueDate: null,
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        endDate: new Date('2026-12-31T00:00:00Z'),
+        sortOrder: 0,
+      },
+    ];
+    const tree = buildGoalTree(flat as any);
+    expect(tree[0].startDate).toBe('2026-01-01T00:00:00.000Z');
+    expect(tree[0].endDate).toBe('2026-12-31T00:00:00.000Z');
+  });
+});
+
+describe('round-trip full fidelity', () => {
+  const fullTree: GoalNode[] = [
+    {
+      id: 'g1',
+      level: 'HIGH_HARD',
+      title: 'HHG',
+      status: 'IN_PROGRESS',
+      startDate: '2026-01-01T00:00:00.000Z',
+      endDate: '2026-12-31T00:00:00.000Z',
+      children: [
+        {
+          id: 'g2',
+          level: 'STRATEGIC',
+          title: 'Strategic',
+          status: 'IN_PROGRESS',
+          startDate: '2026-04-01T00:00:00.000Z',
+          endDate: '2026-06-30T00:00:00.000Z',
+          children: [
+            {
+              id: 'g3',
+              level: 'MONTHLY',
+              title: 'Monthly',
+              status: 'IN_PROGRESS',
+              children: [
+                {
+                  id: 'g4',
+                  level: 'WEEKLY',
+                  title: 'Weekly',
+                  status: 'IN_PROGRESS',
+                  children: [],
+                  tasks: [
+                    {
+                      id: 't1',
+                      title: 'Full task',
+                      description: 'task desc',
+                      deliverable: 'deliverable',
+                      status: 'IN_PROGRESS',
+                      priority: 'HIGH',
+                      dueDate: '2026-04-10T00:00:00.000Z',
+                      estimatedMinutes: 90,
+                      timeBlockStart: '2026-04-08T14:00:00.000Z',
+                      timeBlockEnd: '2026-04-08T15:30:00.000Z',
+                      recurrenceRule: 'FREQ=WEEKLY;BYDAY=MO',
+                      isWinTheDay: true,
+                      preferredTimeStart: '09:00',
+                      preferredTimeEnd: '11:00',
+                    },
+                  ],
+                  kpis: [
+                    {
+                      name: 'Weekly KPI',
+                      type: 'NUMERIC',
+                      unit: 'teams',
+                      target: 3,
+                      actual: 1,
+                      linked_to: 'Monthly KPI',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it('preserves all task fields', () => {
+    const yaml = exportGoalsToYaml(fullTree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    const task = goals[0].children![0].children![0].children![0].tasks![0];
+    expect(task.id).toBe('t1');
+    expect(task.title).toBe('Full task');
+    expect(task.description).toBe('task desc');
+    expect(task.deliverable).toBe('deliverable');
+    expect(task.status).toBe('IN_PROGRESS');
+    expect(task.priority).toBe('HIGH');
+    expect(task.dueDate).toBe('2026-04-10T00:00:00.000Z');
+    expect(task.estimatedMinutes).toBe(90);
+    expect(task.timeBlockStart).toBe('2026-04-08T14:00:00.000Z');
+    expect(task.timeBlockEnd).toBe('2026-04-08T15:30:00.000Z');
+    expect(task.recurrenceRule).toBe('FREQ=WEEKLY;BYDAY=MO');
+    expect(task.isWinTheDay).toBe(true);
+    expect(task.preferredTimeStart).toBe('09:00');
+    expect(task.preferredTimeEnd).toBe('11:00');
+  });
+
+  it('preserves goal startDate and endDate', () => {
+    const yaml = exportGoalsToYaml(fullTree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    expect(goals[0].startDate).toBe('2026-01-01T00:00:00.000Z');
+    expect(goals[0].endDate).toBe('2026-12-31T00:00:00.000Z');
+    expect(goals[0].children![0].startDate).toBe('2026-04-01T00:00:00.000Z');
+  });
+
+  it('preserves KPI linked_to reference', () => {
+    const yaml = exportGoalsToYaml(fullTree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    const kpi = goals[0].children![0].children![0].children![0].kpis![0];
+    expect(kpi.linked_to).toBe('Monthly KPI');
+  });
+});
+
+describe('diffGoals with tasks and dates', () => {
+  it('reports startDate and endDate as modified', () => {
+    const current: GoalNode[] = [
+      {
+        id: 'g1',
+        level: 'STRATEGIC',
+        title: 'Strat',
+        status: 'IN_PROGRESS',
+        startDate: '2026-01-01T00:00:00.000Z',
+        endDate: '2026-06-30T00:00:00.000Z',
+        children: [],
+      },
+    ];
+    const incoming: GoalNode[] = [
+      {
+        id: 'g1',
+        level: 'STRATEGIC',
+        title: 'Strat',
+        status: 'IN_PROGRESS',
+        startDate: '2026-02-01T00:00:00.000Z',
+        endDate: '2026-07-31T00:00:00.000Z',
+        children: [],
+      },
+    ];
+    const diff = diffGoals(current, incoming);
+    expect(diff.modified).toHaveLength(1);
+    expect(diff.modified[0].changes.startDate).toBeDefined();
+    expect(diff.modified[0].changes.endDate).toBeDefined();
+  });
+
+  it('reports task additions, removals, and modifications in taskChanges', () => {
+    const current: GoalNode[] = [
+      {
+        id: 'g1',
+        level: 'WEEKLY',
+        title: 'Week 1',
+        status: 'IN_PROGRESS',
+        children: [],
+        tasks: [
+          { id: 't1', title: 'Keep me', status: 'TODO', priority: 'MEDIUM' },
+          { id: 't2', title: 'Modify me', status: 'TODO', priority: 'MEDIUM' },
+          { id: 't3', title: 'Remove me', status: 'TODO', priority: 'MEDIUM' },
+        ],
+      },
+    ];
+    const incoming: GoalNode[] = [
+      {
+        id: 'g1',
+        level: 'WEEKLY',
+        title: 'Week 1',
+        status: 'IN_PROGRESS',
+        children: [],
+        tasks: [
+          { id: 't1', title: 'Keep me', status: 'TODO', priority: 'MEDIUM' },
+          { id: 't2', title: 'Modify me', status: 'IN_PROGRESS', priority: 'HIGH' },
+          { title: 'New task', status: 'TODO', priority: 'MEDIUM' },
+        ],
+      },
+    ];
+    const diff = diffGoals(current, incoming);
+    expect(diff.taskChanges).toHaveLength(1);
+    const entry = diff.taskChanges[0];
+    expect(entry.added.map((t) => t.title)).toContain('New task');
+    expect(entry.removed.map((t) => t.title)).toContain('Remove me');
+    expect(entry.modified.map((t) => t.title)).toContain('Modify me');
+    expect(entry.modified[0].changes.status).toBeDefined();
+    expect(entry.modified[0].changes.priority).toBeDefined();
+  });
+
+  it('diffTasks matches by id first — rename with same id appears as modified', () => {
+    const current: GoalNode[] = [
+      {
+        id: 'g1',
+        level: 'WEEKLY',
+        title: 'Week 1',
+        status: 'IN_PROGRESS',
+        children: [],
+        tasks: [{ id: 't1', title: 'Old name', status: 'TODO', priority: 'MEDIUM' }],
+      },
+    ];
+    const incoming: GoalNode[] = [
+      {
+        id: 'g1',
+        level: 'WEEKLY',
+        title: 'Week 1',
+        status: 'IN_PROGRESS',
+        children: [],
+        tasks: [{ id: 't1', title: 'New name', status: 'TODO', priority: 'MEDIUM' }],
+      },
+    ];
+    const diff = diffGoals(current, incoming);
+    expect(diff.taskChanges).toHaveLength(1);
+    const entry = diff.taskChanges[0];
+    expect(entry.added).toHaveLength(0);
+    expect(entry.removed).toHaveLength(0);
+    expect(entry.modified).toHaveLength(1);
+    expect(entry.modified[0].changes.title).toEqual({ from: 'Old name', to: 'New name' });
+  });
 });

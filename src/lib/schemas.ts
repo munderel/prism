@@ -52,6 +52,7 @@ export const updateTaskSchema = z.object({
   timeBlockStart: z.string().optional().nullable(),
   timeBlockEnd: z.string().optional().nullable(),
   isWinTheDay: z.boolean().optional(),
+  winTheDayRank: z.number().int().min(1).max(3).optional().nullable(),
   deliverable: z.string().max(1000).optional().nullable(),
   estimatedMinutes: z.number().int().min(1).max(1440).optional().nullable(),
   goalId: z.string().optional().nullable(),

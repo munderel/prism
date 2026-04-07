@@ -242,6 +242,7 @@ model Task {
   isPinned            Boolean          @default(false)
   isAutoScheduled     Boolean          @default(false)
   isWinTheDay         Boolean          @default(false)
+  winTheDayRank       Int?
   startedAt      DateTime?
   completedAt    DateTime?
   failedAt       DateTime?

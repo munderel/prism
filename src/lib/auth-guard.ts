@@ -1,5 +1,7 @@
 import { getServerSession, Session } from 'next-auth';
+import { getToken } from 'next-auth/jwt';
 import { createHmac, timingSafeEqual } from 'crypto';
+import type { NextRequest } from 'next/server';
 import { authOptions } from './auth';
 import { prisma } from './prisma';
 
@@ -18,6 +20,24 @@ export async function requireAuth(): Promise<AuthResult> {
     return { error: 'Unauthorized', status: 401 };
   }
   return { session, userId: session.user.id };
+}
+
+/**
+ * Fast auth check for API route handlers.
+ * Uses getToken() (pure JWT decode from cookie) instead of getServerSession(),
+ * skipping the NextAuth callback chain and any conditional DB calls.
+ * Prefer this in GET routes that only need userId/isAdmin from the token.
+ */
+export async function requireAuthFromRequest(request: NextRequest): Promise<AuthResult> {
+  const token = await getToken({ req: request });
+  if (!token?.id || (token as any).isLockedOut) {
+    return { error: 'Unauthorized', status: 401 };
+  }
+  const session: Session = {
+    user: { id: token.id, isAdmin: token.isAdmin ?? false },
+    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  };
+  return { session, userId: token.id };
 }
 
 /**

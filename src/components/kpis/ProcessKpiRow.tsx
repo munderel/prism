@@ -27,12 +27,14 @@ export function ProcessKpiRow({ process }: ProcessKpiRowProps) {
     <m.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -1 }}
+      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
       className="glass-panel p-4"
     >
       {/* Process header */}
       <div className="flex items-start justify-between mb-4">
         <div>
-          <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-0.5">
+          <p className="text-[11px] font-medium text-[var(--text-muted)] mb-0.5">
             {process.functionName}
           </p>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">
