@@ -20,6 +20,8 @@ import {
   ChevronUp,
   AlertTriangle,
   RotateCcw,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react';
 import StreakHeatmap from '@/components/aims/StreakHeatmap';
 import { AimProgressChart } from '@/components/aims/AimProgressChart';
@@ -108,6 +110,29 @@ export default function AimsPage() {
   const { start: todayStart, end: todayEnd } = getTodayRange();
   const { data: todayInstances, mutate: mutateTodayInstances } = useSWR<AimInstance[]>(
     `/api/aims/instances?start=${todayStart}&end=${todayEnd}`
+  );
+
+  const { data: aimStreaks, mutate: mutateAimStreaks } = useSWR<any[]>('/api/streaks?type=aim');
+
+  const getAimStreakData = useCallback(
+    (categoryId: string): { count: number; id: string | null; isActive: boolean } => {
+      if (!Array.isArray(aimStreaks)) return { count: 0, id: null, isActive: true };
+      const s = aimStreaks.find((x: any) => x.streakType === `aim_${categoryId}`);
+      return { count: s?.currentCount ?? 0, id: s?.id ?? null, isActive: s?.isActive ?? true };
+    },
+    [aimStreaks]
+  );
+
+  const handleToggleAimStreak = useCallback(
+    async (streakId: string, newIsActive: boolean) => {
+      await fetch(`/api/streaks/${streakId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: newIsActive }),
+      });
+      mutateAimStreaks();
+    },
+    [mutateAimStreaks]
   );
 
   const [viewMode, setViewMode] = useState<'simplified' | 'full'>('simplified');
@@ -554,6 +579,8 @@ export default function AimsPage() {
                     onRemoveActivity={removeActivity}
                     onResetToSeed={() => resetToSeed(cat.id)}
                     onMutateAims={mutateAims}
+                    aimStreakData={getAimStreakData(cat.id)}
+                    onToggleAimStreak={handleToggleAimStreak}
                   />
                 ))}
               </div>
@@ -601,6 +628,8 @@ export default function AimsPage() {
                   onResetToSeed={() => resetToSeed(cat.id)}
                   onMutateAims={mutateAims}
                   onWorkoutSubTypesChange={(subTypes) => handleWorkoutSubTypesChange(cat.id, subTypes)}
+                  aimStreakData={getAimStreakData(cat.id)}
+                  onToggleAimStreak={handleToggleAimStreak}
                 />
               ))}
             </div>
@@ -663,6 +692,8 @@ interface AimCardProps {
   onResetToSeed: () => void;
   onMutateAims: () => void;
   onWorkoutSubTypesChange?: (subTypes: { id: string; name: string; frequencyPerWeek: number }[]) => void;
+  aimStreakData?: { count: number; id: string | null; isActive: boolean };
+  onToggleAimStreak?: (id: string, isActive: boolean) => void;
 }
 
 function AimCard({
@@ -695,6 +726,8 @@ function AimCard({
   onResetToSeed,
   onMutateAims: _onMutateAims,
   onWorkoutSubTypesChange,
+  aimStreakData,
+  onToggleAimStreak,
 }: AimCardProps) {
   const [chartExpanded, setChartExpanded] = useState(false);
   const phase = (userAim?.currentPhase || 'SEED') as string;
@@ -825,6 +858,19 @@ function AimCard({
               >
                 {completionCount} done
               </span>
+            )}
+            {aimStreakData?.id && onToggleAimStreak && (
+              <button
+                onClick={() => onToggleAimStreak(aimStreakData.id!, !aimStreakData.isActive)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                title={aimStreakData.isActive ? 'Pause streak tracking' : 'Resume streak tracking'}
+              >
+                {aimStreakData.isActive ? (
+                  <PauseCircle className="h-4 w-4" />
+                ) : (
+                  <PlayCircle className="h-4 w-4" />
+                )}
+              </button>
             )}
           </div>
         </div>
