@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, RefreshCw, Link2, Check } from 'lucide-react';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, RefreshCw, Link2, Check, Flame } from 'lucide-react';
 import { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -66,6 +66,12 @@ export default function SettingsPage() {
 
   // Powerdown Time
   const [powerdownTime, setPowerdownTime] = useState('17:30');
+
+  // Streak preferences
+  const [streakCountAims, setStreakCountAims] = useState(true);
+  const [streakCountProcesses, setStreakCountProcesses] = useState(true);
+  const [streakCountReviews, setStreakCountReviews] = useState(true);
+  const [streakCountPowerdown, setStreakCountPowerdown] = useState(true);
 
   // Weekly Review Schedule
   const [weeklyReviewDayOfWeek, setWeeklyReviewDayOfWeek] = useState<number>(0);
@@ -140,6 +146,10 @@ export default function SettingsPage() {
         setCalendarColorOverrides({});
       }
       if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
+      if (data.streakCountAims !== undefined) setStreakCountAims(data.streakCountAims);
+      if (data.streakCountProcesses !== undefined) setStreakCountProcesses(data.streakCountProcesses);
+      if (data.streakCountReviews !== undefined) setStreakCountReviews(data.streakCountReviews);
+      if (data.streakCountPowerdown !== undefined) setStreakCountPowerdown(data.streakCountPowerdown);
       if (data.weeklyReviewDayOfWeek != null) setWeeklyReviewDayOfWeek(data.weeklyReviewDayOfWeek);
       if (data.weeklyReviewTime) setWeeklyReviewTime(data.weeklyReviewTime);
       if (data.weeklyReviewDuration) setWeeklyReviewDuration(data.weeklyReviewDuration);
@@ -195,7 +205,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration }),
+        body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakCountAims, streakCountProcesses, streakCountReviews, streakCountPowerdown }),
       });
 
       if (!res.ok) {
@@ -785,6 +795,36 @@ export default function SettingsPage() {
             onChange={(e) => setPowerdownTime(e.target.value)}
             className={inputClasses}
           />
+          <SaveButton onClick={saveUserSettings} className="mt-4" />
+        </section>
+
+        {/* Streak Preferences */}
+        <section className="glass-panel p-4 sm:p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-1 flex items-center gap-2">
+            <Flame className="h-5 w-5 text-amber-400" />
+            Daily Streak — What Counts
+          </h2>
+          <p className="text-sm text-[var(--text-muted)] mb-4">
+            Choose which activity types contribute to your master daily streak.
+          </p>
+          <div className="space-y-3">
+            {[
+              { label: 'Aims', value: streakCountAims, setter: setStreakCountAims },
+              { label: 'Processes', value: streakCountProcesses, setter: setStreakCountProcesses },
+              { label: 'Reviews', value: streakCountReviews, setter: setStreakCountReviews },
+              { label: 'Power Down', value: streakCountPowerdown, setter: setStreakCountPowerdown },
+            ].map(({ label, value, setter }) => (
+              <label key={label} className="flex items-center justify-between">
+                <span className="text-sm text-[var(--text-secondary)]">{label}</span>
+                <input
+                  type="checkbox"
+                  checked={value}
+                  onChange={(e) => setter(e.target.checked)}
+                  className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+                />
+              </label>
+            ))}
+          </div>
           <SaveButton onClick={saveUserSettings} className="mt-4" />
         </section>
 
