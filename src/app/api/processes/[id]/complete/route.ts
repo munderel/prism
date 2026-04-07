@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson, notFoundResponse, NO_STORE } from '@/lib/api-helpers';
-import { updateProcessStreak } from '@/lib/process-streak';
+import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
 
 export async function POST(
   request: NextRequest,
@@ -78,7 +78,8 @@ export async function POST(
       });
 
       // Update streak (fire-and-forget)
-      updateProcessStreak(auth.userId, id, process.cadence).catch(() => {});
+      updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch(() => {});
+      updateDailyStreak(auth.userId, 'processes').catch(() => {});
 
       return Response.json({ execution: updated, completed: true }, NO_STORE);
     }
@@ -101,7 +102,8 @@ export async function POST(
   });
 
   // Update streak (fire-and-forget)
-  updateProcessStreak(auth.userId, id, process.cadence).catch(() => {});
+  updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch(() => {});
+  updateDailyStreak(auth.userId, 'processes').catch(() => {});
 
   return Response.json({ execution, completed: true }, { status: 201, ...NO_STORE });
 }
