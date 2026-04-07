@@ -105,6 +105,10 @@ export const updateSettingsSchema = z.object({
   yearlyReviewTime: hhmmTime,
   yearlyReviewDuration: reviewDuration,
   isPublicOnLeaderboard: z.boolean().optional(),
+  streakCountAims:      z.boolean().optional(),
+  streakCountProcesses: z.boolean().optional(),
+  streakCountReviews:   z.boolean().optional(),
+  streakCountPowerdown: z.boolean().optional(),
   companyMtp: z.string().max(10000).optional(),
   notificationPrefs: z.object({
     emailEnabled: z.boolean().optional(),
