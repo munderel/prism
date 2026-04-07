@@ -208,8 +208,8 @@ export const authOptions: NextAuthOptions = {
         token.adminCheckedAt = Date.now();
       }
 
-      // Re-fetch isAdmin and lockout status from DB every minute
-      const ADMIN_CACHE_TTL = 60 * 1000;
+      // Re-fetch isAdmin and lockout status from DB every 5 minutes
+      const ADMIN_CACHE_TTL = 5 * 60 * 1000;
       if (
         token.id &&
         (!token.adminCheckedAt ||

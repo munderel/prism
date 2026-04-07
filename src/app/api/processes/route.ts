@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { requireAuthFromRequest, requireAdmin, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 
-export async function GET(_request: NextRequest) {
-  const auth = await requireAuth();
+export async function GET(request: NextRequest) {
+  const auth = await requireAuthFromRequest(request);
   if ('error' in auth) return authError(auth);
 
   const functions = await prisma.businessFunction.findMany({

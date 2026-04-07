@@ -203,7 +203,7 @@ export default function CalendarPage() {
   const deepWorkDuration = deepWorkEffective?.active ? deepWorkEffective.effectiveDuration : undefined;
 
   const scheduleSettings = useMemo(() => {
-    if (!settingsData) return undefined;
+    if (!settingsData || typeof settingsData !== 'object' || Array.isArray(settingsData)) return undefined;
     const s = settingsData;
     return {
       workingHoursStart: s.workingHoursStart ?? '09:00',

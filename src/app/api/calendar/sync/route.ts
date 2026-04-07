@@ -390,6 +390,29 @@ async function upsertRecurringSeries(
   } satisfies ManagedRecurringSeriesState;
 }
 
+async function processSeriesSync(
+  userId: string,
+  calendarId: string,
+  gcalEvents: GoogleEventLike[],
+  timezone: string,
+  updates: string[],
+  currentSeries: ManagedRecurringSeriesState | undefined,
+  config: SeriesConfig | null,
+  onSync: ((series: ManagedRecurringSeriesState) => Promise<void>) | null,
+  message: string,
+): Promise<ManagedRecurringSeriesState | undefined> {
+  const nextSeries = await upsertRecurringSeries(userId, calendarId, currentSeries, config);
+  if (!config || !nextSeries?.eventId) return undefined;
+
+  const matchingEvents = gcalEvents.filter((e) => e.recurringEventId === nextSeries.eventId);
+  const synced = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
+  if (!synced) return undefined;
+
+  if (onSync) await onSync(synced);
+  updates.push(message);
+  return synced;
+}
+
 function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date, rangeEnd: Date, baseUrl: string) {
   const configs: Partial<Record<'WEEKLY' | 'MONTHLY' | 'YEARLY', SeriesConfig>> = {};
 
@@ -862,21 +885,15 @@ export async function POST(request: NextRequest) {
 
   for (const reviewType of ['WEEKLY', 'MONTHLY', 'YEARLY'] as const) {
     try {
-      const currentSeries = googleSyncState.recurringReviews[reviewType];
-      const config = reviewConfigs[reviewType] ?? null;
-      const nextSeries = await upsertRecurringSeries(auth.userId, targetCalendarId, currentSeries, config);
-
-      if (config && nextSeries?.eventId) {
-        const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextSeries.eventId);
-        const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
-        if (syncedSeries) {
-          googleSyncState.recurringReviews[reviewType] = syncedSeries;
-          await applyReviewOverridesToPrism(auth.userId, reviewType, syncedSeries, timezone, updates);
-          updates.push(`Synced ${reviewType.toLowerCase()} review series`);
-        }
-      } else {
-        delete googleSyncState.recurringReviews[reviewType];
-      }
+      const synced = await processSeriesSync(
+        auth.userId, targetCalendarId, gcalEvents as GoogleEventLike[], timezone, updates,
+        googleSyncState.recurringReviews[reviewType],
+        reviewConfigs[reviewType] ?? null,
+        (series) => applyReviewOverridesToPrism(auth.userId, reviewType, series, timezone, updates),
+        `Synced ${reviewType.toLowerCase()} review series`,
+      );
+      if (synced) googleSyncState.recurringReviews[reviewType] = synced;
+      else delete googleSyncState.recurringReviews[reviewType];
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[calendar] Failed to sync ${reviewType} review series for user ${auth.userId}:`, err);
@@ -887,18 +904,15 @@ export async function POST(request: NextRequest) {
   // Recurring powerdown series.
   try {
     const powerdownConfig = buildPowerdownSeriesConfig(user, timezone, rangeStart, rangeEnd, baseUrl);
-    const nextPowerdown = await upsertRecurringSeries(auth.userId, targetCalendarId, googleSyncState.powerdown, powerdownConfig);
-    if (powerdownConfig && nextPowerdown?.eventId) {
-      const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextPowerdown.eventId);
-      const syncedPowerdown = syncSeriesExceptions(nextPowerdown, matchingEvents, powerdownConfig.defaultsByDate, timezone);
-      if (syncedPowerdown) {
-        googleSyncState.powerdown = syncedPowerdown;
-        await applyPowerdownOverridesToPrism(auth.userId, syncedPowerdown, timezone, updates);
-        updates.push('Synced powerdown series');
-      }
-    } else {
-      delete googleSyncState.powerdown;
-    }
+    const synced = await processSeriesSync(
+      auth.userId, targetCalendarId, gcalEvents as GoogleEventLike[], timezone, updates,
+      googleSyncState.powerdown,
+      powerdownConfig,
+      (series) => applyPowerdownOverridesToPrism(auth.userId, series, timezone, updates),
+      'Synced powerdown series',
+    );
+    if (synced) googleSyncState.powerdown = synced;
+    else delete googleSyncState.powerdown;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[calendar] Failed to sync powerdown series for user ${auth.userId}:`, err);
@@ -912,19 +926,15 @@ export async function POST(request: NextRequest) {
   for (const process of processes) {
     try {
       liveProcessIds.add(process.id);
-      const config = buildProcessSeriesConfig(process, timezone, rangeStart, rangeEnd);
-      const nextSeries = await upsertRecurringSeries(auth.userId, targetCalendarId, googleSyncState.processes[process.id], config);
-
-      if (config && nextSeries?.eventId) {
-        const matchingEvents = (gcalEvents as GoogleEventLike[]).filter((event) => event.recurringEventId === nextSeries.eventId);
-        const syncedSeries = syncSeriesExceptions(nextSeries, matchingEvents, config.defaultsByDate, timezone);
-        if (syncedSeries) {
-          googleSyncState.processes[process.id] = syncedSeries;
-          updates.push(`Synced process series: ${process.title}`);
-        }
-      } else {
-        delete googleSyncState.processes[process.id];
-      }
+      const synced = await processSeriesSync(
+        auth.userId, targetCalendarId, gcalEvents as GoogleEventLike[], timezone, updates,
+        googleSyncState.processes[process.id],
+        buildProcessSeriesConfig(process, timezone, rangeStart, rangeEnd),
+        null,
+        `Synced process series: ${process.title}`,
+      );
+      if (synced) googleSyncState.processes[process.id] = synced;
+      else delete googleSyncState.processes[process.id];
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[calendar] Failed to sync process series "${process.title}" for user ${auth.userId}:`, err);

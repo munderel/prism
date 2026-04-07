@@ -53,8 +53,9 @@ export function KpiSubPeriodChart({ subPeriods, unit, kpiName }: KpiSubPeriodCha
 
   return (
     <div className="mt-3">
-      <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-2">
-        {kpiName} — Sub-period Breakdown
+      <p className="text-xs font-medium text-[var(--text-muted)] mb-2">
+        {kpiName}
+        <span className="opacity-50"> — Sub-period breakdown</span>
       </p>
       <ResponsiveContainer width="100%" height={140}>
         <BarChart data={subPeriods} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
@@ -80,7 +81,7 @@ export function KpiSubPeriodChart({ subPeriods, unit, kpiName }: KpiSubPeriodCha
           {referenceTarget !== null && (
             <ReferenceLine
               y={referenceTarget}
-              stroke="#ef4444"
+              stroke="#f59e0b"
               strokeDasharray="4 3"
               strokeWidth={1.5}
             />

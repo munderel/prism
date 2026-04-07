@@ -1,0 +1,162 @@
+# =============================================================================
+# PRISM GOAL STACK — FULL EXAMPLE YAML
+# =============================================================================
+# This file demonstrates every field supported by the Prism YAML import/export.
+# Use it as a reference template when authoring or editing a goal stack by hand.
+#
+# IMPORTING THIS FILE
+#   1. Go to Goal Stack in Prism
+#   2. Create (or select) an empty stack
+#   3. Click "Import YAML" and choose this file
+#   4. The preview will show every goal/task/KPI as "added"; click Confirm
+#
+# MATCHING ON RE-IMPORT
+#   • Goals, tasks, and KPIs are matched by `id` first, then by title/name
+#     within their parent goal.
+#   • Exported YAMLs carry `id` fields automatically — edit titles freely and
+#     the system still knows which record is which.
+#   • Hand-written entries without an `id` are matched by title. Keep task
+#     titles unique within a weekly goal to avoid ambiguity.
+#   • Removing a task from the YAML marks it as DROPPED (reversible) on the
+#     next import, not hard-deleted. DROPPED tasks remain in exports.
+#   • Comments are stripped by the YAML library on re-export — keep this file
+#     as read-only documentation, don't expect comments to round-trip.
+#
+# SUPPORTED GOAL LEVELS (in hierarchy order)
+#   HIGH_HARD → STRATEGIC → MONTHLY → WEEKLY → DAILY (daily items are tasks)
+#
+# SUPPORTED STATUSES
+#   Goals: NOT_STARTED, IN_PROGRESS, COMPLETED, ABANDONED
+#   Tasks: TODO, IN_PROGRESS, DONE, DROPPED
+#
+# SUPPORTED TASK PRIORITIES
+#   LOW, MEDIUM, HIGH, URGENT
+#
+# SUPPORTED KPI TYPES
+#   numeric  — tracks actual/target with a unit
+#   binary   — done/not-done, no target
+# =============================================================================
+
+meta:
+  name: "Example Full Stack"
+  owner: "you@example.com"
+  is_company: false
+  exported_at: "2026-04-07T00:00:00Z"
+  mtp: "Your Massive Transformative Purpose — a single sentence that anchors every goal below"
+  # links: is only used for company stacks. Commented because this is a personal example.
+  # links:
+  #   - company_goal: "Ship v1 to production"
+  #     individual_goals:
+  #       - user: "ic1@example.com"
+  #         goal: "Deliver the auth module"
+  #       - user: "ic2@example.com"
+  #         goal: "Deliver the billing module"
+
+# The HIGH_HARD goal sits at the top of the stack. Use one per stack.
+high_hard_goal:
+  title: "Reach product-market fit by end of year"
+  description: "Multi-line descriptions are fine. Use this to capture the why, the success criteria, and any key constraints."
+  status: "IN_PROGRESS"
+  date: "2026-12-31"           # due date (the date the goal must be complete by)
+  start_date: "2026-01-01"     # shown on the goal card alongside end_date
+  end_date: "2026-12-31"
+
+  # STRATEGIC goals are quarterly-ish horizons under the HHG.
+  strategic_goals:
+
+    - title: "Launch to 100 paying teams"
+      description: "First growth milestone — proves the product resonates at scale."
+      status: "IN_PROGRESS"
+      date: "2026-09-30"
+      start_date: "2026-04-01"
+      end_date: "2026-09-30"
+
+      # KPIs can live on STRATEGIC, MONTHLY, or WEEKLY goals (not on HHG or DAILY).
+      # Weekly numeric KPIs can link to monthly KPIs via `linked_to` for aggregation.
+      kpis:
+        - name: "Paying teams"
+          type: "numeric"
+          unit: "teams"
+          target: 100
+          actual: 12
+        - name: "MVP shipped"
+          type: "binary"
+          complete: false
+
+      # MONTHLY goals are monthly horizons under a strategic goal.
+      monthly_goals:
+
+        - title: "Onboard 10 pilot teams in April"
+          description: "First month of pilot outreach — focus on warm intros."
+          status: "IN_PROGRESS"
+          date: "2026-04-30"
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+
+          kpis:
+            - name: "Monthly new teams"
+              type: "numeric"
+              unit: "teams"
+              target: 10
+              actual: 3
+
+          # WEEKLY goals are weekly horizons under a monthly goal. Tasks live here.
+          weekly_goals:
+
+            - title: "Close 3 pilot agreements this week"
+              description: "Focus on the 5 warmest leads from last quarter."
+              status: "IN_PROGRESS"
+              date: "2026-04-12"
+              start_date: "2026-04-06"
+              end_date: "2026-04-12"
+
+              # Tasks support every editor field. Only `title` is required.
+              tasks:
+
+                # Task 1 — showcases every task field
+                - title: "Send pilot proposal to Acme"
+                  description: "Two-page pilot proposal with pricing table and timeline."
+                  deliverable: "Signed letter of intent"
+                  status: "IN_PROGRESS"
+                  priority: "HIGH"
+                  date: "2026-04-09"              # due date
+                  estimated_minutes: 90
+                  time_block_start: "2026-04-08T14:00:00Z"
+                  time_block_end: "2026-04-08T15:30:00Z"
+                  preferred_time_start: "09:00"   # HH:MM, local time hint for auto-scheduling
+                  preferred_time_end: "11:00"
+                  recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"   # RFC5545 RRULE
+                  win_the_day: true               # only emitted when true; marks as must-do
+
+                # Task 2 — minimal task, only required fields
+                - title: "Follow up with Globex"
+                  status: "TODO"
+                  priority: "MEDIUM"
+
+                # Task 3 — DONE task with deliverable
+                - title: "Schedule demo with Initech"
+                  deliverable: "Calendar invite sent"
+                  status: "DONE"
+                  priority: "LOW"
+                  date: "2026-04-07"
+
+                # Task 4 — URGENT priority example
+                - title: "Respond to security review from Hooli"
+                  status: "IN_PROGRESS"
+                  priority: "URGENT"
+                  estimated_minutes: 120
+
+              kpis:
+                # Weekly KPI aggregating into the monthly one via `linked_to`.
+                # The monthly KPI "Monthly new teams" above will sum across weekly linked children.
+                - name: "Weekly new teams"
+                  type: "numeric"
+                  unit: "teams"
+                  target: 3
+                  actual: 1
+                  linked_to: "Monthly new teams"
+
+    # Second strategic branch — shows sibling structure and a minimal fully-valid goal
+    - title: "Publish 4 product-led case studies"
+      status: "NOT_STARTED"
+      date: "2026-09-30"

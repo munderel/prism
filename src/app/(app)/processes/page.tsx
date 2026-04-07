@@ -69,7 +69,7 @@ export default function ProcessesPage() {
   const toast = useToast();
 
   // ── Data fetching ──
-  const { data: functionsData, isLoading: loading, mutate: mutateFunctions } = useSWR('/api/processes');
+  const { data: functionsData, isLoading: loading, error: functionsError, mutate: mutateFunctions } = useSWR('/api/processes');
   const functions = Array.isArray(functionsData) ? (functionsData as BusinessFunction[]) : [];
   const { data: usersData } = useSWR(isAdmin ? '/api/admin' : null);
   const users = Array.isArray(usersData) ? (usersData as UserOption[]) : [];
@@ -533,7 +533,7 @@ export default function ProcessesPage() {
 
   // ── Render ──
 
-  if (loading) return <ProcessSkeleton />;
+  if (loading || (functionsError && !functionsData)) return <ProcessSkeleton />;
 
   return (
     <div>

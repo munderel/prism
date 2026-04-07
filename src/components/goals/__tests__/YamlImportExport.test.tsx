@@ -26,10 +26,36 @@ describe('YamlImportExport', () => {
     onImportComplete.mockReset();
   });
 
-  it('renders export and import buttons', () => {
+  it('renders export, example, and import buttons', () => {
     render(<YamlImportExport {...defaultProps} />);
     expect(screen.getByText('Export YAML')).toBeInTheDocument();
+    expect(screen.getByText('Example')).toBeInTheDocument();
     expect(screen.getByText('Import YAML')).toBeInTheDocument();
+  });
+
+  it('downloads example yaml on Example click', async () => {
+    global.fetch = createMockFetch({
+      '/example-goal-stack-full.yaml': '# example yaml content',
+    });
+    const user = userEvent.setup();
+
+    const clickSpy = vi.fn();
+    const origCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = origCreateElement(tag);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'click', { value: clickSpy });
+      }
+      return el;
+    });
+
+    render(<YamlImportExport {...defaultProps} />);
+    await user.click(screen.getByText('Example'));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/example-goal-stack-full.yaml');
+    });
+    expect(clickSpy).toHaveBeenCalled();
   });
 
   it('exports YAML on click and triggers download', async () => {
@@ -153,5 +179,38 @@ describe('YamlImportExport', () => {
     await waitFor(() => {
       expect(screen.getByText('No changes detected.')).toBeInTheDocument();
     });
+  });
+
+  it('shows task changes section in preview', async () => {
+    global.fetch = createMockFetch({
+      '/api/goals/import': {
+        diff: {
+          added: [],
+          deleted: [],
+          modified: [],
+          taskChanges: [
+            {
+              goalTitle: 'Week 1',
+              added: [{ title: 'New task' }],
+              removed: [{ title: 'Old task' }],
+              modified: [{ title: 'Changed task', changes: { status: true, priority: true } }],
+            },
+          ],
+        },
+      },
+    });
+    const user = userEvent.setup();
+    render(<YamlImportExport {...defaultProps} />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['goals: []'], 'test.yaml', { type: 'text/yaml' });
+    await user.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Task changes in 1 goal/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/\+ Task: New task/)).toBeInTheDocument();
+    expect(screen.getByText(/- Task: Old task/)).toBeInTheDocument();
+    expect(screen.getByText(/~ Task: Changed task/)).toBeInTheDocument();
   });
 });
