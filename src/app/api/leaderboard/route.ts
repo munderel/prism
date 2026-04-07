@@ -19,7 +19,7 @@ export async function GET(_request: NextRequest) {
         name: true,
         image: true,
         streaks: {
-          where: { streakType: 'daily_completion' },
+          where: { streakType: 'daily' },
           select: { currentCount: true, bestCount: true },
         },
         _count: {

@@ -92,7 +92,7 @@ async function individualReport(userId: string): Promise<Response> {
       select: TASK_REPORT_SELECT,
     }),
     prisma.streak.findUnique({
-      where: { userId_streakType: { userId, streakType: 'daily_completion' } },
+      where: { userId_streakType: { userId, streakType: 'daily' } },
     }),
   ]);
 
