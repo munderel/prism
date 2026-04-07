@@ -33,6 +33,10 @@ const USER_SETTINGS_SELECT = {
   yearlyReviewTime: true,
   yearlyReviewDuration: true,
   isPublicOnLeaderboard: true,
+  streakCountAims: true,
+  streakCountProcesses: true,
+  streakCountReviews: true,
+  streakCountPowerdown: true,
 } as const;
 
 const USER_UPDATABLE_FIELDS = [
@@ -43,6 +47,7 @@ const USER_UPDATABLE_FIELDS = [
   'monthlyReviewRecurrenceRule', 'monthlyReviewTime', 'monthlyReviewDuration',
   'yearlyReviewRecurrenceRule', 'yearlyReviewTime', 'yearlyReviewDuration',
   'isPublicOnLeaderboard',
+  'streakCountAims', 'streakCountProcesses', 'streakCountReviews', 'streakCountPowerdown',
 ];
 
 const NOTIFICATION_PREF_FIELDS = [
