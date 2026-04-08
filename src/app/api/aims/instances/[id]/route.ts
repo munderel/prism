@@ -5,7 +5,6 @@ import { safeParseJson } from '@/lib/api-helpers';
 import {
   getPointsPerCompletion,
   evaluatePhaseGraduation,
-  calculateAimStreak,
   type AimPhase,
 } from '@/lib/aim-phases';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
@@ -44,7 +43,7 @@ async function recalculateUserAimProgress(userId: string, aimCategoryId: string)
   const uniqueCompletionDates: string[] = [];
   for (const instance of completedInstances) {
     const date = new Date(instance.scheduledDate);
-    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     if (uniqueCompletionDates[uniqueCompletionDates.length - 1] !== key) {
       uniqueCompletionDates.push(key);
     }
@@ -57,7 +56,7 @@ async function recalculateUserAimProgress(userId: string, aimCategoryId: string)
 
   for (const key of uniqueCompletionDates) {
     const [year, month, day] = key.split('-').map(Number);
-    const currentDate = new Date(year, month, day);
+    const currentDate = new Date(year, month - 1, day);
     if (!previousDate) {
       runningStreak = 1;
     } else {
@@ -170,12 +169,6 @@ export async function PATCH(
       updateData.pointsEarned = getPointsPerCompletion(phase);
       updateData.phaseAtCompletion = phase;
 
-      const { newStreak } = calculateAimStreak(
-        userAim.currentStreak,
-        userAim.lastCompletedAt,
-        phase,
-      );
-
       const sixWeeksAgo = new Date(Date.now() - 6 * 7 * 24 * 60 * 60 * 1000);
       const recentInstances = await prisma.aimInstance.findMany({
         where: {
@@ -193,21 +186,17 @@ export async function PATCH(
         recentInstances,
       );
 
-      await prisma.userAim.update({
-        where: { id: userAim.id },
-        data: {
-          completionCount: { increment: 1 },
-          currentStreak: newStreak,
-          bestStreak: Math.max(userAim.bestStreak, newStreak),
-          lastCompletedAt: new Date(),
-          ...(newPhase ? { currentPhase: newPhase, phaseStartedAt: new Date() } : {}),
-        },
-      });
+      if (newPhase) {
+        await prisma.userAim.update({
+          where: { id: userAim.id },
+          data: { currentPhase: newPhase, phaseStartedAt: new Date() },
+        });
+      }
     }
 
     // Update streak records (fire-and-forget; don't block response)
-    updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch(() => {});
-    updateDailyStreak(existing.userId, 'aims').catch(() => {});
+    updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch((err) => console.warn('[streak] update failed:', err));
+    updateDailyStreak(existing.userId, 'aims').catch((err) => console.warn('[streak] update failed:', err));
   }
 
   const updated = await prisma.aimInstance.update({

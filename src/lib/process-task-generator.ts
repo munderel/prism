@@ -1,26 +1,103 @@
 import { ProcessCadence } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { computeNextDueDate } from '@/lib/process-scheduler';
+import {
+  startOfWeek, endOfWeek, startOfMonth, endOfMonth,
+  startOfQuarter, endOfQuarter, startOfYear, endOfYear,
+  setDay, setDate,
+} from 'date-fns';
+
+// ─── Period helpers ───────────────────────────────────────────────────────────
+
+interface PeriodRange {
+  periodStart: Date;
+  dueDate: Date;
+}
 
 /**
- * Number of periods to pre-create, scaled by cadence.
+ * Compute the start and due date of the current period for a process cadence.
+ * dueDate is the day within the period the process is "due" — used as the
+ * task's dueDate (no timeBlockStart/End, so the task is unscheduled).
  */
-const PERIODS_AHEAD: Record<ProcessCadence, number> = {
-  ONE_TIME: 1,
-  DAILY: 5,
-  WEEKLY: 4,
-  BIWEEKLY: 4,
-  MONTHLY: 3,
-  QUARTERLY: 2,
-  YEARLY: 1,
-};
+function getCurrentPeriodRange(process: {
+  cadence: ProcessCadence;
+  scheduledDayOfWeek: number | null;
+  scheduledDayOfMonth: number | null;
+}): PeriodRange {
+  const now = new Date();
 
-/**
- * Determine the responsible user for a process, considering delegation.
- */
-function getResponsibleUserId(
-  process: { assigneeId: string | null; delegateId: string | null; delegateUntil: Date | null }
-): string | null {
+  switch (process.cadence) {
+    case 'DAILY': {
+      const periodStart = new Date(now);
+      periodStart.setHours(0, 0, 0, 0);
+      const dueDate = new Date(now);
+      dueDate.setHours(23, 59, 59, 999);
+      return { periodStart, dueDate };
+    }
+
+    case 'WEEKLY':
+    case 'BIWEEKLY': {
+      // Period starts on Monday of the current week
+      const periodStart = startOfWeek(now, { weekStartsOn: 1 });
+
+      // For BIWEEKLY: period is 2 weeks, but we still use the current week's Monday as start
+      // dueDate = scheduledDayOfWeek within this week (0=Sun…6=Sat), default Sunday (0)
+      const targetDow = process.scheduledDayOfWeek ?? 0; // 0=Sun
+      // setDay with weekStartsOn:1 returns the date within Mon–Sun for targetDow.
+      // DOW=0 (Sunday) returns Mon+6 days, which is the last day of the ISO week.
+      const dueDate = setDay(periodStart, targetDow, { weekStartsOn: 1 });
+      dueDate.setHours(23, 59, 59, 999);
+      return { periodStart, dueDate };
+    }
+
+    case 'MONTHLY': {
+      const periodStart = startOfMonth(now);
+      const targetDay = process.scheduledDayOfMonth ?? 1;
+      const dueDate = new Date(now.getFullYear(), now.getMonth(), targetDay, 23, 59, 59, 999);
+      // Clamp to end of month if day exceeds month length
+      const eom = endOfMonth(now);
+      return { periodStart, dueDate: dueDate > eom ? eom : dueDate };
+    }
+
+    case 'QUARTERLY': {
+      const periodStart = startOfQuarter(now);
+      const targetDay = process.scheduledDayOfMonth ?? 1;
+      const dueDate = new Date(
+        periodStart.getFullYear(),
+        periodStart.getMonth(),
+        targetDay,
+        23, 59, 59, 999
+      );
+      const eoq = endOfQuarter(now);
+      return { periodStart, dueDate: dueDate > eoq ? eoq : dueDate };
+    }
+
+    case 'YEARLY': {
+      const periodStart = startOfYear(now);
+      const targetDay = process.scheduledDayOfMonth ?? 1;
+      const dueDate = new Date(now.getFullYear(), 0, targetDay, 23, 59, 59, 999);
+      const eoy = endOfYear(now);
+      return { periodStart, dueDate: dueDate > eoy ? eoy : dueDate };
+    }
+
+    case 'ONE_TIME':
+    default: {
+      // For ONE_TIME: due today
+      const periodStart = new Date(now);
+      periodStart.setHours(0, 0, 0, 0);
+      const dueDate = new Date(now);
+      dueDate.setHours(23, 59, 59, 999);
+      return { periodStart, dueDate };
+    }
+  }
+}
+
+// ─── Owner resolution ─────────────────────────────────────────────────────────
+
+function getResponsibleUserId(process: {
+  assigneeId: string | null;
+  delegateId: string | null;
+  delegateUntil: Date | null;
+}): string | null {
   const today = new Date();
   if (process.delegateId && process.delegateUntil && process.delegateUntil >= today) {
     return process.delegateId;
@@ -28,219 +105,124 @@ function getResponsibleUserId(
   return process.assigneeId;
 }
 
-/**
- * Delete all future TODO tasks and their incomplete executions for a process.
- * Preserves IN_PROGRESS and DONE tasks.
- */
-export async function cleanupFutureProcessTasks(processId: string): Promise<void> {
-  const now = new Date();
-
-  // Find future TODO tasks linked to this process
-  const futureTasks = await prisma.task.findMany({
-    where: {
-      processId,
-      status: 'TODO',
-      dueDate: { gte: now },
-    },
-    select: { id: true },
-  });
-
-  if (futureTasks.length === 0) return;
-
-  const taskIds = futureTasks.map((t) => t.id);
-
-  await prisma.$transaction([
-    // Delete subtasks of those future tasks
-    prisma.task.deleteMany({
-      where: { parentId: { in: taskIds } },
-    }),
-    // Delete incomplete executions linked to those tasks
-    prisma.processExecution.deleteMany({
-      where: {
-        taskId: { in: taskIds },
-        completedAt: null,
-      },
-    }),
-    // Delete the tasks themselves
-    prisma.task.deleteMany({
-      where: { id: { in: taskIds } },
-    }),
-  ]);
-}
+// ─── Core generator ───────────────────────────────────────────────────────────
 
 /**
- * Pre-create MAINTENANCE tasks for an ADVANCED mode process.
- * Creates tasks for multiple periods ahead based on cadence.
- * Idempotent — only creates tasks up to the target count.
+ * Lazily create MAINTENANCE tasks for the current period of an ADVANCED process.
+ * Idempotent — if tasks already exist for this period, returns immediately.
+ * No parent/child hierarchy: each step becomes an independent task.
  */
-export async function generateAdvancedModeTasks(processId: string): Promise<number> {
+export async function generateTasksForCurrentPeriod(processId: string): Promise<void> {
   const process = await prisma.process.findUnique({
     where: { id: processId },
     include: {
       steps: { orderBy: { sortOrder: 'asc' } },
+      function: { select: { id: true } },
     },
   });
 
-  if (!process || process.mode !== 'ADVANCED') return 0;
+  if (!process || process.mode !== 'ADVANCED') return;
 
-  const responsibleUserId = getResponsibleUserId(process);
-  if (!responsibleUserId) return 0;
+  // Respect duration end date
+  if (process.durationEndDate && new Date() > process.durationEndDate) return;
 
-  const now = new Date();
-  const targetPeriods = PERIODS_AHEAD[process.cadence] ?? 4;
+  const ownerId = getResponsibleUserId(process);
+  if (!ownerId) return; // No responsible user — skip
 
-  // Count existing future TODO tasks for this process
-  const existingFutureCount = await prisma.task.count({
+  const { periodStart, dueDate } = getCurrentPeriodRange(process);
+
+  // Idempotency: check if any tasks exist for this process in the current period
+  const existing = await prisma.task.count({
     where: {
       processId,
-      status: 'TODO',
-      dueDate: { gte: now },
+      status: { in: ['TODO', 'IN_PROGRESS', 'DONE'] },
+      dueDate: { gte: periodStart, lte: dueDate },
     },
   });
+  if (existing > 0) return;
 
-  const periodsToCreate = targetPeriods - existingFutureCount;
-  if (periodsToCreate <= 0) return 0;
-
-  // Find the latest scheduled date to start from
-  const latestExecution = await prisma.processExecution.findFirst({
-    where: { processId },
-    orderBy: { scheduledDate: 'desc' },
-    select: { scheduledDate: true },
-  });
-
-  let startFrom: Date;
-  let firstTaskIsStartDate = false;
-
-  if (!latestExecution && process.scheduleStartDate) {
-    // Brand-new process with explicit start date: use it as anchor
-    const anchor = new Date(process.scheduleStartDate);
-    if (process.scheduledTime) {
-      const [h, m] = process.scheduledTime.split(':').map(Number);
-      anchor.setHours(h, m, 0, 0);
-    }
-    startFrom = anchor;
-    firstTaskIsStartDate = true;
-  } else {
-    startFrom = latestExecution?.scheduledDate ?? process.nextDueAt ?? now;
-    // If startFrom is in the past, use now
-    if (startFrom < now) startFrom = now;
-  }
-
-  let created = 0;
-  let currentDate = startFrom;
-
-  for (let i = 0; i < periodsToCreate; i++) {
-    let dueDate: Date;
-    if (firstTaskIsStartDate && i === 0) {
-      // First task lands ON the start date itself
-      dueDate = startFrom;
-    } else {
-      dueDate = computeNextDueDate(process.cadence, currentDate);
-    }
-
-    await prisma.$transaction(async (tx) => {
-      // Create parent MAINTENANCE task
-      const task = await tx.task.create({
-        data: {
-          ownerId: responsibleUserId,
-          taskType: 'MAINTENANCE',
-          title: process.title,
-          description: process.description,
-          dueDate,
-          status: 'TODO',
-          priority: 'MEDIUM',
-          estimatedMinutes: process.defaultDurationMinutes,
-          processId,
-        },
-      });
-
-      // Create ProcessExecution linked to this task
-      await tx.processExecution.create({
-        data: {
-          processId,
-          executedById: responsibleUserId,
-          scheduledDate: dueDate,
-          taskId: task.id,
-        },
-      });
-
-      // Create subtasks from process steps
-      if (process.steps.length > 0) {
-        if (process.subtaskMode === 'PAIRED') {
-          // Paired: child tasks with parentId (embedded checklist)
-          await Promise.all(
-            process.steps.map((step) =>
-              tx.task.create({
-                data: {
-                  ownerId: responsibleUserId,
-                  taskType: 'MAINTENANCE',
-                  title: step.title,
-                  description: step.description,
-                  dueDate,
-                  status: 'TODO',
-                  priority: 'MEDIUM',
-                  parentId: task.id,
-                  processId,
-                },
-              })
-            )
-          );
-        } else {
-          // Unpaired: independent tasks (no parentId), separately schedulable
-          await Promise.all(
-            process.steps.map((step) =>
-              tx.task.create({
-                data: {
-                  ownerId: responsibleUserId,
-                  taskType: 'MAINTENANCE',
-                  title: step.title,
-                  description: step.description,
-                  dueDate,
-                  status: 'TODO',
-                  priority: 'MEDIUM',
-                  processId,
-                },
-              })
-            )
-          );
-        }
-      }
+  // Create tasks: one per step (independent), or one parent task if no steps
+  if (process.steps.length === 0) {
+    await prisma.task.create({
+      data: {
+        ownerId,
+        taskType: 'MAINTENANCE',
+        title: process.title,
+        description: process.description,
+        dueDate,
+        status: 'TODO',
+        priority: 'MEDIUM',
+        estimatedMinutes: process.defaultDurationMinutes,
+        processId,
+      },
     });
-
-    currentDate = dueDate;
-    created++;
+  } else {
+    await Promise.all(
+      process.steps.map((step) =>
+        prisma.task.create({
+          data: {
+            ownerId,
+            taskType: 'MAINTENANCE',
+            title: step.title,
+            description: step.description,
+            dueDate,
+            status: 'TODO',
+            priority: 'MEDIUM',
+            estimatedMinutes: process.defaultDurationMinutes,
+            processId,
+          },
+        })
+      )
+    );
   }
 
-  // Update process.nextDueAt to the farthest scheduled date
   await prisma.process.update({
     where: { id: processId },
-    data: { nextDueAt: currentDate },
+    data: { lastRunAt: new Date() },
   });
-
-  return created;
 }
 
-/**
- * Regenerate tasks for an ADVANCED process.
- * Cleans up future TODO tasks and re-creates them.
- */
-export async function regenerateAdvancedModeTasks(processId: string): Promise<number> {
-  await cleanupFutureProcessTasks(processId);
-  return generateAdvancedModeTasks(processId);
-}
+// ─── Period start helper (for route invalidation) ─────────────────────────────
 
 /**
- * Update the owner of all future TODO tasks for a process.
- * Called when assignee or delegate changes.
+ * Returns the start of the current period for a given cadence.
+ * Used by step routes to delete stale TODO tasks so the checker recreates them.
  */
-export async function updateFutureTaskOwners(processId: string, newOwnerId: string): Promise<void> {
+export function getCurrentPeriodStart(cadence: ProcessCadence): Date {
   const now = new Date();
-  await prisma.task.updateMany({
+  switch (cadence) {
+    case 'DAILY': {
+      const d = new Date(now); d.setHours(0, 0, 0, 0); return d;
+    }
+    case 'WEEKLY':
+    case 'BIWEEKLY':
+      return startOfWeek(now, { weekStartsOn: 1 });
+    case 'MONTHLY':
+      return startOfMonth(now);
+    case 'QUARTERLY':
+      return startOfQuarter(now);
+    case 'YEARLY':
+      return startOfYear(now);
+    default: {
+      const d = new Date(now); d.setHours(0, 0, 0, 0); return d;
+    }
+  }
+}
+
+// ─── Period invalidation (called by step/process routes) ─────────────────────
+
+/**
+ * Delete TODO tasks in the current period for a process so the checker
+ * recreates them fresh on the next GET /api/tasks call.
+ * Called from step add/edit/delete and process mode/cadence/assignee changes.
+ */
+export async function cleanupCurrentPeriodTasks(processId: string, cadence: ProcessCadence): Promise<void> {
+  const { periodStart, dueDate: periodEnd } = getCurrentPeriodRange({ cadence, scheduledDayOfWeek: null, scheduledDayOfMonth: null });
+  await prisma.task.deleteMany({
     where: {
       processId,
       status: 'TODO',
-      dueDate: { gte: now },
+      dueDate: { gte: periodStart, lte: periodEnd },
     },
-    data: { ownerId: newOwnerId },
   });
 }

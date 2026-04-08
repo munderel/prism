@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Target, Edit3, Calendar, FileText, Star, Trophy, Eye, CheckCircle2,
   ChevronDown, ChevronRight, Plus, Save, BarChart3,
@@ -8,12 +8,14 @@ import {
 import { PeriodReviewWizard } from './PeriodReviewWizard';
 import type { Goal, HhgGroup, StepConfig } from './shared/review-types';
 import { GOAL_STATUSES, getStatusBadgeClass } from './shared/review-types';
+import { getLocalDateString } from '@/lib/date-utils';
 
 // Yearly review steps — updated 2026-03-30
 // Removed: Review Monthly Goals, Monthly KPI Progress
 // 1. HHG Assessment → 2. Current Year Overview → 3. Successes & Difficulties →
-// 4. On-Track Assessment → 5. Modify Goals → 6. Create Monthly Goals → 7. Notes
-const STEPS: StepConfig[] = [
+// 4. On-Track Assessment → 5. Modify Goals → 5a. [Process KPI Log (conditional)] →
+// 6. Create Monthly Goals → 7. Notes
+const STEPS_BASE: StepConfig[] = [
   { key: 'hhg-assessment', title: 'High Hard Goal Assessment', icon: Star },
   { key: 'current-goals', title: 'Current Year Overview', icon: Eye },
   { key: 'successes-difficulties', title: 'Successes & Difficulties', icon: Trophy },
@@ -642,6 +644,24 @@ function YearlyGoalAdjustmentStep(ctx: GoalAdjustmentContext) {
 }
 
 export function YearlyReviewWizard({ reviewId, isTeamReview }: { reviewId: string; isTeamReview?: boolean }) {
+  const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
+
+  useEffect(() => {
+    const today = getLocalDateString();
+    fetch(`/api/processes/kpis/due?period=yearly&date=${today}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setDueKpiProcesses(Array.isArray(data) ? data : []))
+      .catch(() => {}); // non-critical
+  }, []);
+
+  const steps = useMemo((): StepConfig[] => {
+    const idx = STEPS_BASE.findIndex((s) => s.key === 'goal-adjustment');
+    if (dueKpiProcesses.length === 0 || idx === -1) return STEPS_BASE;
+    const result = [...STEPS_BASE];
+    result.splice(idx + 1, 0, { key: 'process_kpi_log', title: 'Process KPI Log', icon: BarChart3 });
+    return result;
+  }, [dueKpiProcesses]);
+
   return (
     <PeriodReviewWizard
       reviewId={reviewId}
@@ -650,7 +670,8 @@ export function YearlyReviewWizard({ reviewId, isTeamReview }: { reviewId: strin
       parentGoalLevel="HIGH_HARD"
       childGoalLevel="MONTHLY"
       periodLabel="year"
-      steps={STEPS}
+      steps={steps}
+      processKpiData={dueKpiProcesses}
       stepDescriptions={STEP_DESCRIPTIONS}
       completionTitle="Yearly Review Complete!"
       completionMessage="Incredible work completing your annual review. This level of strategic reflection is what separates exceptional performers from the rest."

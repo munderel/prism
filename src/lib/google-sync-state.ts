@@ -1,3 +1,18 @@
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
+
+export function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+export function getDateKey(date: Date, timezone: string): string {
+  const zoned = toZonedTime(date, timezone);
+  return `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+}
+
+export function parseLocalDateKey(dateKey: string, timezone: string): Date {
+  return fromZonedTime(`${dateKey}T00:00:00`, timezone);
+}
+
 export interface GoogleEventOverride {
   googleEventId?: string;
   start: string;

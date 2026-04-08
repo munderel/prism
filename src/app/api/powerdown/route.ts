@@ -4,21 +4,39 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { pickDefined, safeParseJson } from '@/lib/api-helpers';
 import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
+import { parseLocalDateKey } from '@/lib/google-sync-state';
 import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
-import { fromZonedTime } from 'date-fns-tz';
+import { startOfToday } from '@/lib/date-utils';
 
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
+type PowerdownSession = Awaited<ReturnType<typeof prisma.powerdownSession.findUnique>>;
+
+async function syncPowerdownToGcal(userId: string, session: NonNullable<PowerdownSession>, context: string) {
+  if (!session.timeBlockStart || !session.timeBlockEnd) return;
+  try {
+    if (session.calendarEventId) {
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(userId);
+      if (!hasGoogle) return;
+      await updateGoogleEvent(userId, session.calendarEventId, {
+        start: session.timeBlockStart.toISOString(),
+        end: session.timeBlockEnd.toISOString(),
+      }, targetCalendarId);
+      return;
+    }
+    await syncManagedSeriesOverride({
+      userId,
+      date: session.sessionDate,
+      start: session.timeBlockStart,
+      end: session.timeBlockEnd,
+      selector: (state) => state.powerdown,
+      writer: (state, series) => { state.powerdown = series; },
+    });
+  } catch (err) {
+    console.warn(`[powerdown] Google Calendar sync failed for user=${userId} ${context}:`, err);
+  }
 }
 
 function toDateOrNull(value: string | null | undefined): Date | null {
   return value ? new Date(value) : null;
-}
-
-function parseLocalDateKey(dateKey: string, timezone: string): Date {
-  return fromZonedTime(`${dateKey}T00:00:00`, timezone);
 }
 
 export async function GET(request: NextRequest) {
@@ -131,31 +149,7 @@ export async function PATCH(request: NextRequest) {
     const updated = await prisma.powerdownSession.update({ where: { id: session.id }, data: updateData });
 
     // Google Calendar sync — keep legacy one-off events working, but prefer recurring-series exceptions.
-    if (updated.timeBlockStart && updated.timeBlockEnd) {
-      const syncToGcal = async () => {
-        if (updated.calendarEventId) {
-          const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
-          if (!hasGoogle) return;
-          await updateGoogleEvent(auth.userId, updated.calendarEventId, {
-            start: updated.timeBlockStart!.toISOString(),
-            end: updated.timeBlockEnd!.toISOString(),
-          }, targetCalendarId);
-          return;
-        }
-
-        await syncManagedSeriesOverride({
-          userId: auth.userId,
-          date: updated.sessionDate,
-          start: updated.timeBlockStart!,
-          end: updated.timeBlockEnd!,
-          selector: (state) => state.powerdown,
-          writer: (state, series) => {
-            state.powerdown = series;
-          },
-        });
-      };
-      try { await syncToGcal(); } catch (err) { console.warn(`[powerdown] Google Calendar sync failed for user=${auth.userId} sessionDate=${body.sessionDate}:`, err); }
-    }
+    await syncPowerdownToGcal(auth.userId, updated, `sessionDate=${body.sessionDate}`);
 
     return Response.json(updated);
   }
@@ -172,39 +166,15 @@ export async function PATCH(request: NextRequest) {
   const data: Record<string, unknown> = pickDefined(body, SESSION_UPDATABLE_FIELDS);
   if (body.complete && !session.completedAt) data.completedAt = new Date();
   if (body.complete && !session.completedAt) {
-    updateSpecificStreak(auth.userId, 'powerdown').catch(() => {});
-    updateDailyStreak(auth.userId, 'powerdown').catch(() => {});
+    updateSpecificStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] update failed:', err));
+    updateDailyStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] update failed:', err));
   }
   if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
 
   const updated = await prisma.powerdownSession.update({ where: { id: body.sessionId }, data });
 
-  if (updated.timeBlockStart && updated.timeBlockEnd) {
-    const syncToGcal = async () => {
-      if (updated.calendarEventId) {
-        const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
-        if (!hasGoogle) return;
-        await updateGoogleEvent(auth.userId, updated.calendarEventId, {
-          start: updated.timeBlockStart!.toISOString(),
-          end: updated.timeBlockEnd!.toISOString(),
-        }, targetCalendarId);
-        return;
-      }
-
-      await syncManagedSeriesOverride({
-        userId: auth.userId,
-        date: updated.sessionDate,
-        start: updated.timeBlockStart!,
-        end: updated.timeBlockEnd!,
-        selector: (state) => state.powerdown,
-        writer: (state, series) => {
-          state.powerdown = series;
-        },
-      });
-    };
-    try { await syncToGcal(); } catch (err) { console.warn(`[powerdown] Google Calendar sync failed for user=${auth.userId} sessionId=${body.sessionId}:`, err); }
-  }
+  await syncPowerdownToGcal(auth.userId, updated, `sessionId=${body.sessionId}`);
 
   return Response.json(updated);
 }

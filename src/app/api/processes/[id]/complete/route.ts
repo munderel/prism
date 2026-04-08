@@ -78,8 +78,8 @@ export async function POST(
       });
 
       // Update streak (fire-and-forget)
-      updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch(() => {});
-      updateDailyStreak(auth.userId, 'processes').catch(() => {});
+      updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) => console.warn('[streak] update failed:', err));
+      updateDailyStreak(auth.userId, 'processes').catch((err) => console.warn('[streak] update failed:', err));
 
       return Response.json({ execution: updated, completed: true }, NO_STORE);
     }
@@ -102,8 +102,8 @@ export async function POST(
   });
 
   // Update streak (fire-and-forget)
-  updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch(() => {});
-  updateDailyStreak(auth.userId, 'processes').catch(() => {});
+  updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) => console.warn('[streak] update failed:', err));
+  updateDailyStreak(auth.userId, 'processes').catch((err) => console.warn('[streak] update failed:', err));
 
   return Response.json({ execution, completed: true }, { status: 201, ...NO_STORE });
 }

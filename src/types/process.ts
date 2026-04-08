@@ -18,6 +18,7 @@ export interface ProcessData {
   scheduledDayOfWeek: number | null;
   scheduledDayOfMonth: number | null;
   scheduleStartDate: string | null;
+  durationEndDate: string | null;
   nextDueAt: string | null;
   assigneeId: string | null;
   delegateId: string | null;
@@ -51,7 +52,7 @@ export interface ProcessFormValues {
   scheduledDayOfMonth: number;
   scheduleStartDate: string;
   mode: 'BASIC' | 'ADVANCED';
-  subtaskMode: 'PAIRED' | 'UNPAIRED';
+  durationEndDate: string | null;
 }
 
 export const INITIAL_PROCESS_FORM: ProcessFormValues = {
@@ -65,5 +66,5 @@ export const INITIAL_PROCESS_FORM: ProcessFormValues = {
   scheduledDayOfMonth: 1,
   scheduleStartDate: '',
   mode: 'BASIC',
-  subtaskMode: 'PAIRED',
+  durationEndDate: null,
 };

@@ -15,6 +15,22 @@ import { expandVariants } from '@/lib/process-animations';
 import type { ProcessFormValues, UserOption } from '@/types/process';
 import { INITIAL_PROCESS_FORM } from '@/types/process';
 
+const DURATION_PRESETS = [
+  { label: 'Indefinite', weeks: null },
+  { label: '8 weeks', weeks: 8 },
+  { label: '3 months', weeks: 13 },
+  { label: '6 months', weeks: 26 },
+  { label: '1 year', weeks: 52 },
+  { label: '2 years', weeks: 104 },
+] as const;
+
+function computeDurationEndDate(weeks: number | null): string | null {
+  if (weeks === null) return null;
+  const d = new Date();
+  d.setDate(d.getDate() + weeks * 7);
+  return d.toISOString();
+}
+
 interface ProcessFormProps {
   mode: 'create' | 'edit';
   initialValues?: Partial<ProcessFormValues>;
@@ -40,6 +56,15 @@ export function ProcessForm({
     mode === 'edit' || form.mode === 'ADVANCED'
   );
   const [submitting, setSubmitting] = useState(false);
+  const [durationPreset, setDurationPreset] = useState<string>(() => {
+    if (!initialValues?.durationEndDate) return 'Indefinite';
+    const msRemaining = new Date(initialValues.durationEndDate).getTime() - Date.now();
+    const weeksRemaining = Math.round(msRemaining / (7 * 24 * 60 * 60 * 1000));
+    const match = DURATION_PRESETS.find(
+      (p) => p.weeks !== null && Math.abs(p.weeks - weeksRemaining) <= 1
+    );
+    return match ? match.label : 'Indefinite';
+  });
 
   const updateField = <K extends keyof ProcessFormValues>(
     field: K,
@@ -197,44 +222,39 @@ export function ProcessForm({
                     <p className="text-[10px] text-[var(--text-muted)] mt-1">
                       {form.mode === 'BASIC'
                         ? 'Shows on calendar as a reminder. Mark complete to track streaks.'
-                        : 'Pre-creates tasks with subtasks for multiple periods ahead.'}
+                        : 'Creates independent tasks from process steps each period.'}
                     </p>
                   </div>
 
-                  {/* Subtask mode (ADVANCED only) */}
+                  {/* Process Duration (ADVANCED only) */}
                   {form.mode === 'ADVANCED' && (
                     <div>
                       <label className="block text-xs text-[var(--text-secondary)] mb-1">
-                        Subtask Mode
+                        Process Duration
                       </label>
-                      <div className="flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => updateField('subtaskMode', 'PAIRED')}
-                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                            form.subtaskMode === 'PAIRED'
-                              ? 'bg-indigo-600 text-white border border-indigo-600'
-                              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                          }`}
-                        >
-                          Paired (Checklist)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateField('subtaskMode', 'UNPAIRED')}
-                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                            form.subtaskMode === 'UNPAIRED'
-                              ? 'bg-indigo-600 text-white border border-indigo-600'
-                              : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                          }`}
-                        >
-                          Unpaired (Separate)
-                        </button>
+                      <div className="flex flex-wrap gap-1.5">
+                        {DURATION_PRESETS.map((preset) => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => {
+                              setDurationPreset(preset.label);
+                              updateField('durationEndDate', computeDurationEndDate(preset.weeks));
+                            }}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                              durationPreset === preset.label
+                                ? 'bg-blue-600 text-white border border-blue-600'
+                                : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
                       </div>
                       <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                        {form.subtaskMode === 'PAIRED'
-                          ? 'Steps appear as a checklist inside each task.'
-                          : 'Steps become independent tasks, schedulable separately.'}
+                        {durationPreset === 'Indefinite'
+                          ? 'Tasks generated every period with no end date.'
+                          : `Tasks generated until ${new Date(form.durationEndDate ?? '').toLocaleDateString()}.`}
                       </p>
                     </div>
                   )}

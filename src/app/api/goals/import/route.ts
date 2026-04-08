@@ -213,16 +213,12 @@ export async function POST(request: NextRequest) {
   }
 
   // KPI updates on existing goals (add/modify/remove based on kpiChanges)
+  const goalMeta = new Map(currentDbGoals.map((g) => [g.id, { level: g.level, parentId: g.parentId }]));
   const touchedMonthlyKpiIds = new Set<string>();
   for (const entry of diff.kpiChanges) {
     if (!entry.goalId) continue;
 
-    // We need the goal's level to decide whether added KPIs are weekly (need linked_to resolution)
-    // or parent-level. Fetch parent goal once for linked_to lookups.
-    const goal = await prisma.goal.findUnique({
-      where: { id: entry.goalId },
-      select: { level: true, parentId: true },
-    });
+    const goal = goalMeta.get(entry.goalId);
     if (!goal) continue;
     const isParentLevel = ['STRATEGIC', 'MONTHLY'].includes(goal.level);
 
@@ -340,9 +336,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Recalculate any monthly KPIs affected by KPI updates
-  for (const mkId of Array.from(touchedMonthlyKpiIds)) {
-    await cascadeKpiUpdate(mkId);
-  }
+  await Promise.all(Array.from(touchedMonthlyKpiIds).map((mkId) => cascadeKpiUpdate(mkId)));
 
   // Create ConfigVersion
   const maxVersion = await prisma.configVersion.findFirst({
@@ -370,9 +364,7 @@ export async function POST(request: NextRequest) {
     },
     select: { id: true },
   });
-  for (const leaf of leafGoals) {
-    await cascadeProgressUp(leaf.id);
-  }
+  await Promise.all(leafGoals.map((leaf) => cascadeProgressUp(leaf.id)));
 
   return Response.json({ ok: true, diff });
 }

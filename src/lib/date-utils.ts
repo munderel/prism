@@ -83,6 +83,15 @@ export function formatDisplayDate(
   return d.toLocaleDateString('en-US', fmt);
 }
 
+/**
+ * Returns a Date representing the start of today (midnight local time).
+ */
+export function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 // ─── Date boundary helpers ────────────────────────────────────────────────────
 
 export interface DateBoundary {

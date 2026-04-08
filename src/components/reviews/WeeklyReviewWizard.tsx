@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import { getLocalDateString } from '@/lib/date-utils';
+import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 import { StepCurrentGoals } from './weekly-steps/StepCurrentGoals';
 import { StepReviewTasks } from './weekly-steps/StepReviewTasks';
 import { StepTop3Tasks } from './weekly-steps/StepTop3Tasks';
@@ -30,11 +31,11 @@ const CalendarSplitView = dynamic(
 );
 
 // Step definitions — reordered per Prism overhaul spec (2026-03-28)
-// 1. Current Goals → 2. Review Tasks (successes captured) → 3. KPI Progress →
-// 4. Successes & Difficulties → 5. Create/Adjust Weekly Goals →
-// 6. Create/Modify Tasks → 7. Rank Top 3 → 8. Calendar: Work Blocks →
-// 9. Calendar: Tasks into Blocks → 10. Maintenance → 11. Notes
-const STEPS = [
+// 1. Current Goals → 2. Review Tasks → 3. KPI Progress →
+// 3a. [Process KPI Log (conditional)] → 4. Successes & Difficulties → ...
+// The process_kpi_log step is inserted dynamically after kpi_progress
+// if processes with KPIs are due/scheduled this week.
+const STEPS_BASE = [
   { key: 'current_goals',     title: 'Current Goals',                       icon: Target,         description: 'Review your current weekly and monthly goals grouped by hierarchy.' },
   { key: 'review_tasks',      title: 'Review Previous Tasks',               icon: ListTodo,       description: 'Check off completed tasks. Incomplete tasks carry forward. Capture successes.' },
   { key: 'kpi_progress',      title: 'KPI Progress',                        icon: BarChart3,      description: 'Update weekly KPI actuals and review goal progress.' },
@@ -46,9 +47,7 @@ const STEPS = [
   { key: 'schedule_tasks',    title: 'Calendar: Tasks into Blocks',         icon: CalendarClock,  description: 'Drag tasks and AIMs into your work blocks.' },
   { key: 'maintenance',       title: 'Maintenance Review',                  icon: Wrench,         description: 'Keep, automate, or eliminate maintenance tasks.' },
   { key: 'notes_completion',  title: 'Notes & Completion',                  icon: FileText,       description: 'Add final notes and complete the review.' },
-] as const;
-
-const TOTAL_STEPS = STEPS.length;
+];
 
 interface WorkBlock {
   id: string;
@@ -75,6 +74,24 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const toast = useToast();
   const { mutate } = useSWRConfig();
   // URL step param is 1-based for user-friendliness; internal state is 0-based
+  // Processes with KPIs due this week (WEEKLY + BIWEEKLY cadences)
+  const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
+
+  // Dynamic STEPS — inserts process_kpi_log after kpi_progress when eligible processes exist
+  const STEPS = useMemo(() => {
+    const kpiStepIdx = STEPS_BASE.findIndex((s) => s.key === 'kpi_progress');
+    if (dueKpiProcesses.length === 0 || kpiStepIdx === -1) return STEPS_BASE;
+    const result = [...STEPS_BASE];
+    result.splice(kpiStepIdx + 1, 0, {
+      key: 'process_kpi_log',
+      title: 'Process KPI Log',
+      icon: BarChart3,
+      description: 'Log KPI progress for weekly and biweekly processes due this week.',
+    });
+    return result;
+  }, [dueKpiProcesses]);
+
+  const TOTAL_STEPS = STEPS.length;
   const urlStep = searchParams.get('step');
   const initialStep = urlStep ? Math.max(0, Math.min(parseInt(urlStep, 10) - 1, TOTAL_STEPS - 1)) : 0;
   const [currentStep, setCurrentStep] = useState(initialStep);
@@ -234,6 +251,14 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     fetchReviewAndAnswers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewId]);
+
+  useEffect(() => {
+    const today = getLocalDateString();
+    fetch(`/api/processes/kpis/due?period=weekly&date=${today}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setDueKpiProcesses(Array.isArray(data) ? data : []))
+      .catch(() => {}); // non-critical
+  }, []);
 
   const fetchReviewAndAnswers = async () => {
     try {
@@ -607,6 +632,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 onNotesChange={setKpiNotes}
                 isTeamReview={isTeamReview}
               />
+            )}
+            {step.key === 'process_kpi_log' && (
+              <ProcessKpiLogStep processes={dueKpiProcesses} date={getLocalDateString()} />
             )}
             {step.key === 'successes_difficulties' && (
               <SuccessesAndDifficultiesStep

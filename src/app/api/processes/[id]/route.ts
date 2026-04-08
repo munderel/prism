@@ -2,13 +2,9 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
-import { regenerateAdvancedModeTasks, updateFutureTaskOwners } from '@/lib/process-task-generator';
+import { cleanupCurrentPeriodTasks } from '@/lib/process-task-generator';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
-import { fromZonedTime } from 'date-fns-tz';
-
-function parseLocalDateKey(dateKey: string, timezone: string): Date {
-  return fromZonedTime(`${dateKey}T00:00:00`, timezone);
-}
+import { parseLocalDateKey } from '@/lib/google-sync-state';
 
 export async function GET(
   _request: NextRequest,
@@ -145,7 +141,8 @@ export async function PATCH(
       ...(scheduledDayOfWeek !== undefined && { scheduledDayOfWeek: scheduledDayOfWeek ?? null }),
       ...(scheduledDayOfMonth !== undefined && { scheduledDayOfMonth: scheduledDayOfMonth ?? null }),
       // Admin-only fields
-      ...(isAdmin && pickDefined(body, ['title', 'description', 'cadence', 'cadenceRule', 'defaultDurationMinutes', 'mode', 'subtaskMode'])),
+      ...(isAdmin && pickDefined(body, ['title', 'description', 'cadence', 'cadenceRule', 'defaultDurationMinutes', 'mode'])),
+      ...(isAdmin && body.durationEndDate !== undefined && { durationEndDate: body.durationEndDate ? new Date(body.durationEndDate) : null }),
       ...(isAdmin && body.assigneeId !== undefined && { assigneeId: body.assigneeId || null }),
       ...(isAdmin && body.scheduleStartDate !== undefined && {
         scheduleStartDate: body.scheduleStartDate ? new Date(body.scheduleStartDate) : null,
@@ -153,25 +150,16 @@ export async function PATCH(
     },
   });
 
-  // Handle ADVANCED mode task regeneration
+  // On significant changes, invalidate current-period TODO tasks so checker recreates them fresh
   if (isAdmin && updated.mode === 'ADVANCED') {
-    const modeChanged = newMode !== undefined && newMode !== process.mode;
-    const cadenceChanged = body.cadence !== undefined && body.cadence !== process.cadence;
-    const subtaskModeChanged = body.subtaskMode !== undefined && body.subtaskMode !== process.subtaskMode;
-    const forceRegenerate = body.regenerate === true;
-    const startDateChanged = body.scheduleStartDate !== undefined;
+    const significantChange =
+      (newMode !== undefined && newMode !== process.mode) ||
+      (body.cadence !== undefined && body.cadence !== process.cadence) ||
+      (body.assigneeId !== undefined && body.assigneeId !== process.assigneeId) ||
+      body.regenerate === true;
 
-    if (modeChanged || cadenceChanged || subtaskModeChanged || forceRegenerate || startDateChanged) {
-      regenerateAdvancedModeTasks(id).catch((err) => {
-        console.error('[process-update] Failed to regenerate tasks:', err);
-      });
-    }
-
-    // Handle assignee change: update future task owners
-    if (body.assigneeId !== undefined && body.assigneeId !== process.assigneeId && body.assigneeId) {
-      updateFutureTaskOwners(id, body.assigneeId).catch((err) => {
-        console.error('[process-update] Failed to update task owners:', err);
-      });
+    if (significantChange) {
+      await cleanupCurrentPeriodTasks(id, updated.cadence);
     }
   }
 

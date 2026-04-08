@@ -318,7 +318,7 @@ export default function CalendarPage() {
         draggableRef.current = null;
       }
     };
-  }, [allUnscheduledItems, isMobile, deepWorkDuration]); // Re-init when any items change
+  }, [isMobile]); // Only re-init when layout changes (Draggable uses CSS selector, reads data-* at drag time)
 
   const handleEventClick = (info: any) => {
     const eventData = info.event.extendedProps;
