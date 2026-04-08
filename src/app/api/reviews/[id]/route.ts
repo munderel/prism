@@ -57,8 +57,8 @@ export async function PATCH(
   if (body.complete) data.completedAt = new Date();
 
   if (body.complete && !review.completedAt) {
-    updateSpecificStreak(auth.userId, 'review').catch(() => {});
-    updateDailyStreak(auth.userId, 'reviews').catch(() => {});
+    updateSpecificStreak(auth.userId, 'reviews').catch((err) => console.warn('[streak] update failed:', err));
+    updateDailyStreak(auth.userId, 'reviews').catch((err) => console.warn('[streak] update failed:', err));
   }
 
   const updated = await prisma.review.update({ where: { id }, data });

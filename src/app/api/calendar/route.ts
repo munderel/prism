@@ -216,7 +216,7 @@ export async function GET(request: NextRequest) {
   let googleError: string | undefined;
 
   // Run independent queries in parallel
-  const [tasks, reviews, meetings, googleEvents, pdSessions, aimInstances] = await Promise.all([
+  const [tasks, reviews, meetings, googleEvents, pdSessions, aimInstances, teamReviews, calendarProcesses] = await Promise.all([
     (fetchAll || source === 'tasks')
       ? prisma.task.findMany({
           where: {
@@ -292,6 +292,37 @@ export async function GET(request: NextRequest) {
           include: { aimCategory: true, tasks: { select: { id: true, title: true, status: true } } },
         })
       : Promise.resolve([]),
+    // Team reviews — independent of other queries, fetched in parallel
+    (fetchAll || fetchExternal || source === 'reviews')
+      ? prisma.recurringTeamReview.findMany({
+          where: {
+            isActive: true,
+            members: { some: { userId: auth.userId } },
+          },
+          include: { members: { select: { userId: true } } },
+        })
+      : Promise.resolve([]),
+    // Processes — independent of other queries, fetched in parallel
+    prisma.process.findMany({
+      where: {
+        scheduledTime: { not: null },
+        OR: [
+          { assigneeId: auth.userId },
+          { delegateId: auth.userId },
+          { assigneeId: null },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        cadence: true,
+        mode: true,
+        scheduledTime: true,
+        scheduledDayOfWeek: true,
+        scheduledDayOfMonth: true,
+        defaultDurationMinutes: true,
+      },
+    }),
   ]);
 
   // Detect "not connected" — Google was requested but returned empty without error
@@ -607,14 +638,6 @@ export async function GET(request: NextRequest) {
 
   // Generate team review events (only for members of each team review)
   if (fetchAll || fetchExternal || source === 'reviews') {
-    const teamReviews = await prisma.recurringTeamReview.findMany({
-      where: {
-        isActive: true,
-        members: { some: { userId: auth.userId } },
-      },
-      include: { members: { select: { userId: true } } },
-    });
-
     for (const tr of teamReviews) {
       const [trH, trM] = tr.time.split(':').map(Number);
       const matchFn = (cursor: Date): boolean => {
@@ -646,27 +669,6 @@ export async function GET(request: NextRequest) {
   }
 
   // Generate recurring process events
-  const calendarProcesses = await prisma.process.findMany({
-    where: {
-      scheduledTime: { not: null },
-      OR: [
-        { assigneeId: auth.userId },
-        { delegateId: auth.userId },
-        { assigneeId: null },
-      ],
-    },
-    select: {
-      id: true,
-      title: true,
-      cadence: true,
-      mode: true,
-      scheduledTime: true,
-      scheduledDayOfWeek: true,
-      scheduledDayOfMonth: true,
-      defaultDurationMinutes: true,
-    },
-  });
-
   if (calendarProcesses.length > 0) {
     const processIds = calendarProcesses.map(p => p.id);
     const processExecutions = await prisma.processExecution.findMany({

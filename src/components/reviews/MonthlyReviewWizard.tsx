@@ -1,17 +1,19 @@
 'use client';
 
+import { useState, useEffect, useMemo } from 'react';
 import {
-  Target, TrendingUp, CheckCircle2, Edit3, Calendar, FileText, Eye, Trophy,
+  Target, TrendingUp, CheckCircle2, Edit3, Calendar, FileText, Eye, Trophy, BarChart3,
 } from 'lucide-react';
 import { PeriodReviewWizard } from './PeriodReviewWizard';
 import type { Goal, StepConfig } from './shared/review-types';
+import { getLocalDateString } from '@/lib/date-utils';
 
 // Monthly review steps — reordered per Prism overhaul spec (2026-03-28)
 // 1. Big Picture (HHG + yearly) → 2. Current Monthly Goals (expandable to weekly) →
 // 3. Review Weekly Goals → 4. Successes & Difficulties → 5. Weekly KPI Progress →
-// 6. On-Track Assessment → 7. Modify Goals (reorder weekly) →
+// 5a. [Process KPI Log (conditional)] → 6. On-Track Assessment → 7. Modify Goals →
 // 8. Create Weekly Goals (with coach) → 9. Notes
-const STEPS: StepConfig[] = [
+const STEPS_BASE: StepConfig[] = [
   { key: 'big-picture', title: 'Big Picture', icon: Eye },
   { key: 'current-goals', title: 'Current Monthly Goals', icon: Target },
   { key: 'review-weekly', title: 'Review Weekly Goals', icon: TrendingUp },
@@ -36,15 +38,34 @@ const STEP_DESCRIPTIONS: Record<string, string> = {
 };
 
 export function MonthlyReviewWizard({ reviewId, isTeamReview }: { reviewId: string; isTeamReview?: boolean }) {
+  const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
+
+  useEffect(() => {
+    const today = getLocalDateString();
+    fetch(`/api/processes/kpis/due?period=monthly&date=${today}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setDueKpiProcesses(Array.isArray(data) ? data : []))
+      .catch(() => {}); // non-critical
+  }, []);
+
+  const steps = useMemo((): StepConfig[] => {
+    const idx = STEPS_BASE.findIndex((s) => s.key === 'kpi-progress');
+    if (dueKpiProcesses.length === 0 || idx === -1) return STEPS_BASE;
+    const result = [...STEPS_BASE];
+    result.splice(idx + 1, 0, { key: 'process_kpi_log', title: 'Process KPI Log', icon: BarChart3 });
+    return result;
+  }, [dueKpiProcesses]);
+
   return (
     <PeriodReviewWizard
       reviewId={reviewId}
       isTeamReview={isTeamReview}
+      steps={steps}
+      processKpiData={dueKpiProcesses}
       goalLevel="MONTHLY"
       parentGoalLevel="STRATEGIC"
       childGoalLevel="WEEKLY"
       periodLabel="month"
-      steps={STEPS}
       stepDescriptions={STEP_DESCRIPTIONS}
       completionTitle="Monthly Review Complete!"
       completionMessage="Great work reflecting on your monthly progress. Keep pushing toward your goals."

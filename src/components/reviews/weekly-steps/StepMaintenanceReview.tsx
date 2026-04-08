@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Settings, Zap, Trash2, Check, Wrench } from 'lucide-react';
+import { getWeekBoundaries } from '@/lib/date-utils';
 
 interface Task {
   id: string;
@@ -46,7 +47,14 @@ export function StepMaintenanceReview({ reviewId: _reviewId, initialDecisions, o
   const fetchMaintenanceTasks = async () => {
     try {
       const scopeParam = isTeamReview ? '&scope=company' : '';
-      const res = await fetch(`/api/tasks?taskType=MAINTENANCE&status=TODO${scopeParam}`);
+      // Limit to tasks due this week or overdue — exclude future-week tasks.
+      // The API needs startDate+endDate together; use a far-past startDate to include all overdue tasks.
+      // endDate is exclusive, so +1 day from Sunday captures the full week.
+      const { end: weekEnd } = getWeekBoundaries();
+      const weekEndDate = new Date(weekEnd);
+      weekEndDate.setDate(weekEndDate.getDate() + 1);
+      const endDateParam = weekEndDate.toISOString().split('T')[0];
+      const res = await fetch(`/api/tasks?taskType=MAINTENANCE&status=TODO&startDate=2000-01-01&endDate=${endDateParam}${scopeParam}`);
       if (res.ok) {
         const data = await res.json();
         setTasks(data);

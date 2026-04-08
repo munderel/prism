@@ -231,7 +231,7 @@ export default function ProcessesPage() {
         scheduledDayOfMonth: cadenceNeedsDayOfMonth(values.cadence) ? values.scheduledDayOfMonth : null,
         scheduleStartDate: values.scheduleStartDate || null,
         mode: values.mode,
-        subtaskMode: values.subtaskMode,
+        durationEndDate: values.durationEndDate || null,
       }),
     });
     if (res.ok) {
@@ -258,7 +258,7 @@ export default function ProcessesPage() {
         scheduledDayOfMonth: cadenceNeedsDayOfMonth(values.cadence) ? values.scheduledDayOfMonth : null,
         scheduleStartDate: values.scheduleStartDate || null,
         mode: values.mode,
-        subtaskMode: values.subtaskMode,
+        durationEndDate: values.durationEndDate || null,
       }),
     });
     if (res.ok) {
@@ -889,7 +889,7 @@ export default function ProcessesPage() {
                                         ? new Date(proc.scheduleStartDate).toISOString().split('T')[0]
                                         : '',
                                       mode: proc.mode || 'BASIC',
-                                      subtaskMode: proc.subtaskMode || 'PAIRED',
+                                      durationEndDate: proc.durationEndDate || null,
                                     });
                                   }}
                                   className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors"

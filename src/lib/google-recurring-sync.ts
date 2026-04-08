@@ -1,20 +1,14 @@
 import { Prisma } from '@prisma/client';
-import { fromZonedTime, toZonedTime } from 'date-fns-tz';
+import { fromZonedTime } from 'date-fns-tz';
 import { getCalendarClient } from '@/lib/calendar';
 import { prisma } from '@/lib/prisma';
 import {
   cloneGoogleSyncState,
   parseGoogleSyncState,
+  getDateKey,
   type GoogleSyncState,
   type ManagedRecurringSeriesState,
 } from '@/lib/google-sync-state';
-
-const pad2 = (n: number) => String(n).padStart(2, '0');
-
-function getDateKey(date: Date, timezone: string) {
-  const zoned = toZonedTime(date, timezone);
-  return `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-}
 
 function buildDateRange(dateKey: string, timezone: string) {
   const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);

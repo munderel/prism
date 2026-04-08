@@ -7,6 +7,8 @@ import { ChevronRight, ChevronLeft, PartyPopper, Target, Plus, Star } from 'luci
 import { useToast } from '@/components/ui/ToastProvider';
 
 import type { Goal, Kpi, ReviewAnswer, StepConfig, HhgGroup } from './shared/review-types';
+import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
+import { getLocalDateString } from '@/lib/date-utils';
 import { getStatusBadgeClass } from './shared/review-types';
 import { DifficultiesStep } from './shared/DifficultiesStep';
 import { KpiProgressStep } from './shared/KpiProgressStep';
@@ -258,6 +260,8 @@ export interface PeriodReviewConfig {
   periodLabel: string;
   /** Steps that define the wizard flow */
   steps: StepConfig[];
+  /** Processes with KPIs due in this review period, for the conditional process_kpi_log step */
+  processKpiData?: Array<{ process: any; kpis: any[] }>;
   /** Step descriptions keyed by step key */
   stepDescriptions: Record<string, string>;
   /** Completion message */
@@ -658,6 +662,7 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
     findNextPeriodParent,
     renderGoalAdjustment,
     isTeamReview,
+    processKpiData = [],
   } = config;
 
   const router = useRouter();
@@ -1149,6 +1154,9 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
                 onUpdate={updateKpiActual}
                 emptyMessage={kpiEmptyMessage}
               />
+            )}
+            {step.key === 'process_kpi_log' && (
+              <ProcessKpiLogStep processes={processKpiData} date={getLocalDateString()} />
             )}
             {step.key === 'on-track' && (
               <OnTrackStep

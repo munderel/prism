@@ -6,6 +6,7 @@ import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star, ListChecks } fr
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
 import { isTaskOverdue, subtaskDoneCount } from '@/lib/task-utils';
 import { StatusChip } from './StatusChip';
+import { ClearGoalsDisplay } from './ClearGoalsDisplay';
 
 interface TaskCardProps {
   task: any;
@@ -152,6 +153,9 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
+      </div>
+      <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 -mt-1">
+        <ClearGoalsDisplay taskId={task.id} editable={false} compact />
       </div>
     </m.div>
   );

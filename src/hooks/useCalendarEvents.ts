@@ -20,7 +20,7 @@ export function useCalendarEvents(
 ): CalendarEventsResult {
   const key =
     start && end ? `/api/calendar?start=${start}&end=${end}&source=all` : null;
-  const { data, error, mutate } = useSWR(key);
+  const { data, error, mutate } = useSWR(key, { revalidateOnFocus: false });
 
   // Handle both old (array) and new (object) response shapes
   const events = Array.isArray(data) ? data : (data?.events ?? []);

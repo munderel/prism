@@ -18,6 +18,9 @@ import { getCompletionUrl, getAimCompletionUrl, getBaseUrl } from '@/lib/complet
 import {
   cloneGoogleSyncState,
   parseGoogleSyncState,
+  pad2,
+  getDateKey,
+  parseLocalDateKey,
   type GoogleSyncState,
   type ManagedRecurringSeriesState,
 } from '@/lib/google-sync-state';
@@ -25,7 +28,6 @@ import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 const MAX_DAYS = 366;
-const pad2 = (n: number) => String(n).padStart(2, '0');
 
 type GoogleEventLike = {
   id?: string | null;
@@ -60,8 +62,7 @@ function getEventEndString(event: GoogleEventLike) {
 function getOriginalDateKey(event: GoogleEventLike, timezone: string) {
   const raw = event.originalStartTime?.dateTime ?? event.originalStartTime?.date ?? getEventStartString(event);
   if (!raw) return null;
-  const zoned = toZonedTime(new Date(raw), timezone);
-  return `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
+  return getDateKey(new Date(raw), timezone);
 }
 
 function hasTimeDrifted(startA: string, endA: string, startB: string, endB: string) {
@@ -174,8 +175,8 @@ async function applyReviewOverridesToPrism(
 
   // Apply overrides (moved instances) back to Review records
   if (series.overrides) {
-    for (const [dateKey, override] of Object.entries(series.overrides)) {
-      const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);
+    await Promise.all(Object.entries(series.overrides).map(async ([dateKey, override]) => {
+      const dayStart = parseLocalDateKey(dateKey, timezone);
       const dayEnd = new Date(dayStart.getTime() + 86400000);
 
       const review = await prisma.review.findFirst({
@@ -188,13 +189,13 @@ async function applyReviewOverridesToPrism(
         select: { id: true, updatedAt: true, timeBlockStart: true, timeBlockEnd: true },
       });
 
-      if (!review) continue;
+      if (!review) return;
 
       const googleUpdatedAt = override.updatedAt ? new Date(override.updatedAt) : null;
       const prismUpdatedAt = review.updatedAt;
 
       // Last-write-wins: only apply Google's change if it's newer
-      if (googleUpdatedAt && prismUpdatedAt && googleUpdatedAt <= prismUpdatedAt) continue;
+      if (googleUpdatedAt && prismUpdatedAt && googleUpdatedAt <= prismUpdatedAt) return;
 
       const newStart = new Date(override.start);
       const newEnd = new Date(override.end);
@@ -209,20 +210,20 @@ async function applyReviewOverridesToPrism(
           override.start,
           override.end,
         )
-      ) continue;
+      ) return;
 
       await prisma.review.update({
         where: { id: review.id },
         data: { timeBlockStart: newStart, timeBlockEnd: newEnd },
       });
       updates.push(`Pulled ${reviewType.toLowerCase()} review time change from Google (${dateKey})`);
-    }
+    }));
   }
 
   // Apply cancellations back to Review records
   if (series.cancelledDates) {
-    for (const dateKey of series.cancelledDates) {
-      const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);
+    await Promise.all(series.cancelledDates.map(async (dateKey) => {
+      const dayStart = parseLocalDateKey(dateKey, timezone);
       const dayEnd = new Date(dayStart.getTime() + 86400000);
 
       const review = await prisma.review.findFirst({
@@ -239,14 +240,14 @@ async function applyReviewOverridesToPrism(
         select: { id: true },
       });
 
-      if (!review) continue;
+      if (!review) return;
 
       await prisma.review.update({
         where: { id: review.id },
         data: { timeBlockStart: null, timeBlockEnd: null },
       });
       updates.push(`Cleared ${reviewType.toLowerCase()} review time block from Google cancellation (${dateKey})`);
-    }
+    }));
   }
 }
 
@@ -260,8 +261,8 @@ async function applyPowerdownOverridesToPrism(
 
   // Apply overrides (moved instances) back to PowerdownSession records
   if (series.overrides) {
-    for (const [dateKey, override] of Object.entries(series.overrides)) {
-      const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);
+    await Promise.all(Object.entries(series.overrides).map(async ([dateKey, override]) => {
+      const dayStart = parseLocalDateKey(dateKey, timezone);
       const dayEnd = new Date(dayStart.getTime() + 86400000);
 
       const session = await prisma.powerdownSession.findFirst({
@@ -272,13 +273,13 @@ async function applyPowerdownOverridesToPrism(
         select: { id: true, updatedAt: true, timeBlockStart: true, timeBlockEnd: true },
       });
 
-      if (!session) continue;
+      if (!session) return;
 
       const googleUpdatedAt = override.updatedAt ? new Date(override.updatedAt) : null;
       const prismUpdatedAt = session.updatedAt;
 
       // Last-write-wins: only apply Google's change if it's newer
-      if (googleUpdatedAt && prismUpdatedAt && googleUpdatedAt <= prismUpdatedAt) continue;
+      if (googleUpdatedAt && prismUpdatedAt && googleUpdatedAt <= prismUpdatedAt) return;
 
       const newStart = new Date(override.start);
       const newEnd = new Date(override.end);
@@ -293,20 +294,20 @@ async function applyPowerdownOverridesToPrism(
           override.start,
           override.end,
         )
-      ) continue;
+      ) return;
 
       await prisma.powerdownSession.update({
         where: { id: session.id },
         data: { timeBlockStart: newStart, timeBlockEnd: newEnd },
       });
       updates.push(`Pulled powerdown time change from Google (${dateKey})`);
-    }
+    }));
   }
 
   // Apply cancellations back to PowerdownSession records
   if (series.cancelledDates) {
-    for (const dateKey of series.cancelledDates) {
-      const dayStart = fromZonedTime(`${dateKey}T00:00:00`, timezone);
+    await Promise.all(series.cancelledDates.map(async (dateKey) => {
+      const dayStart = parseLocalDateKey(dateKey, timezone);
       const dayEnd = new Date(dayStart.getTime() + 86400000);
 
       const session = await prisma.powerdownSession.findFirst({
@@ -321,14 +322,92 @@ async function applyPowerdownOverridesToPrism(
         select: { id: true },
       });
 
-      if (!session) continue;
+      if (!session) return;
 
       await prisma.powerdownSession.update({
         where: { id: session.id },
         data: { timeBlockStart: null, timeBlockEnd: null },
       });
       updates.push(`Cleared powerdown time block from Google cancellation (${dateKey})`);
-    }
+    }));
+  }
+}
+
+async function applyProcessOverridesToPrism(
+  userId: string,
+  processId: string,
+  series: ManagedRecurringSeriesState | undefined,
+  timezone: string,
+  updates: string[],
+) {
+  if (!series) return;
+
+  // Apply overrides (moved instances) back to ProcessExecution records
+  if (series.overrides) {
+    await Promise.all(Object.entries(series.overrides).map(async ([dateKey, override]) => {
+      const dayStart = parseLocalDateKey(dateKey, timezone);
+      const dayEnd = new Date(dayStart.getTime() + 86400000);
+
+      const execution = await prisma.processExecution.findFirst({
+        where: {
+          processId,
+          executedById: userId,
+          scheduledDate: { gte: dayStart, lt: dayEnd },
+          completedAt: null,
+        },
+        select: { id: true, timeBlockStart: true, timeBlockEnd: true },
+      });
+
+      if (!execution) return;
+
+      // Skip if times already match
+      if (
+        execution.timeBlockStart &&
+        execution.timeBlockEnd &&
+        !hasTimeDrifted(
+          execution.timeBlockStart.toISOString(),
+          execution.timeBlockEnd.toISOString(),
+          override.start,
+          override.end,
+        )
+      ) return;
+
+      await prisma.processExecution.update({
+        where: { id: execution.id },
+        data: {
+          timeBlockStart: new Date(override.start),
+          timeBlockEnd: new Date(override.end),
+        },
+      });
+      updates.push(`Pulled process execution time change from Google (${dateKey})`);
+    }));
+  }
+
+  // Apply cancellations back to ProcessExecution records
+  if (series.cancelledDates) {
+    await Promise.all(series.cancelledDates.map(async (dateKey) => {
+      const dayStart = parseLocalDateKey(dateKey, timezone);
+      const dayEnd = new Date(dayStart.getTime() + 86400000);
+
+      const execution = await prisma.processExecution.findFirst({
+        where: {
+          processId,
+          executedById: userId,
+          scheduledDate: { gte: dayStart, lt: dayEnd },
+          completedAt: null,
+          OR: [{ timeBlockStart: { not: null } }, { timeBlockEnd: { not: null } }],
+        },
+        select: { id: true },
+      });
+
+      if (!execution) return;
+
+      await prisma.processExecution.update({
+        where: { id: execution.id },
+        data: { timeBlockStart: null, timeBlockEnd: null },
+      });
+      updates.push(`Cleared process execution time block from Google cancellation (${dateKey})`);
+    }));
   }
 }
 
@@ -511,7 +590,7 @@ function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date,
 
 function buildPowerdownSeriesConfig(user: any, timezone: string, rangeStart: Date, rangeEnd: Date, baseUrl: string): SeriesConfig | null {
   if (!user.powerdownTime) return null;
-  const firstDateKey = `${toZonedTime(rangeStart, timezone).getFullYear()}-${pad2(toZonedTime(rangeStart, timezone).getMonth() + 1)}-${pad2(toZonedTime(rangeStart, timezone).getDate())}`;
+  const firstDateKey = getDateKey(rangeStart, timezone);
   const firstWindow = buildTimedWindow(firstDateKey, user.powerdownTime, 30, timezone);
   const defaultsByDate = new Map<string, { start: string; end: string }>();
 
@@ -923,14 +1002,14 @@ export async function POST(request: NextRequest) {
   googleSyncState.processes = googleSyncState.processes ?? {};
   const liveProcessIds = new Set<string>();
 
-  for (const process of processes) {
+  await Promise.all(processes.map(async (process) => {
     try {
       liveProcessIds.add(process.id);
       const synced = await processSeriesSync(
         auth.userId, targetCalendarId, gcalEvents as GoogleEventLike[], timezone, updates,
         googleSyncState.processes[process.id],
         buildProcessSeriesConfig(process, timezone, rangeStart, rangeEnd),
-        null,
+        (series) => applyProcessOverridesToPrism(auth.userId, process.id, series, timezone, updates),
         `Synced process series: ${process.title}`,
       );
       if (synced) googleSyncState.processes[process.id] = synced;
@@ -940,7 +1019,7 @@ export async function POST(request: NextRequest) {
       console.error(`[calendar] Failed to sync process series "${process.title}" for user ${auth.userId}:`, err);
       updates.push(`Failed to sync process series "${process.title}": ${msg}`);
     }
-  }
+  }));
 
   for (const staleProcessId of Object.keys(googleSyncState.processes)) {
     if (liveProcessIds.has(staleProcessId)) continue;

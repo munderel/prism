@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
+import { startOfToday } from '@/lib/date-utils';
 
 const STREAK_MILESTONES = new Set([7, 14, 30, 50, 100]);
 
@@ -38,8 +39,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'streakType is required' }, { status: 400 });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = startOfToday();
 
   const existing = await prisma.streak.findUnique({
     where: { userId_streakType: { userId: auth.userId, streakType } },

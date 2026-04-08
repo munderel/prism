@@ -1,13 +1,13 @@
 'use client';
 
 import { Star, Trophy } from 'lucide-react';
+import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
 
 interface WinTheDayTask {
   id: string;
   title: string;
   status: string;
   rank?: number; // 1 = most important, 2, 3
-  clearGoal?: string;
   timeBlockStart?: string;
   timeBlockEnd?: string;
 }
@@ -71,11 +71,9 @@ export function WinTheDayCard({ tasks }: WinTheDayCardProps) {
           <span className={`text-sm font-medium flex-1 ${isTopDone ? 'text-gray-500 line-through' : 'text-[var(--text-primary)]'}`}>
             {topTask.title}
           </span>
-          {topTask.clearGoal && (
-            <span className="text-xs text-[var(--text-muted)] truncate max-w-[200px]">{topTask.clearGoal}</span>
-          )}
           <TimeRangeLabel start={topTask.timeBlockStart} end={topTask.timeBlockEnd} />
         </div>
+        <ClearGoalsDisplay taskId={topTask.id} editable={false} compact />
         <p className="text-xs text-[var(--text-muted)] mt-1.5">
           This is your highest-leverage task. Everything else is bonus.
         </p>
@@ -85,18 +83,20 @@ export function WinTheDayCard({ tasks }: WinTheDayCardProps) {
         const rank = i + 2;
         const isDone = task.status === 'DONE';
         return (
-          <div key={task.id} className="glass-panel border-[var(--border-color)] p-3 flex items-center gap-3">
-            <span className="text-xs font-bold text-indigo-400 bg-indigo-400/20 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0">
-              {rank}
-            </span>
-            <span className={`text-sm flex-1 ${isDone ? 'text-gray-500 line-through' : 'text-[var(--text-secondary)]'}`}>
-              {task.title}
-            </span>
-            {task.clearGoal && (
-              <span className="text-xs text-[var(--text-muted)] truncate max-w-[180px]">{task.clearGoal}</span>
-            )}
-            <TimeRangeLabel start={task.timeBlockStart} end={task.timeBlockEnd} />
-            {isDone && <span className="text-xs text-green-400">Done</span>}
+          <div key={task.id} className="glass-panel border-[var(--border-color)] p-3">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-indigo-400 bg-indigo-400/20 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0">
+                {rank}
+              </span>
+              <span className={`text-sm flex-1 ${isDone ? 'text-gray-500 line-through' : 'text-[var(--text-secondary)]'}`}>
+                {task.title}
+              </span>
+              <TimeRangeLabel start={task.timeBlockStart} end={task.timeBlockEnd} />
+              {isDone && <span className="text-xs text-green-400">Done</span>}
+            </div>
+            <div className="pl-9 mt-1">
+              <ClearGoalsDisplay taskId={task.id} editable={false} compact />
+            </div>
           </div>
         );
       })}

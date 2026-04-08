@@ -12,26 +12,18 @@ import {
 import { getLocalDateString, getTomorrowDateString, getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
 import { subtaskDoneCount } from '@/lib/task-utils';
+import { ClearGoalGuide } from './ClearGoalGuide';
+import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 const CalendarSplitView = dynamic(
   () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
   { ssr: false, loading: () => <div className="text-[var(--text-muted)] py-4 text-center">Loading calendar...</div> }
 );
 
 // Power Down steps — reordered per Prism overhaul spec (2026-03-28)
-// 1. Review Today → 2. Weekly Goals & Tasks → 3. Select Top 3 →
-// 4. Calendar Split (tomorrow) → 5. Clear Goals → 6. Goal Clarity Summary →
-// 7. Capture Ideas (auto-save) → 8. Distractions → 9. Gratitudes
-const STEPS = [
-  { num: 1, title: 'Review Today', description: 'Review today\'s completions and wins.' },
-  { num: 2, title: 'Weekly Goals & Tasks', description: 'See your weekly goals with tasks. Update, create, and review incomplete tasks.' },
-  { num: 3, title: 'Select Top 3 for Tomorrow', description: 'Pick your top 3 most important tasks for tomorrow, ranked 1st, 2nd, 3rd.' },
-  { num: 4, title: "Tomorrow's Calendar", description: 'Drag tasks into tomorrow\'s time blocks. Fully editable — move, resize, or cancel blocks.' },
-  { num: 5, title: 'Clear Goals', description: 'Create a clear goal checklist for each task scheduled tomorrow, starting with your top 3.' },
-  { num: 6, title: 'Goal Clarity Summary', description: 'Final checklist of tomorrow\'s tasks with clear goals. Review and edit.' },
-  { num: 7, title: 'Capture Ideas', description: 'Dump any ideas — they\'ll be auto-saved to your Ideas list.' },
-  { num: 8, title: 'Record Distractions', description: 'What pulled you off track today? Log it so you can guard against it.' },
-  { num: 9, title: 'Daily Gratitude', description: 'Spend a few minutes reflecting on what you\'re grateful for.' },
-];
+// 1. Review Today → 2. [Log Process KPIs (conditional)] → 2/3. Weekly Goals & Tasks → ...
+// Step 2 is conditionally inserted if processes with KPIs are due today.
+// When inserted, all following steps shift up by 1.
+// STEPS are computed dynamically inside the component via useMemo.
 
 interface DistractionEntry {
   content: string;
@@ -197,6 +189,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   // Clear Goals step state — text checklists per task
   const [goalChecklists, setGoalChecklists] = useState<Record<string, string[]>>({});
   const [goalInput, setGoalInput] = useState<Record<string, string>>({});
+  const [clearGoalGuideOpen, setClearGoalGuideOpen] = useState(false);
+
+  // KPI processes due today (conditional step)
+  const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
 
   const [timerSeconds, setTimerSeconds] = useState(300);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -229,6 +225,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchUnscheduledTomorrow();
     fetchAimInstances();
     fetchWeeklyGoals();
+    fetchDueKpiProcesses();
   }, []);
 
   const initSession = async () => {
@@ -367,6 +364,41 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       setWeeklyGoalsLoading(false);
     }
   }, []);
+
+  const fetchDueKpiProcesses = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/processes/kpis/due?period=daily&date=${sessionToday}`);
+      if (res.ok) {
+        const processes = await res.json();
+        setDueKpiProcesses(Array.isArray(processes) ? processes : []);
+      }
+    } catch {
+      // Non-critical
+    }
+  }, [sessionToday]);
+
+  // Dynamic STEPS array — inserts KPI logging step if processes with KPIs are due today
+  // currentStep is 1-based and indexes into this array (1 = first step, 2 = second, etc.)
+  const STEPS = useMemo(() => {
+    const list = [
+      { key: 'review_today', title: 'Review Today', description: 'Review today\'s completions and wins.' },
+      ...(dueKpiProcesses.length > 0
+        ? [{ key: 'log_kpis', title: 'Log Process KPIs', description: 'Log KPI progress for processes scheduled today.' }]
+        : []),
+      { key: 'weekly_goals', title: 'Weekly Goals & Tasks', description: 'See your weekly goals with tasks. Update, create, and review incomplete tasks.' },
+      { key: 'top3', title: 'Select Top 3 for Tomorrow', description: 'Pick your top 3 most important tasks for tomorrow, ranked 1st, 2nd, 3rd.' },
+      { key: 'calendar', title: "Tomorrow's Calendar", description: 'Drag tasks into tomorrow\'s time blocks. Fully editable — move, resize, or cancel blocks.' },
+      { key: 'clear_goals', title: 'Clear Goals', description: 'Create a clear goal checklist for each task scheduled tomorrow, starting with your top 3.' },
+      { key: 'goal_summary', title: 'Goal Clarity Summary', description: 'Final checklist of tomorrow\'s tasks with clear goals. Review and edit.' },
+      { key: 'ideas', title: 'Capture Ideas', description: 'Dump any ideas — they\'ll be auto-saved to your Ideas list.' },
+      { key: 'distractions', title: 'Record Distractions', description: 'What pulled you off track today? Log it so you can guard against it.' },
+      { key: 'gratitude', title: 'Daily Gratitude', description: 'Spend a few minutes reflecting on what you\'re grateful for.' },
+    ];
+    return list.map((s, i) => ({ ...s, num: i + 1 }));
+  }, [dueKpiProcesses]);
+
+  // Get current step key for rendering
+  const currentStepKey = STEPS[currentStep - 1]?.key || 'review_today';
 
   const toggleAimInstance = async (instance: any) => {
     const newCompleted = !instance.completed;
@@ -769,7 +801,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
           {/* Step content */}
           <div className="glass-panel p-6">
             {/* Step 1: Review Today — task completion + AIM instances */}
-            {currentStep === 1 && (
+            {currentStepKey === 'review_today' && (
               <div className="space-y-4">
                 <div className="space-y-2">
                   <p className="text-sm text-[var(--text-secondary)] mb-3">
@@ -836,8 +868,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 2: Weekly Goals & Tasks */}
-            {currentStep === 2 && (
+            {/* Step 2 (conditional): Log Process KPIs */}
+            {currentStepKey === 'log_kpis' && (
+              <ProcessKpiLogStep processes={dueKpiProcesses} date={sessionToday} />
+            )}
+
+            {/* Step 2/3: Weekly Goals & Tasks */}
+            {currentStepKey === 'weekly_goals' && (
               <div className="space-y-4">
                 {weeklyGoalsLoading && (
                   <p className="text-sm text-[var(--text-secondary)]">Loading weekly goals...</p>
@@ -1048,8 +1085,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 3: Select Top 3 for Tomorrow */}
-            {currentStep === 3 && (
+            {/* Step 3/4: Select Top 3 for Tomorrow */}
+            {currentStepKey === 'top3' && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Star className="h-5 w-5 text-indigo-400" />
@@ -1099,8 +1136,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 4: Tomorrow's Calendar — full-screen modal overlay */}
-            {currentStep === 4 && (
+            {/* Step 4/5: Tomorrow's Calendar — full-screen modal overlay */}
+            {currentStepKey === 'calendar' && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Calendar className="h-5 w-5 text-indigo-400" />
@@ -1163,18 +1200,14 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 5: Clear Goals */}
-            {currentStep === 5 && (
-              <div className="space-y-4">
-                <p className="text-sm text-[var(--text-secondary)] mb-3">
-                  For each task, add specific outcomes you&apos;ll achieve. e.g., &quot;Complete first draft of proposal sections 1-3&quot;
-                </p>
-                <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
-                  <p className="text-sm font-medium text-[var(--text-primary)]">Clear Goal Guide</p>
-                  <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                    Write the exact result you want, break it into a short checklist, and make the first action obvious enough to start immediately tomorrow.
+            {/* Step 5/6: Clear Goals */}
+            {currentStepKey === 'clear_goals' && (
+              <>
+                <ClearGoalGuide isOpen={clearGoalGuideOpen} onToggle={() => setClearGoalGuideOpen(o => !o)} />
+                <div className="space-y-4">
+                  <p className="text-sm text-[var(--text-secondary)] mb-3">
+                    For each task, add specific outcomes you&apos;ll achieve. e.g., &quot;Complete first draft of proposal sections 1-3&quot;
                   </p>
-                </div>
                 {scheduledPlanTasks.length === 0 && (
                   <p className="text-sm text-[var(--text-secondary)]">Nothing is scheduled for tomorrow.</p>
                 )}
@@ -1239,11 +1272,12 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     })}
                   </div>
                 ))}
-              </div>
+                </div>
+              </>
             )}
 
-            {/* Step 6: Goal Clarity Summary — read-only preview */}
-            {currentStep === 6 && (
+            {/* Step 6/7: Goal Clarity Summary — read-only preview */}
+            {currentStepKey === 'goal_summary' && (
               <div className="space-y-4">
                 <p className="text-sm text-[var(--text-secondary)] mb-3">
                   Here&apos;s your plan for tomorrow. Review that each task has a clear goal.
@@ -1287,8 +1321,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 7: Capture Ideas */}
-            {currentStep === 7 && (
+            {/* Step 7/8: Capture Ideas */}
+            {currentStepKey === 'ideas' && (
               <ListCaptureStep
                 items={ideas}
                 setItems={setIdeas}
@@ -1300,8 +1334,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               />
             )}
 
-            {/* Step 8: Record Distractions */}
-            {currentStep === 8 && (
+            {/* Step 8/9: Record Distractions */}
+            {currentStepKey === 'distractions' && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertCircle className="h-5 w-5 text-orange-400" />
@@ -1358,7 +1392,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
             )}
 
             {/* Step 9: Daily Gratitude */}
-            {currentStep === 9 && (
+            {currentStepKey === 'gratitude' && (
               <ListCaptureStep
                 items={gratitudes}
                 setItems={setGratitudes}
@@ -1411,7 +1445,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               disabled={saving}
               className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? 'Saving...' : currentStep === 9 ? 'Complete Power Down' : 'Next Step'}
+              {saving ? 'Saving...' : currentStepKey === 'gratitude' ? 'Complete Power Down' : 'Next Step'}
               {!saving && <ChevronRight className="h-4 w-4" />}
             </button>
           </div>

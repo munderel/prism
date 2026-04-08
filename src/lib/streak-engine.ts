@@ -1,5 +1,6 @@
 import { ProcessCadence } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { startOfToday } from '@/lib/date-utils';
 
 const STREAK_MILESTONES = new Set([7, 14, 30, 50, 100]);
 
@@ -20,8 +21,7 @@ async function upsertOrUpdateStreak(
   streakType: string,
   windowDays: number,
 ): Promise<void> {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = startOfToday();
 
   const existing = await prisma.streak.findUnique({
     where: { userId_streakType: { userId, streakType } },

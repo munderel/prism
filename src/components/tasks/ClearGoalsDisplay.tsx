@@ -48,9 +48,7 @@ export function ClearGoalsDisplay({
   const goals = data ?? [];
 
   if (goals.length === 0 && !editable) {
-    return (
-      <p className={`text-gray-400 ${compact ? 'text-xs' : 'text-sm'}`}>No clear goals set</p>
-    );
+    return null;
   }
 
   const toggleGoal = async (goalId: string, completed: boolean) => {

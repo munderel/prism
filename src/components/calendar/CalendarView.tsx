@@ -10,6 +10,7 @@ import { type ProposedSlot } from '@/lib/scheduling-engine';
 import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
+import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -958,6 +959,9 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                   <div className="text-xs text-[var(--text-secondary)] line-clamp-3 mt-1">
                     {selectedEventPopover.description}
                   </div>
+                )}
+                {selectedEventPopover.taskId && (
+                  <ClearGoalsDisplay taskId={selectedEventPopover.taskId} editable={false} compact />
                 )}
               </>
             )}

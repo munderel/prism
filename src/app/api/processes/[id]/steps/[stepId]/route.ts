@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 import { safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
-import { regenerateAdvancedModeTasks } from '@/lib/process-task-generator';
+import { cleanupCurrentPeriodTasks } from '@/lib/process-task-generator';
 
 export async function PATCH(
   request: NextRequest,
@@ -20,12 +20,9 @@ export async function PATCH(
     data: pickDefined(parsed.data, ['title', 'description', 'url', 'sortOrder']),
   });
 
-  // Regenerate tasks if process is in ADVANCED mode
-  const process = await prisma.process.findUnique({ where: { id }, select: { mode: true } });
+  const process = await prisma.process.findUnique({ where: { id }, select: { mode: true, cadence: true } });
   if (process?.mode === 'ADVANCED') {
-    regenerateAdvancedModeTasks(id).catch((err) => {
-      console.error('[step-update] Failed to regenerate tasks:', err);
-    });
+    await cleanupCurrentPeriodTasks(id, process.cadence as import('@prisma/client').ProcessCadence);
   }
 
   return Response.json(step, NO_STORE);
@@ -42,12 +39,9 @@ export async function DELETE(
 
   await prisma.processStep.delete({ where: { id: stepId } });
 
-  // Regenerate tasks if process is in ADVANCED mode
-  const process = await prisma.process.findUnique({ where: { id }, select: { mode: true } });
+  const process = await prisma.process.findUnique({ where: { id }, select: { mode: true, cadence: true } });
   if (process?.mode === 'ADVANCED') {
-    regenerateAdvancedModeTasks(id).catch((err) => {
-      console.error('[step-delete] Failed to regenerate tasks:', err);
-    });
+    await cleanupCurrentPeriodTasks(id, process.cadence as import('@prisma/client').ProcessCadence);
   }
 
   return Response.json({ ok: true }, NO_STORE);
