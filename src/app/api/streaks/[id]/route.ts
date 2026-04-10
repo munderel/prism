@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, updateStreakSchema } from '@/lib/schemas';
 
 export async function PATCH(
   request: NextRequest,
@@ -12,13 +12,10 @@ export async function PATCH(
 
   const { id } = await params;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateStreakSchema);
   if ('error' in parsed) return parsed.error;
 
   const { isActive } = parsed.data;
-  if (typeof isActive !== 'boolean') {
-    return Response.json({ error: 'isActive (boolean) is required' }, { status: 400 });
-  }
 
   const streak = await prisma.streak.findUnique({ where: { id } });
   if (!streak || streak.userId !== auth.userId) {

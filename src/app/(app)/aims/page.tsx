@@ -27,7 +27,7 @@ import StreakHeatmap from '@/components/aims/StreakHeatmap';
 import { AimProgressChart } from '@/components/aims/AimProgressChart';
 import { AimCard as AimCardSimplified } from '@/components/aims/AimCard';
 import { WorkoutSubTypes } from '@/components/aims/WorkoutSubTypes';
-import type { DerailInfo } from '@/lib/derail-detection';
+import type { DerailInfo } from '@/lib/derailing';
 import {
   PHASE_LABELS as PHASE_LABELS_MAP,
   getEffectiveDuration,

@@ -9,6 +9,25 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 
+interface TeamUser {
+  id: string;
+  name: string | null;
+  email: string;
+  isAdmin: boolean;
+}
+
+interface Invitation {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  token: string;
+  createdAt: string;
+  revokedAt?: string | null;
+  acceptedAt?: string | null;
+  isExpired?: boolean;
+}
+
 function DurationInput({ value, onChange, inputClasses }: { value: number; onChange: (v: number) => void; inputClasses: string }) {
   return (
     <div>
@@ -44,7 +63,7 @@ export default function SettingsPage() {
     mentionAlerts: true,
     reviewNags: true,
   });
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<TeamUser[]>([]);
   const [hiddenFeatures, setHiddenFeatures] = useState<string[]>([]);
   const [workingHoursStart, setWorkingHoursStart] = useState('09:00');
   const [workingHoursEnd, setWorkingHoursEnd] = useState('17:00');
@@ -95,7 +114,7 @@ export default function SettingsPage() {
   const [creating, setCreating] = useState(false);
 
   // Invitations
-  const [invitations, setInvitations] = useState<any[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('user');
   const [inviting, setInviting] = useState(false);
@@ -259,7 +278,7 @@ export default function SettingsPage() {
 
   const toggleAdmin = async (userId: string, newValue: boolean) => {
     // Optimistic update
-    setUsers((prev) => prev.map((u: any) => u.id === userId ? { ...u, isAdmin: newValue } : u));
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, isAdmin: newValue } : u));
 
     const res = await fetch('/api/admin', {
       method: 'PATCH',
@@ -284,7 +303,7 @@ export default function SettingsPage() {
     setPendingRemoveUserId(null);
 
     // Optimistic: immediately remove from local state
-    setUsers((prev) => prev.filter((u: any) => u.id !== removedId));
+    setUsers((prev) => prev.filter((u) => u.id !== removedId));
 
     const res = await fetch('/api/admin', {
       method: 'DELETE',
@@ -448,7 +467,7 @@ export default function SettingsPage() {
   const revokeInvitation = async (id: string) => {
     // Optimistic: immediately mark as REVOKED in local state
     setInvitations((prev) =>
-      prev.map((inv: any) => inv.id === id ? { ...inv, status: 'REVOKED', revokedAt: new Date().toISOString() } : inv)
+      prev.map((inv) => inv.id === id ? { ...inv, status: 'REVOKED', revokedAt: new Date().toISOString() } : inv)
     );
     toast.success('Invitation revoked');
 
@@ -460,8 +479,8 @@ export default function SettingsPage() {
     }
   };
 
-  const pendingInvitations = invitations.filter((inv: any) => inv.status === 'PENDING');
-  const historyInvitations = invitations.filter((inv: any) => inv.status !== 'PENDING');
+  const pendingInvitations = invitations.filter((inv) => inv.status === 'PENDING');
+  const historyInvitations = invitations.filter((inv) => inv.status !== 'PENDING');
 
   const themeOptions = [
     { value: 'light', label: 'Light', icon: Sun },
@@ -1187,7 +1206,7 @@ export default function SettingsPage() {
               <div className="mt-6">
                 <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">Pending Invitations</h3>
                 <div className="space-y-2">
-                  {pendingInvitations.map((inv: any) => (
+                  {pendingInvitations.map((inv) => (
                       <div key={inv.id} className="rounded-lg bg-[var(--surface)] px-4 py-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center flex-wrap gap-1">
@@ -1252,7 +1271,7 @@ export default function SettingsPage() {
                   Invitation History ({historyInvitations.length})
                 </summary>
                 <div className="space-y-2 mt-2">
-                  {historyInvitations.map((inv: any) => (
+                  {historyInvitations.map((inv) => (
                       <div key={inv.id} className="rounded-lg bg-[var(--surface)] px-4 py-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center flex-wrap gap-1">

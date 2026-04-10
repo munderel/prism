@@ -13,7 +13,7 @@ interface ProcessKpiLogStepProps {
  * Shared KPI logging step for PowerDown and review wizards.
  * Groups processes by cadence and renders KPI entry loggers.
  */
-export function ProcessKpiLogStep({ processes, date }: ProcessKpiLogStepProps) {
+export function ProcessKpiLogStep({ processes, date: _date }: ProcessKpiLogStepProps) {
   // Group processes by cadence
   const grouped = useMemo(() => {
     const groups: Record<string, any[]> = {};

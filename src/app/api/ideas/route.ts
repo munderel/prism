@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server';
+import { Prisma, IdeaStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIceScore } from '@/lib/scoring';
-import { parsePagination, validateIceScores, USER_SUMMARY_SELECT, safeParseJson } from '@/lib/api-helpers';
+import { parsePagination, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
+import { parseBody, createIdeaSchema } from '@/lib/schemas';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -14,7 +16,7 @@ export async function GET(request: NextRequest) {
   const sort = searchParams.get('sort') ?? 'createdAt';
   const { page, limit, skip } = parsePagination(searchParams);
 
-  const where: any = {};
+  const where: Prisma.IdeaWhereInput = {};
 
   // Non-admins only see their own ideas
   if (!auth.session.user.isAdmin) {
@@ -22,7 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (status) {
-    where.status = status;
+    where.status = status as IdeaStatus;
   }
 
   if (search) {
@@ -32,7 +34,7 @@ export async function GET(request: NextRequest) {
     ];
   }
 
-  const orderBy: any =
+  const orderBy: Prisma.IdeaOrderByWithRelationInput =
     sort === 'iceScore'
       ? { iceScore: 'desc' }
       : { createdAt: 'desc' };
@@ -65,23 +67,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createIdeaSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { title, description, processId, confidenceScore, easeScore, impactScore } = body;
-
-  if (!title?.trim()) {
-    return Response.json({ error: 'title is required' }, { status: 400 });
-  }
-
-  if (!description?.trim()) {
-    return Response.json({ error: 'description is required' }, { status: 400 });
-  }
-
-  const scoreError = validateIceScores({ confidenceScore, easeScore, impactScore });
-  if (scoreError) {
-    return Response.json({ error: scoreError }, { status: 400 });
-  }
+  const { title, description, processId, confidenceScore, easeScore, impactScore } = parsed.data;
 
   // Validate processId if provided
   if (processId) {

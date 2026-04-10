@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createFeedbackSchema } from '@/lib/schemas';
 
 export async function GET() {
   const auth = await requireAdmin();
@@ -18,13 +18,9 @@ export async function POST(request: Request) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createFeedbackSchema);
   if ('error' in parsed) return parsed.error;
   const { content } = parsed.data;
-
-  if (!content?.trim()) {
-    return Response.json({ error: 'Feedback content is required' }, { status: 400 });
-  }
 
   const feedback = await prisma.feedback.create({
     data: {

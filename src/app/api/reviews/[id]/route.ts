@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { ReviewType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, forbiddenResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, updateReviewSchema } from '@/lib/schemas';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { cancelManagedSeriesInstance, syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
 import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
@@ -46,11 +47,11 @@ export async function PATCH(
     return notFoundResponse('Review');
   }
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateReviewSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 
-  const data: any = pickDefined(body, ['checklistState', 'notes']);
+  const data: Record<string, unknown> = pickDefined(body, ['checklistState', 'notes']);
 
   if (body.timeBlockStart !== undefined) data.timeBlockStart = body.timeBlockStart ? new Date(body.timeBlockStart) : null;
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = body.timeBlockEnd ? new Date(body.timeBlockEnd) : null;

@@ -1,21 +1,22 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson, hasAccess, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
+import { hasAccess, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
+import { parseBody, generateQuizSchema } from '@/lib/schemas';
 import { openrouter } from '@/lib/openrouter';
 import { quizGenerationPrompt } from '@/lib/ai-prompts';
 import { prisma } from '@/lib/prisma';
-import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
+import { handleAIError } from '@/lib/ai-error-handler';
 
 export async function POST(request: Request) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, generateQuizSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 
   const { trainingItemId, chapterRange, material } = body;
 
-  let materialText = material;
+  let materialText: string | null | undefined = material;
 
   if (trainingItemId) {
     const trainingItem = await prisma.trainingItem.findUnique({
@@ -29,27 +30,20 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!materialText || typeof materialText !== 'string' || materialText.length > MAX_AI_INPUT_LENGTH) {
+  if (!materialText) {
     return Response.json(
-      { error: 'material (or trainingItemId with title) is required and must be under 10000 characters' },
-      { status: 400 }
-    );
-  }
-
-  if (!chapterRange || typeof chapterRange !== 'string' || chapterRange.length > MAX_AI_INPUT_LENGTH) {
-    return Response.json(
-      { error: 'chapterRange is required and must be under 10000 characters' },
+      { error: 'material (or trainingItemId with title) is required' },
       { status: 400 }
     );
   }
 
   try {
-    const messages = quizGenerationPrompt(materialText, chapterRange);
+    const messages = quizGenerationPrompt(materialText, chapterRange ?? '');
     const result = await openrouter.chatJSON<any>(messages);
 
     const quizAttempt = await prisma.quizAttempt.create({
       data: {
-        trainingItemId: trainingItemId ?? null,
+        trainingItemId: trainingItemId as string,
         trainingTaskId: body.trainingTaskId ?? null,
         questions: result.questions ?? result,
       },

@@ -1,8 +1,8 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createBookSchema } from '@/lib/schemas';
 import { openrouter } from '@/lib/openrouter';
 import { bookBreakdownPrompt } from '@/lib/ai-prompts';
-import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
+import { handleAIError } from '@/lib/ai-error-handler';
 import { createTrainingItemWithTasks, TaskEntry } from '@/lib/training-helpers';
 
 interface ReadingGroup {
@@ -38,28 +38,12 @@ export async function POST(request: Request) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createBookSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-
-  const { title, description, targetCompletionDate, goalId } = body;
-
-  if (!title || typeof title !== 'string' || title.length > MAX_AI_INPUT_LENGTH) {
-    return Response.json(
-      { error: 'title is required and must be under 10000 characters' },
-      { status: 400 }
-    );
-  }
-
-  if (description && (typeof description !== 'string' || description.length > MAX_AI_INPUT_LENGTH)) {
-    return Response.json(
-      { error: 'description must be under 10000 characters' },
-      { status: 400 }
-    );
-  }
+  const { title, description, targetCompletionDate, goalId } = parsed.data;
 
   try {
-    const messages = bookBreakdownPrompt(title, description);
+    const messages = bookBreakdownPrompt(title, description ?? undefined as string | undefined);
     const breakdown = await openrouter.chatJSON<BookBreakdown>(messages);
 
     const readingGroups = breakdown.readingGroups ?? [];

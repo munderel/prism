@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson, notFoundResponse, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, completeProcessSchema } from '@/lib/schemas';
 import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
 
 export async function POST(
@@ -13,13 +14,9 @@ export async function POST(
 
   const { id } = await params;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, completeProcessSchema);
   if ('error' in parsed) return parsed.error;
   const { scheduledDate } = parsed.data;
-
-  if (!scheduledDate) {
-    return Response.json({ error: 'scheduledDate is required' }, { status: 400 });
-  }
 
   const process = await prisma.process.findUnique({
     where: { id },

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createAimCategorySchema } from '@/lib/schemas';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -18,22 +18,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createAimCategorySchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { name, description, defaultFrequency, defaultDurationMin, isGroupable, isDaily, activities } = body;
-
-  if (!name?.trim()) {
-    return Response.json({ error: 'name is required' }, { status: 400 });
-  }
-
-  if (typeof defaultFrequency !== 'number' || defaultFrequency < 1) {
-    return Response.json({ error: 'defaultFrequency must be a positive integer' }, { status: 400 });
-  }
-
-  if (typeof defaultDurationMin !== 'number' || defaultDurationMin < 1) {
-    return Response.json({ error: 'defaultDurationMin must be a positive integer' }, { status: 400 });
-  }
+  const { name, description, defaultFrequency, defaultDurationMin, isGroupable, isDaily, activities } = parsed.data;
 
   const category = await prisma.aimCategory.create({
     data: {

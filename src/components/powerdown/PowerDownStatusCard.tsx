@@ -20,7 +20,7 @@ interface PowerDownStatusCardProps {
   compact?: boolean;
 }
 
-export function PowerDownStatusCard({ session, powerdownTime, date, compact }: PowerDownStatusCardProps) {
+export function PowerDownStatusCard({ session, powerdownTime, date: _date, compact }: PowerDownStatusCardProps) {
   const isCompleted = !!session?.completedAt;
 
   const timeLabel = useMemo(() => {

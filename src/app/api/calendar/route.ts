@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createCalendarEventSchema } from '@/lib/schemas';
 import { listGoogleEvents, createGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
 import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
@@ -185,13 +185,15 @@ export async function GET(request: NextRequest) {
     }
 
     for (const ge of googleEvents) {
-      const geStart = ge.start?.dateTime ?? ge.start?.date;
-      const geEnd = ge.end?.dateTime ?? ge.end?.date;
+      const geStartObj = ge.start as Record<string, unknown> | undefined;
+      const geEndObj = ge.end as Record<string, unknown> | undefined;
+      const geStart = (geStartObj?.dateTime ?? geStartObj?.date) as string | undefined;
+      const geEnd = (geEndObj?.dateTime ?? geEndObj?.date) as string | undefined;
       if (geStart && geEnd) {
         busySlots.push({
           start: geStart,
           end: geEnd,
-          title: ge.summary ?? 'Google Calendar Event',
+          title: (ge.summary as string) ?? 'Google Calendar Event',
         });
       }
     }
@@ -435,22 +437,24 @@ export async function GET(request: NextRequest) {
 
   for (const ge of googleEvents) {
     // Skip Google Calendar events that are already represented by Prism items (by ID)
-    if (ge.id && syncedCalendarEventIds.has(ge.id)) continue;
+    if (ge.id && syncedCalendarEventIds.has(ge.id as string)) continue;
     if ((ge as any).recurringEventId && syncedCalendarEventIds.has((ge as any).recurringEventId)) continue;
 
     // Fallback dedup: skip Google events from the sync target calendar that match
     // Prism-managed titles. These are likely orphaned recurring events from stale sync state.
     const sourceCalId = (ge as any)._sourceCalendarId;
-    if (sourceCalId === targetCalendarId && ge.summary && prismManagedTitles.has(ge.summary)) continue;
+    if (sourceCalId === targetCalendarId && ge.summary && prismManagedTitles.has(ge.summary as string)) continue;
 
     const eventColor = colorOverrides[sourceCalId] || (ge as any).colorId || '#9333ea';
+    const geStartObj = ge.start as Record<string, unknown> | undefined;
+    const geEndObj = ge.end as Record<string, unknown> | undefined;
     events.push({
       id: `google-${ge.id}`,
       title: ge.summary,
       description: ge.description,
-      start: ge.start?.dateTime ?? ge.start?.date,
-      end: ge.end?.dateTime ?? ge.end?.date,
-      allDay: !ge.start?.dateTime,
+      start: (geStartObj?.dateTime ?? geStartObj?.date) as string | undefined,
+      end: (geEndObj?.dateTime ?? geEndObj?.date) as string | undefined,
+      allDay: !geStartObj?.dateTime,
       source: 'google',
       meetLink: ge.hangoutLink,
       calendarId: sourceCalId,
@@ -796,19 +800,14 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createCalendarEventSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { summary, description, start, end, addMeetLink } = body;
-
-  if (!summary || !start || !end) {
-    return Response.json({ error: 'summary, start, and end are required' }, { status: 400 });
-  }
+  const { summary, description, start, end, addMeetLink } = parsed.data;
 
   const targetCalendarId = await getUserSyncCalendarId(auth.userId);
   const event = await createGoogleEvent(auth.userId, {
     summary,
-    description,
+    description: description ?? undefined,
     start,
     end,
     addMeetLink,

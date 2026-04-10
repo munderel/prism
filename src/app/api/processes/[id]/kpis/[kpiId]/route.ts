@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { KpiTimeLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { authorizeProcessAccess, notFoundResponse, safeParseJson, pickDefined, validateKpiGoals } from '@/lib/api-helpers';
+import { authorizeProcessAccess, notFoundResponse, pickDefined } from '@/lib/api-helpers';
+import { parseBody, updateProcessKpiSchema } from '@/lib/schemas';
 
 export async function PATCH(
   request: NextRequest,
@@ -18,17 +19,12 @@ export async function PATCH(
   const kpi = await prisma.processKpi.findUnique({ where: { id: kpiId } });
   if (!kpi || kpi.processId !== processId) return notFoundResponse('KPI');
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateProcessKpiSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 
   const kpiFields = pickDefined(body, ['name', 'unit', 'targetValue', 'goalId']);
   const { goals } = body;
-
-  if (Array.isArray(goals) && goals.length > 0) {
-    const goalsError = validateKpiGoals(goals, Object.values(KpiTimeLevel) as string[]);
-    if (goalsError) return Response.json({ error: goalsError }, { status: 400 });
-  }
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.processKpi.update({

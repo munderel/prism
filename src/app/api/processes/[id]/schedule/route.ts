@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, safeParseJson } from '@/lib/api-helpers';
+import { notFoundResponse } from '@/lib/api-helpers';
+import { parseBody, scheduleProcessSchema } from '@/lib/schemas';
 import { computeNextDueDate } from '@/lib/process-scheduler';
 import {
   setHours,
@@ -24,15 +25,9 @@ export async function POST(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, scheduleProcessSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { time, dayOfWeek, dayOfMonth, date: dateStr } = body;
-
-  // Validate time format
-  if (!time || !/^\d{2}:\d{2}$/.test(time)) {
-    return Response.json({ error: 'time is required in HH:mm format' }, { status: 400 });
-  }
+  const { time, dayOfWeek, dayOfMonth, date: dateStr } = parsed.data;
 
   const [hours, minutes] = time.split(':').map(Number);
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {

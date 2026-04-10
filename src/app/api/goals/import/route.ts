@@ -1,37 +1,23 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
+import { parseBody, importGoalsSchema } from '@/lib/schemas';
 
 import { parseYamlToGoals, diffGoals, buildGoalTree, type GoalNode, type KpiNode } from '@/lib/yaml-handler';
 import { cascadeProgressUp } from '@/lib/progress';
 import { cascadeKpiUpdate } from '@/lib/kpi-progress';
 import { validateGoalLevel } from '@/lib/goal-validation';
 
-const MAX_YAML_SIZE = 256 * 1024; // 256KB
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, importGoalsSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { stackId, yamlContent, confirmed } = body;
-
-  if (!stackId || !yamlContent) {
-    return Response.json(
-      { error: 'stackId and yamlContent are required' },
-      { status: 400 }
-    );
-  }
-
-  if (typeof yamlContent !== 'string' || yamlContent.length > MAX_YAML_SIZE) {
-    return Response.json(
-      { error: 'YAML content must be a string under 256KB' },
-      { status: 400 }
-    );
-  }
 
   const stack = await prisma.goalStack.findUnique({ where: { id: stackId } });
   if (!stack) return notFoundResponse('Stack');
@@ -98,7 +84,7 @@ export async function POST(request: NextRequest) {
     const data: Record<string, any> = {};
     for (const [field, change] of Object.entries(mod.changes)) {
       if (GOAL_DATE_FIELDS.has(field)) {
-        data[field] = change.to ? new Date(change.to) : null;
+        data[field] = change.to ? new Date(change.to as string) : null;
       } else {
         data[field] = change.to;
       }
@@ -179,7 +165,7 @@ export async function POST(request: NextRequest) {
       const data: Record<string, any> = {};
       for (const [field, change] of Object.entries(mod.changes)) {
         if (TASK_DATE_FIELDS.has(field)) {
-          data[field] = change.to ? new Date(change.to) : null;
+          data[field] = change.to ? new Date(change.to as string) : null;
         } else {
           data[field] = change.to;
         }
@@ -289,7 +275,7 @@ export async function POST(request: NextRequest) {
             data.completedAt = null;
           }
         } else if (field === 'completed_at') {
-          data.completedAt = change.to ? new Date(change.to) : null;
+          data.completedAt = change.to ? new Date(change.to as string) : null;
         } else if (field === 'linked_to') {
           // Resolve linked_to by name: look up parent KPI on the parent goal
           if (change.to && goal.parentId) {

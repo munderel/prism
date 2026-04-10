@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireTaskAccess, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createCommentSchema } from '@/lib/schemas';
 
 import { extractMentions, resolveMentions } from '@/lib/mention-parser';
 
@@ -34,14 +34,9 @@ export async function POST(
   const auth = await requireTaskAccess(taskId);
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createCommentSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { content } = body;
-
-  if (!content?.trim()) {
-    return Response.json({ error: 'Content is required' }, { status: 400 });
-  }
+  const { content } = parsed.data;
 
   // Extract and resolve @mentions
   const mentionNames = extractMentions(content);

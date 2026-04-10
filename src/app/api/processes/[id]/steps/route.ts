@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createProcessStepSchema } from '@/lib/schemas';
 import { cleanupCurrentPeriodTasks } from '@/lib/process-task-generator';
 
 export async function GET(
@@ -29,14 +29,9 @@ export async function POST(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createProcessStepSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { title, description, url, sortOrder } = body;
-
-  if (!title || typeof title !== 'string') {
-    return Response.json({ error: 'title is required' }, { status: 400 });
-  }
+  const { title, description, url, sortOrder } = parsed.data;
 
   let order = sortOrder;
   if (order === undefined) {

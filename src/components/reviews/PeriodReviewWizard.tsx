@@ -9,7 +9,6 @@ import { useToast } from '@/components/ui/ToastProvider';
 import type { Goal, Kpi, ReviewAnswer, StepConfig, HhgGroup } from './shared/review-types';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 import { getLocalDateString } from '@/lib/date-utils';
-import { getStatusBadgeClass } from './shared/review-types';
 import { DifficultiesStep } from './shared/DifficultiesStep';
 import { KpiProgressStep } from './shared/KpiProgressStep';
 import { OnTrackStep } from './shared/OnTrackStep';

@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { notFoundResponse, safeParseJson, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
+import { notFoundResponse, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
+import { parseBody, convertIdeaSchema } from '@/lib/schemas';
 
 export async function POST(
   request: NextRequest,
@@ -24,9 +25,9 @@ export async function POST(
     return Response.json({ error: 'Idea has already been converted' }, { status: 400 });
   }
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, convertIdeaSchema);
   const body = 'error' in parsed ? {} : parsed.data;
-  const { ownerId, priority, dueDate } = body as Record<string, any>;
+  const { ownerId, priority, dueDate } = body;
 
   const taskOwnerId = ownerId ?? idea.process?.assigneeId ?? idea.authorId;
 

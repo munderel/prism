@@ -6,6 +6,8 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import type { EventClickArg, DateSelectArg, DatesSetArg, EventDropArg } from '@fullcalendar/core';
+import type { EventReceiveArg, EventResizeDoneArg } from '@fullcalendar/interaction';
 import { type ProposedSlot } from '@/lib/scheduling-engine';
 import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
@@ -53,11 +55,45 @@ interface SelectedAimInstance {
   tasks: AimTask[];
 }
 
+/** Shape of the event data objects returned by useCalendarEvents */
+interface CalendarEventData {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  source: string;
+  status?: string;
+  aimInstanceId?: string;
+  aimCategoryName?: string;
+  tasks?: AimTask[];
+  taskId?: string;
+  taskType?: string;
+  itemType?: string;
+  [key: string]: unknown;
+}
+
+/** Shape of unscheduled task items passed via props */
+interface UnscheduledTaskItem {
+  id: string;
+  itemType?: string;
+  title: string;
+  status?: string;
+  taskId?: string;
+  duration?: number;
+  taskType?: string;
+  priority?: string;
+  aimInstanceId?: string;
+  aimCategoryId?: string;
+  goalTitle?: string;
+  estimatedMinutes?: number;
+  [key: string]: unknown;
+}
+
 interface CalendarViewProps {
-  onEventClick?: (info: any) => void;
-  onDateSelect?: (info: any) => void;
+  onEventClick?: (info: EventClickArg) => void;
+  onDateSelect?: (info: DateSelectArg) => void;
   onExternalDrop?: (itemId: string, start: Date, end: Date, itemType?: string) => void;
-  unscheduledTasks?: any[];
+  unscheduledTasks?: UnscheduledTaskItem[];
   onBatchScheduleConfirm?: (slots: Array<{ id: string; timeBlockStart: string; timeBlockEnd: string; isAutoScheduled: boolean; isPinned: boolean; itemType?: string }>) => void;
   scheduleSettings?: {
     workingHoursStart: string;
@@ -114,10 +150,10 @@ function scheduleItem(
 export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings: _scheduleSettings, navigateTo }: CalendarViewProps) {
   const router = useRouter();
   const toast = useToast();
-  const calendarRef = useRef<any>(null);
+  const calendarRef = useRef<FullCalendar>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
-  const { events, error: calendarError, refreshEvents, googleStatus, googleError, isLoading: calendarLoading } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
+  const { events, error: calendarError, refreshEvents, googleStatus, googleError, isLoading: _calendarLoading } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
   const { resolvedTheme } = useTheme();
   const isMobile = useMediaQuery('(max-width: 1023px)');
 
@@ -162,12 +198,12 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
   // Activity selection modal state
   const [showActivityModal, setShowActivityModal] = useState(false);
-  const [pendingAimDrop, setPendingAimDrop] = useState<{ info: any; startISO: string; endISO: string } | null>(null);
+  const [pendingAimDrop, setPendingAimDrop] = useState<{ info: EventReceiveArg; startISO: string; endISO: string } | null>(null);
   const [pendingActivities, setPendingActivities] = useState<string[]>([]);
   const [pendingAimName, setPendingAimName] = useState('');
 
   // Task editor modal state
-  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editingTask, setEditingTask] = useState<Record<string, unknown> | null>(null);
 
   // Task assignment panel state (Deep Work as task container)
   const [selectedAimInstance, setSelectedAimInstance] = useState<SelectedAimInstance | null>(null);
@@ -175,7 +211,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [savingTasks, setSavingTasks] = useState(false);
 
-  const handleDatesSet = (info: any) => {
+  const handleDatesSet = (info: DatesSetArg) => {
     setDateRange({ start: info.startStr, end: info.endStr });
   };
 
@@ -298,7 +334,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   }, [toast, refreshEvents]);
 
   // --- Task assignment handlers ---
-  const handleEventClick = (info: any) => {
+  const handleEventClick = (info: EventClickArg) => {
     const props = info.event.extendedProps || {};
     const rect = info.el.getBoundingClientRect();
 
@@ -427,7 +463,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const handlePopoverOpenTasks = () => {
     if (!selectedEventPopover || selectedEventPopover.source !== 'aims') return;
     // Open the task assignment panel for this aim
-    const aimEvent = events.find((e: any) => e.aimInstanceId === selectedEventPopover.aimInstanceId);
+    const aimEvent = events.find((e: CalendarEventData) => e.aimInstanceId === selectedEventPopover.aimInstanceId);
     if (aimEvent) {
       const aimData: SelectedAimInstance = {
         aimInstanceId: aimEvent.aimInstanceId,
@@ -476,24 +512,24 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   };
 
   // --- Event receive / drop handlers ---
-  const handleEventReceive = async (info: any) => {
+  const handleEventReceive = async (info: EventReceiveArg) => {
     const props = info.event.extendedProps || {};
-    const itemType = props.itemType || 'task';
-    const start = info.event.start;
-    const fallbackMs = (props.durationMin ?? 60) * 60 * 1000;
+    const itemType = (props.itemType as string) || 'task';
+    const start = info.event.start!;
+    const fallbackMs = ((props.durationMin as number) ?? 60) * 60 * 1000;
     const end = info.event.end || new Date(start.getTime() + fallbackMs);
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
     try {
       if (itemType === 'aim') {
-        const aimInstanceId = props.aimInstanceId;
-        const aimCategoryId = props.aimCategoryId;
+        const aimInstanceId = props.aimInstanceId as string | undefined;
+        const aimCategoryId = props.aimCategoryId as string | undefined;
 
         // Check if this aim has activities that need selection
         let activities: string[] = [];
         try {
-          const activitiesRaw = props.activities;
+          const activitiesRaw = props.activities as string | undefined;
           if (activitiesRaw) {
             activities = JSON.parse(activitiesRaw);
           }
@@ -540,7 +576,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         if (!res.ok) throw new Error('Failed to create work block');
         refreshEvents();
       } else {
-        const taskId = props.taskId || info.event.id?.replace('task-', '');
+        const taskId = (props.taskId as string) || info.event.id?.replace('task-', '');
         if (!taskId) return;
 
         const res = await scheduleItem('task', taskId, startISO, endISO, { dueDate: startISO });
@@ -555,18 +591,18 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     }
   };
 
-  const handleEventDrop = async (info: any) => {
+  const handleEventDrop = async (info: EventDropArg | EventResizeDoneArg) => {
     const eventId = info.event.id;
-    const newStart = info.event.start?.toISOString();
-    const newEnd = info.event.end?.toISOString();
+    const newStart = info.event.start!.toISOString();
+    const newEnd = info.event.end!.toISOString();
 
     // Optimistically update the SWR cache so any re-render during the API call
     // shows the new times instead of snapping back to old positions.
     refreshEvents(
-      (currentData: any) => {
+      (currentData: CalendarEventData[] | { events: CalendarEventData[] } | undefined) => {
         if (!currentData) return currentData;
         const eventsList = Array.isArray(currentData) ? currentData : (currentData?.events ?? []);
-        const updatedEvents = eventsList.map((e: any) =>
+        const updatedEvents = eventsList.map((e: CalendarEventData) =>
           e.id === eventId ? { ...e, start: newStart, end: newEnd } : e
         );
         return Array.isArray(currentData) ? updatedEvents : { ...currentData, events: updatedEvents };
@@ -579,7 +615,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
       if (eventId.startsWith('aim-instance-') || eventId.startsWith('aim-new-') || eventId.startsWith('aim-')) {
         // One-time adjustment: PATCH the specific aim instance
-        const aimInstanceId = info.event.extendedProps?.aimInstanceId;
+        const aimInstanceId = info.event.extendedProps?.aimInstanceId as string | undefined;
         if (aimInstanceId) {
           res = await scheduleItem('aim', aimInstanceId, newStart, newEnd);
         }
@@ -626,7 +662,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         res = await scheduleItem('task', taskId, newStart, newEnd, { dueDate: newStart, isPinned: true });
       } else if (eventId.startsWith('google-')) {
         const gcalEventId = eventId.replace('google-', '');
-        const calendarId = info.event.extendedProps?.calendarId || 'primary';
+        const calendarId = (info.event.extendedProps?.calendarId as string) || 'primary';
         res = await fetch(`/api/calendar/events/${gcalEventId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -716,8 +752,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
     const { info, startISO, endISO } = pendingAimDrop;
     const props = info.event.extendedProps || {};
-    const aimInstanceId = props.aimInstanceId;
-    const aimCategoryId = props.aimCategoryId;
+    const aimInstanceId = props.aimInstanceId as string | undefined;
+    const aimCategoryId = props.aimCategoryId as string | undefined;
 
     if (aimInstanceId) {
       await fetch(`/api/aims/instances/${aimInstanceId}`, {
@@ -739,8 +775,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       });
     }
 
-    const start = info.event.start;
-    const fallbackMs = (props.durationMin ?? 60) * 60 * 1000;
+    const start = info.event.start!;
+    const fallbackMs = ((props.durationMin as number) ?? 60) * 60 * 1000;
     const end = info.event.end || new Date(start.getTime() + fallbackMs);
 
     setShowActivityModal(false);
@@ -764,10 +800,10 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
   // Get TODO tasks available for assignment (from unscheduledTasks prop)
   const availableTodoTasks = (unscheduledTasks || []).filter(
-    (t: any) => t.itemType !== 'aim' && (t.status === 'TODO' || t.status === 'IN_PROGRESS')
+    (t: UnscheduledTaskItem) => t.itemType !== 'aim' && (t.status === 'TODO' || t.status === 'IN_PROGRESS')
   );
 
-  const filteredEvents = events.filter((e: any) => activeFilters.has(e.source));
+  const filteredEvents = events.filter((e: CalendarEventData) => activeFilters.has(e.source));
 
   const ghostCalendarEvents = showGhosts ? ghostEvents.map(g => {
     const item = unscheduledTasks?.find(t => t.id === g.taskId);
@@ -1224,7 +1260,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           longPressDelay={isMobile ? 1000 : 0}
           droppable={true}
           eventDrop={handleEventDrop}
-          eventResize={async (info: any) => {
+          eventResize={async (info: EventResizeDoneArg) => {
             if (!info.event.end) { info.revert(); return; }
             await handleEventDrop(info);
           }}
@@ -1319,7 +1355,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                   <p className="text-sm text-[var(--text-muted)] italic">No unscheduled tasks available.</p>
                 ) : (
                   <ul className="space-y-1.5">
-                    {availableTodoTasks.map((task: any) => {
+                    {availableTodoTasks.map((task: UnscheduledTaskItem) => {
                       const taskId = task.taskId || task.id?.replace('task-', '') || task.id;
                       const isSelected = selectedTaskIds.has(taskId);
                       return (

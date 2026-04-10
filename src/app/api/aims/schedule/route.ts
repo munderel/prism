@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, scheduleAimsSchema } from '@/lib/schemas';
 import { getEffectiveDuration } from '@/lib/aim-phases';
 
 /**
@@ -20,27 +20,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, scheduleAimsSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { aimCategoryId, days } = body;
-
-  if (!aimCategoryId) {
-    return Response.json({ error: 'aimCategoryId is required' }, { status: 400 });
-  }
-  if (!Array.isArray(days) || days.length === 0) {
-    return Response.json({ error: 'days must be a non-empty array' }, { status: 400 });
-  }
-
-  // Validate each day entry
-  for (const day of days) {
-    if (typeof day.dayOfWeek !== 'number' || day.dayOfWeek < 0 || day.dayOfWeek > 6) {
-      return Response.json({ error: 'Each day must have dayOfWeek 0-6' }, { status: 400 });
-    }
-    if (!day.timeStart || !/^\d{2}:\d{2}$/.test(day.timeStart)) {
-      return Response.json({ error: 'Each day must have timeStart in HH:mm format' }, { status: 400 });
-    }
-  }
+  const { aimCategoryId, days } = parsed.data;
 
   // Verify category exists
   const category = await prisma.aimCategory.findUnique({ where: { id: aimCategoryId } });

@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createAimInstanceSchema } from '@/lib/schemas';
 import { createGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 
 export async function GET(request: NextRequest) {
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
   }
 
   // If groupOpen=true, fetch all group-open sessions from all users (for joining)
-  const where: any = {
+  const where: Prisma.AimInstanceWhereInput = {
     scheduledDate: {
       gte: new Date(start),
       lte: new Date(end),
@@ -47,18 +48,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createAimInstanceSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { aimCategoryId, scheduledDate, timeBlockStart, timeBlockEnd, isGroupOpen, selectedActivity } = body;
-
-  if (!aimCategoryId) {
-    return Response.json({ error: 'aimCategoryId is required' }, { status: 400 });
-  }
-
-  if (!scheduledDate) {
-    return Response.json({ error: 'scheduledDate is required' }, { status: 400 });
-  }
+  const { aimCategoryId, scheduledDate, timeBlockStart, timeBlockEnd, isGroupOpen, selectedActivity } = parsed.data;
 
   // Verify category exists
   const category = await prisma.aimCategory.findUnique({ where: { id: aimCategoryId } });

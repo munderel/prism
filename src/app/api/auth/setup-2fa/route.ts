@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson, NO_STORE, notFoundResponse } from '@/lib/api-helpers';
+import { NO_STORE, notFoundResponse } from '@/lib/api-helpers';
+import { parseBody, totpCodeSchema } from '@/lib/schemas';
 import { generateSecret, generateURI, verifySync } from 'otplib';
 import QRCode from 'qrcode';
 
@@ -8,15 +9,11 @@ import QRCode from 'qrcode';
 async function extractCode(
   request: Request
 ): Promise<{ code: string; error?: never } | { code?: never; error: Response }> {
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, totpCodeSchema);
   if (parsed.error) {
     return { error: parsed.error };
   }
-  const { code } = parsed.data;
-  if (!code) {
-    return { error: Response.json({ error: 'Code is required' }, { status: 400 }) };
-  }
-  return { code };
+  return { code: parsed.data.code };
 }
 
 /**

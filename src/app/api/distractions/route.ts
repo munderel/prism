@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createDistractionSchema } from '@/lib/schemas';
 import { startOfToday } from '@/lib/date-utils';
 
 export async function GET(request: NextRequest) {
@@ -32,13 +32,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createDistractionSchema);
   if ('error' in parsed) return parsed.error;
   const { content, notes, logDate, source } = parsed.data;
-
-  if (!content) {
-    return Response.json({ error: 'content is required' }, { status: 400 });
-  }
 
   const today = startOfToday();
 

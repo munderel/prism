@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
         title: string; startDate: Date; endDate: Date; sortOrder: number;
       }[] = [];
       let weekNum = 1;
-      let cursor = new Date(rangeStart);
+      const cursor = new Date(rangeStart);
       const cursorDay = cursor.getDay();
       const diff = (cursorDay - weekStartDay + 7) % 7;
       if (diff > 0) cursor.setDate(cursor.getDate() - diff);

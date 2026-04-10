@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIceScore } from '@/lib/scoring';
-import { pickDefined, validateIceScores, notFoundResponse, forbiddenResponse, USER_SUMMARY_SELECT, safeParseJson } from '@/lib/api-helpers';
+import { pickDefined, notFoundResponse, forbiddenResponse, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
+import { parseBody, updateIdeaSchema } from '@/lib/schemas';
 
 /**
  * Check if the user can mutate an idea.
@@ -59,12 +60,12 @@ export async function PATCH(
     return forbiddenResponse();
   }
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateIdeaSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { confidenceScore, easeScore, impactScore, status } = body;
 
-  const data: any = pickDefined(body, ['title', 'description']);
+  const data: Record<string, unknown> = pickDefined(body, ['title', 'description']);
   if (body.processId !== undefined) data.processId = body.processId || null;
 
   // Handle score updates
@@ -73,11 +74,6 @@ export async function PATCH(
   const newEase = easeScore ?? idea.easeScore;
 
   if (confidenceScore !== undefined || easeScore !== undefined || impactScore !== undefined) {
-    const scoreError = validateIceScores({ impactScore: newImpact, confidenceScore: newConfidence, easeScore: newEase });
-    if (scoreError) {
-      return Response.json({ error: scoreError }, { status: 400 });
-    }
-
     if (confidenceScore !== undefined) data.confidenceScore = confidenceScore;
     if (easeScore !== undefined) data.easeScore = easeScore;
     if (impactScore !== undefined) data.impactScore = impactScore;

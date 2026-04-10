@@ -87,7 +87,7 @@ export function ClearGoalGuide({ isOpen, onToggle }: ClearGoalGuideProps) {
 
             {/* Description */}
             <p className="mb-6 text-sm leading-relaxed text-gray-600">
-              A clear goal is a specific result you can point to when it's done—not a task, but an outcome.
+              A clear goal is a specific result you can point to when it&apos;s done—not a task, but an outcome.
             </p>
 
             {/* Checklist */}

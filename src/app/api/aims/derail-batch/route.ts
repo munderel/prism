@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { computeDerailInfo, type DerailInfo } from '@/lib/derail-detection';
+import { computeDerailInfo, type DerailInfo } from '@/lib/derailing';
 import { buildDailyHistory, buildDateRange, computeExpectedPerDay } from '@/lib/aim-history';
 
 /**

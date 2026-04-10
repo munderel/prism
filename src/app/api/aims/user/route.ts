@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, putUserAimsSchema } from '@/lib/schemas';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -19,9 +19,9 @@ export async function GET() {
 interface AimInput {
   aimCategoryId: string;
   isActive?: boolean;
-  customDuration?: number;
-  customFrequency?: number;
-  customActivities?: any;
+  customDuration?: number | null;
+  customFrequency?: number | null;
+  customActivities?: string[];
   currentPhase?: string;
   phaseStartedAt?: string;
   completionCount?: number;
@@ -29,8 +29,8 @@ interface AimInput {
 }
 
 /** Build the shared data payload for both create and update in a upsert. */
-function buildAimData(aim: AimInput, userId?: string): Record<string, any> {
-  const data: Record<string, any> = {
+function buildAimData(aim: AimInput, userId?: string): Record<string, unknown> {
+  const data: Record<string, unknown> = {
     isActive: aim.isActive ?? true,
     customDuration: aim.customDuration ?? null,
     customFrequency: aim.customFrequency ?? null,
@@ -55,13 +55,9 @@ export async function PUT(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, putUserAimsSchema);
   if ('error' in parsed) return parsed.error;
   const { aims } = parsed.data;
-
-  if (!Array.isArray(aims)) {
-    return Response.json({ error: 'aims must be an array' }, { status: 400 });
-  }
 
   // Validate all categories exist upfront in a single query
   const categoryIds = aims.map((a: AimInput) => a.aimCategoryId).filter(Boolean);

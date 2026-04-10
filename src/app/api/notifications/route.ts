@@ -1,19 +1,15 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, pushSubscriptionSchema } from '@/lib/schemas';
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, pushSubscriptionSchema);
   if ('error' in parsed) return parsed.error;
   const { endpoint, keys } = parsed.data;
-
-  if (!endpoint || !keys?.p256dh || !keys?.auth) {
-    return Response.json({ error: 'Invalid push subscription' }, { status: 400 });
-  }
 
   const existing = await prisma.pushSubscription.findFirst({
     where: { userId: auth.userId, endpoint },

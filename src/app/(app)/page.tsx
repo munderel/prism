@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Focus, AlertTriangle, Lightbulb, Moon, Check } from 'lucide-react';
@@ -13,14 +14,17 @@ import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
 import { SubtaskList } from '@/components/tasks/SubtaskList';
 import { WinTheDayCard } from '@/components/dashboard/WinTheDayCard';
-import { WinTheDayCelebration } from '@/components/dopamine/WinTheDayCelebration';
+const WinTheDayCelebration = dynamic(
+  () => import('@/components/dopamine/WinTheDayCelebration').then((m) => m.WinTheDayCelebration),
+  { ssr: false }
+);
 import { FocusView } from '@/components/dashboard/FocusView';
 import { DashboardTimeline } from '@/components/dashboard/DashboardTimeline';
 import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { setTimeOnDate } from '@/lib/scheduling-engine';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import type { DerailInfo } from '@/lib/derail-detection';
+import type { DerailInfo } from '@/lib/derailing';
 
 // --- Dashboard-specific interfaces based on API response shapes ---
 

@@ -6,7 +6,8 @@ import {
   requireOwnership,
   authError,
 } from '@/lib/auth-guard';
-import { notFoundResponse, USER_SUMMARY_SELECT, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, USER_SUMMARY_SELECT, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, updateStackSchema } from '@/lib/schemas';
 
 /** Authorize write access: admins for company stacks, owners for personal stacks. */
 async function requireStackWriteAccess(stack: { isCompany: boolean; ownerId: string }): Promise<Response | null> {
@@ -74,7 +75,7 @@ export async function PATCH(
   const denied = await requireStackWriteAccess(stack);
   if (denied) return denied;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateStackSchema);
   if ('error' in parsed) return parsed.error;
   const data = pickDefined(parsed.data, ['name', 'weekStartDay']);
 

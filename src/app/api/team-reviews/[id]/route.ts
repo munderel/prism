@@ -1,9 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson, pickDefined } from '@/lib/api-helpers';
-
-const VALID_REVIEW_TYPES = ['WEEKLY', 'MONTHLY', 'YEARLY'] as const;
+import { pickDefined } from '@/lib/api-helpers';
+import { parseBody, updateTeamReviewSchema } from '@/lib/schemas';
 
 const TEAM_REVIEW_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
@@ -21,24 +20,11 @@ export async function PATCH(
 
   const { id } = await params;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateTeamReviewSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 
-  if (body.reviewType !== undefined && !VALID_REVIEW_TYPES.includes(body.reviewType)) {
-    return Response.json({ error: 'Invalid reviewType' }, { status: 400 });
-  }
-  if (body.dayOfWeek != null && (body.dayOfWeek < 0 || body.dayOfWeek > 6)) {
-    return Response.json({ error: 'dayOfWeek must be 0-6' }, { status: 400 });
-  }
-  if (body.time !== undefined && !/^\d{2}:\d{2}$/.test(body.time)) {
-    return Response.json({ error: 'time must be HH:mm format' }, { status: 400 });
-  }
-  if (body.duration !== undefined && body.duration < 1) {
-    return Response.json({ error: 'duration must be at least 1 minute' }, { status: 400 });
-  }
-
-  const data: any = pickDefined(body, ['reviewType', 'dayOfWeek', 'recurrenceRule', 'time', 'duration', 'isActive']);
+  const data: Record<string, unknown> = pickDefined(body, ['reviewType', 'dayOfWeek', 'recurrenceRule', 'time', 'duration', 'isActive']);
 
   if (Array.isArray(body.memberIds)) {
     await prisma.recurringTeamReviewMember.deleteMany({

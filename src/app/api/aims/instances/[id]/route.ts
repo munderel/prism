@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, updateAimInstanceSchema } from '@/lib/schemas';
 import {
   getPointsPerCompletion,
   evaluatePhaseGraduation,
@@ -16,7 +16,6 @@ const INSTANCE_INCLUDE = {
   tasks: { select: { id: true, title: true, status: true } },
 } as const;
 
-const VALID_STATUSES = ['SCHEDULED', 'COMPLETED', 'SKIPPED'] as const;
 
 async function recalculateUserAimProgress(userId: string, aimCategoryId: string) {
   const userAim = await prisma.userAim.findUnique({
@@ -96,16 +95,12 @@ export async function PATCH(
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateAimInstanceSchema);
   if ('error' in parsed) return parsed.error;
   const { status, timeBlockStart, timeBlockEnd, isGroupOpen, activityNote, selectedActivity, taskIds } = parsed.data;
 
   // Handle task assignment (Deep Work as task container)
   if (taskIds !== undefined) {
-    if (!Array.isArray(taskIds)) {
-      return Response.json({ error: 'taskIds must be an array' }, { status: 400 });
-    }
-
     await prisma.task.updateMany({
       where: { aimInstanceId: id, id: { notIn: taskIds } },
       data: { aimInstanceId: null },
@@ -135,9 +130,6 @@ export async function PATCH(
   const updateData: Record<string, any> = {};
 
   if (status !== undefined) {
-    if (!VALID_STATUSES.includes(status)) {
-      return Response.json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` }, { status: 400 });
-    }
     updateData.status = status;
     updateData.completedAt = status === 'COMPLETED' ? new Date() : null;
   }

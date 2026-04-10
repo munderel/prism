@@ -53,8 +53,8 @@ export interface YamlMeta {
 }
 
 export interface GoalDiffChange {
-  from: any;
-  to: any;
+  from: unknown;
+  to: unknown;
 }
 
 export interface KpiDiffEntry {
@@ -245,10 +245,10 @@ export function parseYamlToGoals(yamlContent: string): { goals: GoalNode[]; meta
   return { goals, meta };
 }
 
-function toIsoString(v: any): string | undefined {
+function toIsoString(v: unknown): string | undefined {
   if (v == null) return undefined;
   if (typeof v === 'string') return v;
-  if (typeof v?.toISOString === 'function') return v.toISOString();
+  if (v instanceof Date) return v.toISOString();
   return undefined;
 }
 

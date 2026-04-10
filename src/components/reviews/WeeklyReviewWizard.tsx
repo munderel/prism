@@ -138,7 +138,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     return d;
   }, [upcomingWeekEnd]);
   const upcomingWeekStartStr = getLocalDateString(upcomingWeekStart);
-  const upcomingWeekEndStr = getLocalDateString(upcomingWeekEnd);
+
   const nextWeekEndStr = getLocalDateString(nextWeekEnd);
 
   // Fetch the same task pool the calendar should care about here: current week + next week.

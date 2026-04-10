@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, safeParseJson } from '@/lib/api-helpers';
+import { notFoundResponse } from '@/lib/api-helpers';
+import { parseBody, createReviewAnswerSchema } from '@/lib/schemas';
 
 /** Load and authorize access to a review. Returns the review or an error Response. */
 async function loadReview(reviewId: string, userId: string, isAdmin: boolean) {
@@ -41,13 +42,9 @@ export async function POST(
   const result = await loadReview(reviewId, auth.userId, auth.session.user.isAdmin);
   if ('error' in result) return result.error;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createReviewAnswerSchema);
   if ('error' in parsed) return parsed.error;
   const { stepKey, answerType, answerData } = parsed.data;
-
-  if (!stepKey || !answerType) {
-    return Response.json({ error: 'stepKey and answerType are required' }, { status: 400 });
-  }
 
   const existing = await prisma.reviewAnswer.findFirst({
     where: { reviewId, stepKey },

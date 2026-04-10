@@ -2,8 +2,6 @@
 
 import { useEffect } from 'react';
 import { Trophy } from 'lucide-react';
-import confetti from 'canvas-confetti';
-
 interface WinTheDayCelebrationProps {
   show: boolean;
   onComplete?: () => void;
@@ -12,11 +10,13 @@ interface WinTheDayCelebrationProps {
 export function WinTheDayCelebration({ show, onComplete }: WinTheDayCelebrationProps) {
   useEffect(() => {
     if (show) {
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#f59e0b', '#fbbf24', '#fcd34d', '#f97316', '#ffffff'] });
-      setTimeout(() => {
-        confetti({ particleCount: 60, angle: 60, spread: 55, origin: { x: 0, y: 0.6 }, colors: ['#f59e0b', '#fbbf24'] });
-        confetti({ particleCount: 60, angle: 120, spread: 55, origin: { x: 1, y: 0.6 }, colors: ['#f59e0b', '#fbbf24'] });
-      }, 250);
+      import('canvas-confetti').then(({ default: confetti }) => {
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#f59e0b', '#fbbf24', '#fcd34d', '#f97316', '#ffffff'] });
+        setTimeout(() => {
+          confetti({ particleCount: 60, angle: 60, spread: 55, origin: { x: 0, y: 0.6 }, colors: ['#f59e0b', '#fbbf24'] });
+          confetti({ particleCount: 60, angle: 120, spread: 55, origin: { x: 1, y: 0.6 }, colors: ['#f59e0b', '#fbbf24'] });
+        }, 250);
+      });
       const timer = setTimeout(() => onComplete?.(), 3000);
       return () => clearTimeout(timer);
     }

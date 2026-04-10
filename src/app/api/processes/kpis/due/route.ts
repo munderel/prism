@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuthFromRequest, authError } from '@/lib/auth-guard';
-import { parseLocalDate, getLocalDateString, getWeekBoundaries, getMonthBoundaries, getYearBoundaries } from '@/lib/date-utils';
+import { parseLocalDate, getWeekBoundaries, getMonthBoundaries, getYearBoundaries } from '@/lib/date-utils';
 import type { ProcessCadence } from '@prisma/client';
 
 export async function GET(request: NextRequest) {

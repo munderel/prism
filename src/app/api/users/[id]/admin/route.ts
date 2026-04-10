@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson, NO_STORE } from '@/lib/api-helpers';
+import { NO_STORE } from '@/lib/api-helpers';
+import { parseBody, adminUserActionSchema } from '@/lib/schemas';
 
 const ACTION_DATA: Record<string, Record<string, unknown>> = {
   lockout: { isLockedOut: true },
@@ -20,7 +21,7 @@ export async function PATCH(
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, adminUserActionSchema);
   if ('error' in parsed) return parsed.error;
   const { action } = parsed.data;
   const targetUserId = params.id;
@@ -33,9 +34,6 @@ export async function PATCH(
   }
 
   const data = ACTION_DATA[action];
-  if (!data) {
-    return Response.json({ error: 'Unknown action' }, { status: 400 });
-  }
 
   await prisma.user.update({
     where: { id: targetUserId },

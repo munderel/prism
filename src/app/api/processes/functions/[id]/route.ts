@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, createProcessSchema, updateBusinessFunctionSchema } from '@/lib/schemas';
 
 export async function POST(
   request: NextRequest,
@@ -11,22 +12,9 @@ export async function POST(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createProcessSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { title, description, cadence, assigneeId, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth, scheduleStartDate, mode, durationEndDate } = body;
-
-  if (!title || typeof title !== 'string') {
-    return Response.json({ error: 'title is required' }, { status: 400 });
-  }
-
-  if (!scheduledTime || typeof scheduledTime !== 'string' || !/^\d{2}:\d{2}$/.test(scheduledTime)) {
-    return Response.json({ error: 'scheduledTime is required in HH:mm format' }, { status: 400 });
-  }
-
-  if (defaultDurationMinutes !== undefined && (typeof defaultDurationMinutes !== 'number' || defaultDurationMinutes <= 0)) {
-    return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
-  }
+  const { title, description, cadence, assigneeId, defaultDurationMinutes, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth, scheduleStartDate, mode, durationEndDate } = parsed.data;
 
   // Compute initial nextDueAt if a start date is provided
   let initialNextDueAt: Date | undefined;
@@ -69,7 +57,7 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateBusinessFunctionSchema);
   if ('error' in parsed) return parsed.error;
 
   const fn = await prisma.businessFunction.update({

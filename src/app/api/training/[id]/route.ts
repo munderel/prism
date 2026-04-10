@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { enrichTrainingProgress, pickDefined, notFoundResponse, hasAccess, forbiddenResponse, safeParseJson, NO_STORE } from '@/lib/api-helpers';
+import { enrichTrainingProgress, pickDefined, notFoundResponse, hasAccess, forbiddenResponse, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, updateTrainingItemSchema } from '@/lib/schemas';
 
 export async function GET(
   request: NextRequest,
@@ -63,13 +64,13 @@ export async function PUT(
   if (!existing) return notFoundResponse('Training item');
   if (!hasAccess(existing.ownerId, auth.userId, auth.session.user.isAdmin)) return forbiddenResponse();
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateTrainingItemSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 
   const { targetCompletionDate, goalId } = body;
 
-  const data: any = pickDefined(body, ['title', 'description', 'status']);
+  const data: Record<string, unknown> = pickDefined(body, ['title', 'description', 'status']);
   if (targetCompletionDate !== undefined) {
     data.targetCompletionDate = targetCompletionDate ? new Date(targetCompletionDate) : null;
   }

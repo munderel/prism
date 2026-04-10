@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, updateMeetingSchema } from '@/lib/schemas';
 import { deleteGoogleEvent, updateGoogleEvent, createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
 
 const MEETING_INCLUDE = {
@@ -25,7 +26,7 @@ export async function PATCH(
   const meeting = await findMeetingOrFail(id);
   if (meeting instanceof Response) return meeting;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateMeetingSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 
