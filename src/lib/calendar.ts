@@ -56,7 +56,7 @@ export async function updateGoogleEvent(
   if (!calendar) return null;
 
   try {
-    const requestBody: any = {
+    const requestBody: Record<string, unknown> = {
       ...event.summary !== undefined && { summary: event.summary },
       ...event.description !== undefined && { description: event.description },
       ...event.start !== undefined && {
@@ -81,8 +81,9 @@ export async function updateGoogleEvent(
     });
 
     return response.data;
-  } catch (err: any) {
-    const status = err?.code ?? err?.status ?? err?.response?.status;
+  } catch (err) {
+    const gErr = err as { code?: number; status?: number; response?: { status?: number } };
+    const status = gErr.code ?? gErr.status ?? gErr.response?.status;
     if (status === 404 || status === 410) {
       // Event genuinely gone — caller should create a replacement
       return null;
@@ -194,7 +195,7 @@ export async function listGoogleEvents(
   const results = await Promise.all(
     ids.map(async (calendarId) => {
       try {
-        const allEvents: any[] = [];
+        const allEvents: (Record<string, unknown> & { _sourceCalendarId: string })[] = [];
         let pageToken: string | undefined;
 
         do {
@@ -226,8 +227,10 @@ export async function listGoogleEvents(
 
   // Merge and sort by start time
   return results.flat().sort((a, b) => {
-    const aTime = a.start?.dateTime ?? a.start?.date ?? '';
-    const bTime = b.start?.dateTime ?? b.start?.date ?? '';
+    const aStart = a.start as Record<string, unknown> | undefined;
+    const bStart = b.start as Record<string, unknown> | undefined;
+    const aTime = (aStart?.dateTime ?? aStart?.date ?? '') as string;
+    const bTime = (bStart?.dateTime ?? bStart?.date ?? '') as string;
     return aTime.localeCompare(bTime);
   });
 }
@@ -301,14 +304,14 @@ export async function createGoogleEvent(
   if (!calendar) return null;
 
   try {
-    const startObj: any = { dateTime: event.start };
-    const endObj: any = { dateTime: event.end };
+    const startObj: Record<string, string> = { dateTime: event.start };
+    const endObj: Record<string, string> = { dateTime: event.end };
     if (event.timeZone) {
       startObj.timeZone = event.timeZone;
       endObj.timeZone = event.timeZone;
     }
 
-    const eventBody: any = {
+    const eventBody: Record<string, unknown> = {
       summary: event.summary,
       description: event.description,
       start: startObj,

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuthFromRequest, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createBusinessFunctionSchema } from '@/lib/schemas';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuthFromRequest(request);
@@ -28,14 +28,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createBusinessFunctionSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { name, description } = body;
-
-  if (!name || typeof name !== 'string') {
-    return Response.json({ error: 'name is required' }, { status: 400 });
-  }
+  const { name, description } = parsed.data;
 
   const fn = await prisma.businessFunction.create({
     data: { name, description: description || null },

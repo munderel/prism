@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { Prisma, ReviewType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 
@@ -19,12 +20,12 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'format must be "json" or "csv"' }, { status: 400 });
   }
 
-  const completedAt: any = { not: null };
+  const completedAt: Prisma.DateTimeNullableFilter = { not: null };
   if (from) completedAt.gte = new Date(from);
   if (to) completedAt.lte = new Date(to);
 
-  const where: any = { completedAt };
-  if (type) where.reviewType = type;
+  const where: Prisma.ReviewWhereInput = { completedAt };
+  if (type) where.reviewType = type as ReviewType;
 
   if (scope === 'individual') {
     where.isTeamReview = false;

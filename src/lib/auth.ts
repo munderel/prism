@@ -21,12 +21,12 @@ function withSafeAdapter(adapter: ReturnType<typeof PrismaAdapter>) {
   const originalLinkAccount = adapter.linkAccount;
   return {
     ...adapter,
-    linkAccount: (account: Record<string, any>) => {
-      const cleaned: Record<string, any> = {};
+    linkAccount: (account: Record<string, unknown>) => {
+      const cleaned: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(account)) {
         if (ACCOUNT_FIELDS.has(key)) cleaned[key] = value;
       }
-      return originalLinkAccount(cleaned as any);
+      return originalLinkAccount(cleaned as Parameters<typeof originalLinkAccount>[0]);
     },
   };
 }
@@ -65,114 +65,85 @@ const passwordProvider = CredentialsProvider({
     totpCode: { label: '2FA Code', type: 'text' },
   },
   async authorize(credentials) {
+    const isDev = process.env.NODE_ENV === 'development';
     try {
       if (!credentials?.email || !credentials?.password) {
-        console.log('[auth] authorize — missing email or password');
         return null;
       }
 
       const normalizedEmail = credentials.email.trim().toLowerCase();
-      console.log('[auth] authorize — attempt for:', normalizedEmail);
+      if (isDev) console.log('[auth] authorize — attempt for:', normalizedEmail);
 
-    const user = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    });
-    console.log('[auth] authorize — user found:', !!user, 'hasPassword:', !!user?.passwordHash, 'locked:', !!user?.isLockedOut);
-
-    // Allow first user (bootstrap admin) to skip password check
-    const adminCount = await prisma.user.count({ where: { isAdmin: true } });
-    console.log('[auth] authorize — adminCount:', adminCount);
-
-    if (!user) {
-      console.log('[auth] authorize — user not found');
-      if (adminCount === 0) {
-        console.log('[auth] authorize — first user, allowing bootstrap');
-        // Bootstrap first admin user with this email and password
-        const bcryptPassword = await bcrypt.hash(credentials.password, 10);
-        const newUser = await prisma.user.create({
-          data: {
-            email: normalizedEmail,
-            name: normalizedEmail.split('@')[0],
-            isAdmin: true,
-            passwordHash: bcryptPassword,
-          },
-        });
-        console.log('[auth] authorize — bootstrap user created:', newUser.id);
-        return { id: newUser.id, email: newUser.email, name: newUser.name, isAdmin: true };
-      }
-      return null;
-    }
-
-    if (!user.passwordHash) {
-      console.log('[auth] authorize — user has no password hash');
-      return null;
-    }
-    if (user.isLockedOut) {
-      console.log('[auth] authorize — user locked out');
-      return null;
-    }
-
-    const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
-    console.log('[auth] authorize — password valid:', isValid);
-    if (!isValid) {
-      // TODO: Record failed attempt (LoginAttempt table disabled)
-      // try {
-      //   await prisma.loginAttempt.create({
-      //     data: { email: normalizedEmail, success: false },
-      //   });
-      // } catch (e: any) {
-      //   console.error('[auth] authorize — failed to record attempt:', e.message);
-      // }
-      console.log('[auth] authorize — failed attempt (not recorded, LoginAttempt table disabled)');
-
-      return null;
-    }
-
-    // TODO: Record successful login (LoginAttempt table disabled)
-    // try {
-    //   await prisma.loginAttempt.create({
-    //     data: { email: normalizedEmail, success: true },
-    //   });
-    // } catch (e: any) {
-    //   console.error('[auth] authorize — failed to record success:', e.message);
-    // }
-    console.log('[auth] authorize — successful auth (not recorded, LoginAttempt table disabled)');
-
-    // Check 2FA if enabled
-    if (user.is2FAEnabled && user.totpSecret) {
-      if (!credentials.totpCode) {
-        // Signal to the frontend that 2FA is required
-        throw new Error('2FA_REQUIRED');
-      }
-      const { verifySync } = await import('otplib');
-      const isValidTotp = verifySync({
-        token: credentials.totpCode,
-        secret: user.totpSecret,
+      const user = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
       });
-      if (!isValidTotp) {
-        throw new Error('INVALID_2FA_CODE');
-      }
-    }
 
-    // Check if company enforces 2FA and user hasn't set it up yet
-    try {
-      const companyAuth = await prisma.companyAuthSettings.findFirst();
-      if (companyAuth?.enforce2FA && !user.is2FAEnabled) {
-        throw new Error('2FA_SETUP_REQUIRED');
-      }
-    } catch (e: any) {
-      if (e.message === '2FA_SETUP_REQUIRED') throw e;
-      console.error('[auth] authorize — failed to check company auth:', e.message);
-    }
+      // Allow first user (bootstrap admin) to skip password check
+      const adminCount = await prisma.user.count({ where: { isAdmin: true } });
 
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      isAdmin: user.isAdmin,
-    };
-    } catch (error: any) {
-      console.error('[auth] authorize — EXCEPTION:', error.message, 'stack:', error.stack);
+      if (!user) {
+        if (adminCount === 0) {
+          // Bootstrap first admin user with this email and password
+          const bcryptPassword = await bcrypt.hash(credentials.password, 10);
+          const newUser = await prisma.user.create({
+            data: {
+              email: normalizedEmail,
+              name: normalizedEmail.split('@')[0],
+              isAdmin: true,
+              passwordHash: bcryptPassword,
+            },
+          });
+          if (isDev) console.log('[auth] authorize — bootstrap user created:', newUser.id);
+          return { id: newUser.id, email: newUser.email, name: newUser.name, isAdmin: true };
+        }
+        return null;
+      }
+
+      if (!user.passwordHash) return null;
+      if (user.isLockedOut) return null;
+
+      const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
+      if (!isValid) return null;
+
+      // Check 2FA if enabled
+      if (user.is2FAEnabled && user.totpSecret) {
+        if (!credentials.totpCode) {
+          // Signal to the frontend that 2FA is required
+          throw new Error('2FA_REQUIRED');
+        }
+        const { verifySync } = await import('otplib');
+        const isValidTotp = verifySync({
+          token: credentials.totpCode,
+          secret: user.totpSecret,
+        });
+        if (!isValidTotp) {
+          throw new Error('INVALID_2FA_CODE');
+        }
+      }
+
+      // Check if company enforces 2FA and user hasn't set it up yet
+      try {
+        const companyAuth = await prisma.companyAuthSettings.findFirst();
+        if (companyAuth?.enforce2FA && !user.is2FAEnabled) {
+          throw new Error('2FA_SETUP_REQUIRED');
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message === '2FA_SETUP_REQUIRED') throw e;
+        console.error('[auth] authorize — failed to check company auth:', e instanceof Error ? e.message : e);
+      }
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        isAdmin: user.isAdmin,
+      };
+    } catch (error) {
+      // Re-throw 2FA signals so NextAuth can pass them to the client
+      if (error instanceof Error && ['2FA_REQUIRED', '2FA_SETUP_REQUIRED', 'INVALID_2FA_CODE'].includes(error.message)) {
+        throw error;
+      }
+      console.error('[auth] authorize — unexpected error:', error instanceof Error ? error.message : error);
       return null;
     }
   },
@@ -204,7 +175,7 @@ export const authOptions: NextAuthOptions = {
       // On initial sign-in, cache user ID and isAdmin in token
       if (user) {
         token.id = user.id;
-        token.isAdmin = (user as any).isAdmin ?? false;
+        token.isAdmin = (user as { isAdmin?: boolean }).isAdmin ?? false;
         token.adminCheckedAt = Date.now();
       }
 
@@ -241,35 +212,28 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ account, user }) {
-      console.log('[auth] signIn callback — provider:', account?.provider, 'type:', account?.type, 'email:', user?.email);
+      const isDev = process.env.NODE_ENV === 'development';
       try {
         if (
           account?.provider === 'password-login' ||
           account?.provider === 'dev-login' ||
           account?.type === 'credentials'
         ) {
-          console.log('[auth] signIn — credentials provider, allowing');
           return true;
         }
 
-        if (!user.email) {
-          console.log('[auth] signIn — no email, blocking');
-          return false;
-        }
+        if (!user.email) return false;
 
         const normalizedEmail = user.email.trim().toLowerCase();
-        console.log('[auth] signIn — looking up user:', normalizedEmail);
 
         const dbUser = await prisma.user.findUnique({
           where: { email: normalizedEmail },
           select: { isLockedOut: true },
         });
-        console.log('[auth] signIn — dbUser found:', !!dbUser, 'locked:', !!dbUser?.isLockedOut);
 
         if (dbUser) return !dbUser.isLockedOut;
 
         // New user — require a valid pending invitation
-        console.log('[auth] signIn — new user, checking invitation');
         const invitation = await prisma.invitation.findFirst({
           where: {
             email: normalizedEmail,
@@ -277,25 +241,18 @@ export const authOptions: NextAuthOptions = {
             createdAt: { gte: new Date(Date.now() - INVITE_EXPIRY_MS) },
           },
         });
-        console.log('[auth] signIn — invitation found:', !!invitation, 'id:', invitation?.id ?? 'none');
 
         if (invitation) return true;
 
         // Allow the very first user (bootstrap admin)
         const adminCount = await prisma.user.count({ where: { isAdmin: true } });
-        console.log('[auth] signIn — adminCount:', adminCount);
-        if (adminCount === 0) {
-          console.log('[auth] signIn — first user, allowing');
-          return true;
-        }
+        if (adminCount === 0) return true;
 
         // No existing account, no valid invitation — block sign-in
-        console.log('[auth] signIn — no invite, no admin slot, blocking');
+        if (isDev) console.log('[auth] signIn — blocked, no invite for:', normalizedEmail);
         return false;
-      } catch (error: any) {
-        console.error('[auth] signIn callback FAILED — message:', error.message, 'stack:', error.stack);
-        // Re-throw so NextAuth shows a generic "Callback" error rather than
-        // "AccessDenied" (which implies the user lacks an invitation).
+      } catch (error) {
+        console.error('[auth] signIn callback error:', error instanceof Error ? error.message : error);
         throw new Error('SignInCallbackError');
       }
     },
@@ -305,18 +262,10 @@ export const authOptions: NextAuthOptions = {
     // events.signIn fires AFTER the PrismaAdapter creates the user,
     // so user.id is always a valid DB record ID.
     async signIn({ user, account, profile }) {
-      console.log('[auth] events.signIn — provider:', account?.provider, 'email:', user?.email);
-      if (account?.provider !== 'google') {
-        console.log('[auth] events.signIn — not google, returning');
-        return;
-      }
+      if (account?.provider !== 'google') return;
 
       try {
         // Defense-in-depth: detect cross-user account linking.
-        // When an existing session cookie is present during a new Google OAuth
-        // flow, NextAuth's callbackHandler links the new Google account to the
-        // session user instead of creating a new user. Detect and remediate by
-        // comparing the OAuth profile email with the DB user's email.
         if (
           profile?.email &&
           user.email &&
@@ -331,14 +280,13 @@ export const authOptions: NextAuthOptions = {
           });
           console.error(
             `[auth] Security: Cross-user account linking detected and remediated. ` +
-            `DB user ${user.email} had Google account for ${profile.email} incorrectly linked. Unlinked.`
+            `DB user ${user.email} had Google account for ${profile.email} incorrectly linked.`
           );
           return;
         }
 
         // Store Google refresh token (encrypted)
         if (account.refresh_token) {
-          console.log('[auth] events.signIn — storing google refresh token');
           if (!process.env.TOKEN_ENCRYPTION_KEY) {
             console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — skipping refresh token storage');
           } else {
@@ -351,10 +299,7 @@ export const authOptions: NextAuthOptions = {
                   : null,
               },
             });
-            console.log('[auth] events.signIn — refresh token stored');
           }
-        } else {
-          console.log('[auth] events.signIn — no refresh token in account');
         }
 
         // Auto-promote first user to admin
@@ -394,9 +339,9 @@ export const authOptions: NextAuthOptions = {
             });
           }
         }
-      } catch (error: any) {
+      } catch (error) {
         // Log but don't throw — failing here should not block login
-        console.error('[auth] events.signIn error (non-fatal) — message:', error.message, 'stack:', error.stack);
+        console.error('[auth] events.signIn error (non-fatal):', error instanceof Error ? error.message : error);
       }
     },
   },
@@ -407,16 +352,18 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days — persistent sessions
   },
-  debug: true,
+  debug: process.env.NODE_ENV === 'development',
   logger: {
-    error(code: string, metadata: any) {
+    error(code: string, metadata: unknown) {
       console.error(`[nextauth][error] ${code}:`, JSON.stringify(metadata, null, 2));
     },
     warn(code: string) {
       console.warn(`[nextauth][warn] ${code}`);
     },
-    debug(code: string, metadata: any) {
-      console.log(`[nextauth][debug] ${code}:`, JSON.stringify(metadata, null, 2));
+    debug(code: string, metadata: unknown) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[nextauth][debug] ${code}:`, JSON.stringify(metadata, null, 2));
+      }
     },
   },
 };

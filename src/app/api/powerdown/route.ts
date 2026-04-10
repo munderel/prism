@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { pickDefined, safeParseJson } from '@/lib/api-helpers';
+import { pickDefined } from '@/lib/api-helpers';
+import { parseBody, updatePowerdownSchema } from '@/lib/schemas';
 import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
 import { parseLocalDateKey } from '@/lib/google-sync-state';
@@ -120,7 +121,7 @@ export async function PATCH(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updatePowerdownSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 

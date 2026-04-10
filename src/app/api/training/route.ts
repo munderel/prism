@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server';
+import { Prisma, TrainingType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { enrichTrainingProgress, safeParseJson } from '@/lib/api-helpers';
+import { enrichTrainingProgress } from '@/lib/api-helpers';
+import { parseBody, createTrainingItemSchema } from '@/lib/schemas';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -11,8 +13,8 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type'); // BOOK | COURSE
   const status = searchParams.get('status'); // ACTIVE | COMPLETED | ARCHIVED
 
-  const where: any = { ownerId: auth.userId };
-  if (type) where.type = type;
+  const where: Prisma.TrainingItemWhereInput = { ownerId: auth.userId };
+  if (type) where.type = type as TrainingType;
   if (status) where.status = status;
 
   const limit = Math.min(Number(searchParams.get('limit')) || 100, 200);
@@ -46,19 +48,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createTrainingItemSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-
-  const { title, type, description, targetCompletionDate, goalId } = body;
-
-  if (!title || typeof title !== 'string') {
-    return Response.json({ error: 'title is required' }, { status: 400 });
-  }
-
-  if (!type || !['BOOK', 'COURSE'].includes(type)) {
-    return Response.json({ error: 'type must be BOOK or COURSE' }, { status: 400 });
-  }
+  const { title, type, description, targetCompletionDate, goalId } = parsed.data;
 
   // Validate goalId if provided
   if (goalId) {

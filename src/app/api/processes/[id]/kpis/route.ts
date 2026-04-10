@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { KpiTimeLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { authorizeProcessAccess, safeParseJson, validateKpiGoals } from '@/lib/api-helpers';
+import { authorizeProcessAccess } from '@/lib/api-helpers';
+import { parseBody, createProcessKpiSchema } from '@/lib/schemas';
 
 export async function GET(
   _request: NextRequest,
@@ -43,19 +44,9 @@ export async function POST(
   const access = await authorizeProcessAccess(id, auth.userId, auth.session.user.isAdmin);
   if ('error' in access) return access.error;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createProcessKpiSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { name, unit, targetValue, goalId, goals } = body;
-
-  if (!name) {
-    return Response.json({ error: 'name is required' }, { status: 400 });
-  }
-
-  if (Array.isArray(goals) && goals.length > 0) {
-    const goalsError = validateKpiGoals(goals, Object.values(KpiTimeLevel) as string[]);
-    if (goalsError) return Response.json({ error: goalsError }, { status: 400 });
-  }
+  const { name, unit, targetValue, goalId, goals } = parsed.data;
 
   const kpiWithGoals = await prisma.$transaction(async (tx) => {
     const kpi = await tx.processKpi.create({

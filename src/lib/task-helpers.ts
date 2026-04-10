@@ -3,20 +3,23 @@ import { prisma } from '@/lib/prisma';
 /**
  * Unflag all other Win-the-Day tasks for the same user + date,
  * ensuring only one task per user per day has the flag.
+ * Uses a transaction for atomicity to prevent race conditions.
  */
 export async function unflagOtherWinTheDay(
   ownerId: string,
   dueDate: Date | string,
   excludeId?: string
 ) {
-  await prisma.task.updateMany({
-    where: {
-      ownerId,
-      dueDate: new Date(dueDate),
-      isWinTheDay: true,
-      ...(excludeId && { id: { not: excludeId } }),
-    },
-    data: { isWinTheDay: false, winTheDayRank: null },
+  await prisma.$transaction(async (tx) => {
+    await tx.task.updateMany({
+      where: {
+        ownerId,
+        dueDate: new Date(dueDate),
+        isWinTheDay: true,
+        ...(excludeId && { id: { not: excludeId } }),
+      },
+      data: { isWinTheDay: false, winTheDayRank: null },
+    });
   });
 }
 

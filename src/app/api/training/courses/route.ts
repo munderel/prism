@@ -1,8 +1,8 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createCourseSchema } from '@/lib/schemas';
 import { openrouter } from '@/lib/openrouter';
 import { courseBreakdownPrompt } from '@/lib/ai-prompts';
-import { handleAIError, MAX_AI_INPUT_LENGTH } from '@/lib/ai-error-handler';
+import { handleAIError } from '@/lib/ai-error-handler';
 import { createTrainingItemWithTasks, TaskEntry } from '@/lib/training-helpers';
 
 interface Lesson {
@@ -30,28 +30,12 @@ export async function POST(request: Request) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createCourseSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-
-  const { title, syllabus, targetCompletionDate, goalId } = body;
-
-  if (!title || typeof title !== 'string' || title.length > MAX_AI_INPUT_LENGTH) {
-    return Response.json(
-      { error: 'title is required and must be under 10000 characters' },
-      { status: 400 }
-    );
-  }
-
-  if (syllabus && (typeof syllabus !== 'string' || syllabus.length > MAX_AI_INPUT_LENGTH)) {
-    return Response.json(
-      { error: 'syllabus must be under 10000 characters' },
-      { status: 400 }
-    );
-  }
+  const { title, syllabus, targetCompletionDate, goalId } = parsed.data;
 
   try {
-    const messages = courseBreakdownPrompt(title, syllabus);
+    const messages = courseBreakdownPrompt(title, syllabus ?? undefined as string | undefined);
     const breakdown = await openrouter.chatJSON<CourseBreakdown>(messages);
 
     const target = targetCompletionDate ? new Date(targetCompletionDate) : null;

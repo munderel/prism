@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, authSettingsSchema } from '@/lib/schemas';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -14,7 +14,7 @@ export async function PATCH(request: Request) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, authSettingsSchema);
   if ('error' in parsed) return parsed.error;
   const { enforce2FA } = parsed.data;
 

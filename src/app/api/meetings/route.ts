@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createMeetingSchema } from '@/lib/schemas';
 import { createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
 
 const MEETING_INCLUDE = {
@@ -24,16 +24,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createMeetingSchema);
   if ('error' in parsed) return parsed.error;
   const { title, description, cadence, dayOfWeek, occurDate, timeStart, timeEnd, attendeeIds, addMeetLink } = parsed.data;
-
-  if (!title || !cadence || !timeStart || !timeEnd) {
-    return Response.json(
-      { error: 'title, cadence, timeStart, and timeEnd are required' },
-      { status: 400 }
-    );
-  }
 
   if (cadence === 'ONE_TIME' && !occurDate) {
     return Response.json(

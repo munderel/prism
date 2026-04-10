@@ -39,7 +39,7 @@ class OpenRouterClient {
   async chat(
     messages: ChatMessage[],
     options?: { model?: string; temperature?: number; maxTokens?: number }
-  ): Promise<{ content: string; model: string; usage: any }> {
+  ): Promise<{ content: string; model: string; usage: Record<string, number> }> {
     const model = options?.model ?? this.defaultModel;
     let lastError: Error | null = null;
 
@@ -77,10 +77,10 @@ class OpenRouterClient {
           model: data.model ?? model,
           usage: data.usage ?? {},
         };
-      } catch (err: any) {
-        lastError = err;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
         if (err instanceof AIError && !err.retryable) throw err;
-        if (err.name === 'AbortError') throw new AIError('Request timed out', 'TIMEOUT', true);
+        if (err instanceof Error && err.name === 'AbortError') throw new AIError('Request timed out', 'TIMEOUT', true);
         if (attempt < this.maxRetries) {
           await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
           continue;

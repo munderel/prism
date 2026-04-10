@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
-import { safeParseJson, notFoundResponse } from '@/lib/api-helpers';
+import { notFoundResponse } from '@/lib/api-helpers';
+import { parseBody, createKpiSchema } from '@/lib/schemas';
 import { validateKpiLevel, validateKpiLink } from '@/lib/goal-validation';
 
 export async function GET(
@@ -89,18 +90,10 @@ export async function POST(
     );
   }
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createKpiSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { name, type, unit, targetValue, linkedKpiId } = body;
-
-  if (!name || !type) {
-    return Response.json({ error: 'name and type are required' }, { status: 400 });
-  }
-
-  if (type !== 'NUMERIC' && type !== 'BINARY') {
-    return Response.json({ error: 'type must be NUMERIC or BINARY' }, { status: 400 });
-  }
 
   // Check unique constraint before create for friendly error
   const existing = await prisma.kpi.findUnique({

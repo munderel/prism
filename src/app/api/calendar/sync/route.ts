@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, syncCalendarSchema } from '@/lib/schemas';
 import {
   listGoogleEvents,
   createGoogleEvent,
@@ -21,7 +21,6 @@ import {
   pad2,
   getDateKey,
   parseLocalDateKey,
-  type GoogleSyncState,
   type ManagedRecurringSeriesState,
 } from '@/lib/google-sync-state';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
@@ -672,12 +671,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, syncCalendarSchema);
   if ('error' in parsed) return parsed.error;
   const { start, end, force } = parsed.data;
-  if (!start || !end) {
-    return Response.json({ error: 'start and end are required' }, { status: 400 });
-  }
 
   const rangeStart = new Date(start);
   const rangeEnd = new Date(end);
@@ -1007,13 +1003,13 @@ export async function POST(request: NextRequest) {
       liveProcessIds.add(process.id);
       const synced = await processSeriesSync(
         auth.userId, targetCalendarId, gcalEvents as GoogleEventLike[], timezone, updates,
-        googleSyncState.processes[process.id],
+        googleSyncState.processes![process.id],
         buildProcessSeriesConfig(process, timezone, rangeStart, rangeEnd),
         (series) => applyProcessOverridesToPrism(auth.userId, process.id, series, timezone, updates),
         `Synced process series: ${process.title}`,
       );
-      if (synced) googleSyncState.processes[process.id] = synced;
-      else delete googleSyncState.processes[process.id];
+      if (synced) googleSyncState.processes![process.id] = synced;
+      else delete googleSyncState.processes![process.id];
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[calendar] Failed to sync process series "${process.title}" for user ${auth.userId}:`, err);

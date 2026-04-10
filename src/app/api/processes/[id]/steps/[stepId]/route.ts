@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, updateProcessStepSchema } from '@/lib/schemas';
 import { cleanupCurrentPeriodTasks } from '@/lib/process-task-generator';
 
 export async function PATCH(
@@ -12,7 +13,7 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const { id, stepId } = await params;
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateProcessStepSchema);
   if ('error' in parsed) return parsed.error;
 
   const step = await prisma.processStep.update({

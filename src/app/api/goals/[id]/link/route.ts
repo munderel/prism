@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson, notFoundResponse } from '@/lib/api-helpers';
+import { notFoundResponse } from '@/lib/api-helpers';
+import { parseBody, linkGoalSchema } from '@/lib/schemas';
 import { cascadeProgressUp } from '@/lib/progress';
 
 export async function POST(
@@ -12,14 +13,10 @@ export async function POST(
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, linkGoalSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { individualGoalId, weight } = body;
-
-  if (!individualGoalId) {
-    return Response.json({ error: 'individualGoalId is required' }, { status: 400 });
-  }
 
   // Validate company goal is in a company stack
   const companyGoal = await prisma.goal.findUnique({

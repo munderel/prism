@@ -1,3 +1,31 @@
+import { Prisma } from '@prisma/client';
+
+/**
+ * Wraps an API route handler with standardized error handling.
+ * Catches Prisma errors (not found, unique constraint) and returns appropriate HTTP status codes.
+ * Any other errors return a clean 500 without leaking internals.
+ */
+export function withErrorHandler(
+  handler: (request: Request, context?: { params: Record<string, string> }) => Promise<Response>
+) {
+  return async (request: Request, context?: { params: Record<string, string> }): Promise<Response> => {
+    try {
+      return await handler(request, context);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          return Response.json({ error: 'Record not found' }, { status: 404 });
+        }
+        if (error.code === 'P2002') {
+          return Response.json({ error: 'A record with that value already exists' }, { status: 409 });
+        }
+      }
+      console.error('[api] Unhandled error:', error instanceof Error ? error.message : error);
+      return Response.json({ error: 'Internal server error' }, { status: 500 });
+    }
+  };
+}
+
 /**
  * Pick only defined (non-undefined) fields from an input object.
  * Useful in PATCH handlers to build partial update payloads.
@@ -91,7 +119,8 @@ export function validateEmail(raw: unknown): { email: string; error?: never } | 
  * Safely parse JSON from a Request body.
  * Returns { data } on success, { error } with a Response on failure.
  */
-export async function safeParseJson<T = any>(
+/** @deprecated Use `parseBody` from `@/lib/schemas` with a Zod schema instead. */
+export async function safeParseJson<T = Record<string, unknown>>(
   request: Request
 ): Promise<{ data: T; error?: never } | { data?: never; error: Response }> {
   try {

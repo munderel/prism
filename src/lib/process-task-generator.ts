@@ -1,9 +1,9 @@
 import { ProcessCadence } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import {
-  startOfWeek, endOfWeek, startOfMonth, endOfMonth,
+  startOfWeek, startOfMonth, endOfMonth,
   startOfQuarter, endOfQuarter, startOfYear, endOfYear,
-  setDay, setDate,
+  setDay,
 } from 'date-fns';
 
 // ─── Period helpers ───────────────────────────────────────────────────────────

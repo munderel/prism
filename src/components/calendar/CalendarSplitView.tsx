@@ -5,6 +5,8 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction';
+import type { EventClickArg, EventContentArg, EventDropArg } from '@fullcalendar/core';
+import type { EventReceiveArg, EventResizeDoneArg } from '@fullcalendar/interaction';
 import { ChevronDown, ChevronUp, X, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
@@ -65,6 +67,25 @@ interface SelectedEventPopover {
   createdBy?: string;
   gcalEventId?: string;
   gcalCalendarId?: string;
+}
+
+/** Shape of the event data objects returned by useCalendarEvents */
+interface CalendarEventData {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  source: string;
+  status?: string;
+  itemId?: string;
+  itemType?: string;
+  aimInstanceId?: string;
+  aimCategoryName?: string;
+  tasks?: { id: string; title: string; status: string }[];
+  taskId?: string;
+  taskType?: string;
+  calendarId?: string;
+  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +224,7 @@ function colorFromDef(c: ColorDef, isDark: boolean) {
   return { bg: c.bg, border: c.border, text: isDark ? c.textDark : c.textLight };
 }
 
-function getEventColor(event: any, isDark: boolean): { bg: string; border: string; text: string } {
+function getEventColor(event: { extendedProps?: Record<string, unknown> }, isDark: boolean): { bg: string; border: string; text: string } {
   const props = event.extendedProps ?? {};
 
   if (props.source === 'google') {
@@ -218,14 +239,14 @@ function getEventColor(event: any, isDark: boolean): { bg: string; border: strin
 
   // Match by item type (aim, review)
   const ITEM_TYPE_MAP: Record<string, keyof typeof PRISM_COLORS> = { aim: 'AIM', review: 'REVIEW' };
-  const colorKey = ITEM_TYPE_MAP[props.itemType];
+  const colorKey = ITEM_TYPE_MAP[props.itemType as string];
   if (colorKey) {
     return colorFromDef(PRISM_COLORS[colorKey], isDark);
   }
 
   // Match by event source (meetings, powerdown)
   const SOURCE_MAP: Record<string, keyof typeof PRISM_COLORS> = { meetings: 'MEETING', powerdown: 'POWER_DOWN' };
-  const sourceKey = SOURCE_MAP[props.source];
+  const sourceKey = SOURCE_MAP[props.source as string];
   if (sourceKey) {
     return colorFromDef(PRISM_COLORS[sourceKey], isDark);
   }
@@ -337,7 +358,7 @@ export function CalendarSplitView({
   const [mobileItemsExpanded, setMobileItemsExpanded] = useState(false);
   const [selectedEventPopover, setSelectedEventPopover] = useState<SelectedEventPopover | null>(null);
   const [completingEvent, setCompletingEvent] = useState(false);
-  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editingTask, setEditingTask] = useState<Record<string, unknown> | null>(null);
   const [visibleRange, setVisibleRange] = useState<{ start: string; end: string } | null>(null);
 
   // Match the main calendar's data flow: fetch the exact visible range
@@ -352,7 +373,7 @@ export function CalendarSplitView({
   const displayEvents = useMemo(() => {
     const serverEvents = calendarEvents ?? [];
     const stillPendingScheduled = pendingScheduledItems.current.filter((pending) => {
-      return !serverEvents.some((evt: any) => {
+      return !serverEvents.some((evt: CalendarEventData) => {
         const sameItem = evt.itemId === pending.itemId && evt.itemType === pending.itemType;
         if (!sameItem) return false;
         const evtStart = evt.start ? new Date(evt.start).getTime() : 0;
@@ -364,7 +385,7 @@ export function CalendarSplitView({
     });
 
     const stillPending = pendingWorkBlocks.current.filter((wb) => {
-      return !serverEvents.some((evt: any) =>
+      return !serverEvents.some((evt: CalendarEventData) =>
         evt.source === 'google' &&
         Math.abs(new Date(evt.start).getTime() - new Date(wb.start).getTime()) < 60000 &&
         Math.abs(new Date(evt.end).getTime() - new Date(wb.end).getTime()) < 60000
@@ -431,10 +452,10 @@ export function CalendarSplitView({
     const rangeEnd = new Date(activeRange.end).getTime();
 
     // Only count user-scheduled work events (tasks, aims) — exclude meetings, google, powerdown, etc.
-    const workEvents = displayEvents.filter((evt: any) =>
+    const workEvents = displayEvents.filter((evt: CalendarEventData) =>
       evt.source === 'tasks' || evt.source === 'aims'
     );
-    return workEvents.reduce((total: number, evt: any) => {
+    return workEvents.reduce((total: number, evt: CalendarEventData) => {
       const evtStart = new Date(evt.start).getTime();
       const evtEnd = new Date(evt.end).getTime();
       // Only count events within the date range
@@ -570,7 +591,7 @@ export function CalendarSplitView({
   }, [toast, mutateEvents, onRefresh]);
 
   // --- Event click handler ---
-  const handleEventClick = useCallback((info: any) => {
+  const handleEventClick = useCallback((info: EventClickArg) => {
     const props = info.event.extendedProps || {};
     const rect = info.el.getBoundingClientRect();
     const position = { top: rect.top + window.scrollY, left: rect.right + 8 };
@@ -694,7 +715,7 @@ export function CalendarSplitView({
 
   // FullCalendar event receive handler (external drop)
   const handleEventReceive = useCallback(
-    async (info: any) => {
+    async (info: EventReceiveArg) => {
       const { itemId, itemType, durationMin } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
@@ -716,7 +737,7 @@ export function CalendarSplitView({
         };
         pendingWorkBlocks.current = [...pendingWorkBlocks.current, placeholder];
         // Force a re-render so displayEvents includes the placeholder
-        mutateEvents((currentData: any) => currentData, { revalidate: false });
+        mutateEvents((currentData: unknown) => currentData, { revalidate: false });
 
         try {
           await onCreateWorkBlock?.(start, end, title);
@@ -732,7 +753,7 @@ export function CalendarSplitView({
       let snapStart = start;
       let snapEnd = end;
       if (mode === 'schedule_tasks' && displayEvents.length) {
-        const block = displayEvents.find((evt: any) => {
+        const block = displayEvents.find((evt: CalendarEventData) => {
           if (evt.source !== 'google') return false;
           const evtStart = new Date(evt.start);
           const evtEnd = new Date(evt.end);
@@ -760,7 +781,7 @@ export function CalendarSplitView({
             ...(itemType === 'aim' ? { aimInstanceId: itemId } : { taskId: itemId }),
           },
         ];
-        mutateEvents((currentData: any) => currentData, { revalidate: false });
+        mutateEvents((currentData: unknown) => currentData, { revalidate: false });
         // After successful schedule, remove the FullCalendar ghost (server data takes over)
         info.event.remove();
         // Refetch calendar events and sidebar items from server
@@ -779,7 +800,7 @@ export function CalendarSplitView({
 
   // Shared handler for event resize and internal drag-move
   const handleEventUpdate = useCallback(
-    async (info: any) => {
+    async (info: EventDropArg | EventResizeDoneArg) => {
       const { itemId, itemType } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
@@ -800,7 +821,7 @@ export function CalendarSplitView({
             ...(itemType === 'aim' ? { aimInstanceId: itemId } : { taskId: itemId }),
           },
         ];
-        mutateEvents((currentData: any) => currentData, { revalidate: false });
+        mutateEvents((currentData: unknown) => currentData, { revalidate: false });
         await mutateEvents();
         onRefresh?.();
       } catch {
@@ -813,7 +834,7 @@ export function CalendarSplitView({
 
   // Custom event content renderer with unschedule button
   const renderEventContent = useCallback(
-    (eventInfo: any) => {
+    (eventInfo: EventContentArg) => {
       const { itemId, itemType, source } = eventInfo.event.extendedProps ?? {};
       const colors = getEventColor(eventInfo.event, isDark);
       const isGoogleEvent = source === 'google';
@@ -990,7 +1011,7 @@ export function CalendarSplitView({
               }
               if (props.aimInstanceId && props.tasks && props.tasks.length > 0) {
                 const badge = document.createElement('span');
-                const doneCount = props.tasks.filter((t: any) => t.status === 'DONE').length;
+                const doneCount = props.tasks.filter((t: { status: string }) => t.status === 'DONE').length;
                 badge.textContent = `${doneCount}/${props.tasks.length}`;
                 badge.style.cssText = 'position:absolute;bottom:2px;right:4px;font-size:9px;background:rgba(0,0,0,0.4);color:#fff;border-radius:4px;padding:0 4px;line-height:1.4;';
                 info.el.style.position = 'relative';

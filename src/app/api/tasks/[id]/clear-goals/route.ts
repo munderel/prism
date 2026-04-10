@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createClearGoalSchema, updateClearGoalsSchema } from '@/lib/schemas';
 
 export async function GET(
   _request: NextRequest,
@@ -27,13 +27,9 @@ export async function POST(
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createClearGoalSchema);
   if ('error' in parsed) return parsed.error;
   const { text, powerdownId } = parsed.data;
-
-  if (!text?.trim()) {
-    return Response.json({ error: 'Text is required' }, { status: 400 });
-  }
 
   const maxOrder = await prisma.clearGoal.aggregate({
     where: { taskId },
@@ -60,16 +56,12 @@ export async function PATCH(
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateClearGoalsSchema);
   if ('error' in parsed) return parsed.error;
   const { goals } = parsed.data;
 
-  if (!Array.isArray(goals)) {
-    return Response.json({ error: 'goals array is required' }, { status: 400 });
-  }
-
   await prisma.$transaction(
-    goals.map((goal: { id: string; text?: string; isComplete?: boolean; sortOrder?: number }) =>
+    goals.map((goal) =>
       prisma.clearGoal.update({
         where: { id: goal.id },
         data: {

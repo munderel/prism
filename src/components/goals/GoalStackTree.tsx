@@ -160,8 +160,8 @@ const SortableGoalCard = React.memo(function SortableGoalCard({
 
 export function GoalStackTree({
   stackId,
-  isCompanyStack,
-  isAdmin,
+  isCompanyStack: _isCompanyStack,
+  isAdmin: _isAdmin,
   showInProgress,
   showDueToday,
 }: GoalStackTreeProps) {
@@ -299,7 +299,7 @@ export function GoalStackTree({
     };
 
     mutateGoals(
-      async (current: any) => {
+      async (_current: any) => {
         await fetch(`/api/tasks/${task.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },

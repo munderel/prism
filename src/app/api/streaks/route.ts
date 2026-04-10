@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, createStreakSchema } from '@/lib/schemas';
 import { startOfToday } from '@/lib/date-utils';
 
 const STREAK_MILESTONES = new Set([7, 14, 30, 50, 100]);
@@ -31,13 +31,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createStreakSchema);
   if ('error' in parsed) return parsed.error;
   const { streakType } = parsed.data;
-
-  if (!streakType) {
-    return Response.json({ error: 'streakType is required' }, { status: 400 });
-  }
 
   const today = startOfToday();
 

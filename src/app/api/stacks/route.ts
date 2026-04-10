@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { cacheHeaders, safeParseJson, NO_STORE } from '@/lib/api-helpers';
+import { cacheHeaders, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, createStackSchema } from '@/lib/schemas';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -23,19 +24,13 @@ export async function GET() {
     orderBy: [{ isCompany: 'desc' }, { createdAt: 'asc' }],
   });
 
-  return new Response(JSON.stringify(stacks), {
-    headers: cacheHeaders(30, 120),
-  });
+  return Response.json(stacks, { headers: cacheHeaders(30, 120) });
 }
 
 export async function POST(request: NextRequest) {
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createStackSchema);
   if ('error' in parsed) return parsed.error;
   const { name, isCompany, visibility } = parsed.data;
-
-  if (!name || typeof name !== 'string') {
-    return Response.json({ error: 'Name is required' }, { status: 400 });
-  }
 
   const requiresAdmin = isCompany || visibility === 'company' || visibility === 'group';
   const auth = requiresAdmin ? await requireAdmin() : await requireAuth();

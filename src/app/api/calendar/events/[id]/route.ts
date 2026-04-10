@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, updateCalendarEventSchema } from '@/lib/schemas';
 import { deleteGoogleEvent, updateGoogleEvent } from '@/lib/calendar';
 
 /**
@@ -37,13 +37,10 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const { id: eventId } = await params;
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateCalendarEventSchema);
   if ('error' in parsed) return parsed.error;
 
   const { start, end, calendarId = 'primary' } = parsed.data;
-  if (!start || !end) {
-    return Response.json({ error: 'start and end are required' }, { status: 400 });
-  }
 
   const updated = await updateGoogleEvent(auth.userId, eventId, {
     start: new Date(start).toISOString(),

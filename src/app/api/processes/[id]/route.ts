@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { notFoundResponse, safeParseJson, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { parseBody, updateProcessSchema } from '@/lib/schemas';
 import { cleanupCurrentPeriodTasks } from '@/lib/process-task-generator';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
 import { parseLocalDateKey } from '@/lib/google-sync-state';
@@ -45,7 +46,7 @@ export async function PATCH(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateProcessSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
 
@@ -113,10 +114,6 @@ export async function PATCH(
   }
 
   const isAdmin = auth.session.user.isAdmin;
-
-  if (body.defaultDurationMinutes !== undefined && (typeof body.defaultDurationMinutes !== 'number' || body.defaultDurationMinutes <= 0)) {
-    return Response.json({ error: 'defaultDurationMinutes must be a positive number' }, { status: 400 });
-  }
 
   // Non-admin can only update their own processes
   if (!isAdmin && process.assigneeId !== auth.userId) {

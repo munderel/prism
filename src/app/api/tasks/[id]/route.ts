@@ -62,7 +62,7 @@ export async function PATCH(
   const body = parsed.data;
   const { status, dueDate, timeBlockStart, timeBlockEnd, isWinTheDay } = body;
 
-  const data: any = pickDefined(body, [
+  const data: Record<string, unknown> = pickDefined(body, [
     'title', 'description', 'priority', 'deliverable', 'estimatedMinutes',
     'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay', 'winTheDayRank',
     'assigneeId',
@@ -145,22 +145,22 @@ export async function PATCH(
         await prisma.task.update({ where: { id }, data: { calendarEventId: null } });
       } else if (task.calendarEventId && (timeBlockStart !== undefined || timeBlockEnd !== undefined)) {
         await updateGoogleEvent(task.ownerId, task.calendarEventId, {
-          summary: data.title ?? task.title,
-          description: data.description ?? task.description ?? undefined,
-          start: newStart ? new Date(newStart).toISOString() : undefined,
-          end: newEnd ? new Date(newEnd).toISOString() : undefined,
+          summary: (data.title as string | undefined) ?? task.title,
+          description: (data.description as string | undefined) ?? task.description ?? undefined,
+          start: newStart ? new Date(newStart as string | Date).toISOString() : undefined,
+          end: newEnd ? new Date(newEnd as string | Date).toISOString() : undefined,
         }, targetCalendarId);
       } else if (!task.calendarEventId && newStart && newEnd && status !== 'DONE' && status !== 'DROPPED') {
         const completionUrl = getCompletionUrl(id, task.ownerId);
-        const rawDesc = data.description ?? task.description;
+        const rawDesc = (data.description as string | undefined) ?? task.description;
         const descWithLink = rawDesc
           ? `${rawDesc}\n\nMark complete in Prism: ${completionUrl}`
           : `Mark complete in Prism: ${completionUrl}`;
         const gcalEvent = await createGoogleEvent(task.ownerId, {
-          summary: data.title ?? task.title,
+          summary: (data.title as string | undefined) ?? task.title,
           description: descWithLink,
-          start: new Date(newStart).toISOString(),
-          end: new Date(newEnd).toISOString(),
+          start: new Date(newStart as string | Date).toISOString(),
+          end: new Date(newEnd as string | Date).toISOString(),
         }, targetCalendarId);
         if (gcalEvent?.id) {
           await prisma.task.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });

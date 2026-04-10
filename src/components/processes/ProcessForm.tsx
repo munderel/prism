@@ -8,8 +8,6 @@ import { ScheduleFields } from './ScheduleFields';
 import {
   CADENCE_OPTIONS,
   INPUT_CLASSES,
-  cadenceNeedsDayOfWeek,
-  cadenceNeedsDayOfMonth,
 } from '@/lib/process-constants';
 import { expandVariants } from '@/lib/process-animations';
 import type { ProcessFormValues, UserOption } from '@/types/process';

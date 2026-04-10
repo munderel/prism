@@ -5,14 +5,14 @@ import useSWR, { useSWRConfig } from 'swr';
 import dynamic from 'next/dynamic';
 import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw, X, CalendarPlus, Loader2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import { Draggable } from '@fullcalendar/interaction';
+import type { Draggable } from '@fullcalendar/interaction';
 import { LazyMotion, domAnimation, m, AnimatePresence } from 'framer-motion';
 import { MeetingsManager } from '@/components/calendar/MeetingsManager';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useToast } from '@/components/ui/ToastProvider';
 import { freshFetcher } from '@/lib/fetcher';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { fromZonedTime } from 'date-fns-tz';
+
 
 // FullCalendar needs dynamic import (no SSR)
 const CalendarView = dynamic(
@@ -268,13 +268,17 @@ export default function CalendarPage() {
   // Initialize FullCalendar Draggable on the sidebar container (desktop only)
   useEffect(() => {
     if (!sidebarRef.current || isMobile) return;
+    let cancelled = false;
 
     // Clean up previous instance
     if (draggableRef.current) {
       draggableRef.current.destroy();
     }
 
-    draggableRef.current = new Draggable(sidebarRef.current, {
+    import('@fullcalendar/interaction').then(({ Draggable: DraggableClass }) => {
+      if (cancelled || !sidebarRef.current) return;
+
+    draggableRef.current = new DraggableClass(sidebarRef.current, {
       itemSelector: '.fc-unscheduled-task',
       eventData: (eventEl) => {
         const itemType = eventEl.getAttribute('data-item-type') || 'task';
@@ -311,8 +315,10 @@ export default function CalendarPage() {
         };
       },
     });
+    }); // end dynamic import .then()
 
     return () => {
+      cancelled = true;
       if (draggableRef.current) {
         draggableRef.current.destroy();
         draggableRef.current = null;

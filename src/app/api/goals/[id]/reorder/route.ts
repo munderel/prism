@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError, checkStackAccess } from '@/lib/auth-guard';
-import { safeParseJson, notFoundResponse } from '@/lib/api-helpers';
+import { notFoundResponse } from '@/lib/api-helpers';
+import { parseBody, reorderGoalSchema } from '@/lib/schemas';
 import { validateGoalLevel } from '@/lib/goal-validation';
 
 export async function PATCH(
@@ -27,7 +28,7 @@ export async function PATCH(
     if (accessDenied) return accessDenied;
   }
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, reorderGoalSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { sortOrder, parentId } = body;

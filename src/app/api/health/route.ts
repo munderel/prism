@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
-  const results: Record<string, any> = {
+  const results: Record<string, unknown> = {
     dbUrlSet: !!process.env.DATABASE_URL,
     nextAuthUrl: process.env.NEXTAUTH_URL ?? 'NOT SET',
     tokenKeySet: !!process.env.TOKEN_ENCRYPTION_KEY,
@@ -17,10 +17,10 @@ export async function GET() {
     results.accountCount = accountCount;
     results.dbStatus = 'connected';
     console.log('[health] DB queries successful, userCount:', userCount, 'accountCount:', accountCount);
-  } catch (e: any) {
+  } catch (e: unknown) {
     results.dbStatus = 'error';
-    results.dbError = e.message;
-    console.error('[health] DB error:', e.message);
+    results.dbError = e instanceof Error ? e.message : String(e);
+    console.error('[health] DB error:', e instanceof Error ? e.message : e);
   }
 
   return Response.json(results);

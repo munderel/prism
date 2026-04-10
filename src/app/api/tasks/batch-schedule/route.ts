@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, batchScheduleSchema } from '@/lib/schemas';
 
 interface BatchUpdate {
   id: string;
@@ -35,16 +35,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, batchScheduleSchema);
   if ('error' in parsed) return parsed.error;
-  const { updates } = parsed.data as { updates?: BatchUpdate[] };
-
-  if (!Array.isArray(updates) || updates.length === 0) {
-    return Response.json(
-      { error: 'updates must be a non-empty array' },
-      { status: 400 },
-    );
-  }
+  const { updates } = parsed.data;
 
   for (const entry of updates) {
     const validationError = validateEntry(entry);

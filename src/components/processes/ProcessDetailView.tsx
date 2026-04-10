@@ -13,11 +13,10 @@ import {
 import { StepsList } from './StepsList';
 import { ProcessTasksList } from './ProcessTasksList';
 import { ProcessKpiSection } from './ProcessKpiSection';
-import { CadenceBadge } from './CadenceBadge';
 import { modeBadgeClasses } from '@/lib/process-constants';
 import { expandVariants } from '@/lib/process-animations';
 import { INPUT_CLASSES } from '@/lib/process-constants';
-import type { ProcessData, Step, UserOption } from '@/types/process';
+import type { ProcessData, UserOption } from '@/types/process';
 
 interface ProcessDetailViewProps {
   proc: ProcessData;

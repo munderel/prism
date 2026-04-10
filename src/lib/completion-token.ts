@@ -1,15 +1,21 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
-const SECRET =
-  process.env.TOKEN_ENCRYPTION_KEY ||
-  process.env.NEXTAUTH_SECRET ||
-  'prism-default-secret';
+function getSecret(): string {
+  const secret = process.env.TOKEN_ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET;
+  if (!secret) {
+    throw new Error(
+      'completion-token: TOKEN_ENCRYPTION_KEY or NEXTAUTH_SECRET must be set. ' +
+      'Refusing to use a hardcoded fallback secret.'
+    );
+  }
+  return secret;
+}
 
 export function generateCompletionToken(taskId: string, userId: string): string {
-  return createHmac('sha256', SECRET)
+  return createHmac('sha256', getSecret())
     .update(`${taskId}:${userId}`)
     .digest('hex')
-    .slice(0, 16);
+    .slice(0, 32);
 }
 
 export function verifyCompletionToken(taskId: string, userId: string, token: string): boolean {
@@ -27,10 +33,10 @@ export function getCompletionUrl(taskId: string, userId: string): string {
 // --- Aim completion helpers ---
 
 export function generateAimToken(aimInstanceId: string, userId: string): string {
-  return createHmac('sha256', SECRET)
+  return createHmac('sha256', getSecret())
     .update(`aim:${aimInstanceId}:${userId}`)
     .digest('hex')
-    .slice(0, 16);
+    .slice(0, 32);
 }
 
 export function verifyAimToken(aimInstanceId: string, userId: string, token: string): boolean {

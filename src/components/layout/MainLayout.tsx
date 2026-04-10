@@ -2,14 +2,19 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { SessionProvider } from 'next-auth/react';
+import dynamic from 'next/dynamic';
 import { LazyMotion, domAnimation, m } from 'framer-motion';
 import { SWRProvider } from '@/app/(app)/swr-provider';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { FloatingIdeaButton } from './FloatingIdeaButton';
 import { CommandPalette } from '../CommandPalette';
-import { OnboardingTour } from '../onboarding/OnboardingTour';
 import { useUserSettings } from '@/hooks/useUserSettings';
+
+const OnboardingTour = dynamic(
+  () => import('../onboarding/OnboardingTour').then((m) => m.OnboardingTour),
+  { ssr: false }
+);
 
 const SIDEBAR_COLLAPSED_KEY = 'prism-sidebar-collapsed';
 

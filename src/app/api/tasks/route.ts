@@ -7,16 +7,9 @@ import { parseRRule } from '@/lib/recurrence';
 import { parseLocalDate } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
-import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
-import { checkDerailingTasks } from '@/lib/derailing-checker';
-
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
-
-  // Create maintenance tasks for any due processes (idempotent)
-  // Check for derailing tasks and send notifications (throttled to once per 30 min)
-  await Promise.all([checkAndCreateDueProcessTasks(), checkDerailingTasks()]);
 
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date');
@@ -30,7 +23,7 @@ export async function GET(request: NextRequest) {
   const includeUnscheduled = searchParams.get('includeUnscheduled') === 'true';
 
   // Build access filter (who can see what)
-  const accessFilter: any = {};
+  const accessFilter: Record<string, unknown> = {};
   if (scope === 'company') {
     const companyStacks = await prisma.goalStack.findMany({
       where: { isCompany: true },
@@ -57,7 +50,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Build date filter
-  const dateFilter: any = {};
+  const dateFilter: Record<string, unknown> = {};
   if ((startDate && endDate) || date) {
     const rangeStart = startDate ? parseLocalDate(startDate) : parseLocalDate(date!);
     const rangeEnd = endDate ? parseLocalDate(endDate) : new Date(rangeStart);
@@ -78,7 +71,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Build additional filters
-  const extraFilter: any = {};
+  const extraFilter: Record<string, unknown> = {};
   if (goalId) extraFilter.goalId = goalId;
   if (status) extraFilter.status = status;
   if (taskType) extraFilter.taskType = taskType;
@@ -99,7 +92,7 @@ export async function GET(request: NextRequest) {
   const conditions = [accessFilter, dateFilter, extraFilter].filter(
     (f) => Object.keys(f).length > 0
   );
-  const where: any = conditions.length > 1 ? { AND: conditions } : conditions[0] || {};
+  const where = conditions.length > 1 ? { AND: conditions } : conditions[0] || {};
 
   const tasks = await prisma.task.findMany({
     where,
@@ -120,9 +113,7 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return new Response(JSON.stringify(tasks), {
-    headers: cacheHeaders(5, 10),
-  });
+  return Response.json(tasks, { headers: cacheHeaders(5, 10) });
 }
 
 export async function POST(request: NextRequest) {

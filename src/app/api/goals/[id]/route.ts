@@ -5,7 +5,8 @@ import {
   authError,
   checkStackAccess,
 } from '@/lib/auth-guard';
-import { pickDefined, notFoundResponse, safeParseJson } from '@/lib/api-helpers';
+import { pickDefined, notFoundResponse } from '@/lib/api-helpers';
+import { parseBody, updateGoalSchema } from '@/lib/schemas';
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
 
@@ -86,7 +87,7 @@ export async function PATCH(
   const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
   if (accessDenied) return accessDenied;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateGoalSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { status, dueDate, level } = body;

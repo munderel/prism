@@ -30,7 +30,7 @@ export async function requireAuth(): Promise<AuthResult> {
  */
 export async function requireAuthFromRequest(request: NextRequest): Promise<AuthResult> {
   const token = await getToken({ req: request });
-  if (!token?.id || (token as any).isLockedOut) {
+  if (!token?.id || (token as { isLockedOut?: boolean }).isLockedOut) {
     return { error: 'Unauthorized', status: 401 };
   }
   const session: Session = {

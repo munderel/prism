@@ -136,6 +136,51 @@ export const createInvitationSchema = z.object({
   role: z.enum(['admin', 'user']).optional(),
 });
 
+// === GOALS (update / reorder / link / import) ===
+
+export const updateGoalSchema = z.object({
+  title: z.string().min(3, 'Title must be at least 3 characters').max(500).optional(),
+  description: z.string().max(5000).optional().nullable(),
+  status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED']).optional(),
+  level: z.enum(['HIGH_HARD', 'STRATEGIC', 'MONTHLY', 'WEEKLY', 'DAILY']).optional(),
+  dueDate: z.string().optional().nullable(),
+});
+
+export const reorderGoalSchema = z.object({
+  sortOrder: z.number().int().min(0).optional(),
+  parentId: z.string().optional().nullable(),
+});
+
+export const linkGoalSchema = z.object({
+  individualGoalId: z.string().min(1, 'individualGoalId is required'),
+  weight: z.number().min(0).max(100).optional(),
+});
+
+export const importGoalsSchema = z.object({
+  stackId: z.string().min(1, 'stackId is required'),
+  yamlContent: z.string().min(1, 'yamlContent is required').max(256 * 1024, 'YAML content must be under 256KB'),
+  confirmed: z.boolean().optional(),
+});
+
+// === KPIs ===
+
+export const createKpiSchema = z.object({
+  name: z.string().min(1, 'name is required').max(200),
+  type: z.enum(['NUMERIC', 'BINARY']),
+  unit: z.string().max(50).optional().nullable(),
+  targetValue: z.number().optional().nullable(),
+  linkedKpiId: z.string().optional().nullable(),
+});
+
+export const updateKpiSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  unit: z.string().max(50).optional().nullable(),
+  targetValue: z.number().optional().nullable(),
+  actualValue: z.number().optional().nullable(),
+  isComplete: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
 // === STACKS ===
 
 export const createStackSchema = z.object({
@@ -143,6 +188,517 @@ export const createStackSchema = z.object({
   description: z.string().max(2000).optional().nullable(),
   color: z.string().max(50).optional().nullable(),
   icon: z.string().max(50).optional().nullable(),
+  isCompany: z.boolean().optional(),
+  visibility: z.enum(['private', 'group', 'company']).optional(),
+});
+
+export const updateStackSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(200).optional(),
+  weekStartDay: z.number().int().min(0).max(6).optional(),
+});
+
+// === ADMIN ===
+
+export const adminToggleSchema = z.object({
+  userId: z.string().min(1, 'userId is required'),
+  isAdmin: z.boolean(),
+});
+
+export const adminDeleteUserSchema = z.object({
+  userId: z.string().min(1, 'userId is required'),
+});
+
+export const adminCreateUserSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  name: z.string().optional(),
+  role: z.enum(['admin', 'user']).optional(),
+});
+
+export const adminUserActionSchema = z.object({
+  action: z.enum(['lockout', 'unlock', 'reset-2fa', 'reset-password']),
+});
+
+// === AUTH SETTINGS ===
+
+export const authSettingsSchema = z.object({
+  enforce2FA: z.boolean(),
+});
+
+// === FEEDBACK ===
+
+export const createFeedbackSchema = z.object({
+  content: z.string().min(1, 'Feedback content is required').max(10000),
+});
+
+// === 2FA ===
+
+export const totpCodeSchema = z.object({
+  code: z.string().min(1, 'Code is required'),
+});
+
+// === NOTIFICATIONS ===
+
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.string().min(1, 'endpoint is required'),
+  keys: z.object({
+    p256dh: z.string().min(1, 'keys.p256dh is required'),
+    auth: z.string().min(1, 'keys.auth is required'),
+  }),
+});
+
+// === COMMENTS ===
+
+export const createCommentSchema = z.object({
+  content: z.string().min(1, 'Content is required').max(5000),
+});
+
+// === CLEAR GOALS ===
+
+export const createClearGoalSchema = z.object({
+  text: z.string().min(1, 'Text is required').max(1000),
+  powerdownId: z.string().optional().nullable(),
+});
+
+export const updateClearGoalsSchema = z.object({
+  goals: z.array(
+    z.object({
+      id: z.string().min(1),
+      text: z.string().max(1000).optional(),
+      isComplete: z.boolean().optional(),
+      sortOrder: z.number().int().min(0).optional(),
+    })
+  ).min(1, 'goals array is required'),
+});
+
+// === BATCH SCHEDULE ===
+
+export const batchScheduleSchema = z.object({
+  updates: z.array(
+    z.object({
+      id: z.string().min(1, 'Each update must have a valid id'),
+      timeBlockStart: z.string().min(1, 'timeBlockStart is required'),
+      timeBlockEnd: z.string().min(1, 'timeBlockEnd is required'),
+      isAutoScheduled: z.boolean().optional(),
+      isPinned: z.boolean().optional(),
+    })
+  ).min(1, 'updates must be a non-empty array'),
+});
+
+// === BATCH WIN THE DAY ===
+
+export const batchWinTheDaySchema = z.object({
+  taskIds: z.array(z.string().min(1)).min(1).max(3, 'taskIds must be an array of 1\u20133 task IDs'),
+  dueDate: z.string().optional(),
+});
+
+// === AI SUGGEST ===
+
+export const aiSuggestSchema = z.object({
+  weeklyGoal: z.string().min(1, 'weeklyGoal is required').max(10000, 'weeklyGoal must be under 10000 characters'),
+  existingTasks: z.array(z.string()).optional(),
+});
+
+// === DISTRACTIONS ===
+
+export const createDistractionSchema = z.object({
+  content: z.string().min(1, 'content is required').max(5000),
+  notes: z.string().max(5000).optional().nullable(),
+  logDate: z.string().optional().nullable(),
+  source: z.string().max(100).optional().nullable(),
+});
+
+// === PROCESSES ===
+
+const processCadence = z.enum(['ONE_TIME', 'DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY']);
+const processMode = z.enum(['BASIC', 'ADVANCED']);
+const kpiTimeLevel = z.enum(['WEEKLY', 'MONTHLY', 'YEARLY', 'FIVE_YEAR', 'HHG']);
+
+const kpiGoalSchema = z.object({
+  timeLevel: kpiTimeLevel,
+  targetValue: z.number().finite('Goal targetValue must be a finite number'),
+});
+
+export const createBusinessFunctionSchema = z.object({
+  name: z.string().min(1, 'name is required').max(200),
+  description: z.string().max(2000).optional().nullable(),
+});
+
+export const updateBusinessFunctionSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  description: z.string().max(2000).optional().nullable(),
+});
+
+export const createProcessSchema = z.object({
+  title: z.string().min(1, 'title is required').max(500),
+  description: z.string().max(5000).optional().nullable(),
+  cadence: processCadence.optional().default('WEEKLY'),
+  assigneeId: z.string().optional().nullable(),
+  defaultDurationMinutes: z.number().positive('defaultDurationMinutes must be a positive number').optional(),
+  scheduledTime: z.string().regex(/^\d{2}:\d{2}$/, 'scheduledTime is required in HH:mm format'),
+  scheduledDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
+  scheduledDayOfMonth: z.number().int().min(1).max(31).optional().nullable(),
+  scheduleStartDate: z.string().optional().nullable(),
+  mode: processMode.optional(),
+  durationEndDate: z.string().optional().nullable(),
+});
+
+export const updateProcessSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().max(5000).optional().nullable(),
+  cadence: processCadence.optional(),
+  cadenceRule: z.string().max(500).optional().nullable(),
+  assigneeId: z.string().optional().nullable(),
+  delegateId: z.string().optional().nullable(),
+  delegateUntil: z.string().optional().nullable(),
+  scheduledTime: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable(),
+  scheduledDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
+  scheduledDayOfMonth: z.number().int().min(1).max(31).optional().nullable(),
+  defaultDurationMinutes: z.number().positive('defaultDurationMinutes must be a positive number').optional(),
+  mode: processMode.optional(),
+  durationEndDate: z.string().optional().nullable(),
+  scheduleStartDate: z.string().optional().nullable(),
+  scheduledDate: z.string().optional(),
+  timeBlockStart: z.string().optional().nullable(),
+  timeBlockEnd: z.string().optional().nullable(),
+  regenerate: z.boolean().optional(),
+});
+
+export const createProcessStepSchema = z.object({
+  title: z.string().min(1, 'title is required').max(500),
+  description: z.string().max(5000).optional().nullable(),
+  url: z.string().max(2048).optional().nullable(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const updateProcessStepSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().max(5000).optional().nullable(),
+  url: z.string().max(2048).optional().nullable(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const scheduleProcessSchema = z.object({
+  time: z.string().regex(/^\d{2}:\d{2}$/, 'time is required in HH:mm format'),
+  dayOfWeek: z.number().int().min(0).max(6).optional(),
+  dayOfMonth: z.number().int().min(1).max(31).optional(),
+  date: z.string().optional(),
+});
+
+export const completeProcessSchema = z.object({
+  scheduledDate: z.string().min(1, 'scheduledDate is required'),
+});
+
+export const createProcessKpiSchema = z.object({
+  name: z.string().min(1, 'name is required').max(200),
+  unit: z.string().max(50).optional().nullable(),
+  targetValue: z.number().finite().optional().nullable(),
+  goalId: z.string().optional().nullable(),
+  goals: z.array(kpiGoalSchema).optional(),
+});
+
+export const updateProcessKpiSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  unit: z.string().max(50).optional().nullable(),
+  targetValue: z.number().finite().optional().nullable(),
+  goalId: z.string().optional().nullable(),
+  goals: z.array(kpiGoalSchema).optional(),
+});
+
+export const createKpiEntrySchema = z.object({
+  value: z.number().finite('value must be a valid number'),
+  date: z.string().optional(),
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+const importStepSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional().nullable(),
+});
+
+const importProcessSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional().nullable(),
+  cadence: processCadence.optional().default('WEEKLY'),
+  steps: z.array(importStepSchema).optional().default([]),
+});
+
+const importFunctionSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional().nullable(),
+  processes: z.array(importProcessSchema).optional().default([]),
+});
+
+export const importProcessesSchema = z.object({
+  functions: z.array(importFunctionSchema).min(1, 'functions array is required'),
+});
+
+// === MEETINGS ===
+
+const meetingCadence = z.enum(['ONE_TIME', 'DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY']);
+
+export const createMeetingSchema = z.object({
+  title: z.string().min(1, 'title is required').max(500),
+  description: z.string().max(5000).optional().nullable(),
+  cadence: meetingCadence,
+  dayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
+  occurDate: z.string().optional().nullable(),
+  timeStart: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format'),
+  timeEnd: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format'),
+  attendeeIds: z.array(z.string()).optional().nullable(),
+  addMeetLink: z.boolean().optional(),
+});
+
+export const updateMeetingSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().max(5000).optional().nullable(),
+  cadence: meetingCadence.optional(),
+  dayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
+  occurDate: z.string().optional().nullable(),
+  timeStart: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional(),
+  timeEnd: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional(),
+  attendeeIds: z.array(z.string()).optional(),
+});
+
+// === IDEAS ===
+
+export const createIdeaSchema = z.object({
+  title: z.string().min(1, 'title is required').max(500),
+  description: z.string().min(1, 'description is required').max(5000),
+  processId: z.string().optional().nullable(),
+  impactScore: z.number().int().min(1).max(5),
+  confidenceScore: z.number().int().min(1).max(5),
+  easeScore: z.number().int().min(1).max(5),
+});
+
+export const updateIdeaSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().max(5000).optional().nullable(),
+  processId: z.string().optional().nullable(),
+  impactScore: z.number().int().min(1).max(5).optional(),
+  confidenceScore: z.number().int().min(1).max(5).optional(),
+  easeScore: z.number().int().min(1).max(5).optional(),
+  status: z.string().optional(),
+});
+
+export const convertIdeaSchema = z.object({
+  ownerId: z.string().optional(),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
+  dueDate: z.string().optional().nullable(),
+});
+
+// === POWERDOWN ===
+
+export const updatePowerdownSchema = z.object({
+  sessionId: z.string().optional(),
+  sessionDate: z.string().optional(),
+  currentStep: z.number().int().min(0).optional(),
+  checklistState: z.unknown().optional(),
+  tomorrowPlan: z.string().max(10000).optional().nullable(),
+  distractions: z.unknown().optional(),
+  gratitudes: z.unknown().optional(),
+  ideas: z.unknown().optional(),
+  clearGoals: z.unknown().optional(),
+  complete: z.boolean().optional(),
+  timeBlockStart: z.string().optional().nullable(),
+  timeBlockEnd: z.string().optional().nullable(),
+});
+
+export const decomposeGoalSchema = z.object({
+  title: z.string().min(1, 'title is required').max(10000),
+  description: z.string().max(10000).optional().nullable(),
+});
+
+// === STREAKS ===
+
+export const createStreakSchema = z.object({
+  streakType: z.string().min(1, 'streakType is required').max(200),
+});
+
+export const updateStreakSchema = z.object({
+  isActive: z.boolean({ message: 'isActive (boolean) is required' }),
+});
+
+// === TEAM REVIEWS ===
+
+export const createTeamReviewSchema = z.object({
+  reviewType: z.enum(['WEEKLY', 'MONTHLY', 'YEARLY']),
+  dayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
+  recurrenceRule: z.string().max(500).optional().nullable(),
+  time: z.string().regex(/^\d{2}:\d{2}$/, 'time must be HH:mm format'),
+  duration: z.number().int().min(1).max(480).optional(),
+  memberIds: z.array(z.string()).min(1, 'At least one member is required'),
+});
+
+export const updateTeamReviewSchema = z.object({
+  reviewType: z.enum(['WEEKLY', 'MONTHLY', 'YEARLY']).optional(),
+  dayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
+  recurrenceRule: z.string().max(500).optional().nullable(),
+  time: z.string().regex(/^\d{2}:\d{2}$/, 'time must be HH:mm format').optional(),
+  duration: z.number().int().min(1).max(480).optional(),
+  isActive: z.boolean().optional(),
+  memberIds: z.array(z.string()).optional(),
+});
+
+// === TRAINING ===
+
+export const createTrainingItemSchema = z.object({
+  title: z.string().min(1, 'title is required').max(500),
+  type: z.enum(['BOOK', 'COURSE']),
+  description: z.string().max(5000).optional().nullable(),
+  targetCompletionDate: z.string().optional().nullable(),
+  goalId: z.string().optional().nullable(),
+});
+
+export const updateTrainingItemSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().max(5000).optional().nullable(),
+  status: z.enum(['ACTIVE', 'COMPLETED', 'ARCHIVED']).optional(),
+  targetCompletionDate: z.string().optional().nullable(),
+  goalId: z.string().optional().nullable(),
+});
+
+export const createBookSchema = z.object({
+  title: z.string().min(1, 'title is required').max(10000),
+  description: z.string().max(10000).optional().nullable(),
+  targetCompletionDate: z.string().optional().nullable(),
+  goalId: z.string().optional().nullable(),
+});
+
+export const createCourseSchema = z.object({
+  title: z.string().min(1, 'title is required').max(10000),
+  syllabus: z.string().max(10000).optional().nullable(),
+  targetCompletionDate: z.string().optional().nullable(),
+  goalId: z.string().optional().nullable(),
+});
+
+export const generateQuizSchema = z.object({
+  trainingItemId: z.string().optional().nullable(),
+  trainingTaskId: z.string().optional().nullable(),
+  chapterRange: z.string().min(1, 'chapterRange is required').max(10000),
+  material: z.string().max(10000).optional().nullable(),
+});
+
+export const checkQuizSchema = z.object({
+  quizAttemptId: z.string().optional().nullable(),
+  questions: z.array(z.unknown()).optional().nullable(),
+  userAnswers: z.array(z.unknown()).min(1, 'userAnswers must be a non-empty array'),
+});
+
+// === REVIEWS ===
+
+const scheduleConfigSchema = z.object({
+  type: z.string().optional(),
+  dayOfWeek: z.number().int().min(0).max(6).optional(),
+  recurrenceRule: z.string().max(200).optional(),
+  customDate: z.string().optional(),
+  time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  duration: z.number().int().min(1).max(480).optional(),
+}).optional().nullable();
+
+export const createReviewSchema = z.object({
+  reviewType: z.string().min(1, 'reviewType is required'),
+  scheduledDate: z.string().optional().nullable(),
+  startDate: z.string().optional().nullable(),
+  recurrenceDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
+  isTeamReview: z.boolean().optional(),
+  scheduleConfig: scheduleConfigSchema,
+});
+
+export const deleteReviewSchema = z.object({
+  reviewType: z.string().min(1, 'reviewType is required'),
+});
+
+export const updateReviewSchema = z.object({
+  checklistState: z.any().optional(),
+  notes: z.string().max(50000).optional().nullable(),
+  timeBlockStart: z.string().optional().nullable(),
+  timeBlockEnd: z.string().optional().nullable(),
+  complete: z.boolean().optional(),
+});
+
+export const createReviewAnswerSchema = z.object({
+  stepKey: z.string().min(1, 'stepKey is required'),
+  answerType: z.string().min(1, 'answerType is required'),
+  answerData: z.any().optional(),
+});
+
+// === AIMS ===
+
+const aimInputSchema = z.object({
+  aimCategoryId: z.string().min(1, 'aimCategoryId is required'),
+  isActive: z.boolean().optional(),
+  customDuration: z.number().int().min(1).optional().nullable(),
+  customFrequency: z.number().int().min(1).optional().nullable(),
+  customActivities: z.any().optional(),
+  currentPhase: z.string().optional(),
+  phaseStartedAt: z.string().optional(),
+  completionCount: z.number().int().min(0).optional(),
+  currentStreak: z.number().int().min(0).optional(),
+});
+
+export const putUserAimsSchema = z.object({
+  aims: z.array(aimInputSchema).min(1, 'aims must be a non-empty array'),
+});
+
+export const createAimInstanceSchema = z.object({
+  aimCategoryId: z.string().min(1, 'aimCategoryId is required'),
+  scheduledDate: z.string().min(1, 'scheduledDate is required'),
+  timeBlockStart: z.string().optional().nullable(),
+  timeBlockEnd: z.string().optional().nullable(),
+  isGroupOpen: z.boolean().optional(),
+  selectedActivity: z.string().optional().nullable(),
+});
+
+export const updateAimInstanceSchema = z.object({
+  status: z.enum(['SCHEDULED', 'COMPLETED', 'SKIPPED']).optional(),
+  timeBlockStart: z.string().optional().nullable(),
+  timeBlockEnd: z.string().optional().nullable(),
+  isGroupOpen: z.boolean().optional(),
+  activityNote: z.string().max(5000).optional().nullable(),
+  selectedActivity: z.string().optional().nullable(),
+  taskIds: z.array(z.string()).optional(),
+});
+
+const scheduleDaySchema = z.object({
+  dayOfWeek: z.number().int().min(0).max(6),
+  timeStart: z.string().regex(/^\d{2}:\d{2}$/, 'timeStart must be HH:mm format'),
+});
+
+export const scheduleAimsSchema = z.object({
+  aimCategoryId: z.string().min(1, 'aimCategoryId is required'),
+  days: z.array(scheduleDaySchema).min(1, 'days must be a non-empty array'),
+});
+
+export const createAimCategorySchema = z.object({
+  name: z.string().min(1, 'name is required').max(200),
+  description: z.string().max(2000).optional().nullable(),
+  defaultFrequency: z.number().int().min(1, 'defaultFrequency must be a positive integer'),
+  defaultDurationMin: z.number().int().min(1, 'defaultDurationMin must be a positive integer'),
+  isGroupable: z.boolean().optional(),
+  isDaily: z.boolean().optional(),
+  activities: z.any().optional(),
+});
+
+// === CALENDAR ===
+
+export const createCalendarEventSchema = z.object({
+  summary: z.string().min(1, 'summary is required').max(500),
+  description: z.string().max(5000).optional().nullable(),
+  start: z.string().min(1, 'start is required'),
+  end: z.string().min(1, 'end is required'),
+  addMeetLink: z.boolean().optional(),
+});
+
+export const syncCalendarSchema = z.object({
+  start: z.string().min(1, 'start is required'),
+  end: z.string().min(1, 'end is required'),
+  force: z.boolean().optional(),
+});
+
+export const updateCalendarEventSchema = z.object({
+  start: z.string().min(1, 'start is required'),
+  end: z.string().min(1, 'end is required'),
+  calendarId: z.string().optional(),
 });
 
 // === HELPER ===

@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { cascadeKpiUpdate, recalculateMonthlyNumericKpi, recalculateBinaryKpi } from '@/lib/kpi-progress';
-import { pickDefined, notFoundResponse, forbiddenResponse, safeParseJson } from '@/lib/api-helpers';
+import { pickDefined, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
+import { parseBody, updateKpiSchema } from '@/lib/schemas';
 
 /** Fetch a KPI and verify the caller has permission to modify it. */
 async function loadAndAuthorizeKpi(id: string, auth: { userId: string; session: { user: { isAdmin: boolean } } }) {
@@ -33,7 +34,7 @@ export async function PUT(
   if ('error' in result) return result.error;
   const { kpi } = result;
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, updateKpiSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { name, isComplete, actualValue } = body;

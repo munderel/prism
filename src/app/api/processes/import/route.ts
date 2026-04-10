@@ -1,20 +1,15 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { parseBody, importProcessesSchema } from '@/lib/schemas';
 
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, importProcessesSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { functions } = body;
-
-  if (!Array.isArray(functions) || functions.length === 0) {
-    return Response.json({ error: 'functions array is required' }, { status: 400 });
-  }
+  const { functions } = parsed.data;
 
   const result = await prisma.$transaction(async (tx) => {
     const created = [];

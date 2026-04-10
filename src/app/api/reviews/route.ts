@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server';
+import { Prisma, ReviewType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { safeParseJson, NO_STORE } from '@/lib/api-helpers';
+import { NO_STORE } from '@/lib/api-helpers';
+import { parseBody, createReviewSchema, deleteReviewSchema } from '@/lib/schemas';
 import { getNextReviewDate } from '@/lib/review-dates';
 import { nextDay } from 'date-fns';
 
@@ -15,24 +17,24 @@ export async function GET(request: NextRequest) {
   const from = searchParams.get('from');
   const to = searchParams.get('to');
 
-  const conditions: any[] = [];
+  const conditions: Prisma.ReviewWhereInput[] = [];
 
   if (scope !== 'individual') {
-    const teamWhere: any = { isTeamReview: true };
-    if (reviewType) teamWhere.reviewType = reviewType;
+    const teamWhere: Prisma.ReviewWhereInput = { isTeamReview: true };
+    if (reviewType) teamWhere.reviewType = reviewType as ReviewType;
     conditions.push(teamWhere);
   }
 
   if (scope !== 'team') {
-    const individualWhere: any = { isTeamReview: false };
+    const individualWhere: Prisma.ReviewWhereInput = { isTeamReview: false };
     if (!auth.session.user.isAdmin) {
       individualWhere.userId = auth.userId;
     }
-    if (reviewType) individualWhere.reviewType = reviewType;
+    if (reviewType) individualWhere.reviewType = reviewType as ReviewType;
     conditions.push(individualWhere);
   }
 
-  const dateFilter: any = {};
+  const dateFilter: Prisma.DateTimeFilter = {};
   if (from) dateFilter.gte = new Date(from);
   if (to) {
     const toDate = new Date(to);
@@ -40,7 +42,7 @@ export async function GET(request: NextRequest) {
     dateFilter.lt = toDate;
   }
 
-  const baseWhere: any = conditions.length === 1 ? conditions[0] : { OR: conditions };
+  const baseWhere: Prisma.ReviewWhereInput = conditions.length === 1 ? conditions[0] : { OR: conditions };
   if (from || to) baseWhere.scheduledDate = dateFilter;
 
   const reviews = await prisma.review.findMany({
@@ -131,8 +133,17 @@ function lastSaturdayOfDec(year: number): Date {
   return new Date(year, 11, 31 - diff);
 }
 
-function computeScheduledDate(config: any, now: Date, reviewType: string): Date {
-  const configType = config.type as string;
+interface ScheduleConfig {
+  type?: string;
+  dayOfWeek?: number;
+  recurrenceRule?: string;
+  customDate?: string;
+  time?: string;
+  duration?: number;
+}
+
+function computeScheduledDate(config: ScheduleConfig, now: Date, reviewType: string): Date {
+  const configType = config.type;
   if (configType === 'weekly' && config.dayOfWeek != null) {
     return nextDay(now, config.dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6);
   }
@@ -162,14 +173,11 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, createReviewSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { reviewType, scheduledDate: scheduledDateStr, startDate, recurrenceDayOfWeek, isTeamReview, scheduleConfig } = body;
-
-  if (!reviewType) {
-    return Response.json({ error: 'reviewType is required' }, { status: 400 });
-  }
+  const { reviewType: reviewTypeStr, scheduledDate: scheduledDateStr, startDate, recurrenceDayOfWeek, isTeamReview, scheduleConfig } = body;
+  const reviewType = reviewTypeStr as ReviewType;
 
   if (isTeamReview) {
     const adminAuth = await requireAdmin();
@@ -182,7 +190,7 @@ export async function POST(request: NextRequest) {
   if (scheduledDateStr) {
     scheduledDate = new Date(scheduledDateStr);
   } else if (scheduleConfig) {
-    scheduledDate = computeScheduledDate(scheduleConfig, now, reviewType);
+    scheduledDate = computeScheduledDate(scheduleConfig as ScheduleConfig, now, reviewType);
   } else if (startDate && recurrenceDayOfWeek != null) {
     const base = new Date(startDate);
     const dayOfWeek = recurrenceDayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -198,8 +206,8 @@ export async function POST(request: NextRequest) {
   const scheduledDayEnd = new Date(scheduledDayStart);
   scheduledDayEnd.setDate(scheduledDayEnd.getDate() + 1);
 
-  const existingWhere: any = {
-    reviewType,
+  const existingWhere: Prisma.ReviewWhereInput = {
+    reviewType: reviewType as ReviewType,
     isTeamReview: !!isTeamReview,
     scheduledDate: {
       gte: scheduledDayStart,
@@ -222,7 +230,7 @@ export async function POST(request: NextRequest) {
   const review = await prisma.review.create({
     data: {
       userId: auth.userId,
-      reviewType,
+      reviewType: reviewType as ReviewType,
       scheduledDate,
       startDate: startDate ? new Date(startDate) : undefined,
       recurrenceDayOfWeek: recurrenceDayOfWeek ?? scheduleConfig?.dayOfWeek ?? undefined,
@@ -238,19 +246,14 @@ export async function DELETE(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, deleteReviewSchema);
   if ('error' in parsed) return parsed.error;
-  const body = parsed.data;
-  const { reviewType } = body;
-
-  if (!reviewType) {
-    return Response.json({ error: 'reviewType is required' }, { status: 400 });
-  }
+  const { reviewType: deleteReviewType } = parsed.data;
 
   const result = await prisma.review.deleteMany({
     where: {
       userId: auth.userId,
-      reviewType,
+      reviewType: deleteReviewType as ReviewType,
       completedAt: null,
     },
   });

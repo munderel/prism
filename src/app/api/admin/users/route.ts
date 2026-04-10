@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
-import { validateEmail, safeParseJson } from '@/lib/api-helpers';
+import { validateEmail } from '@/lib/api-helpers';
+import { parseBody, adminCreateUserSchema } from '@/lib/schemas';
 
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV !== 'development') {
@@ -11,7 +12,7 @@ export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
-  const parsed = await safeParseJson(request);
+  const parsed = await parseBody(request, adminCreateUserSchema);
   if ('error' in parsed) return parsed.error;
   const { email, name, role } = parsed.data;
 

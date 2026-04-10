@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Save, Lightbulb,
 } from 'lucide-react';
 import { getLocalDateString } from '@/lib/date-utils';
-import { formatGoalDateRange } from '@/lib/goal-constants';
+
 import { getStatusBadgeClass } from '../shared/review-types';
 import { GoalCreationCoach } from '../shared/GoalCreationCoach';
 
