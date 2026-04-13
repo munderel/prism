@@ -5,6 +5,8 @@ import {
   startOfQuarter, endOfQuarter, startOfYear, endOfYear,
   setDay,
 } from 'date-fns';
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
+import { pad2 } from '@/lib/google-sync-state';
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
@@ -145,11 +147,17 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
     });
     if (existing > 0) return;
 
+    // Compute time blocks in user's timezone
+    const user = await prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { timezone: true },
+    });
+    const userTz = user?.timezone ?? 'America/New_York';
     const [hours, minutes] = process.scheduledTime.split(':').map(Number);
-    const taskDate = new Date(dueDate);
-    taskDate.setHours(hours, minutes, 0, 0);
-    const timeBlockStart = new Date(taskDate);
-    const timeBlockEnd = new Date(taskDate.getTime() + (process.defaultDurationMinutes ?? 60) * 60_000);
+    const zonedDue = toZonedTime(dueDate, userTz);
+    const dateKey = `${zonedDue.getFullYear()}-${pad2(zonedDue.getMonth() + 1)}-${pad2(zonedDue.getDate())}`;
+    const timeBlockStart = fromZonedTime(`${dateKey}T${pad2(hours)}:${pad2(minutes)}:00`, userTz);
+    const timeBlockEnd = new Date(timeBlockStart.getTime() + (process.defaultDurationMinutes ?? 60) * 60_000);
 
     await prisma.task.create({
       data: {
