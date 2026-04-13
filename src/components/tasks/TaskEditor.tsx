@@ -24,7 +24,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [priority, setPriority] = useState(task?.priority ?? 'MEDIUM');
   const [status, setStatus] = useState(task?.status ?? 'TODO');
   const [dueDate, setDueDate] = useState(
-    task?.dueDate ? getLocalDateString(new Date(task.dueDate)) : ''
+    task?.dueDate ? task.dueDate.split('T')[0] : ''
   );
   const [goalId, setGoalId] = useState(task?.goalId ?? prefilledGoalId ?? '');
   const [recurrenceFreq, setRecurrenceFreq] = useState('DAILY');
