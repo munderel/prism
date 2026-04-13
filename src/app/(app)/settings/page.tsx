@@ -504,6 +504,46 @@ export default function SettingsPage() {
     );
   }
 
+  function TestEmailButton() {
+    const [testing, setTesting] = useState(false);
+    const [result, setResult] = useState<{ sent: boolean; configured: boolean; error?: string } | null>(null);
+
+    const sendTest = async () => {
+      setTesting(true);
+      setResult(null);
+      try {
+        const res = await fetch('/api/notifications/test', { method: 'POST' });
+        const data = await res.json();
+        setResult(data);
+        if (data.sent) toast.success('Test email sent! Check your inbox.');
+        else if (!data.configured) toast.error('Email not configured. Set RESEND_API_KEY in Vercel.');
+        else toast.error(data.error || 'Email send failed.');
+      } catch {
+        toast.error('Failed to send test email.');
+      } finally {
+        setTesting(false);
+      }
+    };
+
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={sendTest}
+          disabled={testing}
+          className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors disabled:opacity-50"
+        >
+          <Mail className="h-4 w-4 inline mr-1.5" />
+          {testing ? 'Sending...' : 'Send test email'}
+        </button>
+        {result && (
+          <span className={`text-xs ${result.sent ? 'text-emerald-400' : 'text-red-400'}`}>
+            {result.sent ? 'Delivered' : result.error || 'Failed'}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mb-4 sm:mb-6">
@@ -684,7 +724,10 @@ export default function SettingsPage() {
               </label>
             )}
           </div>
-          <SaveButton onClick={saveUserSettings} label="Save Preferences" className="mt-4" />
+          <div className="mt-4 flex items-center gap-3">
+            <SaveButton onClick={saveUserSettings} label="Save Preferences" />
+            <TestEmailButton />
+          </div>
         </section>
 
         {/* Scheduling */}

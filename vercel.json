@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/review-nag",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/derailing",
+      "schedule": "0 18-23 * * *"
     }
   ]
 }

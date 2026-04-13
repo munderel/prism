@@ -37,6 +37,7 @@ const navSections = [
   {
     label: 'Insights',
     items: [
+      { href: '/streaks', label: 'Streaks', icon: Flame },
       { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
       { href: '/reports', label: 'Reports', icon: BarChart3 },
       { href: '/kpis', label: 'KPI Dashboard', icon: TrendingUp },
