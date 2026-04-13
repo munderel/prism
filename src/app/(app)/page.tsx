@@ -661,7 +661,7 @@ export default function DashboardPage() {
                           {expandedTaskId === task.id && (
                             <div className="ml-8 mt-1 mb-2 space-y-2">
                               <SubtaskList parentId={task.id} initialChildren={task.children} compact onMutate={() => mutate()} />
-                              <ClearGoalsDisplay taskId={task.id} compact />
+                              <ClearGoalsDisplay taskId={task.id} editable />
                             </div>
                           )}
                         </div>
