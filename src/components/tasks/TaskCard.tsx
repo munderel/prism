@@ -132,7 +132,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
         {/* Due date */}
         {task.dueDate && (
           <span className={`text-xs ${isOverdue ? 'text-red-400' : 'text-[var(--text-muted)]'}`}>
-            {new Date(task.dueDate).toLocaleDateString()}
+            {new Date(task.dueDate.split('T')[0] + 'T00:00:00').toLocaleDateString()}
           </span>
         )}
 
@@ -154,7 +154,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
           </button>
         </div>
       </div>
-      <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 -mt-1">
+      <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-1">
         <ClearGoalsDisplay taskId={task.id} editable={false} compact collapsible />
       </div>
     </m.div>
