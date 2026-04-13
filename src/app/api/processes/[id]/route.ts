@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { notFoundResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateProcessSchema } from '@/lib/schemas';
 import { cleanupCurrentPeriodTasks } from '@/lib/process-task-generator';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
@@ -119,7 +119,7 @@ export async function PATCH(
 
   // Non-admin can only update their own processes
   if (!isAdmin && process.assigneeId !== auth.userId) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
   const { delegateId, delegateUntil, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;

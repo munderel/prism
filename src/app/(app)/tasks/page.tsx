@@ -218,9 +218,7 @@ export default function TasksPage() {
           <ListTodo className="h-6 w-6 text-prism-indigo" />
           Tasks
         </h1>
-        <div className="flex items-center gap-2">
-          <QuickAddMenu />
-        </div>
+        <QuickAddMenu />
       </div>
 
       {/* View mode tabs */}

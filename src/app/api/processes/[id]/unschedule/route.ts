@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { NO_STORE } from '@/lib/api-helpers';
+import { NO_STORE, forbiddenResponse } from '@/lib/api-helpers';
 import { parseLocalDateKey } from '@/lib/google-sync-state';
+import { resolveAssignee } from '@/lib/delegation';
 
 export async function POST(
   request: NextRequest,
@@ -34,19 +35,11 @@ export async function POST(
   // Authorization: only assignee, delegate, or admin can unschedule
   const isAdmin = auth.session.user.isAdmin;
   if (!isAdmin && process.assigneeId !== auth.userId && process.delegateId !== auth.userId) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return forbiddenResponse();
   }
 
   // Resolve the responsible user
-  const today = new Date();
-  let ownerId: string;
-  if (process.delegateId && process.delegateUntil && process.delegateUntil >= today) {
-    ownerId = process.delegateId;
-  } else if (process.assigneeId) {
-    ownerId = process.assigneeId;
-  } else {
-    ownerId = auth.userId;
-  }
+  const ownerId = resolveAssignee(process) ?? auth.userId;
 
   const owner = await prisma.user.findUnique({
     where: { id: auth.userId },
