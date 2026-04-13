@@ -1,2 +1,2 @@
--- AlterTable
-ALTER TABLE "Task" ADD COLUMN     "winTheDayRank" INTEGER;
+-- AlterTable (safe)
+ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "winTheDayRank" INTEGER;

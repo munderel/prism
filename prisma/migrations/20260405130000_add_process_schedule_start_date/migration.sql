@@ -1,2 +1,2 @@
--- AlterTable
-ALTER TABLE "Process" ADD COLUMN "scheduleStartDate" TIMESTAMP(3);
+-- AlterTable (safe)
+ALTER TABLE "Process" ADD COLUMN IF NOT EXISTS "scheduleStartDate" TIMESTAMP(3);

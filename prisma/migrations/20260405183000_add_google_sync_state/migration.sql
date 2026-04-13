@@ -1,2 +1,2 @@
-ALTER TABLE "User"
-ADD COLUMN "googleSyncState" JSONB NOT NULL DEFAULT '{}';
+-- AlterTable (safe)
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleSyncState" JSONB NOT NULL DEFAULT '{}';

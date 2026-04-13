@@ -1,21 +1,36 @@
--- CreateEnum
-CREATE TYPE "KpiTimeLevel" AS ENUM ('WEEKLY', 'MONTHLY', 'YEARLY', 'FIVE_YEAR', 'HHG');
+-- CreateEnum (safe)
+DO $$ BEGIN
+  CREATE TYPE "KpiTimeLevel" AS ENUM ('WEEKLY', 'MONTHLY', 'YEARLY', 'FIVE_YEAR', 'HHG');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AlterEnum
-BEGIN;
-CREATE TYPE "ReviewType_new" AS ENUM ('WEEKLY', 'MONTHLY', 'YEARLY');
-ALTER TABLE "Review" ALTER COLUMN "reviewType" TYPE "ReviewType_new" USING ("reviewType"::text::"ReviewType_new");
-ALTER TABLE "ReviewTemplate" ALTER COLUMN "reviewType" TYPE "ReviewType_new" USING ("reviewType"::text::"ReviewType_new");
-ALTER TYPE "ReviewType" RENAME TO "ReviewType_old";
-ALTER TYPE "ReviewType_new" RENAME TO "ReviewType";
-DROP TYPE "public"."ReviewType_old";
-COMMIT;
+-- AlterEnum (safe: only run if ReviewType doesn't already have YEARLY)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_enum e
+    JOIN pg_type t ON e.enumtypid = t.oid
+    WHERE t.typname = 'ReviewType' AND e.enumlabel = 'YEARLY'
+  ) THEN
+    CREATE TYPE "ReviewType_new" AS ENUM ('WEEKLY', 'MONTHLY', 'YEARLY');
+    ALTER TABLE "Review" ALTER COLUMN "reviewType" TYPE "ReviewType_new" USING ("reviewType"::text::"ReviewType_new");
+    ALTER TABLE "ReviewTemplate" ALTER COLUMN "reviewType" TYPE "ReviewType_new" USING ("reviewType"::text::"ReviewType_new");
+    ALTER TYPE "ReviewType" RENAME TO "ReviewType_old";
+    ALTER TYPE "ReviewType_new" RENAME TO "ReviewType";
+    DROP TYPE "public"."ReviewType_old";
+  END IF;
+END $$;
 
 -- AlterEnum
 ALTER TYPE "TaskType" ADD VALUE IF NOT EXISTS 'REVIEW';
 
--- DropForeignKey
-ALTER TABLE "Session" DROP CONSTRAINT IF EXISTS "Session_userId_fkey";
+-- DropForeignKey (safe: only if table exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'Session') THEN
+    ALTER TABLE "Session" DROP CONSTRAINT IF EXISTS "Session_userId_fkey";
+  END IF;
+END $$;
 
 -- DropIndex
 DROP INDEX IF EXISTS "ProcessExecution_processId_idx";
@@ -189,41 +204,78 @@ CREATE INDEX IF NOT EXISTS "Task_dueDate_status_idx" ON "Task"("dueDate", "statu
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "Task_goalId_status_idx" ON "Task"("goalId", "status");
 
--- AddForeignKey
-ALTER TABLE "RecurringTeamReview" ADD CONSTRAINT "RecurringTeamReview_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- AddForeignKey (safe)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'RecurringTeamReview_createdById_fkey') THEN
+    ALTER TABLE "RecurringTeamReview" ADD CONSTRAINT "RecurringTeamReview_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "RecurringTeamReviewMember" ADD CONSTRAINT "RecurringTeamReviewMember_recurringTeamReviewId_fkey" FOREIGN KEY ("recurringTeamReviewId") REFERENCES "RecurringTeamReview"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'RecurringTeamReviewMember_recurringTeamReviewId_fkey') THEN
+    ALTER TABLE "RecurringTeamReviewMember" ADD CONSTRAINT "RecurringTeamReviewMember_recurringTeamReviewId_fkey" FOREIGN KEY ("recurringTeamReviewId") REFERENCES "RecurringTeamReview"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "RecurringTeamReviewMember" ADD CONSTRAINT "RecurringTeamReviewMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'RecurringTeamReviewMember_userId_fkey') THEN
+    ALTER TABLE "RecurringTeamReviewMember" ADD CONSTRAINT "RecurringTeamReviewMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "ClearGoal" ADD CONSTRAINT "ClearGoal_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ClearGoal_taskId_fkey') THEN
+    ALTER TABLE "ClearGoal" ADD CONSTRAINT "ClearGoal_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "GoalAssignee" ADD CONSTRAINT "GoalAssignee_goalId_fkey" FOREIGN KEY ("goalId") REFERENCES "Goal"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'GoalAssignee_goalId_fkey') THEN
+    ALTER TABLE "GoalAssignee" ADD CONSTRAINT "GoalAssignee_goalId_fkey" FOREIGN KEY ("goalId") REFERENCES "Goal"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "GoalAssignee" ADD CONSTRAINT "GoalAssignee_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'GoalAssignee_userId_fkey') THEN
+    ALTER TABLE "GoalAssignee" ADD CONSTRAINT "GoalAssignee_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "Feedback" ADD CONSTRAINT "Feedback_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Feedback_userId_fkey') THEN
+    ALTER TABLE "Feedback" ADD CONSTRAINT "Feedback_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "ProcessKpi" ADD CONSTRAINT "ProcessKpi_processId_fkey" FOREIGN KEY ("processId") REFERENCES "Process"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ProcessKpi_processId_fkey') THEN
+    ALTER TABLE "ProcessKpi" ADD CONSTRAINT "ProcessKpi_processId_fkey" FOREIGN KEY ("processId") REFERENCES "Process"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "ProcessKpi" ADD CONSTRAINT "ProcessKpi_goalId_fkey" FOREIGN KEY ("goalId") REFERENCES "Goal"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ProcessKpi_goalId_fkey') THEN
+    ALTER TABLE "ProcessKpi" ADD CONSTRAINT "ProcessKpi_goalId_fkey" FOREIGN KEY ("goalId") REFERENCES "Goal"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "ProcessKpiEntry" ADD CONSTRAINT "ProcessKpiEntry_kpiId_fkey" FOREIGN KEY ("kpiId") REFERENCES "ProcessKpi"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ProcessKpiEntry_kpiId_fkey') THEN
+    ALTER TABLE "ProcessKpiEntry" ADD CONSTRAINT "ProcessKpiEntry_kpiId_fkey" FOREIGN KEY ("kpiId") REFERENCES "ProcessKpi"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "ProcessKpiEntry" ADD CONSTRAINT "ProcessKpiEntry_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ProcessKpiEntry_userId_fkey') THEN
+    ALTER TABLE "ProcessKpiEntry" ADD CONSTRAINT "ProcessKpiEntry_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "ProcessKpiGoal" ADD CONSTRAINT "ProcessKpiGoal_kpiId_fkey" FOREIGN KEY ("kpiId") REFERENCES "ProcessKpi"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ProcessKpiGoal_kpiId_fkey') THEN
+    ALTER TABLE "ProcessKpiGoal" ADD CONSTRAINT "ProcessKpiGoal_kpiId_fkey" FOREIGN KEY ("kpiId") REFERENCES "ProcessKpi"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 -- Handle RecurringTeamReview in ReviewType enum rename (done after table creation)
 ALTER TABLE "RecurringTeamReview" ALTER COLUMN "reviewType" TYPE "ReviewType" USING ("reviewType"::text::"ReviewType");
