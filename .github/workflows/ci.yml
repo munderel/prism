@@ -16,6 +16,7 @@ jobs:
       NEXTAUTH_URL: "http://localhost:3000"
       GOOGLE_CLIENT_ID: "ci-placeholder"
       GOOGLE_CLIENT_SECRET: "ci-placeholder"
+      NODE_OPTIONS: "--max-old-space-size=4096"
 
     steps:
       - uses: actions/checkout@v4
