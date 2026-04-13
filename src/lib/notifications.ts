@@ -196,6 +196,17 @@ async function sendEmailNotification(
 }
 
 /**
+ * Send a test email so the user can verify delivery is working.
+ */
+export async function sendTestEmail(toEmail: string): Promise<EmailDeliveryResult> {
+  return sendEmailMessage(
+    toEmail,
+    'Prism Test Email',
+    '<p>This is a test email from Prism. If you received this, email notifications are working correctly.</p>',
+  );
+}
+
+/**
  * Send an invitation email to a prospective user.
  * Bypasses notification preferences since the recipient isn't a user yet.
  */
