@@ -96,7 +96,7 @@ export function ClearGoalsDisplay({
   };
 
   return (
-    <div className={compact ? 'space-y-1' : 'space-y-2'}>
+    <div className={compact ? 'space-y-1 py-1 px-2' : 'space-y-2 py-2 px-3'}>
       {goals.map((goal) => (
         <div key={goal.id} className="group flex items-start gap-2">
           {/* Checkbox */}
