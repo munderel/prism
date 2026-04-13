@@ -1,9 +1,15 @@
--- CreateEnum
-CREATE TYPE "ProcessMode" AS ENUM ('BASIC', 'ADVANCED');
+-- CreateEnum (safe)
+DO $$ BEGIN
+  CREATE TYPE "ProcessMode" AS ENUM ('BASIC', 'ADVANCED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateEnum
-CREATE TYPE "SubtaskMode" AS ENUM ('PAIRED', 'UNPAIRED');
+-- CreateEnum (safe)
+DO $$ BEGIN
+  CREATE TYPE "SubtaskMode" AS ENUM ('PAIRED', 'UNPAIRED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AlterTable
-ALTER TABLE "Process" ADD COLUMN "mode" "ProcessMode" NOT NULL DEFAULT 'BASIC';
-ALTER TABLE "Process" ADD COLUMN "subtaskMode" "SubtaskMode" NOT NULL DEFAULT 'PAIRED';
+-- AlterTable (safe)
+ALTER TABLE "Process" ADD COLUMN IF NOT EXISTS "mode" "ProcessMode" NOT NULL DEFAULT 'BASIC';
+ALTER TABLE "Process" ADD COLUMN IF NOT EXISTS "subtaskMode" "SubtaskMode" NOT NULL DEFAULT 'PAIRED';

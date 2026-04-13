@@ -1,2 +1,2 @@
--- AlterTable
-ALTER TABLE "PowerdownSession" ADD COLUMN "calendarEventId" TEXT;
+-- AlterTable (safe)
+ALTER TABLE "PowerdownSession" ADD COLUMN IF NOT EXISTS "calendarEventId" TEXT;
