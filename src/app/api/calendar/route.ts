@@ -5,12 +5,12 @@ import { parseBody, createCalendarEventSchema } from '@/lib/schemas';
 import { listGoogleEvents, createGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
 import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
-import { parseGoogleSyncState, type GoogleEventOverride } from '@/lib/google-sync-state';
+import { parseGoogleSyncState, type GoogleEventOverride, pad2 } from '@/lib/google-sync-state';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
+import { getTaskTypeColor } from '@/lib/prism-colors';
 
 const MAX_DAYS = 366;
-const pad2 = (n: number) => String(n).padStart(2, '0');
 
 /** Iterate day-by-day through a date range, calling `onDay` for each day.
  *  The callback receives a zoned cursor (local day/date/month values) and a YYYY-MM-DD dateKey. */
@@ -64,14 +64,6 @@ function pushTimedEvent(
 function parseCalendarIds(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw as string[];
-}
-
-function taskTypeColor(taskType: string): string {
-  switch (taskType) {
-    case 'IMPROVE': return '#6366f1';
-    case 'REACT': return '#eab308';
-    default: return '#06b6d4';
-  }
 }
 
 function applySeriesException(
@@ -372,7 +364,7 @@ export async function GET(request: NextRequest) {
       taskType: task.taskType,
       priority: task.priority,
       goalTitle: task.goal?.title,
-      color: taskTypeColor(task.taskType),
+      color: getTaskTypeColor(task.taskType),
     });
   }
 
@@ -785,8 +777,7 @@ export async function GET(request: NextRequest) {
         evEnd = processException.end;
 
         if (evStart >= rangeStart && evStart <= rangeEnd) {
-          const completionKey = `${proc.id}-${dateKey}`;
-          const completed = procCompletions.has(completionKey);
+          const completed = procCompletions.has(overrideKey);
           events.push({
             id: `process-${proc.id}-${dateKey}`,
             title: proc.title,

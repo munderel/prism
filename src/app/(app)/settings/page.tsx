@@ -44,6 +44,58 @@ function DurationInput({ value, onChange, inputClasses }: { value: number; onCha
   );
 }
 
+function SaveButton({ onClick, label = 'Save', className: extraClass, saving }: { onClick: () => void; label?: string; className?: string; saving: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={saving}
+      className={`rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors ${extraClass ?? ''}`}
+    >
+      {saving ? 'Saving...' : label}
+    </button>
+  );
+}
+
+function TestEmailButton({ toast }: { toast: ReturnType<typeof useToast> }) {
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{ sent: boolean; configured: boolean; error?: string } | null>(null);
+
+  const sendTest = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await fetch('/api/notifications/test', { method: 'POST' });
+      const data = await res.json();
+      setResult(data);
+      if (data.sent) toast.success('Test email sent! Check your inbox.');
+      else if (!data.configured) toast.error('Email not configured. Set RESEND_API_KEY in Vercel.');
+      else toast.error(data.error || 'Email send failed.');
+    } catch {
+      toast.error('Failed to send test email.');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={sendTest}
+        disabled={testing}
+        className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors disabled:opacity-50"
+      >
+        <Mail className="h-4 w-4 inline mr-1.5" />
+        {testing ? 'Sending...' : 'Send test email'}
+      </button>
+      {result && (
+        <span className={`text-xs ${result.sent ? 'text-emerald-400' : 'text-red-400'}`}>
+          {result.sent ? 'Delivered' : result.error || 'Failed'}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
@@ -492,58 +544,6 @@ export default function SettingsPage() {
 
   const inputClasses = 'w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none';
 
-  function SaveButton({ onClick, label = 'Save', className: extraClass }: { onClick: () => void; label?: string; className?: string }) {
-    return (
-      <button
-        onClick={onClick}
-        disabled={saving}
-        className={`rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors ${extraClass ?? ''}`}
-      >
-        {saving ? 'Saving...' : label}
-      </button>
-    );
-  }
-
-  function TestEmailButton() {
-    const [testing, setTesting] = useState(false);
-    const [result, setResult] = useState<{ sent: boolean; configured: boolean; error?: string } | null>(null);
-
-    const sendTest = async () => {
-      setTesting(true);
-      setResult(null);
-      try {
-        const res = await fetch('/api/notifications/test', { method: 'POST' });
-        const data = await res.json();
-        setResult(data);
-        if (data.sent) toast.success('Test email sent! Check your inbox.');
-        else if (!data.configured) toast.error('Email not configured. Set RESEND_API_KEY in Vercel.');
-        else toast.error(data.error || 'Email send failed.');
-      } catch {
-        toast.error('Failed to send test email.');
-      } finally {
-        setTesting(false);
-      }
-    };
-
-    return (
-      <div className="flex items-center gap-2">
-        <button
-          onClick={sendTest}
-          disabled={testing}
-          className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors disabled:opacity-50"
-        >
-          <Mail className="h-4 w-4 inline mr-1.5" />
-          {testing ? 'Sending...' : 'Send test email'}
-        </button>
-        {result && (
-          <span className={`text-xs ${result.sent ? 'text-emerald-400' : 'text-red-400'}`}>
-            {result.sent ? 'Delivered' : result.error || 'Failed'}
-          </span>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div>
       <div className="mb-4 sm:mb-6">
@@ -569,7 +569,7 @@ export default function SettingsPage() {
             className={`${inputClasses} mb-3`}
             maxLength={100}
           />
-          <SaveButton onClick={saveUserSettings} />
+          <SaveButton onClick={saveUserSettings} saving={saving} />
         </section>
 
         {/* Appearance */}
@@ -639,7 +639,7 @@ export default function SettingsPage() {
               </label>
             ))}
           </div>
-          <SaveButton onClick={saveUserSettings} className="mt-4" />
+          <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
 
         {/* MTP */}
@@ -655,7 +655,7 @@ export default function SettingsPage() {
             placeholder="What is your MTP? e.g., 'Democratize access to quality education for every child on earth'"
             className={`${inputClasses} resize-none mb-3`}
           />
-          <SaveButton onClick={saveUserSettings} />
+          <SaveButton onClick={saveUserSettings} saving={saving} />
         </section>
 
         {/* Timezone */}
@@ -725,8 +725,8 @@ export default function SettingsPage() {
             )}
           </div>
           <div className="mt-4 flex items-center gap-3">
-            <SaveButton onClick={saveUserSettings} label="Save Preferences" />
-            <TestEmailButton />
+            <SaveButton onClick={saveUserSettings} saving={saving} label="Save Preferences" />
+            <TestEmailButton toast={toast} />
           </div>
         </section>
 
@@ -790,7 +790,7 @@ export default function SettingsPage() {
               </select>
             </div>
           </div>
-          <SaveButton onClick={saveUserSettings} className="mt-4" />
+          <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
 
         {/* Connected Calendars */}
@@ -861,7 +861,7 @@ export default function SettingsPage() {
           {calendarError && (
             <p className="mt-3 text-sm text-amber-400">{calendarError}</p>
           )}
-          <SaveButton onClick={saveUserSettings} className="mt-4" />
+          <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
 
         {/* Powerdown Time */}
@@ -877,7 +877,7 @@ export default function SettingsPage() {
             onChange={(e) => setPowerdownTime(e.target.value)}
             className={inputClasses}
           />
-          <SaveButton onClick={saveUserSettings} className="mt-4" />
+          <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
 
         {/* Streak Preferences */}
@@ -907,7 +907,7 @@ export default function SettingsPage() {
               </label>
             ))}
           </div>
-          <SaveButton onClick={saveUserSettings} className="mt-4" />
+          <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
 
         {/* Review Schedule */}
@@ -1078,7 +1078,7 @@ export default function SettingsPage() {
             <DurationInput value={yearlyReviewDuration} onChange={setYearlyReviewDuration} inputClasses={inputClasses} />
           </div>
 
-          <SaveButton onClick={saveUserSettings} className="mt-2" />
+          <SaveButton onClick={saveUserSettings} saving={saving} className="mt-2" />
         </section>
 
         {/* Onboarding */}

@@ -99,7 +99,6 @@ export function ClearGoalsDisplay({
     <div className={compact ? 'space-y-1 py-1 px-2' : 'space-y-2 py-2 px-3'}>
       {goals.map((goal) => (
         <div key={goal.id} className="group flex items-start gap-2">
-          {/* Checkbox */}
           <button
             onClick={() => (editable || compact) && toggleGoal(goal.id, goal.completed)}
             disabled={!editable && !compact}
@@ -112,7 +111,6 @@ export function ClearGoalsDisplay({
             {goal.completed && <Check className="h-3 w-3" />}
           </button>
 
-          {/* Text or inline edit */}
           {editingId === goal.id && editable ? (
             <div className="flex flex-1 items-center gap-1">
               <input
@@ -149,7 +147,6 @@ export function ClearGoalsDisplay({
             </span>
           )}
 
-          {/* Edit / Delete (editable mode only, non-compact) */}
           {editable && !compact && editingId !== goal.id && (
             <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               <button
@@ -169,7 +166,6 @@ export function ClearGoalsDisplay({
         </div>
       ))}
 
-      {/* Add new goal (editable, non-compact only) */}
       {editable && !compact && (
         <div className="flex items-center gap-2 pt-1">
           <Plus className="h-4 w-4 shrink-0 text-gray-300" />
@@ -186,7 +182,6 @@ export function ClearGoalsDisplay({
         </div>
       )}
 
-      {/* Empty state for editable */}
       {goals.length === 0 && editable && (
         <p className="text-sm text-gray-400">No clear goals set. Add one above.</p>
       )}

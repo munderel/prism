@@ -7,6 +7,7 @@ import { parseBody, updateSettingsSchema } from '@/lib/schemas';
 import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
+import { pad2, getDateKey } from '@/lib/google-sync-state';
 
 const USER_SETTINGS_SELECT = {
   name: true,
@@ -54,13 +55,6 @@ const USER_UPDATABLE_FIELDS = [
 const NOTIFICATION_PREF_FIELDS = [
   'emailEnabled', 'pushEnabled', 'derailingAlerts', 'mentionAlerts', 'reviewNags',
 ] as const;
-
-const pad2 = (n: number) => String(n).padStart(2, '0');
-
-function getDateKey(date: Date, timezone: string) {
-  const zoned = toZonedTime(date, timezone);
-  return `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
-}
 
 function buildZonedWindow(dateKey: string, time: string, duration: number, timezone: string) {
   const [hours, minutes] = time.split(':').map(Number);

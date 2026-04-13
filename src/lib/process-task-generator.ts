@@ -7,6 +7,7 @@ import {
 } from 'date-fns';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { pad2 } from '@/lib/google-sync-state';
+import { resolveAssignee } from '@/lib/delegation';
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
@@ -95,18 +96,6 @@ function getCurrentPeriodRange(process: {
 
 // ─── Owner resolution ─────────────────────────────────────────────────────────
 
-function getResponsibleUserId(process: {
-  assigneeId: string | null;
-  delegateId: string | null;
-  delegateUntil: Date | null;
-}): string | null {
-  const today = new Date();
-  if (process.delegateId && process.delegateUntil && process.delegateUntil >= today) {
-    return process.delegateId;
-  }
-  return process.assigneeId;
-}
-
 // ─── Core generator ───────────────────────────────────────────────────────────
 
 /**
@@ -129,7 +118,7 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
   // Respect duration end date
   if (process.durationEndDate && new Date() > process.durationEndDate) return;
 
-  const ownerId = getResponsibleUserId(process);
+  const ownerId = resolveAssignee(process);
   if (!ownerId) return; // No responsible user — skip
 
   const { periodStart, dueDate } = getCurrentPeriodRange(process);
