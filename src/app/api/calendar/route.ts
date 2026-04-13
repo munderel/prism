@@ -7,6 +7,7 @@ import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
 import { parseGoogleSyncState, type GoogleEventOverride } from '@/lib/google-sync-state';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
+import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
 
 const MAX_DAYS = 366;
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -98,6 +99,9 @@ export async function GET(request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   try {
+  // Ensure process tasks exist before querying (idempotent)
+  await checkAndCreateDueProcessTasks();
+
   const { searchParams } = new URL(request.url);
   const start = searchParams.get('start');
   const end = searchParams.get('end');
@@ -304,27 +308,30 @@ export async function GET(request: NextRequest) {
           include: { members: { select: { userId: true } } },
         })
       : Promise.resolve([]),
-    // Processes — independent of other queries, fetched in parallel
-    prisma.process.findMany({
-      where: {
-        scheduledTime: { not: null },
-        OR: [
-          { assigneeId: auth.userId },
-          { delegateId: auth.userId },
-          { assigneeId: null },
-        ],
-      },
-      select: {
-        id: true,
-        title: true,
-        cadence: true,
-        mode: true,
-        scheduledTime: true,
-        scheduledDayOfWeek: true,
-        scheduledDayOfMonth: true,
-        defaultDurationMinutes: true,
-      },
-    }),
+    // Processes — only for source=all (calendar page); skip for source=external
+    // to avoid duplicates with task records on the dashboard
+    (fetchAll || source === 'processes')
+      ? prisma.process.findMany({
+          where: {
+            scheduledTime: { not: null },
+            OR: [
+              { assigneeId: auth.userId },
+              { delegateId: auth.userId },
+              { assigneeId: null },
+            ],
+          },
+          select: {
+            id: true,
+            title: true,
+            cadence: true,
+            mode: true,
+            scheduledTime: true,
+            scheduledDayOfWeek: true,
+            scheduledDayOfMonth: true,
+            defaultDurationMinutes: true,
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   // Detect "not connected" — Google was requested but returned empty without error
@@ -335,13 +342,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Build set of process+dateKey combos already covered by Task records (for dedup)
+  // Build set of process+dateKey combos already covered by Task records (for dedup).
+  // Use the user's timezone for date keys to match forEachDayInRange output.
   const taskProcessDates = new Set<string>();
   for (const task of tasks) {
     if (task.processId) {
       const dateSource = task.timeBlockStart || task.dueDate;
       if (dateSource) {
-        const taskDateKey = dateSource.toISOString().split('T')[0];
+        const zoned = toZonedTime(dateSource, userTz);
+        const taskDateKey = `${zoned.getFullYear()}-${pad2(zoned.getMonth() + 1)}-${pad2(zoned.getDate())}`;
         taskProcessDates.add(`${task.processId}-${taskDateKey}`);
       }
     }
