@@ -49,10 +49,6 @@ vi.mock('@/lib/task-helpers', () => ({
   unflagOtherWinTheDay: vi.fn(),
 }));
 
-vi.mock('@/lib/derailing-checker', () => ({
-  checkDerailingTasks: vi.fn(),
-}));
-
 vi.mock('@/lib/process-task-checker', () => ({
   checkAndCreateDueProcessTasks: vi.fn(),
 }));

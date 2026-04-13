@@ -7,9 +7,13 @@ import { parseRRule } from '@/lib/recurrence';
 import { parseLocalDate } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
+import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
+
+  // Lazily generate process tasks for the current period (idempotent)
+  await checkAndCreateDueProcessTasks();
 
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date');

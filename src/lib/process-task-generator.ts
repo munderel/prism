@@ -121,7 +121,8 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
     },
   });
 
-  if (!process || process.mode !== 'ADVANCED') return;
+  if (!process) return;
+  if (process.mode !== 'ADVANCED' && process.mode !== 'BASIC') return;
 
   // Respect duration end date
   if (process.durationEndDate && new Date() > process.durationEndDate) return;
@@ -130,6 +131,48 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
   if (!ownerId) return; // No responsible user — skip
 
   const { periodStart, dueDate } = getCurrentPeriodRange(process);
+
+  // BASIC mode: create a single task for the current period with time blocks
+  if (process.mode === 'BASIC') {
+    if (!process.scheduledTime) return;
+
+    const existing = await prisma.task.count({
+      where: {
+        processId,
+        status: { in: ['TODO', 'IN_PROGRESS', 'DONE'] },
+        dueDate: { gte: periodStart, lte: dueDate },
+      },
+    });
+    if (existing > 0) return;
+
+    const [hours, minutes] = process.scheduledTime.split(':').map(Number);
+    const taskDate = new Date(dueDate);
+    taskDate.setHours(hours, minutes, 0, 0);
+    const timeBlockStart = new Date(taskDate);
+    const timeBlockEnd = new Date(taskDate.getTime() + (process.defaultDurationMinutes ?? 60) * 60_000);
+
+    await prisma.task.create({
+      data: {
+        ownerId,
+        taskType: 'MAINTENANCE',
+        title: process.title,
+        description: process.description,
+        dueDate,
+        timeBlockStart,
+        timeBlockEnd,
+        status: 'TODO',
+        priority: 'MEDIUM',
+        estimatedMinutes: process.defaultDurationMinutes,
+        processId,
+      },
+    });
+
+    await prisma.process.update({
+      where: { id: processId },
+      data: { lastRunAt: new Date() },
+    });
+    return;
+  }
 
   // Idempotency: check if any tasks exist for this process in the current period
   const existing = await prisma.task.count({

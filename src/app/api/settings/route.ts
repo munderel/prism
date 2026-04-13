@@ -9,6 +9,7 @@ import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
 
 const USER_SETTINGS_SELECT = {
+  name: true,
   mtp: true,
   timezone: true,
   hasCompletedOnboarding: true,
@@ -40,7 +41,7 @@ const USER_SETTINGS_SELECT = {
 } as const;
 
 const USER_UPDATABLE_FIELDS = [
-  'mtp', 'hasCompletedOnboarding', 'hiddenFeatures',
+  'name', 'mtp', 'hasCompletedOnboarding', 'hiddenFeatures',
   'workingHoursStart', 'workingHoursEnd', 'casualHoursStart', 'casualHoursEnd',
   'taskSchedulePeriod', 'selectedCalendarIds', 'syncTargetCalendarId', 'calendarColorOverrides', 'powerdownTime',
   'weeklyReviewDayOfWeek', 'weeklyReviewTime', 'weeklyReviewDuration',

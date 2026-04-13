@@ -85,6 +85,8 @@ export async function PATCH(
       data: {
         ...(body.timeBlockStart !== undefined && { timeBlockStart: body.timeBlockStart ? new Date(body.timeBlockStart) : null }),
         ...(body.timeBlockEnd !== undefined && { timeBlockEnd: body.timeBlockEnd ? new Date(body.timeBlockEnd) : null }),
+        // Clear unscheduledAt when re-scheduling with new time blocks
+        ...(body.timeBlockStart && body.timeBlockEnd && { unscheduledAt: null }),
       },
     });
 

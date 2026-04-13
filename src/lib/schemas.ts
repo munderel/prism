@@ -83,6 +83,7 @@ export const createGoalSchema = z.object({
 
 export const updateSettingsSchema = z.object({
   scope: z.enum(['user', 'company']).optional(),
+  name: z.string().min(1).max(100).optional(),
   mtp: z.string().max(10000).optional().nullable(),
   timezone: z.string().optional(),
   hasCompletedOnboarding: z.boolean().optional(),

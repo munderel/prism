@@ -7,12 +7,17 @@ import { generateTasksForCurrentPeriod } from '@/lib/process-task-generator';
  * processes are skipped by the generator itself.
  */
 export async function checkAndCreateDueProcessTasks(): Promise<void> {
-  const advancedProcesses = await prisma.process.findMany({
-    where: { mode: 'ADVANCED' },
+  const processes = await prisma.process.findMany({
+    where: {
+      OR: [
+        { mode: 'ADVANCED' },
+        { mode: 'BASIC', scheduledTime: { not: null } },
+      ],
+    },
     select: { id: true },
   });
 
-  if (advancedProcesses.length === 0) return;
+  if (processes.length === 0) return;
 
-  await Promise.all(advancedProcesses.map((p) => generateTasksForCurrentPeriod(p.id)));
+  await Promise.all(processes.map((p) => generateTasksForCurrentPeriod(p.id)));
 }
