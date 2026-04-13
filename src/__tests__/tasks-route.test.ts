@@ -73,10 +73,10 @@ vi.mock('@/lib/api-helpers', () => ({
 import { requireAuth, checkStackAccess } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
 import { prisma } from '@/lib/prisma';
-import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
+import { parseRRule, getNextOccurrence as _getNextOccurrence } from '@/lib/recurrence';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
-import { cascadeProgressUp } from '@/lib/progress';
+import { cascadeProgressUp as _cascadeProgressUp } from '@/lib/progress';
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockCheckStackAccess = vi.mocked(checkStackAccess);
@@ -359,7 +359,7 @@ describe('POST /api/tasks', () => {
 });
 
 // Import PATCH/DELETE/GET from the [id] route
-import { PATCH, DELETE as TaskDelete, GET as TaskGet } from '@/app/api/tasks/[id]/route';
+import { PATCH, DELETE as TaskDelete, GET as _TaskGet } from '@/app/api/tasks/[id]/route';
 
 function createPatchRequest(body: any) {
   return new Request('http://localhost/api/tasks/task-1', {
