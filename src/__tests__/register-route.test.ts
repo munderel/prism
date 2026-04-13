@@ -196,7 +196,7 @@ describe('POST /api/auth/register', () => {
     await POST(createRequest(validBody));
 
     // The $transaction was called with an array; check the user.update call
-    const transactionCall = mockTransaction.mock.calls[0][0] as any[];
+    const _transactionCall = mockTransaction.mock.calls[0][0] as any[];
     // Can't easily inspect prisma chained calls, but the route uses
     // `invitation.role === 'admin' || existingUser.isAdmin` which preserves admin
     expect(mockTransaction).toHaveBeenCalled();
