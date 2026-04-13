@@ -7,6 +7,7 @@ import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { AgendaView } from '@/components/tasks/AgendaView';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { TaskComments } from '@/components/tasks/TaskComments';
+import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
 import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { PowerDownStatusCard } from '@/components/powerdown/PowerDownStatusCard';
@@ -448,6 +449,10 @@ export default function TasksPage() {
                   <span>{selectedTask.priority}</span>
                   <span>{selectedTask.status.replace('_', ' ')}</span>
                 </div>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-[var(--text-secondary)] mb-2">Clear Goals</h4>
+                <ClearGoalsDisplay taskId={selectedTask.id} editable />
               </div>
               <TaskComments taskId={selectedTask.id} />
             </div>
