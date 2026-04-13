@@ -188,12 +188,13 @@ export const authOptions: NextAuthOptions = {
       ) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { isAdmin: true, isLockedOut: true },
+          select: { name: true, isAdmin: true, isLockedOut: true },
         });
         if (dbUser?.isLockedOut) {
           // Invalidate the session for locked out users
           return { ...token, isLockedOut: true };
         }
+        token.name = dbUser?.name ?? token.name;
         token.isAdmin = dbUser?.isAdmin ?? false;
         token.adminCheckedAt = Date.now();
       }
@@ -207,6 +208,7 @@ export const authOptions: NextAuthOptions = {
       }
       if (session.user) {
         session.user.id = token.id;
+        session.user.name = token.name as string | undefined;
         session.user.isAdmin = token.isAdmin ?? false;
       }
       return session;

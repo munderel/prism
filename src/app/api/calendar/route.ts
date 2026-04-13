@@ -335,6 +335,18 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Build set of process+dateKey combos already covered by Task records (for dedup)
+  const taskProcessDates = new Set<string>();
+  for (const task of tasks) {
+    if (task.processId) {
+      const dateSource = task.timeBlockStart || task.dueDate;
+      if (dateSource) {
+        const taskDateKey = dateSource.toISOString().split('T')[0];
+        taskProcessDates.add(`${task.processId}-${taskDateKey}`);
+      }
+    }
+  }
+
   for (const task of tasks) {
     events.push({
       id: `task-${task.id}`,
@@ -680,11 +692,12 @@ export async function GET(request: NextRequest) {
         processId: { in: processIds },
         scheduledDate: { gte: rangeStart, lte: rangeEnd },
       },
-      select: { processId: true, scheduledDate: true, timeBlockStart: true, timeBlockEnd: true, completedAt: true },
+      select: { processId: true, scheduledDate: true, timeBlockStart: true, timeBlockEnd: true, completedAt: true, unscheduledAt: true },
     });
 
     const procOverrides = new Map<string, { start: Date; end: Date }>();
     const procCompletions = new Set<string>();
+    const procUnscheduled = new Set<string>();
     for (const ex of processExecutions) {
       const dateKey = ex.scheduledDate.toISOString().split('T')[0];
       const key = `${ex.processId}-${dateKey}`;
@@ -693,6 +706,9 @@ export async function GET(request: NextRequest) {
       }
       if (ex.completedAt) {
         procCompletions.add(key);
+      }
+      if (ex.unscheduledAt) {
+        procUnscheduled.add(key);
       }
     }
 
@@ -737,6 +753,11 @@ export async function GET(request: NextRequest) {
         if (!matches) return;
 
         const overrideKey = `${proc.id}-${dateKey}`;
+
+        // Skip unscheduled occurrences and dates already covered by a Task record
+        if (procUnscheduled.has(overrideKey)) return;
+        if (taskProcessDates.has(overrideKey)) return;
+
         const override = procOverrides.get(overrideKey);
 
         let evStart: Date;

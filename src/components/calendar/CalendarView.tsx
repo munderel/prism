@@ -38,6 +38,9 @@ interface SelectedEventPopover {
   description?: string;
   cadence?: string;
   createdBy?: string;
+  // Process-specific
+  processId?: string;
+  scheduledDate?: string;
   // Google Calendar event
   gcalEventId?: string;
   gcalCalendarId?: string;
@@ -287,6 +290,29 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     }
   }, [toast, refreshEvents]);
 
+  // --- Unschedule process occurrence (creates task + marks execution unscheduled) ---
+  const handleUnscheduleProcess = useCallback(async (processId: string, scheduledDate: string) => {
+    setCompletingEvent(true);
+    try {
+      const res = await fetch(`/api/processes/${processId}/unschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledDate }),
+      });
+      if (res.ok) {
+        toast.success('Process occurrence unscheduled');
+        setSelectedEventPopover(null);
+        refreshEvents();
+      } else {
+        toast.error('Failed to unschedule process');
+      }
+    } catch {
+      toast.error('Failed to unschedule process');
+    } finally {
+      setCompletingEvent(false);
+    }
+  }, [toast, refreshEvents]);
+
   // --- Delete handlers ---
   const handleDeleteTask = useCallback(async (taskId: string) => {
     try {
@@ -380,13 +406,18 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
     // Process event → show popover
     if (info.event.id?.startsWith('process-')) {
+      const match = info.event.id.match(/^process-(.+)-(\d{4}-\d{2}-\d{2})$/);
+      const processId = match ? match[1] : '';
+      const scheduledDate = match ? match[2] : '';
       setSelectedEventPopover({
         eventId: info.event.id,
         title: info.event.title,
         source: 'process',
-        status: '',
+        status: props.completed ? 'completed' : '',
         position: { top: rect.top + window.scrollY, left: rect.right + 8 },
         link: '/processes',
+        processId,
+        scheduledDate,
       });
       return;
     }
@@ -1182,17 +1213,32 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </div>
             )}
 
-            {/* Process: Open */}
+            {/* Process: Unschedule + Open */}
             {selectedEventPopover.source === 'process' && (
-              <button
-                onClick={() => {
-                  router.push('/processes');
-                  setSelectedEventPopover(null);
-                }}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors"
-              >
-                Open
-              </button>
+              <>
+                {selectedEventPopover.processId && selectedEventPopover.scheduledDate && selectedEventPopover.status !== 'completed' && (
+                  <button
+                    onClick={() => handleUnscheduleProcess(
+                      selectedEventPopover.processId!,
+                      selectedEventPopover.scheduledDate!,
+                    )}
+                    disabled={completingEvent}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+                  >
+                    <CalendarX2 className="h-3.5 w-3.5" />
+                    Reschedule
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    router.push('/processes');
+                    setSelectedEventPopover(null);
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors"
+                >
+                  Open
+                </button>
+              </>
             )}
 
             {/* Meeting: Join (if meet link) */}

@@ -583,6 +583,7 @@ model ProcessExecution {
   executedById  String?
   scheduledDate DateTime
   completedAt   DateTime?
+  unscheduledAt DateTime?
   taskId        String?   @unique
   timeBlockStart DateTime?
   timeBlockEnd   DateTime?

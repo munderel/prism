@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, RefreshCw, Link2, Check, Flame } from 'lucide-react';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, RefreshCw, Link2, Check, Flame, User } from 'lucide-react';
 import { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -53,6 +53,7 @@ export default function SettingsPage() {
   const { isSubscribed: isPushSubscribed, isSupported: isPushSupported, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const [mounted, setMounted] = useState(false);
 
+  const [displayName, setDisplayName] = useState(session?.user?.name ?? '');
   const [mtp, setMtp] = useState('');
   const [companyMtp, setCompanyMtp] = useState('');
   const [timezone, setTimezone] = useState('America/New_York');
@@ -144,6 +145,7 @@ export default function SettingsPage() {
       }
 
       const data = await res.json();
+      setDisplayName(data.name ?? '');
       setMtp(data.mtp ?? '');
       setTimezone(data.timezone ?? 'America/New_York');
       if (Array.isArray(data.hiddenFeatures)) {
@@ -224,7 +226,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakCountAims, streakCountProcesses, streakCountReviews, streakCountPowerdown }),
+        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakCountAims, streakCountProcesses, streakCountReviews, streakCountPowerdown }),
       });
 
       if (!res.ok) {
@@ -512,6 +514,24 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-4 sm:space-y-6 max-w-2xl w-full">
+        {/* Profile */}
+        <section className="glass-panel p-4 sm:p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <User className="h-5 w-5 text-violet-400" />
+            Profile
+          </h2>
+          <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Display Name</label>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Your name"
+            className={`${inputClasses} mb-3`}
+            maxLength={100}
+          />
+          <SaveButton onClick={saveUserSettings} />
+        </section>
+
         {/* Appearance */}
         <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
