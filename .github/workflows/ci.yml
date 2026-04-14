@@ -16,6 +16,8 @@ jobs:
       NEXTAUTH_URL: "http://localhost:3000"
       GOOGLE_CLIENT_ID: "ci-placeholder"
       GOOGLE_CLIENT_SECRET: "ci-placeholder"
+      TOKEN_ENCRYPTION_KEY: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      CRON_SECRET: "ci-placeholder-cron-secret"
       NODE_OPTIONS: "--max-old-space-size=4096"
 
     steps:
