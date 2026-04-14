@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import useSWR, { mutate } from 'swr';
+import useSWR from 'swr';
 import { Check, Plus, Trash2, Pencil, X, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ClearGoal {
@@ -24,12 +24,12 @@ export function ClearGoalsDisplay({
   collapsible = false,
 }: ClearGoalsDisplayProps) {
   const apiUrl = `/api/tasks/${taskId}/clear-goals`;
-  const { data, error, isLoading } = useSWR<ClearGoal[]>(apiUrl);
+  const { data, error, isLoading, mutate } = useSWR<ClearGoal[]>(apiUrl);
 
   const [newGoalText, setNewGoalText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
-  const [collapsed, setCollapsed] = useState(collapsible);
+  const [collapsed, setCollapsed] = useState(collapsible && !editable);
 
   if (isLoading) {
     return (
@@ -54,13 +54,21 @@ export function ClearGoalsDisplay({
     return null;
   }
 
-  const toggleGoal = async (goalId: string, isComplete: boolean) => {
-    await fetch(apiUrl, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goals: [{ id: goalId, isComplete: !isComplete }] }),
-    });
-    mutate(apiUrl);
+  const toggleGoal = (goalId: string, isComplete: boolean) => {
+    const optimisticGoals = goals.map((g) =>
+      g.id === goalId ? { ...g, isComplete: !isComplete } : g
+    );
+    mutate(
+      async () => {
+        await fetch(apiUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goals: [{ id: goalId, isComplete: !isComplete }] }),
+        });
+        return optimisticGoals;
+      },
+      { optimisticData: optimisticGoals, rollbackOnError: true, revalidate: true }
+    );
   };
 
   const addGoal = async () => {
@@ -72,7 +80,7 @@ export function ClearGoalsDisplay({
       body: JSON.stringify({ text }),
     });
     setNewGoalText('');
-    mutate(apiUrl);
+    mutate();
   };
 
   const saveEdit = async (goalId: string) => {
@@ -85,12 +93,12 @@ export function ClearGoalsDisplay({
     });
     setEditingId(null);
     setEditText('');
-    mutate(apiUrl);
+    mutate();
   };
 
   const deleteGoal = async (goalId: string) => {
     await fetch(`${apiUrl}?goalId=${goalId}`, { method: 'DELETE' });
-    mutate(apiUrl);
+    mutate();
   };
 
   const startEdit = (goal: ClearGoal) => {
@@ -106,16 +114,16 @@ export function ClearGoalsDisplay({
   }
 
   return (
-    <div className={compact ? 'pt-2 pb-1 px-2' : 'space-y-2 py-2 px-3'}>
+    <div className={compact ? 'pt-2 pb-1 px-2' : 'space-y-2 pt-3 pb-2 px-3'}>
       {collapsible && goals.length > 0 && (
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors mb-1"
+          className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] rounded px-1.5 py-0.5 transition-colors mb-1"
         >
           {collapsed ? (
-            <ChevronRight className="h-3 w-3" />
+            <ChevronRight className="h-3.5 w-3.5" />
           ) : (
-            <ChevronDown className="h-3 w-3" />
+            <ChevronDown className="h-3.5 w-3.5" />
           )}
           <span>
             {completedCount}/{goals.length} goal{goals.length !== 1 ? 's' : ''}
@@ -128,7 +136,10 @@ export function ClearGoalsDisplay({
           {goals.map((goal) => (
             <div key={goal.id} className="group flex items-start gap-2">
               <button
-                onClick={() => (editable || compact) && toggleGoal(goal.id, goal.isComplete)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (editable || compact) toggleGoal(goal.id, goal.isComplete);
+                }}
                 disabled={!editable && !compact}
                 className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
                   goal.isComplete
