@@ -96,6 +96,7 @@ export const updateSettingsSchema = z.object({
   selectedCalendarIds: z.array(z.string()).optional(),
   syncTargetCalendarId: z.string().max(200).optional().nullable(),
   calendarColorOverrides: z.record(z.string(), z.string()).optional(),
+  weeklyTargetCalendarIds: z.array(z.string()).optional(),
   powerdownTime: hhmmTime,
   weeklyReviewDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   weeklyReviewTime: hhmmTime,
@@ -111,6 +112,8 @@ export const updateSettingsSchema = z.object({
   streakCountProcesses: z.boolean().optional(),
   streakCountReviews:   z.boolean().optional(),
   streakCountPowerdown: z.boolean().optional(),
+  beeminderAuthToken: z.string().max(200).optional().nullable(),
+  beeminderGoalSlug: z.string().max(200).optional().nullable(),
   companyMtp: z.string().max(10000).optional(),
   notificationPrefs: z.object({
     emailEnabled: z.boolean().optional(),
@@ -201,12 +204,12 @@ export const updateStackSchema = z.object({
 // === ADMIN ===
 
 export const adminToggleSchema = z.object({
-  userId: z.string().min(1, 'userId is required'),
+  userId: z.string({ message: 'userId is required' }).min(1, 'userId is required'),
   isAdmin: z.boolean(),
 });
 
 export const adminDeleteUserSchema = z.object({
-  userId: z.string().min(1, 'userId is required'),
+  userId: z.string({ message: 'userId is required' }).min(1, 'userId is required'),
 });
 
 export const adminCreateUserSchema = z.object({
@@ -512,7 +515,7 @@ export const decomposeGoalSchema = z.object({
 // === STREAKS ===
 
 export const createStreakSchema = z.object({
-  streakType: z.string().min(1, 'streakType is required').max(200),
+  streakType: z.string({ message: 'streakType is required' }).min(1, 'streakType is required').max(200),
 });
 
 export const updateStreakSchema = z.object({

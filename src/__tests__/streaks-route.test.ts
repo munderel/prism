@@ -125,8 +125,12 @@ describe('POST /api/streaks', () => {
   });
 
   it('returns 400 when streakType is missing', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: {} } as any);
-    const res = await POST(createPostRequest());
+    const req = new Request('http://localhost/api/streaks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }) as any;
+    const res = await POST(req);
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain('streakType is required');
