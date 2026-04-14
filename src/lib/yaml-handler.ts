@@ -348,7 +348,9 @@ function normalizeYearBasedYaml(doc: Record<string, any>): Record<string, any> {
     const sgMap = new Map<string, Record<string, any>>();
     const strategicGoals: Record<string, any>[] = (yearBlock.strategic_goals ?? []).map((sg: any) => {
       const normalised: Record<string, any> = {
-        id: sg.id,
+        // NOTE: sg.id (e.g. "SG1") is a YAML back-reference label, NOT a DB id.
+        // We store it in sgMap for resolution but must NOT set it on the goal object —
+        // createNewGoals skips creation for any node with a non-null id.
         title: sg.title,
         description: sg.why ?? sg.description,
         start_date: sg.start_date ?? yearStartDate,
