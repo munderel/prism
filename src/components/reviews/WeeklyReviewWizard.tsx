@@ -148,6 +148,13 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const { data: weekTasks } = useSWR(weekTasksSWRKey);
   const { data: weekAims } = useSWR(weekAimsSWRKey);
 
+  // Fetch settings for weekly target calendar filtering
+  const { data: userSettings } = useSWR('/api/settings');
+  const weeklyTargetCalendarIds = useMemo(() => {
+    if (!userSettings || !Array.isArray(userSettings.weeklyTargetCalendarIds)) return [];
+    return userSettings.weeklyTargetCalendarIds as string[];
+  }, [userSettings]);
+
   // Fetch user aims for AIM block duration (calendar work blocks)
   const { data: userAimsData } = useSWR('/api/aims/user');
   const aimBlockDuration = useMemo(() => {
@@ -497,11 +504,13 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
 
     if (currentStep === TOTAL_STEPS - 1) {
       try {
-        await fetch(`/api/reviews/${reviewId}`, {
+        const res = await fetch(`/api/reviews/${reviewId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ notes: finalNotes, complete: true }),
         });
+        const data = await res.json().catch(() => ({}));
+        if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
         setCompleted(true);
       } catch {
         toast.error('Failed to complete review. Please try again.');
@@ -680,6 +689,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 onUnschedule={handleUnscheduleItem}
                 onRefresh={() => { mutate(weekTasksSWRKey); mutate(weekAimsSWRKey); }}
                 showWorkBlockTemplates={step.key === 'work_blocks'}
+                weeklyTargetCalendarIds={weeklyTargetCalendarIds}
               />
             )}
             {step.key === 'maintenance' && (
@@ -743,6 +753,7 @@ interface CalendarStepContentProps {
   onUnschedule: (itemId: string, itemType: string) => Promise<void>;
   onRefresh?: () => void;
   showWorkBlockTemplates?: boolean;
+  weeklyTargetCalendarIds?: string[];
 }
 
 function CalendarStepContent({
@@ -761,6 +772,7 @@ function CalendarStepContent({
   onUnschedule,
   onRefresh,
   showWorkBlockTemplates,
+  weeklyTargetCalendarIds,
 }: CalendarStepContentProps): ReactNode {
   if (isTeamReview) {
     return (
@@ -805,6 +817,7 @@ function CalendarStepContent({
                 onUnschedule={onUnschedule}
                 onRefresh={onRefresh}
                 showWorkBlockTemplates={showWorkBlockTemplates}
+                weeklyTargetCalendarIds={weeklyTargetCalendarIds}
               />
             </div>
           </div>

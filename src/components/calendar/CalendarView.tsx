@@ -241,7 +241,9 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         body: JSON.stringify({ status }),
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         toast.success(`${label} completed!`);
+        if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
         setSelectedEventPopover(null);
         refreshEvents();
       } else {

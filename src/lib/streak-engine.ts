@@ -1,6 +1,7 @@
 import { ProcessCadence } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { startOfToday } from '@/lib/date-utils';
+import { maybePostBeeminder, BeeminderResult } from '@/lib/beeminder';
 
 const STREAK_MILESTONES = new Set([7, 14, 30, 50, 100]);
 
@@ -16,11 +17,15 @@ const CONTINUATION_WINDOW_DAYS: Record<ProcessCadence, number> = {
 
 export type StreakCategory = 'aims' | 'processes' | 'reviews' | 'powerdown';
 
+export interface StreakUpdateResult {
+  beeminder?: BeeminderResult;
+}
+
 async function upsertOrUpdateStreak(
   userId: string,
   streakType: string,
   windowDays: number,
-): Promise<void> {
+): Promise<StreakUpdateResult> {
   const today = startOfToday();
 
   const existing = await prisma.streak.findUnique({
@@ -31,13 +36,16 @@ async function upsertOrUpdateStreak(
     await prisma.streak.create({
       data: { userId, streakType, currentCount: 1, bestCount: 1, lastActiveDate: today },
     });
-    return;
+    if (streakType === 'daily') {
+      return { beeminder: await maybePostBeeminder(userId) };
+    }
+    return {};
   }
 
-  if (!existing.isActive) return;
+  if (!existing.isActive) return {};
 
   const lastActive = existing.lastActiveDate;
-  if (lastActive && lastActive >= today) return; // idempotent same-day
+  if (lastActive && lastActive >= today) return {}; // idempotent same-day
 
   const windowStart = new Date(today);
   windowStart.setDate(windowStart.getDate() - windowDays);
@@ -58,6 +66,11 @@ async function upsertOrUpdateStreak(
       data: { userId, message: `${newCount}-period ${streakType} streak!` },
     });
   }
+
+  if (streakType === 'daily') {
+    return { beeminder: await maybePostBeeminder(userId) };
+  }
+  return {};
 }
 
 /**
@@ -73,6 +86,7 @@ export async function updateSpecificStreak(
 ): Promise<void> {
   const windowDays = cadence ? CONTINUATION_WINDOW_DAYS[cadence] : 1;
   await upsertOrUpdateStreak(userId, streakType, windowDays);
+  // Return value intentionally discarded — Beeminder only fires for 'daily'
 }
 
 /**
@@ -83,7 +97,7 @@ export async function updateSpecificStreak(
 export async function updateDailyStreak(
   userId: string,
   category: StreakCategory,
-): Promise<void> {
+): Promise<StreakUpdateResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -93,7 +107,7 @@ export async function updateDailyStreak(
       streakCountPowerdown: true,
     },
   });
-  if (!user) return;
+  if (!user) return {};
 
   const enabled: Record<StreakCategory, boolean> = {
     aims: user.streakCountAims,
@@ -102,6 +116,6 @@ export async function updateDailyStreak(
     powerdown: user.streakCountPowerdown,
   };
 
-  if (!enabled[category]) return;
-  await upsertOrUpdateStreak(userId, 'daily', 1);
+  if (!enabled[category]) return {};
+  return upsertOrUpdateStreak(userId, 'daily', 1);
 }

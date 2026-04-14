@@ -23,6 +23,7 @@ import {
   PauseCircle,
   PlayCircle,
 } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
 import StreakHeatmap from '@/components/aims/StreakHeatmap';
 import { AimProgressChart } from '@/components/aims/AimProgressChart';
 import { AimCard as AimCardSimplified } from '@/components/aims/AimCard';
@@ -100,6 +101,7 @@ function getStreakColorOrMuted(streak: number): string {
 }
 
 export default function AimsPage() {
+  const toast = useToast();
   const { data: categories, isLoading: catsLoading } = useSWR<AimCategory[]>('/api/aims/categories');
   const { data: userAims, isLoading: aimsLoading, mutate: mutateAims } = useSWR<UserAim[]>('/api/aims/user');
 
@@ -197,6 +199,8 @@ export default function AimsPage() {
             console.error('Failed to complete instance');
             return;
           }
+          const data = await res.json().catch(() => ({}));
+          if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
         }
 
         // Refresh data
@@ -385,11 +389,13 @@ export default function AimsPage() {
       { revalidate: false },
     );
     try {
-      await fetch(`/api/aims/instances/${instanceId}`, {
+      const res = await fetch(`/api/aims/instances/${instanceId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'COMPLETED' }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
       mutateAims(); // Refresh user aims for streak/phase updates
     } catch {
       mutateTodayInstances(); // Revert on error

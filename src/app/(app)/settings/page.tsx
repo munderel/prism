@@ -132,6 +132,7 @@ export default function SettingsPage() {
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
   const [syncTargetCalendarId, setSyncTargetCalendarId] = useState<string>('');
   const [calendarColorOverrides, setCalendarColorOverrides] = useState<Record<string, string>>({});
+  const [weeklyTargetCalendarIds, setWeeklyTargetCalendarIds] = useState<string[]>([]);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   const [googleCalConnected, setGoogleCalConnected] = useState(true);
   const [calendarError, setCalendarError] = useState<string | null>(null);
@@ -144,6 +145,10 @@ export default function SettingsPage() {
   const [streakCountProcesses, setStreakCountProcesses] = useState(true);
   const [streakCountReviews, setStreakCountReviews] = useState(true);
   const [streakCountPowerdown, setStreakCountPowerdown] = useState(true);
+
+  // Beeminder
+  const [beeminderAuthToken, setBeeminderAuthToken] = useState('');
+  const [beeminderGoalSlug, setBeeminderGoalSlug] = useState('');
 
   // Weekly Review Schedule
   const [weeklyReviewDayOfWeek, setWeeklyReviewDayOfWeek] = useState<number>(0);
@@ -212,6 +217,7 @@ export default function SettingsPage() {
       if (data.casualHoursEnd) setCasualHoursEnd(data.casualHoursEnd);
       if (data.taskSchedulePeriod) setTaskSchedulePeriod(data.taskSchedulePeriod);
       if (Array.isArray(data.selectedCalendarIds)) setSelectedCalendarIds(data.selectedCalendarIds);
+      if (Array.isArray(data.weeklyTargetCalendarIds)) setWeeklyTargetCalendarIds(data.weeklyTargetCalendarIds);
       setSyncTargetCalendarId(data.syncTargetCalendarId ?? '');
       if (data.calendarColorOverrides && typeof data.calendarColorOverrides === 'object') {
         setCalendarColorOverrides(data.calendarColorOverrides);
@@ -223,6 +229,8 @@ export default function SettingsPage() {
       if (data.streakCountProcesses !== undefined) setStreakCountProcesses(data.streakCountProcesses);
       if (data.streakCountReviews !== undefined) setStreakCountReviews(data.streakCountReviews);
       if (data.streakCountPowerdown !== undefined) setStreakCountPowerdown(data.streakCountPowerdown);
+      if (data.beeminderAuthToken) setBeeminderAuthToken(data.beeminderAuthToken);
+      if (data.beeminderGoalSlug) setBeeminderGoalSlug(data.beeminderGoalSlug);
       if (data.weeklyReviewDayOfWeek != null) setWeeklyReviewDayOfWeek(data.weeklyReviewDayOfWeek);
       if (data.weeklyReviewTime) setWeeklyReviewTime(data.weeklyReviewTime);
       if (data.weeklyReviewDuration) setWeeklyReviewDuration(data.weeklyReviewDuration);
@@ -278,7 +286,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakCountAims, streakCountProcesses, streakCountReviews, streakCountPowerdown }),
+        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakCountAims, streakCountProcesses, streakCountReviews, streakCountPowerdown, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
       });
 
       if (!res.ok) {
@@ -856,6 +864,33 @@ export default function SettingsPage() {
                   ))}
                 </select>
               </div>
+
+              <div className="mt-4">
+                <label className="text-sm text-[var(--text-secondary)]">Count toward weekly target</label>
+                <p className="text-xs text-[var(--text-muted)] mb-2">Select which calendars&apos; events count toward your weekly scheduled hours target.</p>
+                <div className="space-y-2">
+                  {availableCalendars.map((cal) => (
+                    <label key={cal.id} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={weeklyTargetCalendarIds.includes(cal.id)}
+                        onChange={(e) => {
+                          setWeeklyTargetCalendarIds((prev) =>
+                            e.target.checked
+                              ? [...prev, cal.id]
+                              : prev.filter((id) => id !== cal.id)
+                          );
+                        }}
+                        className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-[var(--text-secondary)]">
+                        {cal.summary}
+                        {cal.primary && <span className="text-xs text-[var(--text-muted)] ml-1">(Primary)</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </>
           )}
           {calendarError && (
@@ -906,6 +941,43 @@ export default function SettingsPage() {
                 />
               </label>
             ))}
+          </div>
+          <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
+        </section>
+
+        {/* Beeminder Integration */}
+        <section className="glass-panel p-4 sm:p-6">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-1 flex items-center gap-2">
+            <Link2 className="h-5 w-5 text-yellow-500" />
+            Beeminder
+          </h2>
+          <p className="text-sm text-[var(--text-muted)] mb-4">
+            Automatically post a datapoint to your Beeminder goal each day your daily streak advances.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Auth Token</label>
+              <input
+                type="password"
+                value={beeminderAuthToken}
+                onChange={(e) => setBeeminderAuthToken(e.target.value)}
+                placeholder="Your Beeminder auth token"
+                className={inputClasses}
+              />
+              <p className="text-xs text-[var(--text-muted)] mt-1">
+                Get your token from beeminder.com/api/v1/auth_token.json
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)] mb-1">Goal Slug</label>
+              <input
+                type="text"
+                value={beeminderGoalSlug}
+                onChange={(e) => setBeeminderGoalSlug(e.target.value)}
+                placeholder="e.g. daily-streak"
+                className={inputClasses}
+              />
+            </div>
           </div>
           <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>

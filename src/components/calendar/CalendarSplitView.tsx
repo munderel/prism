@@ -46,6 +46,8 @@ export interface CalendarSplitViewProps {
   aimBlockDuration?: number;
   /** Show work block template cards at the bottom of the left panel (default mode only). */
   showWorkBlockTemplates?: boolean;
+  /** Google Calendar IDs whose events count toward the weekly hour target. */
+  weeklyTargetCalendarIds?: string[];
 }
 
 interface SelectedEventPopover {
@@ -344,6 +346,7 @@ export function CalendarSplitView({
   onCreateWorkBlock,
   aimBlockDuration = 60,
   showWorkBlockTemplates = false,
+  weeklyTargetCalendarIds,
 }: CalendarSplitViewProps) {
   const draggableContainerRef = useRef<HTMLDivElement>(null);
   const calendarRef = useRef<FullCalendar>(null);
@@ -451,9 +454,10 @@ export function CalendarSplitView({
     const rangeStart = new Date(activeRange.start).getTime();
     const rangeEnd = new Date(activeRange.end).getTime();
 
-    // Only count user-scheduled work events (tasks, aims) — exclude meetings, google, powerdown, etc.
+    // Count tasks, aims, and Google Calendar events from selected calendars
     const workEvents = displayEvents.filter((evt: CalendarEventData) =>
-      evt.source === 'tasks' || evt.source === 'aims'
+      evt.source === 'tasks' || evt.source === 'aims' ||
+      (evt.source === 'google' && weeklyTargetCalendarIds && weeklyTargetCalendarIds.length > 0 && !!evt.calendarId && weeklyTargetCalendarIds.includes(evt.calendarId))
     );
     return workEvents.reduce((total: number, evt: CalendarEventData) => {
       const evtStart = new Date(evt.start).getTime();
@@ -466,7 +470,7 @@ export function CalendarSplitView({
       }
       return total;
     }, 0);
-  }, [displayEvents, visibleRange, dateRange]);
+  }, [displayEvents, visibleRange, dateRange, weeklyTargetCalendarIds]);
 
   // Group unscheduled items
   const groupedItems = useMemo(() => {
@@ -490,7 +494,9 @@ export function CalendarSplitView({
         body: JSON.stringify({ status }),
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         toast.success(`${label} completed!`);
+        if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
         setSelectedEventPopover(null);
         mutateEvents();
         onRefresh?.();
@@ -765,31 +771,35 @@ export function CalendarSplitView({
         }
       }
 
+      // Remove the FullCalendar ghost immediately and add a placeholder
+      // so there's no visual gap while the API call is in flight.
+      info.event.remove();
+      pendingScheduledItems.current = [
+        ...pendingScheduledItems.current.filter((evt) => !(evt.itemId === itemId && evt.itemType === itemType)),
+        {
+          id: `pending-${itemType}-${itemId}`,
+          title,
+          start: snapStart.toISOString(),
+          end: snapEnd.toISOString(),
+          allDay: false,
+          source: itemType === 'aim' ? 'aims' : 'tasks',
+          itemId,
+          itemType,
+          ...(itemType === 'aim' ? { aimInstanceId: itemId } : { taskId: itemId }),
+        },
+      ];
+      mutateEvents((currentData: unknown) => currentData, { revalidate: false });
+
       try {
         await onSchedule(itemId, itemType, snapStart, snapEnd);
-        pendingScheduledItems.current = [
-          ...pendingScheduledItems.current.filter((evt) => !(evt.itemId === itemId && evt.itemType === itemType)),
-          {
-            id: `pending-${itemType}-${itemId}`,
-            title,
-            start: snapStart.toISOString(),
-            end: snapEnd.toISOString(),
-            allDay: false,
-            source: itemType === 'aim' ? 'aims' : 'tasks',
-            itemId,
-            itemType,
-            ...(itemType === 'aim' ? { aimInstanceId: itemId } : { taskId: itemId }),
-          },
-        ];
-        mutateEvents((currentData: unknown) => currentData, { revalidate: false });
-        // After successful schedule, remove the FullCalendar ghost (server data takes over)
-        info.event.remove();
         // Refetch calendar events and sidebar items from server
         await mutateEvents();
         onRefresh?.();
       } catch {
-        // Remove the ghost on failure too so it doesn't linger
-        info.event.remove();
+        // Remove the placeholder on failure
+        pendingScheduledItems.current = pendingScheduledItems.current.filter(
+          (evt) => !(evt.itemId === itemId && evt.itemType === itemType),
+        );
         await mutateEvents();
         onRefresh?.();
         toast.error('Failed to schedule item. Please try again.');
@@ -838,10 +848,13 @@ export function CalendarSplitView({
       const { itemId, itemType, source } = eventInfo.event.extendedProps ?? {};
       const colors = getEventColor(eventInfo.event, isDark);
       const isGoogleEvent = source === 'google';
+      // Detect short events (≤ 10 min) to reduce padding and hide time text
+      const durationMs = (eventInfo.event.end?.getTime() ?? 0) - (eventInfo.event.start?.getTime() ?? 0);
+      const isShort = durationMs > 0 && durationMs <= 10 * 60 * 1000;
 
       return (
         <div
-          className="relative h-full w-full overflow-hidden rounded px-1.5 py-1 text-xs leading-tight"
+          className={`relative h-full w-full overflow-hidden rounded px-1.5 text-xs leading-tight ${isShort ? 'py-0.5' : 'py-1'}`}
           style={{
             backgroundColor: colors.bg,
             borderLeft: `3px solid ${colors.border}`,
@@ -849,7 +862,7 @@ export function CalendarSplitView({
           }}
         >
           <div className="font-medium truncate pr-5">{eventInfo.event.title}</div>
-          {eventInfo.timeText && (
+          {eventInfo.timeText && !isShort && (
             <div className="text-[10px] opacity-75 mt-0.5">{eventInfo.timeText}</div>
           )}
           {!isGoogleEvent && itemId && (

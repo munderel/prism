@@ -299,6 +299,7 @@ export default function ProcessesPage() {
       if (res.ok) {
         const data = await res.json();
         toast.success(data.completed ? 'Process marked complete!' : 'Completion removed');
+        if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
         mutateStreaks();
         if (expandedProcessId === processId) fetchProcessDetail(processId);
       } else {

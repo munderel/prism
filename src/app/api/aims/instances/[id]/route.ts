@@ -9,7 +9,7 @@ import {
 } from '@/lib/aim-phases';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { getAimCompletionUrl } from '@/lib/completion-token';
-import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
+import { updateSpecificStreak, updateDailyStreak, type StreakUpdateResult } from '@/lib/streak-engine';
 
 const INSTANCE_INCLUDE = {
   aimCategory: true,
@@ -144,6 +144,8 @@ export async function PATCH(
   if (activityNote !== undefined) updateData.activityNote = activityNote;
   if (selectedActivity !== undefined) updateData.selectedActivity = selectedActivity;
 
+  let beeminderError: string | undefined;
+
   // Handle phase progression and scoring when completing an aim
   if (status === 'COMPLETED' && existing.status !== 'COMPLETED') {
     const userAim = await prisma.userAim.findUnique({
@@ -186,9 +188,12 @@ export async function PATCH(
       }
     }
 
-    // Update streak records (fire-and-forget; don't block response)
+    // Update streak records
     updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch((err) => console.warn('[streak] update failed:', err));
-    updateDailyStreak(existing.userId, 'aims').catch((err) => console.warn('[streak] update failed:', err));
+    const streakResult = await updateDailyStreak(existing.userId, 'aims').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
+    if (streakResult?.beeminder?.ok === false) {
+      beeminderError = streakResult.beeminder.error;
+    }
   }
 
   const updated = await prisma.aimInstance.update({
@@ -238,7 +243,7 @@ export async function PATCH(
     try { await syncToGcal(); } catch (err) { console.warn('[aims] Google Calendar sync failed:', err); }
   }
 
-  return Response.json(updated);
+  return Response.json({ ...updated, beeminderError });
 }
 
 export async function DELETE(
