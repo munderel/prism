@@ -6,7 +6,7 @@ import { parseBody, updatePowerdownSchema } from '@/lib/schemas';
 import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
 import { parseLocalDateKey } from '@/lib/google-sync-state';
-import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
+import { updateSpecificStreak, updateDailyStreak, type StreakUpdateResult } from '@/lib/streak-engine';
 import { startOfToday } from '@/lib/date-utils';
 
 type PowerdownSession = Awaited<ReturnType<typeof prisma.powerdownSession.findUnique>>;
@@ -165,10 +165,14 @@ export async function PATCH(request: NextRequest) {
   }
 
   const data: Record<string, unknown> = pickDefined(body, SESSION_UPDATABLE_FIELDS);
+  let beeminderError: string | undefined;
   if (body.complete && !session.completedAt) data.completedAt = new Date();
   if (body.complete && !session.completedAt) {
     updateSpecificStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] update failed:', err));
-    updateDailyStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] update failed:', err));
+    const streakResult = await updateDailyStreak(auth.userId, 'powerdown').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
+    if (streakResult?.beeminder?.ok === false) {
+      beeminderError = streakResult.beeminder.error;
+    }
   }
   if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
@@ -177,5 +181,5 @@ export async function PATCH(request: NextRequest) {
 
   await syncPowerdownToGcal(auth.userId, updated, `sessionId=${body.sessionId}`);
 
-  return Response.json(updated);
+  return Response.json({ ...updated, beeminderError });
 }

@@ -170,7 +170,7 @@ describe('updateDailyStreak', () => {
 
   it('returns silently when user not found', async () => {
     mockUserFindUnique.mockResolvedValue(null);
-    await expect(updateDailyStreak('u1', 'aims')).resolves.toBeUndefined();
+    await expect(updateDailyStreak('u1', 'aims')).resolves.toEqual({});
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });

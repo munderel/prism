@@ -24,6 +24,7 @@ const USER_SETTINGS_SELECT = {
   selectedCalendarIds: true,
   syncTargetCalendarId: true,
   calendarColorOverrides: true,
+  weeklyTargetCalendarIds: true,
   powerdownTime: true,
   weeklyReviewDayOfWeek: true,
   weeklyReviewTime: true,
@@ -39,17 +40,20 @@ const USER_SETTINGS_SELECT = {
   streakCountProcesses: true,
   streakCountReviews: true,
   streakCountPowerdown: true,
+  beeminderAuthToken: true,
+  beeminderGoalSlug: true,
 } as const;
 
 const USER_UPDATABLE_FIELDS = [
   'name', 'mtp', 'hasCompletedOnboarding', 'hiddenFeatures',
   'workingHoursStart', 'workingHoursEnd', 'casualHoursStart', 'casualHoursEnd',
-  'taskSchedulePeriod', 'selectedCalendarIds', 'syncTargetCalendarId', 'calendarColorOverrides', 'powerdownTime',
+  'taskSchedulePeriod', 'selectedCalendarIds', 'syncTargetCalendarId', 'calendarColorOverrides', 'weeklyTargetCalendarIds', 'powerdownTime',
   'weeklyReviewDayOfWeek', 'weeklyReviewTime', 'weeklyReviewDuration',
   'monthlyReviewRecurrenceRule', 'monthlyReviewTime', 'monthlyReviewDuration',
   'yearlyReviewRecurrenceRule', 'yearlyReviewTime', 'yearlyReviewDuration',
   'isPublicOnLeaderboard',
   'streakCountAims', 'streakCountProcesses', 'streakCountReviews', 'streakCountPowerdown',
+  'beeminderAuthToken', 'beeminderGoalSlug',
 ];
 
 const NOTIFICATION_PREF_FIELDS = [

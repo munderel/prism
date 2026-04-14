@@ -191,6 +191,11 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [goalInput, setGoalInput] = useState<Record<string, string>>({});
   const [clearGoalGuideOpen, setClearGoalGuideOpen] = useState(false);
 
+  // AIM block duration for Deep Work template (mirrors WeeklyReviewWizard logic)
+  const [aimBlockDuration, setAimBlockDuration] = useState(60);
+  // Calendar IDs that count toward weekly target
+  const [weeklyTargetCalendarIds, setWeeklyTargetCalendarIds] = useState<string[]>([]);
+
   // KPI processes due today (conditional step)
   const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
 
@@ -226,6 +231,30 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchAimInstances();
     fetchWeeklyGoals();
     fetchDueKpiProcesses();
+    // Fetch user aims to compute Deep Work block duration
+    fetch('/api/aims/user').then(r => r.ok ? r.json() : []).then((userAims: any[]) => {
+      if (!Array.isArray(userAims)) return;
+      const activeAims = userAims.filter((ua: any) => ua.isActive && ua.aimCategory);
+      if (activeAims.length === 0) return;
+      const durations = activeAims.map((ua: any) => {
+        const baseDuration = ua.customDuration ?? ua.aimCategory.defaultDurationMin ?? 60;
+        const phase = ua.currentPhase ?? 'FLOW';
+        if (phase === 'SEED') {
+          const weeksInPhase = Math.floor((Date.now() - new Date(ua.phaseStartedAt).getTime()) / (7 * 24 * 60 * 60 * 1000));
+          return Math.min(baseDuration, 5 + weeksInPhase * 5);
+        }
+        if (phase === 'SPROUT') return Math.max(5, Math.round(baseDuration * 0.5));
+        if (phase === 'GROW') return Math.max(5, Math.round(baseDuration * 0.75));
+        return baseDuration;
+      });
+      setAimBlockDuration(Math.min(...durations));
+    }).catch(() => {});
+    // Fetch settings for weekly target calendar IDs
+    fetch('/api/settings').then(r => r.ok ? r.json() : null).then((settings: any) => {
+      if (settings && Array.isArray(settings.weeklyTargetCalendarIds)) {
+        setWeeklyTargetCalendarIds(settings.weeklyTargetCalendarIds);
+      }
+    }).catch(() => {});
   }, []);
 
   const initSession = async () => {
@@ -512,7 +541,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const persistStep = async (nextStep: number, extra: Record<string, any> = {}) => {
     if (!session) return;
-    await fetch('/api/powerdown', {
+    const res = await fetch('/api/powerdown', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -526,6 +555,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         ...extra,
       }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
   };
 
   const advanceStep = async () => {
@@ -1180,7 +1211,9 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                           onUnschedule={handleItemUnscheduled}
                           onRefresh={fetchUnscheduledTomorrow}
                           onCreateWorkBlock={handleCreateWorkBlock}
+                          aimBlockDuration={aimBlockDuration}
                           showWorkBlockTemplates
+                          weeklyTargetCalendarIds={weeklyTargetCalendarIds}
                         />
                       </div>
                     </div>

@@ -57,10 +57,13 @@ model User {
   streakCountProcesses Boolean @default(true)
   streakCountReviews   Boolean @default(true)
   streakCountPowerdown Boolean @default(true)
+  beeminderAuthToken   String?
+  beeminderGoalSlug    String?
   taskSchedulePeriod    String?   // "working" | "casual" | "both"
   selectedCalendarIds   Json      @default("[]") // String[] of Google Calendar IDs to sync
   syncTargetCalendarId  String?   // Google Calendar ID to push events to (null = 'primary')
   calendarColorOverrides Json     @default("{}") // Record<calendarId, hexColor> overrides
+  weeklyTargetCalendarIds Json   @default("[]") // String[] of Google Calendar IDs that count toward weekly hour target
   googleSyncState       Json      @default("{}") // Recurring Google Calendar sync metadata and exceptions
   powerdownTime         String?   // "HH:mm" format, e.g. "17:30"
   weeklyReviewDayOfWeek Int?      // 0=Sun,1=Mon,...6=Sat
