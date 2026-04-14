@@ -84,31 +84,33 @@ export function formatGoalDateRange(
 
   const e = new Date(endDate);
 
+  // All dates are stored as UTC midnight. Use timeZone: 'UTC' and UTC getters
+  // everywhere so dates never shift by a day in negative-offset timezones.
   switch (level) {
     case 'HIGH_HARD': {
       const diffDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
       if (diffDays <= 14) {
-        const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+        const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
         return `${start} \u2013 ${end}`;
       }
-      const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+      const months = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth());
       if (months < 12) {
-        const start = s.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-        const end = e.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        const start = s.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+        const end = e.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
         return `${months}-Month Goal (${start} \u2013 ${end})`;
       }
-      const years = e.getFullYear() - s.getFullYear();
+      const years = e.getUTCFullYear() - s.getUTCFullYear();
       const label = years <= 1 ? '1-Year' : `${years}-Year`;
-      return `${label} High Hard Goal (${s.getFullYear()}\u2013${e.getFullYear()})`;
+      return `${label} High Hard Goal (${s.getUTCFullYear()}\u2013${e.getUTCFullYear()})`;
     }
     case 'STRATEGIC':
-      return String(s.getFullYear());
+      return String(s.getUTCFullYear());
     case 'MONTHLY':
-      return s.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      return s.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
     case 'WEEKLY': {
-      const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+      const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
       return `${start} \u2013 ${end}`;
     }
     default:

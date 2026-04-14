@@ -119,7 +119,10 @@ export const GoalCard = React.memo(function GoalCard({
         {/* Title and status */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`text-[var(--text-primary)] truncate ${styles.titleClass}`}>
+            <span
+              className={`text-[var(--text-primary)] ${goal.level === 'HIGH_HARD' ? 'line-clamp-3 break-words' : 'truncate'} ${styles.titleClass}`}
+              title={goal.title}
+            >
               {goal.title}
             </span>
             <div className="relative" ref={statusRef}>
