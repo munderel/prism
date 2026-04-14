@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { m, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { TaskCard } from './TaskCard';
 import { TaskCompletionKpiModal } from './TaskCompletionKpiModal';
 import { useKpiCompletionPrompt } from '@/hooks/useKpiCompletionPrompt';
@@ -153,27 +153,23 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => {
     const all = tasks.filter((t: DailyTask) => t.taskType === key);
     const active = all.filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED');
-    const done = all.filter((t) => t.status === 'DONE' || t.status === 'DROPPED');
-    return { key, label, color, tasks: showCompleted ? all : active, doneCount: done.length };
-  }), [tasks, showCompleted]);
+    return { key, label, color, tasks: active };
+  }), [tasks]);
+
+  const completedTasks = useMemo(() =>
+    tasks.filter((t: DailyTask) => t.status === 'DONE' || t.status === 'DROPPED'),
+    [tasks]
+  );
 
   if (isLoading) {
     return <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>;
   }
 
-  const totalDone = grouped.reduce((sum, g) => sum + g.doneCount, 0);
+  const totalDone = completedTasks.length;
 
   return (
     <>
     <div className="space-y-4">
-      {totalDone > 0 && (
-        <button
-          onClick={() => setShowCompleted((v) => !v)}
-          className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-        >
-          {showCompleted ? `Hide completed (${totalDone})` : `Show completed (${totalDone})`}
-        </button>
-      )}
       {grouped.map(({ key, label, color, tasks: sectionTasks }) => (
         <div key={key}>
           <button
@@ -218,6 +214,51 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
           </AnimatePresence>
         </div>
       ))}
+
+      {/* Completed tasks section */}
+      {totalDone > 0 && (
+        <div>
+          <button
+            onClick={() => setShowCompleted((v) => !v)}
+            className="flex items-center gap-2 mb-2 w-full text-left"
+          >
+            {showCompleted ? (
+              <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
+            )}
+            <CheckCircle2 className="h-4 w-4 text-green-500 dark:text-green-400" />
+            <span className="text-sm font-semibold text-green-700 dark:text-green-400">
+              Completed
+            </span>
+            <span className="text-xs text-[var(--text-muted)]">({totalDone})</span>
+          </button>
+
+          <AnimatePresence>
+            {showCompleted && (
+              <m.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="space-y-2 overflow-hidden"
+              >
+                {completedTasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onToggle={handleToggle}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onClick={(t: DailyTask) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } onClick?.(t); }}
+                    onStatusChange={handleStatusChange}
+                    onWinTheDayToggle={handleWinTheDayToggle}
+                  />
+                ))}
+              </m.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
     {kpiPromptState && (
       <TaskCompletionKpiModal

@@ -7,7 +7,7 @@ import { Check, Plus, Trash2, Pencil, X, ChevronDown, ChevronRight } from 'lucid
 interface ClearGoal {
   id: string;
   text: string;
-  completed: boolean;
+  isComplete: boolean;
 }
 
 interface ClearGoalsDisplayProps {
@@ -29,7 +29,7 @@ export function ClearGoalsDisplay({
   const [newGoalText, setNewGoalText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(collapsible);
 
   if (isLoading) {
     return (
@@ -54,11 +54,11 @@ export function ClearGoalsDisplay({
     return null;
   }
 
-  const toggleGoal = async (goalId: string, completed: boolean) => {
-    await fetch(`${apiUrl}/${goalId}`, {
+  const toggleGoal = async (goalId: string, isComplete: boolean) => {
+    await fetch(apiUrl, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ completed: !completed }),
+      body: JSON.stringify({ goals: [{ id: goalId, isComplete: !isComplete }] }),
     });
     mutate(apiUrl);
   };
@@ -78,10 +78,10 @@ export function ClearGoalsDisplay({
   const saveEdit = async (goalId: string) => {
     const text = editText.trim();
     if (!text) return;
-    await fetch(`${apiUrl}/${goalId}`, {
+    await fetch(apiUrl, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ goals: [{ id: goalId, text }] }),
     });
     setEditingId(null);
     setEditText('');
@@ -89,7 +89,7 @@ export function ClearGoalsDisplay({
   };
 
   const deleteGoal = async (goalId: string) => {
-    await fetch(`${apiUrl}/${goalId}`, { method: 'DELETE' });
+    await fetch(`${apiUrl}?goalId=${goalId}`, { method: 'DELETE' });
     mutate(apiUrl);
   };
 
@@ -98,7 +98,7 @@ export function ClearGoalsDisplay({
     setEditText(goal.text);
   };
 
-  const completedCount = goals.filter((g) => g.completed).length;
+  const completedCount = goals.filter((g) => g.isComplete).length;
 
   // Collapsible header for compact/list view
   if (collapsible && goals.length === 0) {
@@ -128,15 +128,15 @@ export function ClearGoalsDisplay({
           {goals.map((goal) => (
             <div key={goal.id} className="group flex items-start gap-2">
               <button
-                onClick={() => (editable || compact) && toggleGoal(goal.id, goal.completed)}
+                onClick={() => (editable || compact) && toggleGoal(goal.id, goal.isComplete)}
                 disabled={!editable && !compact}
                 className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
-                  goal.completed
+                  goal.isComplete
                     ? 'border-indigo-500 bg-indigo-500 text-white'
                     : 'border-[var(--glass-border)] bg-[var(--input-bg)] hover:border-indigo-400'
                 } ${!editable && !compact ? 'cursor-default' : 'cursor-pointer'}`}
               >
-                {goal.completed && <Check className="h-3 w-3" />}
+                {goal.isComplete && <Check className="h-3 w-3" />}
               </button>
 
               {editingId === goal.id && editable ? (
@@ -168,7 +168,7 @@ export function ClearGoalsDisplay({
               ) : (
                 <span
                   className={`flex-1 ${compact ? 'text-xs' : 'text-sm'} ${
-                    goal.completed
+                    goal.isComplete
                       ? 'text-[var(--text-muted)] line-through decoration-[var(--text-muted)]'
                       : 'text-[var(--text-primary)]'
                   }`}
