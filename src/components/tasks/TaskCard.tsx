@@ -154,7 +154,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
           </button>
         </div>
       </div>
-      <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-1">
+      <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-2">
         <ClearGoalsDisplay taskId={task.id} editable={false} compact collapsible />
       </div>
     </m.div>
