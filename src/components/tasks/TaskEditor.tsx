@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
-import { getLocalDateString } from '@/lib/date-utils';
 
 interface TaskEditorProps {
   task?: any; // If editing
