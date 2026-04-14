@@ -1,7 +1,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
-import { PrismaAdapter } from '@next-auth/prisma-adapter';
+import { PrismaAdapter } from '@auth/prisma-adapter';
 import bcrypt from 'bcryptjs';
 import { encryptToken } from './crypto';
 import { prisma } from './prisma';
@@ -18,7 +18,7 @@ const ACCOUNT_FIELDS = new Set([
 ]);
 
 function withSafeAdapter(adapter: ReturnType<typeof PrismaAdapter>) {
-  const originalLinkAccount = adapter.linkAccount;
+  const originalLinkAccount = adapter.linkAccount!;
   return {
     ...adapter,
     linkAccount: (account: Record<string, unknown>) => {

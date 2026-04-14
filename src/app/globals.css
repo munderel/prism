@@ -310,6 +310,12 @@ html:not(.dark) .hover\:bg-purple-500:hover {
   border-color: #e5e7eb;
 }
 
+/* Ensure short events (5-10 min) remain readable */
+.fc .fc-timegrid-event {
+  min-height: 22px !important;
+  overflow: visible !important;
+}
+
 /* Mobile responsive sidebar */
 @media (max-width: 1023px) {
   .mobile-bottom-nav {

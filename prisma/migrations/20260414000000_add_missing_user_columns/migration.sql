@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "beeminderAuthToken" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "beeminderGoalSlug" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "weeklyTargetCalendarIds" JSONB NOT NULL DEFAULT '[]';

@@ -109,7 +109,7 @@ export function ClearGoalsDisplay({
   const completedCount = goals.filter((g) => g.isComplete).length;
 
   // Collapsible header for compact/list view
-  if (collapsible && goals.length === 0) {
+  if (collapsible && goals.length === 0 && !editable) {
     return null;
   }
 
