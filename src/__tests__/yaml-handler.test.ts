@@ -418,3 +418,174 @@ describe('diffGoals with tasks and dates', () => {
     expect(entry.modified[0].changes.title).toEqual({ from: 'Old name', to: 'New name' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Year-based YAML normalisation
+// ---------------------------------------------------------------------------
+
+describe('parseYamlToGoals — year-based format', () => {
+  const yearBasedYaml = `
+meta:
+  name: "Test Year Stack"
+  owner: "test@example.com"
+  is_company: true
+  exported_at: "2026-04-13T00:00:00Z"
+
+high_hard_goal:
+  title: "Hit $50M revenue"
+  start_date: "2026-04-01"
+  end_date: "2031-04-01"
+  confidence: 8
+  success_criteria:
+    - "16 locations"
+    - "38,000 subscribers"
+
+year_1:
+  label: "April 2026 — March 2027"
+  start_date: "2026-04-01"
+  end_date: "2027-03-31"
+  strategic_goals:
+    - id: SG1
+      title: "Max Location 1"
+      why: "Prove the model at capacity before expanding."
+      deliverables:
+        - "Scale to 60% utilization"
+        - "Hire 6 more staff"
+    - id: SG2
+      title: "Build Subscription Engine"
+      why: "Recurring revenue is the model."
+      deliverables:
+        - "Launch membership tiers"
+  yearly_kpis:
+    - { name: "Revenue", target: "$686K" }
+    - { name: "Utilization", target: "35%" }
+  monthly_goals:
+    - month: "April 2026"
+      key_goal: "Baseline month"
+      strategic_goals: [SG1]
+      funnel:
+        leads: 250
+        bookings: 70
+        new_customers: 18
+        chair_utilization: "12%"
+      revenue:
+        total: "$17,535"
+        subscription_revenue: "$735"
+    - month: "May 2026"
+      key_goal: "Add Google Ads"
+      strategic_goals: [SG2]
+
+year_2:
+  label: "April 2027 — March 2028"
+  start_date: "2027-04-01"
+  end_date: "2028-03-31"
+  strategic_goals:
+    - title: "Replicate to 2 More Locations"
+      why: "Same city reduces complexity."
+      deliverables:
+        - "Location 2 opens"
+        - "Location 3 opens"
+  yearly_kpis:
+    - { name: "Locations", target: 3 }
+`;
+
+  it('produces HHG with strategic goals from year blocks', () => {
+    const { goals, meta } = parseYamlToGoals(yearBasedYaml);
+    expect(goals).toHaveLength(1);
+    expect(goals[0].level).toBe('HIGH_HARD');
+    expect(goals[0].title).toBe('Hit $50M revenue');
+    expect(meta.name).toBe('Test Year Stack');
+
+    // Year 1 has 2 SGs + Year 2 has 1 SG = 3 total
+    const strategicGoals = goals[0].children!;
+    expect(strategicGoals).toHaveLength(3);
+  });
+
+  it('maps why to description on strategic goals', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    const sg1 = goals[0].children![0];
+    expect(sg1.description).toBe('Prove the model at capacity before expanding.');
+  });
+
+  it('converts deliverables to tasks', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    const sg1 = goals[0].children![0];
+    expect(sg1.tasks).toHaveLength(2);
+    expect(sg1.tasks![0].title).toBe('Scale to 60% utilization');
+    expect(sg1.tasks![0].status).toBe('TODO');
+    expect(sg1.tasks![0].priority).toBe('MEDIUM');
+    expect(sg1.tasks![1].title).toBe('Hire 6 more staff');
+  });
+
+  it('resolves monthly goals to correct strategic parent via back-references', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    const sg1 = goals[0].children![0]; // SG1
+    const sg2 = goals[0].children![1]; // SG2
+
+    // April refs SG1, May refs SG2
+    expect(sg1.children).toHaveLength(1);
+    expect(sg1.children![0].title).toContain('April 2026');
+    expect(sg2.children).toHaveLength(1);
+    expect(sg2.children![0].title).toContain('May 2026');
+  });
+
+  it('folds business context into monthly goal description', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    const april = goals[0].children![0].children![0];
+    expect(april.description).toContain('Baseline month');
+    expect(april.description).toContain('250 leads');
+    expect(april.description).toContain('$17,535');
+  });
+
+  it('parses month strings into start_date and end_date', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    const april = goals[0].children![0].children![0];
+    expect(april.startDate).toBe('2026-04-01');
+    expect(april.endDate).toBe('2026-04-30');
+  });
+
+  it('sets strategic goal dates from parent year block', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    const sg1 = goals[0].children![0];
+    expect(sg1.startDate).toBe('2026-04-01');
+    expect(sg1.endDate).toBe('2027-03-31');
+  });
+
+  it('folds HHG extra fields into description', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    expect(goals[0].description).toContain('Confidence: 8/10');
+    expect(goals[0].description).toContain('16 locations');
+    expect(goals[0].description).toContain('38,000 subscribers');
+  });
+
+  it('attaches yearly_kpis to first strategic goal of each year', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    const sg1Kpis = goals[0].children![0].kpis!;
+    expect(sg1Kpis.some((k) => k.name === 'Revenue')).toBe(true);
+    expect(sg1Kpis.some((k) => k.name === 'Utilization')).toBe(true);
+
+    // Year 2 SG
+    const y2sg = goals[0].children![2];
+    expect(y2sg.kpis!.some((k) => k.name === 'Locations' && k.target === 3)).toBe(true);
+  });
+
+  it('parses string KPI targets correctly', () => {
+    const { goals } = parseYamlToGoals(yearBasedYaml);
+    const kpis = goals[0].children![0].kpis!;
+    const revenue = kpis.find((k) => k.name === 'Revenue')!;
+    expect(revenue.target).toBe(686_000);
+
+    const util = kpis.find((k) => k.name === 'Utilization')!;
+    expect(util.target).toBe(35);
+    expect(util.unit).toBe('%');
+  });
+
+  it('does not affect canonical format parsing (regression)', () => {
+    const canonicalYaml = exportGoalsToYaml(sampleTree, sampleMeta);
+    const { goals } = parseYamlToGoals(canonicalYaml);
+    expect(goals).toHaveLength(1);
+    expect(goals[0].title).toBe('Reach $1M ARR');
+    expect(goals[0].children).toHaveLength(1);
+    expect(goals[0].children![0].title).toBe('Double pipeline');
+  });
+});

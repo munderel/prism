@@ -225,8 +225,218 @@ export function exportGoalsToYaml(goals: GoalNode[], meta: YamlMeta): string {
   return yaml.dump(doc, { lineWidth: 120, noRefs: true, sortKeys: false });
 }
 
+// ---------------------------------------------------------------------------
+// Year-based YAML normalisation helpers
+// ---------------------------------------------------------------------------
+
+const MONTH_NAMES: Record<string, number> = {
+  january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+  july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+};
+
+function parseMonthToDateRange(monthStr: string): { start_date: string; end_date: string } | undefined {
+  // "April 2026" → { start_date: "2026-04-01", end_date: "2026-04-30" }
+  const match = monthStr.match(/^(\w+)\s+(\d{4})$/);
+  if (!match) return undefined;
+  const monthIdx = MONTH_NAMES[match[1].toLowerCase()];
+  if (monthIdx === undefined) return undefined;
+  const year = parseInt(match[2], 10);
+  const start = new Date(Date.UTC(year, monthIdx, 1));
+  const end = new Date(Date.UTC(year, monthIdx + 1, 0)); // last day of month
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return { start_date: fmt(start), end_date: fmt(end) };
+}
+
+function parseKpiTarget(raw: unknown): { target?: number; unit?: string } {
+  if (typeof raw === 'number') return { target: raw };
+  if (typeof raw !== 'string') return {};
+  let s = raw.trim();
+  let unit: string | undefined;
+
+  // Detect unit suffixes
+  if (s.endsWith('%') || s.endsWith('%+')) {
+    unit = '%';
+    s = s.replace(/%\+?$/, '');
+  }
+
+  // Strip currency
+  s = s.replace(/^\$/, '').replace(/,/g, '');
+
+  // Handle multiplier suffixes
+  let multiplier = 1;
+  if (/[Mm]$/i.test(s)) { multiplier = 1_000_000; s = s.replace(/[Mm]$/, ''); }
+  else if (/[Kk]$/i.test(s)) { multiplier = 1_000; s = s.replace(/[Kk]$/, ''); }
+
+  // Strip trailing +
+  s = s.replace(/\+$/, '');
+
+  // Handle ranges like "16-20" → take first number
+  const rangeMatch = s.match(/^([\d.]+)\s*-\s*[\d.]+$/);
+  if (rangeMatch) s = rangeMatch[1];
+
+  const num = parseFloat(s);
+  if (isNaN(num)) return unit ? { unit } : {};
+  return { target: num * multiplier, unit };
+}
+
+function formatBusinessContext(mg: Record<string, any>): string {
+  const parts: string[] = [];
+  if (mg.key_goal) parts.push(mg.key_goal);
+
+  if (mg.funnel) {
+    const f = mg.funnel;
+    parts.push(`Funnel: ${f.leads ?? '?'} leads, ${f.bookings ?? '?'} bookings (${f.lead_to_booking_pct ?? '?'} booking rate), ${f.new_customers ?? '?'} new customers, ${f.chair_utilization ?? '?'} utilization`);
+  }
+  if (mg.subscriptions) {
+    const s = mg.subscriptions;
+    parts.push(`Subscriptions: ${s.active_maintenance_members ?? '?'} active members, ${s.maintenance_arpu ?? '?'} ARPU`);
+  }
+  if (mg.revenue) {
+    const r = mg.revenue;
+    parts.push(`Revenue: ${r.total ?? '?'} total (${r.subscription_revenue ?? '?'} subscription)`);
+  }
+  if (mg.profitability) {
+    const p = mg.profitability;
+    parts.push(`Profitability: ${p.profit ?? '?'} profit (${p.margin ?? '?'} margin), ${p.staff ?? '?'} staff`);
+  }
+  return parts.join('\n');
+}
+
+function normalizeYearBasedYaml(doc: Record<string, any>): Record<string, any> {
+  // Detect year-based format
+  const yearKeys = Object.keys(doc)
+    .filter((k) => /^year_\d+$/.test(k))
+    .sort((a, b) => parseInt(a.split('_')[1]) - parseInt(b.split('_')[1]));
+
+  if (yearKeys.length === 0) return doc;
+
+  // Build HHG description from extra fields
+  const hhg = doc.high_hard_goal ?? {};
+  const descParts: string[] = [];
+  if (hhg.description) descParts.push(hhg.description);
+  if (hhg.confidence != null) descParts.push(`Confidence: ${hhg.confidence}/10`);
+  if (hhg.success_criteria?.length) {
+    descParts.push('Success Criteria:\n' + hhg.success_criteria.map((c: string) => `- ${c}`).join('\n'));
+  }
+  if (hhg.people_helped) {
+    const ph = hhg.people_helped;
+    descParts.push(`People Helped: ${ph.cumulative_people_served ?? '?'} cumulative, ${ph.active_subscribers_by_y5 ?? '?'} active subs by Y5`);
+  }
+  if (descParts.length) hhg.description = descParts.join('\n\n');
+
+  // Normalise HHG KPIs
+  if (hhg.kpis) {
+    hhg.kpis = hhg.kpis.map((k: any) => {
+      const parsed = parseKpiTarget(k.target);
+      return { ...k, type: k.type ?? 'numeric', target: parsed.target, unit: parsed.unit ?? k.unit };
+    });
+  }
+
+  // Clean extra HHG keys the parser doesn't know
+  delete hhg.confidence;
+  delete hhg.people_helped;
+  delete hhg.success_criteria;
+  delete hhg.operations_overview;
+
+  const allStrategicGoals: Record<string, any>[] = [];
+
+  for (const yearKey of yearKeys) {
+    const yearBlock = doc[yearKey];
+    const yearStartDate = yearBlock.start_date;
+    const yearEndDate = yearBlock.end_date;
+    // Build a map of strategic goal id → strategic goal object for back-reference resolution
+    const sgMap = new Map<string, Record<string, any>>();
+    const strategicGoals: Record<string, any>[] = (yearBlock.strategic_goals ?? []).map((sg: any) => {
+      const normalised: Record<string, any> = {
+        id: sg.id,
+        title: sg.title,
+        description: sg.why ?? sg.description,
+        start_date: sg.start_date ?? yearStartDate,
+        end_date: sg.end_date ?? yearEndDate,
+        status: sg.status ?? 'NOT_STARTED',
+        monthly_goals: [],
+      };
+
+      // Convert deliverables to tasks
+      if (sg.deliverables?.length) {
+        normalised.tasks = sg.deliverables.map((d: string) => ({
+          title: d,
+          status: 'TODO',
+          priority: 'MEDIUM',
+        }));
+      }
+
+      if (sg.kpis) normalised.kpis = sg.kpis;
+      if (sg.id) sgMap.set(sg.id, normalised);
+      return normalised;
+    });
+
+    // Attach yearly_kpis — distribute to each strategic goal in the year
+    if (yearBlock.yearly_kpis?.length && strategicGoals.length > 0) {
+      const normalisedKpis = yearBlock.yearly_kpis.map((k: any) => {
+        const parsed = parseKpiTarget(k.target);
+        return { ...k, type: k.type ?? 'numeric', target: parsed.target, unit: parsed.unit ?? k.unit };
+      });
+      // Attach to the first strategic goal of this year as the primary KPI holder
+      strategicGoals[0].kpis = [...(strategicGoals[0].kpis ?? []), ...normalisedKpis];
+    }
+
+    // Resolve monthly goals → nest under the correct strategic goal
+    if (yearBlock.monthly_goals?.length) {
+      for (const mg of yearBlock.monthly_goals) {
+        const dateRange = mg.month ? parseMonthToDateRange(mg.month) : undefined;
+        const monthTitle = mg.month
+          ? `${mg.month}: ${mg.key_goal ?? ''}`
+          : (mg.key_goal ?? mg.title ?? 'Monthly Goal');
+
+        const normalisedMonth: Record<string, any> = {
+          title: monthTitle,
+          description: formatBusinessContext(mg),
+          start_date: dateRange?.start_date ?? mg.start_date,
+          end_date: dateRange?.end_date ?? mg.end_date,
+          status: mg.status ?? 'NOT_STARTED',
+        };
+
+        if (mg.kpis) normalisedMonth.kpis = mg.kpis;
+        if (mg.weekly_goals) normalisedMonth.weekly_goals = mg.weekly_goals;
+
+        // Resolve strategic_goals back-references
+        const sgRefs: string[] = mg.strategic_goals ?? [];
+        let placed = false;
+        for (const ref of sgRefs) {
+          const parent = sgMap.get(String(ref));
+          if (parent) {
+            parent.monthly_goals.push(normalisedMonth);
+            placed = true;
+            break; // place under first matching SG
+          }
+        }
+        // If no valid reference, place under first strategic goal
+        if (!placed && strategicGoals.length > 0) {
+          strategicGoals[0].monthly_goals.push(normalisedMonth);
+        }
+      }
+    }
+
+    allStrategicGoals.push(...strategicGoals);
+    delete doc[yearKey];
+  }
+
+  // Clean subscription_model (reference data, not a goal)
+  delete doc.subscription_model;
+
+  // Attach all strategic goals to HHG
+  hhg.strategic_goals = allStrategicGoals;
+  doc.high_hard_goal = hhg;
+
+  return doc;
+}
+
+// ---------------------------------------------------------------------------
+
 export function parseYamlToGoals(yamlContent: string): { goals: GoalNode[]; meta: YamlMeta } {
-  const doc = yaml.load(yamlContent) as Record<string, any>;
+  const raw = yaml.load(yamlContent) as Record<string, any>;
+  const doc = normalizeYearBasedYaml(raw);
   const meta: YamlMeta = doc.meta ?? { name: '', owner: '', is_company: false, exported_at: '' };
 
   const goals: GoalNode[] = [];
