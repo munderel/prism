@@ -450,7 +450,7 @@ export default function TasksPage() {
               </div>
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-2">Clear Goals</h4>
-                <ClearGoalsDisplay taskId={selectedTask.id} editable />
+                <ClearGoalsDisplay taskId={selectedTask.id} editable collapsible />
               </div>
               <TaskComments taskId={selectedTask.id} />
             </div>
