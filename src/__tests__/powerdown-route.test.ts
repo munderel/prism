@@ -189,27 +189,28 @@ describe('PATCH /api/powerdown', () => {
   });
 
   it('creates session by sessionDate when no sessionId', async () => {
-    mockSafeParseJson.mockResolvedValue({
-      data: { sessionDate: '2026-04-04', timeBlockStart: '2026-04-04T21:00:00Z', timeBlockEnd: '2026-04-04T21:30:00Z' },
-    } as any);
     mockSessionFindFirst.mockResolvedValue(null);
     mockSessionCreate.mockResolvedValue({ id: 's-new', userId: 'user1' } as any);
     mockSessionUpdate.mockResolvedValue({ id: 's-new' } as any);
 
-    const res = await PATCH(createPatchRequest({}));
+    const res = await PATCH(createPatchRequest({
+      sessionDate: '2026-04-04',
+      timeBlockStart: '2026-04-04T21:00:00Z',
+      timeBlockEnd: '2026-04-04T21:30:00Z',
+    }));
     expect(res.status).toBe(200);
     expect(mockSessionCreate).toHaveBeenCalled();
   });
 
   it('updates existing session found by sessionDate', async () => {
-    mockSafeParseJson.mockResolvedValue({
-      data: { sessionDate: '2026-04-04', timeBlockStart: '2026-04-04T21:00:00Z' },
-    } as any);
     const existing = { id: 's-existing', userId: 'user1' };
     mockSessionFindFirst.mockResolvedValue(existing as any);
     mockSessionUpdate.mockResolvedValue({ id: 's-existing' } as any);
 
-    const res = await PATCH(createPatchRequest({}));
+    const res = await PATCH(createPatchRequest({
+      sessionDate: '2026-04-04',
+      timeBlockStart: '2026-04-04T21:00:00Z',
+    }));
     expect(res.status).toBe(200);
     expect(mockSessionCreate).not.toHaveBeenCalled();
   });
