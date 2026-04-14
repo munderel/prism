@@ -53,7 +53,7 @@ export function ClearGoalGuide({ isOpen, onToggle }: ClearGoalGuideProps) {
 
       {/* Sliding panel */}
       <div
-        className={`fixed right-0 top-0 z-50 h-full w-80 transform border-l border-gray-200 bg-white shadow-xl transition-transform duration-300 ${
+        className={`fixed right-0 top-0 z-50 h-full w-96 transform border-l border-gray-200 bg-white shadow-xl transition-transform duration-300 ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
