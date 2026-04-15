@@ -307,13 +307,16 @@ function formatBusinessContext(mg: Record<string, any>): string {
   return parts.join('\n');
 }
 
-function normalizeYearBasedYaml(doc: Record<string, any>): Record<string, any> {
+function normalizeYearBasedYaml(input: Record<string, any>): Record<string, any> {
   // Detect year-based format
-  const yearKeys = Object.keys(doc)
+  const yearKeys = Object.keys(input)
     .filter((k) => /^year_\d+$/.test(k))
     .sort((a, b) => parseInt(a.split('_')[1]) - parseInt(b.split('_')[1]));
 
-  if (yearKeys.length === 0) return doc;
+  if (yearKeys.length === 0) return input;
+
+  // Deep-clone to avoid mutating the parsed input
+  const doc: Record<string, any> = JSON.parse(JSON.stringify(input));
 
   // Build HHG description from extra fields
   const hhg = doc.high_hard_goal ?? {};
@@ -364,13 +367,12 @@ function normalizeYearBasedYaml(doc: Record<string, any>): Record<string, any> {
         monthly_goals: [],
       };
 
-      // Convert deliverables to tasks
+      // Fold deliverables into description (tasks only allowed on WEEKLY goals)
       if (sg.deliverables?.length) {
-        normalised.tasks = sg.deliverables.map((d: string) => ({
-          title: d,
-          status: 'TODO',
-          priority: 'MEDIUM',
-        }));
+        const deliverableText = sg.deliverables.map((d: string) => `- ${d}`).join('\n');
+        normalised.description = normalised.description
+          ? `${normalised.description}\n\nDeliverables:\n${deliverableText}`
+          : `Deliverables:\n${deliverableText}`;
       }
 
       if (sg.kpis) normalised.kpis = sg.kpis;
@@ -420,6 +422,9 @@ function normalizeYearBasedYaml(doc: Record<string, any>): Record<string, any> {
         }
         // If no valid reference, place under first strategic goal
         if (!placed && strategicGoals.length > 0) {
+          if (sgRefs.length > 0) {
+            console.warn(`Monthly goal "${normalisedMonth.title}" references unknown SGs [${sgRefs}], placing under "${strategicGoals[0].title}"`);
+          }
           strategicGoals[0].monthly_goals.push(normalisedMonth);
         }
       }

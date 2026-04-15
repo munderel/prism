@@ -3,7 +3,15 @@ import { toZonedTime } from 'date-fns-tz';
 import { prisma } from '@/lib/prisma';
 import { maybePostBeeminder, BeeminderResult } from '@/lib/beeminder';
 
-/** Returns midnight today in the given IANA timezone. */
+/**
+ * Returns midnight today in the given IANA timezone.
+ *
+ * INVARIANT: The returned Date has a UTC epoch shifted to represent the
+ * user's local time. This means it should ONLY be compared against other
+ * dates produced by this function or stored via the same path (lastActiveDate).
+ * Comparing against raw `new Date()` or `completedAt` timestamps will give
+ * incorrect day-boundary results.
+ */
 function startOfUserToday(timezone: string): Date {
   const zoned = toZonedTime(new Date(), timezone);
   zoned.setHours(0, 0, 0, 0);
@@ -155,40 +163,43 @@ export async function checkAndBreakMissedStreaks(userId: string): Promise<string
       streakCountProcesses: true,
       streakCountReviews: true,
       streakCountPowerdown: true,
+      streakGraceDays: true,
       timezone: true,
     },
   });
   if (!user) return reasons;
 
   const today = startOfUserToday(user.timezone);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+  // When grace is enabled, look back 2 days instead of 1 before breaking
+  const lookbackDays = user.streakGraceDays ? 2 : 1;
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - lookbackDays);
 
-  // Check AIMs: find aim instances that were due yesterday and not completed
+  // Check AIMs: find aim instances due within the lookback window and not completed
   if (user.streakCountAims) {
     const missedAims = await prisma.aimInstance.findMany({
       where: {
         userId,
-        scheduledDate: { gte: yesterday, lt: today },
+        scheduledDate: { gte: cutoff, lt: today },
         status: { not: 'COMPLETED' },
       },
       include: { aimCategory: { select: { name: true } } },
     });
     for (const aim of missedAims) {
-      const reason = `Missed AIM '${aim.aimCategory?.name ?? 'Unknown'}' due ${yesterday.toISOString().slice(0, 10)}`;
+      const reason = `Missed AIM '${aim.aimCategory?.name ?? 'Unknown'}' due ${cutoff.toISOString().slice(0, 10)}`;
       await breakStreak(userId, 'daily', reason);
       reasons.push(reason);
       break; // One break is enough for the daily streak
     }
   }
 
-  // Check Processes: find process tasks due yesterday that are not done
+  // Check Processes: find process tasks due within lookback window that are not done
   if (user.streakCountProcesses) {
     const missedProcessTasks = await prisma.task.findMany({
       where: {
         ownerId: userId,
         processId: { not: null },
-        dueDate: { gte: yesterday, lt: today },
+        dueDate: { gte: cutoff, lt: today },
         status: { notIn: ['DONE', 'DROPPED'] },
       },
       include: { processExecution: { include: { process: { select: { title: true } } } } },
@@ -196,7 +207,7 @@ export async function checkAndBreakMissedStreaks(userId: string): Promise<string
     });
     for (const task of missedProcessTasks) {
       const processName = task.processExecution?.process?.title ?? 'Unknown process';
-      const reason = `Missed process '${processName}' due ${yesterday.toISOString().slice(0, 10)}`;
+      const reason = `Missed process '${processName}' due ${cutoff.toISOString().slice(0, 10)}`;
       if (reasons.length === 0) {
         await breakStreak(userId, 'daily', reason);
       }

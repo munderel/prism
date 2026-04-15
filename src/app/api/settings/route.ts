@@ -40,7 +40,7 @@ const USER_SETTINGS_SELECT = {
   streakCountProcesses: true,
   streakCountReviews: true,
   streakCountPowerdown: true,
-  streakGraceDays: false,
+  streakGraceDays: true,
   beeminderAuthToken: true,
   beeminderGoalSlug: true,
 } as const;
