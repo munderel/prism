@@ -18,10 +18,17 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const days = Math.min(Number(searchParams.get('days') || '14'), 90);
 
-  const userAims = await prisma.userAim.findMany({
-    where: { userId: auth.userId, isActive: true },
-    include: { aimCategory: true },
-  });
+  const [userAims, user] = await Promise.all([
+    prisma.userAim.findMany({
+      where: { userId: auth.userId, isActive: true },
+      include: { aimCategory: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: { timezone: true },
+    }),
+  ]);
+  const timezone = user?.timezone || 'UTC';
 
   if (userAims.length === 0) {
     return Response.json({});
@@ -47,8 +54,9 @@ export async function GET(request: NextRequest) {
     instancesByCategory.set(inst.aimCategoryId, list);
   }
 
-  const fourteenDaysAgo = new Date();
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+  const now = new Date();
+  const fourteenDaysAgo = new Date(now);
+  fourteenDaysAgo.setDate(now.getDate() - 14);
 
   const result: Record<
     string,
@@ -64,7 +72,7 @@ export async function GET(request: NextRequest) {
     const recentInstances = instances.filter(
       (i) => new Date(i.scheduledDate) >= fourteenDaysAgo,
     );
-    const derailInfo = computeDerailInfo(userAim, recentInstances, 14);
+    const derailInfo = computeDerailInfo(userAim, recentInstances, 14, timezone);
     const expectedPerDay = computeExpectedPerDay(userAim);
 
     result[catId] = { derailInfo, history, expectedPerDay };

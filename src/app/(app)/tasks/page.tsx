@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
-import { ListTodo, ChevronLeft, ChevronRight, CalendarRange } from 'lucide-react';
+import { ListTodo, ChevronLeft, ChevronRight, CalendarRange, Inbox, ChevronDown } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { AgendaView } from '@/components/tasks/AgendaView';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
@@ -61,6 +61,9 @@ export default function TasksPage() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [showUnscheduled, setShowUnscheduled] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Fetch AIM instances for the current date range
   const aimRangeKey = useMemo(() => {
@@ -119,11 +122,16 @@ export default function TasksPage() {
   const { data: rangeData, isLoading: rangeLoading, mutate: mutateRange } = useSWR(rangeKey);
   const rangeTasks = useMemo(() => (Array.isArray(rangeData) ? rangeData : []), [rangeData]);
 
+  // Unscheduled tasks (no date, no time block)
+  const { data: unscheduledData, mutate: mutateUnscheduled } = useSWR('/api/tasks?unscheduledOnly=true');
+  const unscheduledTasks = useMemo(() => (Array.isArray(unscheduledData) ? unscheduledData : []), [unscheduledData]);
+
   const refresh = useCallback(() => {
     mutateRange();
+    mutateUnscheduled();
     setShowEditor(false);
     setEditingTask(null);
-  }, [mutateRange]);
+  }, [mutateRange, mutateUnscheduled]);
 
   const handleEdit = useCallback((task: any) => {
     setEditingTask(task);
@@ -140,6 +148,36 @@ export default function TasksPage() {
       setEditingTask(null);
     }
   }, [mutateRange]);
+
+  const toggleSelection = useCallback((taskId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }, []);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} task${selectedIds.size > 1 ? 's' : ''}?`)) return;
+    const ids = Array.from(selectedIds);
+    try {
+      const res = await fetch('/api/tasks/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', taskIds: ids }),
+      });
+      if (res.ok) {
+        setSelectedIds(new Set());
+        setSelectionMode(false);
+        mutateRange();
+        mutateUnscheduled();
+      }
+    } catch {
+      // silent
+    }
+  }, [selectedIds, mutateRange, mutateUnscheduled]);
 
   const handleTaskClick = useCallback(async (task: any) => {
     const res = await fetch(`/api/tasks/${task.id}`);
@@ -218,7 +256,22 @@ export default function TasksPage() {
           <ListTodo className="h-6 w-6 text-prism-indigo" />
           Tasks
         </h1>
-        <QuickAddMenu />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setSelectionMode(!selectionMode);
+              setSelectedIds(new Set());
+            }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              selectionMode
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            {selectionMode ? 'Cancel' : 'Select'}
+          </button>
+          <QuickAddMenu />
+        </div>
       </div>
 
       {/* View mode tabs */}
@@ -296,6 +349,9 @@ export default function TasksPage() {
               onDelete={handleDelete}
               onClick={handleTaskClick}
               onStatusChange={() => mutateRange()}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              onSelect={toggleSelection}
             />
           ) : rangeLoading ? (
             <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>
@@ -330,10 +386,45 @@ export default function TasksPage() {
                         onDelete={handleDelete}
                         onClick={handleTaskClick}
                         onStatusChange={() => mutateRange()}
+                        selectionMode={selectionMode}
+                        selectedIds={selectedIds}
+                        onSelect={toggleSelection}
                       />
                     </div>
                   );
                 })
+              )}
+            </div>
+          )}
+
+          {/* Unscheduled Tasks */}
+          {unscheduledTasks.length > 0 && (
+            <div className="mt-6">
+              <button
+                onClick={() => setShowUnscheduled(!showUnscheduled)}
+                className="flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)] mb-2 hover:text-[var(--text-secondary)] transition-colors"
+              >
+                <Inbox className="h-4 w-4" />
+                Unscheduled ({unscheduledTasks.length})
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showUnscheduled ? 'rotate-180' : ''}`} />
+              </button>
+              {showUnscheduled && (
+                <div className="space-y-2 border-l-2 border-dashed border-[var(--border-color)] pl-4">
+                  {unscheduledTasks.map((task: any) => (
+                    <div
+                      key={task.id}
+                      className={`glass-panel p-3 flex items-center gap-3 cursor-pointer hover:border-[var(--glass-border)] transition-colors ${
+                        task.status === 'DONE' ? 'opacity-50' : ''
+                      }`}
+                      onClick={() => handleTaskClick(task)}
+                    >
+                      <span className={`text-sm font-medium flex-1 ${task.status === 'DONE' ? 'text-gray-500 line-through' : 'text-[var(--text-primary)]'}`}>
+                        {task.title}
+                      </span>
+                      <span className="text-xs text-[var(--text-muted)]">{task.taskType}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -461,6 +552,25 @@ export default function TasksPage() {
           )}
         </div>
       </div>
+
+      {/* Bulk action bar */}
+      {selectionMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 glass-panel px-5 py-3 shadow-2xl border-red-500/30">
+          <span className="text-sm text-[var(--text-primary)] font-medium">{selectedIds.size} selected</span>
+          <button
+            onClick={handleBulkDelete}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
+          >
+            Delete Selected
+          </button>
+          <button
+            onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+            className="rounded-lg px-3 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Editor modal */}
       {showEditor && (

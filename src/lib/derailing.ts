@@ -95,11 +95,13 @@ interface AimInstanceLike {
 }
 
 /** Count distinct calendar dates on which an instance was completed. */
-function countCompletedDays(instances: AimInstanceLike[]): number {
+function countCompletedDays(instances: AimInstanceLike[], timezone?: string): number {
   const days = new Set<string>();
   for (const inst of instances) {
     if (inst.status === 'COMPLETED' || inst.completedAt) {
-      const d = new Date(inst.scheduledDate);
+      const d = timezone
+        ? toZonedTime(new Date(inst.scheduledDate), timezone)
+        : new Date(inst.scheduledDate);
       days.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
     }
   }
@@ -123,11 +125,13 @@ function expectedRatePerDay(userAim: UserAimLike): number {
  * @param userAim  The UserAim (with nested aimCategory).
  * @param instances  AimInstances from the analysis window (typically last 14 days).
  * @param windowDays  How many days the window covers (default 14).
+ * @param timezone  IANA timezone for date calculations (e.g. 'America/New_York').
  */
 export function computeDerailInfo(
   userAim: UserAimLike,
   instances: AimInstanceLike[],
   windowDays = 14,
+  timezone?: string,
 ): DerailInfo {
   if (!userAim.isActive) {
     return {
@@ -141,7 +145,7 @@ export function computeDerailInfo(
 
   const expectedPerDay = expectedRatePerDay(userAim);
   const expectedTotal = expectedPerDay * windowDays;
-  const actualCompleted = countCompletedDays(instances);
+  const actualCompleted = countCompletedDays(instances, timezone);
 
   const completionRate = expectedTotal > 0 ? actualCompleted / expectedTotal : 1;
   const expectedRate = expectedTotal > 0 ? 1 : 0;

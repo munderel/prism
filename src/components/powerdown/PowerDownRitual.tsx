@@ -13,6 +13,7 @@ import { getLocalDateString, getTomorrowDateString, getWeekBoundaries, parseLoca
 import { useToast } from '@/components/ui/ToastProvider';
 import { subtaskDoneCount } from '@/lib/task-utils';
 import { ClearGoalGuide } from './ClearGoalGuide';
+import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 const CalendarSplitView = dynamic(
   () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
@@ -1131,6 +1132,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 {candidateTasks.length === 0 && (
                   <p className="text-sm text-[var(--text-secondary)]">No tasks found. Add tasks in Step 2 first.</p>
                 )}
+                <div className="mb-2">
+                  <InlineTaskCreator
+                    defaultDate={tomorrowDateRange.start}
+                    placeholder="Add a quick chore for tomorrow..."
+                    onCreated={() => fetchTomorrowTasks()}
+                  />
+                </div>
                 {candidateTasks.map((t) => {
                   const isSelected = tomorrowPlan.includes(t.id);
                   return (

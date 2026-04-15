@@ -4,9 +4,10 @@ import { useMemo, useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import {
   Flame, ListChecks, ClipboardCheck, Moon, Trophy, Star,
-  ChevronDown, Pause, Play, Info,
+  ChevronDown, Pause, Play, Info, RotateCcw,
 } from 'lucide-react';
 import useSWR, { useSWRConfig } from 'swr';
+import { useSession } from 'next-auth/react';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 
 // --- Types ---
@@ -211,6 +212,8 @@ function CategorySection({
 // --- Main Dashboard ---
 
 export function StreaksDashboard() {
+  const { data: session } = useSession();
+  const isAdmin = !!(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
   const { data: streaks, isLoading } = useSWR<Streak[]>('/api/streaks');
   const { data: aimCategories } = useSWR<AimCategory[]>('/api/aims/categories');
   const { data: functions } = useSWR<BusinessFunction[]>('/api/processes');
@@ -259,13 +262,35 @@ export function StreaksDashboard() {
     return earned;
   }, [streaks]);
 
+  const [resetConfirm, setResetConfirm] = useState<'streaks' | 'leaderboard' | null>(null);
+
   const togglePause = async (streakId: string, currentlyActive: boolean) => {
-    await fetch(`/api/streaks/${streakId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: !currentlyActive }),
-    });
+    const prev = streaks;
+    mutate('/api/streaks', (streaks ?? []).map((s: Streak) =>
+      s.id === streakId ? { ...s, isActive: !currentlyActive } : s
+    ), false);
+    try {
+      await fetch(`/api/streaks/${streakId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !currentlyActive }),
+      });
+      mutate('/api/streaks');
+    } catch {
+      mutate('/api/streaks', prev, false);
+    }
+  };
+
+  const resetStreaks = async () => {
+    setResetConfirm(null);
+    await fetch('/api/streaks/reset', { method: 'POST' });
     mutate('/api/streaks');
+  };
+
+  const resetLeaderboard = async () => {
+    setResetConfirm(null);
+    await fetch('/api/leaderboard/reset', { method: 'POST' });
+    mutate('/api/leaderboard');
   };
 
   if (isLoading) {
@@ -386,6 +411,71 @@ export function StreaksDashboard() {
           </p>
         </div>
       </div>
+
+      {/* Reset Actions (admin only) */}
+      {isAdmin && <div className="glass-panel p-4">
+        <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Reset</h2>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setResetConfirm('streaks')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-red-400 bg-red-400/10 hover:bg-red-400/20 transition-colors"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Reset All Streaks
+          </button>
+          <button
+            onClick={() => setResetConfirm('leaderboard')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-red-400 bg-red-400/10 hover:bg-red-400/20 transition-colors"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Reset Leaderboard Data
+          </button>
+        </div>
+      </div>}
+
+      {/* Reset Confirmation Modal */}
+      <AnimatePresence>
+        {resetConfirm && (
+          <m.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            onClick={() => setResetConfirm(null)}
+          >
+            <m.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="glass-panel p-6 max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
+                {resetConfirm === 'streaks' ? 'Reset All Streaks?' : 'Reset Leaderboard Data?'}
+              </h3>
+              <p className="text-xs text-[var(--text-muted)] mb-4">
+                {resetConfirm === 'streaks'
+                  ? 'This will reset all streak counts to 0. Your best counts will be preserved. This cannot be undone.'
+                  : 'This will zero all aim points and remove your public wins. This cannot be undone.'}
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setResetConfirm(null)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={resetConfirm === 'streaks' ? resetStreaks : resetLeaderboard}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
+                >
+                  Reset
+                </button>
+              </div>
+            </m.div>
+          </m.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

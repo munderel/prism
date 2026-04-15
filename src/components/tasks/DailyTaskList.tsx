@@ -8,6 +8,7 @@ import { ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { TaskCard } from './TaskCard';
 import { TaskCompletionKpiModal } from './TaskCompletionKpiModal';
 import { useKpiCompletionPrompt } from '@/hooks/useKpiCompletionPrompt';
+import { playCompletionFeedback } from '@/lib/completion-feedback';
 
 const SECTIONS = [
   { key: 'IMPROVE', label: 'Improve', color: 'text-indigo-600 dark:text-indigo-400' },
@@ -50,11 +51,14 @@ interface DailyTaskListProps {
   onDelete: (taskId: string) => void;
   onClick?: (task: DailyTask) => void;
   onStatusChange?: () => void;
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onSelect?: (taskId: string) => void;
 }
 
-export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick, onStatusChange }: DailyTaskListProps) {
+export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick, onStatusChange, selectionMode, selectedIds, onSelect }: DailyTaskListProps) {
   const router = useRouter();
-  const swrKey = prefetchedTasks ? null : `/api/tasks?date=${date}&includeUnscheduled=true`;
+  const swrKey = prefetchedTasks ? null : `/api/tasks?date=${date}`;
   const { data: swrData, isLoading, mutate } = useSWR(swrKey);
   const data = prefetchedTasks ?? swrData;
   const tasks = Array.isArray(data) ? data : [];
@@ -97,9 +101,13 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   const handleToggle = useCallback(
     (task: DailyTask) => {
       const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
-      patchTask(task.id, { status: newStatus }, (t) => ({ ...t, status: newStatus }));
+      patchTask(task.id, { status: newStatus }, (t) => ({
+        ...t,
+        status: newStatus,
+        completedAt: newStatus === 'DONE' ? new Date().toISOString() : null,
+      }));
       if (newStatus === 'DONE') {
-
+        playCompletionFeedback();
         checkAndPrompt(task);
       }
     },
@@ -207,6 +215,9 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
                       onClick={(t: DailyTask) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } onClick?.(t); }}
                       onStatusChange={handleStatusChange}
                       onWinTheDayToggle={handleWinTheDayToggle}
+                      isSelectable={selectionMode}
+                      isSelected={selectedIds?.has(task.id)}
+                      onSelect={onSelect}
                     />
                   ))
                 )}
