@@ -154,11 +154,43 @@ describe('updateSpecificStreak', () => {
     await updateSpecificStreak('u1', 'aim_cat1');
     expect(mockPublicWinCreate).not.toHaveBeenCalled();
   });
+
+  it('continues streak with grace day enabled when gap is 2 days', async () => {
+    mockUserFindUnique.mockResolvedValue({
+      timezone: 'America/New_York',
+      streakGraceDays: true,
+      streakCountAims: true,
+      streakCountProcesses: true,
+      streakCountReviews: true,
+      streakCountPowerdown: true,
+    } as any);
+    mockFindUnique.mockResolvedValue(makeStreak({ currentCount: 3, bestCount: 5, lastActiveDate: daysAgo(2) }));
+    await updateSpecificStreak('u1', 'aim_cat1');
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ currentCount: 4, bestCount: 5 }),
+      })
+    );
+  });
+
+  it('handles P2002 race condition by re-fetching and updating', async () => {
+    // First findUnique returns null (streak doesn't exist)
+    mockFindUnique.mockResolvedValueOnce(null);
+    // Create throws P2002 (concurrent request created it)
+    mockCreate.mockRejectedValueOnce({ code: 'P2002' });
+    // Re-fetch returns the concurrently created streak
+    mockFindUnique.mockResolvedValueOnce(makeStreak({ currentCount: 1, bestCount: 1, lastActiveDate: daysAgo(0) }));
+    // Should not throw — falls through to idempotent same-day check
+    await updateSpecificStreak('u1', 'aim_cat1');
+    expect(mockUpdate).not.toHaveBeenCalled(); // same-day, no update needed
+  });
 });
 
 describe('updateDailyStreak', () => {
   it('updates the daily streak when category is enabled', async () => {
     mockUserFindUnique.mockResolvedValue({
+      timezone: 'America/New_York',
+      streakGraceDays: false,
       streakCountAims: true,
       streakCountProcesses: true,
       streakCountReviews: true,
@@ -175,6 +207,8 @@ describe('updateDailyStreak', () => {
 
   it('skips update when category is disabled', async () => {
     mockUserFindUnique.mockResolvedValue({
+      timezone: 'America/New_York',
+      streakGraceDays: false,
       streakCountAims: false,
       streakCountProcesses: true,
       streakCountReviews: true,
