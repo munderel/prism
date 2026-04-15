@@ -90,7 +90,7 @@ export async function PATCH(
   const parsed = await parseBody(request, updateGoalSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { status, dueDate, level } = body;
+  const { status, dueDate, level, startDate, endDate } = body;
 
   // Validate level change if provided
   if (level && level !== goal.level) {
@@ -105,6 +105,8 @@ export async function PATCH(
 
   const data: Record<string, any> = pickDefined(body, ['title', 'description', 'status', 'level']);
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
+  if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;
+  if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
 
   // If marking as COMPLETED, set progress to 100
   if (status === 'COMPLETED') {

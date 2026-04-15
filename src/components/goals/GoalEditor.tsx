@@ -6,7 +6,7 @@ import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
 import { LEVEL_LABELS, formatGoalDateRange } from '@/lib/goal-constants';
 import { GoalCreationCoach } from '@/components/reviews/shared/GoalCreationCoach';
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, getWeekBoundaries } from '@/lib/date-utils';
 
 /** Compute the appropriate root goal level based on the date range duration. */
 function computeRootLevel(startDate: string, endDate: string): string {
@@ -35,16 +35,21 @@ export function GoalEditor({
   onClose,
 }: GoalEditorProps) {
   const isEditing = !!goal;
+  const childLevel = parentGoal ? getChildLevel(parentGoal.level) : null;
 
   const [title, setTitle] = useState(goal?.title ?? '');
   const [description, setDescription] = useState(goal?.description ?? '');
   const [status, setStatus] = useState(goal?.status ?? 'NOT_STARTED');
-  const [startDate, setStartDate] = useState(
-    goal?.startDate ? getLocalDateString(new Date(goal.startDate)) : ''
-  );
-  const [endDate, setEndDate] = useState(
-    goal?.endDate ? getLocalDateString(new Date(goal.endDate)) : ''
-  );
+  const [startDate, setStartDate] = useState(() => {
+    if (goal?.startDate) return getLocalDateString(new Date(goal.startDate));
+    if (childLevel === 'WEEKLY') return getWeekBoundaries().start;
+    return '';
+  });
+  const [endDate, setEndDate] = useState(() => {
+    if (goal?.endDate) return getLocalDateString(new Date(goal.endDate));
+    if (childLevel === 'WEEKLY') return getWeekBoundaries().end;
+    return '';
+  });
   const [autoGenerate, setAutoGenerate] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -58,7 +63,7 @@ export function GoalEditor({
       : computeRootLevel(startDate, endDate);
 
   const isRootGoal = !parentGoal && !isEditing;
-  const showDates = isRootGoal || (isEditing && (goal?.startDate || goal?.endDate));
+  const showDates = isRootGoal || derivedLevel === 'WEEKLY' || (isEditing && (goal?.startDate || goal?.endDate));
   const canAutoGenerate = isRootGoal && derivedLevel !== 'WEEKLY';
 
   const durationLabel = useMemo(() => {
@@ -75,10 +80,8 @@ export function GoalEditor({
       const body: Record<string, any> = { title, description, status };
 
       if (isEditing) {
-        if (goal.startDate || goal.endDate) {
-          if (startDate) body.startDate = startDate;
-          if (endDate) body.endDate = endDate;
-        }
+        if (startDate) body.startDate = startDate;
+        if (endDate) body.endDate = endDate;
         const res = await fetch(`/api/goals/${goal.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -92,9 +95,9 @@ export function GoalEditor({
         body.stackId = stackId;
         body.level = derivedLevel;
         if (parentGoal) body.parentId = parentGoal.id;
+        if (startDate) body.startDate = startDate;
+        if (endDate) body.endDate = endDate;
         if (isRootGoal) {
-          if (startDate) body.startDate = startDate;
-          if (endDate) body.endDate = endDate;
           if (autoGenerate && startDate && endDate && derivedLevel !== 'WEEKLY') {
             body.autoGenerate = true;
           }

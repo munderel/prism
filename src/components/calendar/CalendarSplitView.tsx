@@ -227,27 +227,43 @@ function colorFromDef(c: ColorDef, isDark: boolean) {
   return { bg: c.bg, border: c.border, text: isDark ? c.textDark : c.textLight };
 }
 
+function hexToColorTriplet(hex: string, isDark: boolean): { bg: string; border: string; text: string } {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const bg = `rgba(${r},${g},${b},0.15)`;
+  const border = hex;
+  const text = isDark
+    ? `#${Math.round(r + (255 - r) * 0.4).toString(16).padStart(2, '0')}${Math.round(g + (255 - g) * 0.4).toString(16).padStart(2, '0')}${Math.round(b + (255 - b) * 0.4).toString(16).padStart(2, '0')}`
+    : `#${Math.round(r * 0.55).toString(16).padStart(2, '0')}${Math.round(g * 0.55).toString(16).padStart(2, '0')}${Math.round(b * 0.55).toString(16).padStart(2, '0')}`;
+  return { bg, border, text };
+}
+
 function getEventColor(event: { extendedProps?: Record<string, unknown> }, isDark: boolean): { bg: string; border: string; text: string } {
   const props = event.extendedProps ?? {};
 
+  // Use the API-provided color as the single source of truth (matches main CalendarView)
+  const apiColor = props.color as string | undefined;
+  if (apiColor && typeof apiColor === 'string' && apiColor.startsWith('#') && apiColor.length === 7) {
+    return hexToColorTriplet(apiColor, isDark);
+  }
+
+  // Fallback: derive from PRISM_COLORS for events without a valid hex color
   if (props.source === 'google') {
     return colorFromDef(PRISM_COLORS.GOOGLE_CAL, isDark);
   }
 
-  // Match by task type (IMPROVE, REACT, MAINTENANCE)
   const taskType = props.taskType as keyof typeof PRISM_COLORS | undefined;
   if (taskType && PRISM_COLORS[taskType]) {
     return colorFromDef(PRISM_COLORS[taskType], isDark);
   }
 
-  // Match by item type (aim, review)
   const ITEM_TYPE_MAP: Record<string, keyof typeof PRISM_COLORS> = { aim: 'AIM', review: 'REVIEW' };
   const colorKey = ITEM_TYPE_MAP[props.itemType as string];
   if (colorKey) {
     return colorFromDef(PRISM_COLORS[colorKey], isDark);
   }
 
-  // Match by event source (meetings, powerdown)
   const SOURCE_MAP: Record<string, keyof typeof PRISM_COLORS> = { meetings: 'MEETING', powerdown: 'POWER_DOWN' };
   const sourceKey = SOURCE_MAP[props.source as string];
   if (sourceKey) {
@@ -849,7 +865,36 @@ export function CalendarSplitView({
   // Shared handler for event resize and internal drag-move
   const handleEventUpdate = useCallback(
     async (info: EventDropArg | EventResizeDoneArg) => {
-      const { itemId, itemType } = info.event.extendedProps ?? {};
+      const { itemId, itemType, meetingId, cadence } = info.event.extendedProps ?? {};
+
+      // Meeting events don't have itemId/itemType — handle separately
+      if (meetingId) {
+        const startDate = info.event.start!;
+        const endDate = info.event.end!;
+        const timeStart = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
+        const timeEnd = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+        const payload: Record<string, unknown> = { timeStart, timeEnd };
+        if (cadence === 'ONE_TIME') {
+          payload.occurDate = startDate.toISOString();
+        } else {
+          payload.dayOfWeek = startDate.getDay();
+        }
+        try {
+          const res = await fetch(`/api/meetings/${meetingId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+          await mutateEvents();
+          onRefresh?.();
+        } catch {
+          info.revert();
+          toast.error('Failed to update meeting. Please try again.');
+        }
+        return;
+      }
+
       if (!itemId || !itemType) return;
       const start = info.event.start as Date;
       const end = info.event.end as Date;
@@ -1070,7 +1115,7 @@ export function CalendarSplitView({
               }
             }}
             slotMinTime="06:00:00"
-            slotMaxTime="22:00:00"
+            slotMaxTime="24:00:00"
             scrollTime="06:00:00"
             slotDuration="00:30:00"
             allDaySlot={false}

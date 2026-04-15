@@ -490,7 +490,16 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <MeetingsManager open={showMeetings} onClose={() => setShowMeetings(false)} isAdmin={isAdmin} />
+      <MeetingsManager
+        open={showMeetings}
+        onClose={() => setShowMeetings(false)}
+        onUpdate={() => globalMutate(
+          (key: unknown) => typeof key === 'string' && key.startsWith('/api/calendar'),
+          undefined,
+          { revalidate: true },
+        )}
+        isAdmin={isAdmin}
+      />
 
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* Unscheduled Items Sidebar — desktop only */}

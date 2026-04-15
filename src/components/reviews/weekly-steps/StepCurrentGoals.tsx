@@ -184,9 +184,6 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
 
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-      const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const nextMonthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59, 999);
-
       const filteredWeekly: Goal[] = [];
       const filteredMonthly: Goal[] = [];
 
@@ -195,9 +192,7 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           filteredWeekly.push(await fetchGoalWithParent(g));
         }
         if (g.level === 'MONTHLY') {
-          const inCurrentMonth = rangesOverlap(g.startDate, g.endDate, currentMonthStart, currentMonthEnd);
-          const inNextMonth = rangesOverlap(g.startDate, g.endDate, nextMonthStart, nextMonthEnd);
-          if (inCurrentMonth || inNextMonth) {
+          if (rangesOverlap(g.startDate, g.endDate, currentMonthStart, currentMonthEnd)) {
             filteredMonthly.push(await fetchGoalWithParent(g));
           }
         }
