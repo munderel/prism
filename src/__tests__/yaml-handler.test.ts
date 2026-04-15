@@ -504,17 +504,15 @@ year_2:
   it('maps why to description on strategic goals', () => {
     const { goals } = parseYamlToGoals(yearBasedYaml);
     const sg1 = goals[0].children![0];
-    expect(sg1.description).toBe('Prove the model at capacity before expanding.');
+    expect(sg1.description).toContain('Prove the model at capacity before expanding.');
   });
 
-  it('converts deliverables to tasks', () => {
+  it('folds deliverables into strategic goal description', () => {
     const { goals } = parseYamlToGoals(yearBasedYaml);
     const sg1 = goals[0].children![0];
-    expect(sg1.tasks).toHaveLength(2);
-    expect(sg1.tasks![0].title).toBe('Scale to 60% utilization');
-    expect(sg1.tasks![0].status).toBe('TODO');
-    expect(sg1.tasks![0].priority).toBe('MEDIUM');
-    expect(sg1.tasks![1].title).toBe('Hire 6 more staff');
+    expect(sg1.description).toContain('Deliverables:');
+    expect(sg1.description).toContain('Scale to 60% utilization');
+    expect(sg1.description).toContain('Hire 6 more staff');
   });
 
   it('resolves monthly goals to correct strategic parent via back-references', () => {

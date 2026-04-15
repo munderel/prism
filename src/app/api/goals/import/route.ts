@@ -98,16 +98,19 @@ export async function POST(request: NextRequest) {
   await createNewGoals(incomingGoals, stackId, null, null, { count: 0 }, 0, auth.userId, kpiLinkQueue);
 
   // Resolve KPI links (two-pass: monthly KPIs created first, now link weekly KPIs)
-  for (const link of kpiLinkQueue) {
-    const monthlyKpi = await prisma.kpi.findFirst({
-      where: { goal: { id: link.parentGoalId }, name: link.linkedToName },
+  if (kpiLinkQueue.length > 0) {
+    const parentIds = [...new Set(kpiLinkQueue.map((l) => l.parentGoalId))];
+    const allMonthlyKpis = await prisma.kpi.findMany({
+      where: { goalId: { in: parentIds } },
     });
-    if (monthlyKpi) {
-      await prisma.kpi.update({
-        where: { id: link.kpiId },
-        data: { linkedKpiId: monthlyKpi.id },
-      });
-    }
+    const kpiMap = new Map(allMonthlyKpis.map((k) => [`${k.goalId}:${k.name}`, k]));
+    const updates = kpiLinkQueue
+      .map((link) => {
+        const mk = kpiMap.get(`${link.parentGoalId}:${link.linkedToName}`);
+        return mk ? prisma.kpi.update({ where: { id: link.kpiId }, data: { linkedKpiId: mk.id } }) : null;
+      })
+      .filter(Boolean);
+    await Promise.all(updates);
   }
 
   // Recalculate monthly KPIs that have new linked weeklies

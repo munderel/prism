@@ -149,6 +149,8 @@ export const updateGoalSchema = z.object({
   status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED']).optional(),
   level: z.enum(['HIGH_HARD', 'STRATEGIC', 'MONTHLY', 'WEEKLY', 'DAILY']).optional(),
   dueDate: z.string().optional().nullable(),
+  startDate: z.string().optional().nullable(),
+  endDate: z.string().optional().nullable(),
 });
 
 export const reorderGoalSchema = z.object({

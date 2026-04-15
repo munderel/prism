@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Target, Plus, Pencil, BarChart3,
   ChevronRight, ChevronDown, Save, Lightbulb,
@@ -137,6 +137,37 @@ function formatShortDateRange(start: Date, end: Date): string {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
+interface MonthlyGroup {
+  monthly: MonthlyGoalContext;
+  upcoming: WeeklyGoal[];
+  last: WeeklyGoal[];
+}
+
+function groupGoalsByMonthlyParent(
+  monthlyGoals: MonthlyGoalContext[],
+  weeklyGoals: WeeklyGoal[]
+): { groups: MonthlyGroup[]; orphans: { upcoming: WeeklyGoal[]; last: WeeklyGoal[] } } {
+  const claimed = new Set<string>();
+
+  const groups: MonthlyGroup[] = monthlyGoals.map((mg) => {
+    const children = weeklyGoals.filter((wg) => wg.parentId === mg.id);
+    children.forEach((c) => claimed.add(c.id));
+    return {
+      monthly: mg,
+      upcoming: children.filter((c) => c.weekCategory === 'upcoming'),
+      last: children.filter((c) => c.weekCategory === 'last'),
+    };
+  });
+
+  const unclaimed = weeklyGoals.filter((wg) => !claimed.has(wg.id));
+  const orphans = {
+    upcoming: unclaimed.filter((wg) => wg.weekCategory === 'upcoming'),
+    last: unclaimed.filter((wg) => wg.weekCategory === 'last'),
+  };
+
+  return { groups, orphans };
+}
+
 interface MonthlyGoalContext {
   id: string;
   title: string;
@@ -173,6 +204,13 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
   const [monthlyParentId, setMonthlyParentId] = useState<string | null>(null);
   const [creatingPlaceholder, setCreatingPlaceholder] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [expandedMonthlyGoals, setExpandedMonthlyGoals] = useState<Set<string>>(new Set());
+
+  const { groups: monthlyGroups, orphans } = useMemo(
+    () => groupGoalsByMonthlyParent(monthlyGoals, goals),
+    [monthlyGoals, goals]
+  );
+
   useEffect(() => {
     fetchWeeklyGoals();
   }, []);
@@ -235,6 +273,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
 
       setGoals(result);
       setMonthlyGoals(monthlyResult);
+      setExpandedMonthlyGoals(new Set(monthlyResult.map((mg) => mg.id)));
     } catch (err) {
       console.error('Failed during weekly goals operation:', err);
     }
@@ -342,7 +381,8 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
             level: 'WEEKLY',
             startDate: created.startDate,
             endDate: created.endDate,
-            parentTitle: '',
+            parentId: monthlyParentId ?? undefined,
+            parentTitle: monthlyGoals.find((mg) => mg.id === monthlyParentId)?.title ?? '',
             kpis: [],
             weekCategory: 'upcoming' as const,
           },
@@ -476,7 +516,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
     setSaving(null);
   };
 
-  const renderGoalCard = (goal: WeeklyGoal) => {
+  const renderGoalCard = (goal: WeeklyGoal, hideParentBanner = false) => {
     const isExpanded = expandedGoals.has(goal.id);
     const isEditing = editingGoalId === goal.id;
 
@@ -486,7 +526,7 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
         className="rounded-lg border border-[var(--border-color)] bg-[var(--surface)] overflow-hidden"
       >
         {/* Monthly goal banner */}
-        {goal.parentTitle && !isEditing && (
+        {goal.parentTitle && !isEditing && !hideParentBanner && (
           <div className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500/5 border-b border-indigo-500/10">
             <Target className="h-3 w-3 text-indigo-400 flex-shrink-0" />
             <span className="text-xs text-indigo-400 font-medium">Monthly Goal:</span>
@@ -720,6 +760,81 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
     );
   };
 
+  const toggleMonthlyExpand = (monthlyId: string) => {
+    setExpandedMonthlyGoals((prev) => {
+      const next = new Set(prev);
+      if (next.has(monthlyId)) next.delete(monthlyId);
+      else next.add(monthlyId);
+      return next;
+    });
+  };
+
+  const renderMonthlyGroup = (group: MonthlyGroup) => {
+    const { monthly, upcoming, last } = group;
+    const isExpanded = expandedMonthlyGoals.has(monthly.id);
+    const childCount = upcoming.length + last.length;
+    const bounds = getWeekBoundaries(new Date());
+
+    return (
+      <div
+        key={monthly.id}
+        className="rounded-lg border border-violet-500/20 overflow-hidden"
+      >
+        {/* Monthly goal header */}
+        <button
+          onClick={() => toggleMonthlyExpand(monthly.id)}
+          className="flex items-center gap-3 w-full px-4 py-3 bg-violet-500/5 hover:bg-violet-500/10 transition-colors text-left"
+        >
+          {isExpanded ? (
+            <ChevronDown className="h-4 w-4 text-violet-400 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-violet-400 flex-shrink-0" />
+          )}
+          <Target className="h-4 w-4 text-violet-400 flex-shrink-0" />
+          <p className="text-sm font-medium text-[var(--text-primary)] flex-1 truncate">
+            {monthly.title}
+          </p>
+          <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${getStatusBadgeClass(monthly.status)}`}>
+            {monthly.status.replace(/_/g, ' ')}
+          </span>
+          <span className="text-xs text-[var(--text-muted)] flex-shrink-0">
+            {childCount} weekly {childCount === 1 ? 'goal' : 'goals'}
+          </span>
+        </button>
+
+        {/* Nested weekly goals */}
+        {isExpanded && (
+          <div className="border-t border-violet-500/10 px-4 py-3 space-y-4">
+            {childCount === 0 ? (
+              <p className="text-xs text-[var(--text-muted)] italic">
+                No weekly goals linked to this monthly goal yet.
+              </p>
+            ) : (
+              <>
+                {upcoming.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
+                      Upcoming Week ({formatShortDateRange(bounds.upcomingWeekStart, bounds.upcomingWeekEnd)})
+                    </h5>
+                    {upcoming.map((g) => renderGoalCard(g, true))}
+                  </div>
+                )}
+                {last.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">
+                      Last Week ({formatShortDateRange(bounds.lastMonday, bounds.lastSunday)})
+                    </h5>
+                    {last.map((g) => renderGoalCard(g, true))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="text-[var(--text-muted)] text-sm py-4">Loading weekly goals...</div>;
   }
@@ -745,47 +860,42 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
       </div>
       <GoalCreationCoach goalLevel="WEEKLY" isOpen={showCoach} onToggle={() => setShowCoach(!showCoach)} />
 
-      {/* Monthly goals context */}
-      {monthlyGoals.length > 0 && (
-        <div className="space-y-2">
+      {/* Monthly goals with nested weekly goals */}
+      {monthlyGroups.length > 0 && (
+        <div className="space-y-4">
           <h4 className="text-xs font-bold text-violet-400 uppercase tracking-wider">
             Current Monthly Goals — {new Date(monthlyGoals[0].startDate || '').toLocaleString('default', { month: 'long', year: 'numeric' })}
           </h4>
-          {monthlyGoals.map((mg) => (
-            <div key={mg.id} className="flex items-center gap-3 rounded-lg border border-violet-500/20 bg-violet-500/5 px-4 py-2">
-              <Target className="h-4 w-4 text-violet-400 flex-shrink-0" />
-              <p className="text-sm text-[var(--text-primary)] flex-1 truncate">{mg.title}</p>
-              <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusBadgeClass(mg.status)}`}>
-                {mg.status.replace(/_/g, ' ')}
-              </span>
-            </div>
-          ))}
+          {monthlyGroups.map((group) => renderMonthlyGroup(group))}
         </div>
       )}
 
-      {/* Existing goals — split by week */}
-      {goals.length > 0 ? (() => {
+      {/* Orphaned weekly goals (no matching monthly parent) */}
+      {(orphans.upcoming.length > 0 || orphans.last.length > 0) && (() => {
         const bounds = getWeekBoundaries(new Date());
-        const upcomingLabel = `Upcoming Week's Goals (${formatShortDateRange(bounds.upcomingWeekStart, bounds.upcomingWeekEnd)})`;
-        const lastLabel = `Last Week's Goals (${formatShortDateRange(bounds.lastMonday, bounds.lastSunday)})`;
         return (
-        <div className="space-y-5">
-          {renderGoalSection(
-            goals.filter((g) => g.weekCategory === 'upcoming'),
-            upcomingLabel,
-            'text-indigo-400',
-            renderGoalCard
-          )}
-          {renderGoalSection(
-            goals.filter((g) => g.weekCategory === 'last'),
-            lastLabel,
-            'text-[var(--text-muted)]',
-            renderGoalCard
-          )}
-          {goals.filter((g) => !g.weekCategory).map((goal) => renderGoalCard(goal))}
-        </div>
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">
+              Unlinked Weekly Goals
+            </h4>
+            {renderGoalSection(
+              orphans.upcoming,
+              `Upcoming Week (${formatShortDateRange(bounds.upcomingWeekStart, bounds.upcomingWeekEnd)})`,
+              'text-indigo-400',
+              renderGoalCard
+            )}
+            {renderGoalSection(
+              orphans.last,
+              `Last Week (${formatShortDateRange(bounds.lastMonday, bounds.lastSunday)})`,
+              'text-[var(--text-muted)]',
+              renderGoalCard
+            )}
+          </div>
         );
-      })() : (
+      })()}
+
+      {/* Empty state */}
+      {goals.length === 0 && monthlyGoals.length === 0 && (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-6 text-center">
           <Target className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-2" />
           <p className="text-sm text-[var(--text-muted)]">No weekly goals for the upcoming week yet.</p>
@@ -823,6 +933,20 @@ export function StepWeeklyGoals({ reviewId: _reviewId, onGoalsUpdated, isTeamRev
             placeholder="Description (optional)"
             className="w-full rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
           />
+          {monthlyGoals.length > 0 && (
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-muted)]">Monthly Goal Parent</label>
+              <select
+                value={monthlyParentId ?? ''}
+                onChange={(e) => setMonthlyParentId(e.target.value || null)}
+                className="w-full rounded border border-[var(--border-color)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+              >
+                {monthlyGoals.map((mg) => (
+                  <option key={mg.id} value={mg.id}>{mg.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {createError && (
             <p className="text-xs text-red-400">{createError}</p>
           )}

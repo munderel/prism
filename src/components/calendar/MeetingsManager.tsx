@@ -68,10 +68,11 @@ const REVIEW_TYPE_OPTIONS = [
 interface MeetingsManagerProps {
   open: boolean;
   onClose: () => void;
+  onUpdate?: () => void;
   isAdmin?: boolean;
 }
 
-export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsManagerProps) {
+export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: MeetingsManagerProps) {
   const [activeTab, setActiveTab] = useState<'meetings' | 'team-reviews'>('meetings');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -185,12 +186,14 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
     setSavingTeamReview(false);
     resetTeamReviewForm();
     fetchTeamReviews();
+    onUpdate?.();
   };
 
   const handleDeleteTeamReview = async (id: string) => {
     if (!confirm('Remove this team review from the calendar?')) return;
     await fetch(`/api/team-reviews/${id}`, { method: 'DELETE' });
     fetchTeamReviews();
+    onUpdate?.();
   };
 
   const resetForm = () => {
@@ -257,12 +260,14 @@ export function MeetingsManager({ open, onClose, isAdmin = false }: MeetingsMana
     setSaving(false);
     resetForm();
     fetchMeetings();
+    onUpdate?.();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this meeting?')) return;
     await fetch(`/api/meetings/${id}`, { method: 'DELETE' });
     fetchMeetings();
+    onUpdate?.();
   };
 
   const addAttendee = (user: UserOption) => {

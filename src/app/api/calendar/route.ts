@@ -389,7 +389,7 @@ export async function GET(request: NextRequest) {
       taskType: task.taskType,
       priority: task.priority,
       goalTitle: task.goal?.title,
-      color: getTaskTypeColor(task.taskType),
+      color: getTaskTypeColor(task.taskType).color,
     });
   }
 
@@ -461,6 +461,8 @@ export async function GET(request: NextRequest) {
         meetingId: meeting.id,
         description: meeting.description,
         cadence: meeting.cadence,
+        dayOfWeek: meeting.dayOfWeek,
+        occurDate: meeting.occurDate?.toISOString() ?? null,
         createdBy: meeting.createdBy.name,
         meetLink: meeting.meetLink,
         color: '#f97316',

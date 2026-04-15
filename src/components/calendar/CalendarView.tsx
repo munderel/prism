@@ -701,6 +701,28 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ start: newStart, end: newEnd, calendarId }),
         });
+      } else if (eventId.startsWith('meeting-')) {
+        const meetingId = info.event.extendedProps?.meetingId as string | undefined;
+        if (meetingId) {
+          const startDate = info.event.start!;
+          const endDate = info.event.end!;
+          const timeStart = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
+          const timeEnd = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+          const cadence = info.event.extendedProps?.cadence as string;
+
+          const payload: Record<string, unknown> = { timeStart, timeEnd };
+          if (cadence === 'ONE_TIME') {
+            payload.occurDate = newStart;
+          } else {
+            payload.dayOfWeek = startDate.getDay();
+          }
+
+          res = await fetch(`/api/meetings/${meetingId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        }
       } else {
         return;
       }
