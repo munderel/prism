@@ -396,7 +396,10 @@ export function CalendarSplitView({
     const serverEvents = calendarEvents ?? [];
     const stillPendingScheduled = pendingScheduledItems.current.filter((pending) => {
       return !serverEvents.some((evt: CalendarEventData) => {
-        const sameItem = evt.itemId === pending.itemId && evt.itemType === pending.itemType;
+        // Match by itemId+itemType or by ID prefix pattern (pending-aim-X vs aim-X)
+        const sameItem = (evt.itemId === pending.itemId && evt.itemType === pending.itemType)
+          || evt.id === pending.itemId
+          || evt.id === `${pending.itemType}-${pending.itemId}`;
         if (!sameItem) return false;
         const evtStart = evt.start ? new Date(evt.start).getTime() : 0;
         const evtEnd = evt.end ? new Date(evt.end).getTime() : 0;
@@ -572,54 +575,59 @@ export function CalendarSplitView({
     }
   }, [toast, mutateEvents, onRefresh]);
 
-  // --- Delete handlers ---
+  // --- Delete handlers (optimistic removal) ---
+  const optimisticRemoveEvent = useCallback((matchFn: (evt: CalendarEventData) => boolean) => {
+    setSelectedEventPopover(null);
+    mutateEvents((currentData: unknown) => {
+      if (!currentData) return currentData;
+      if (Array.isArray(currentData)) return currentData.filter((e: CalendarEventData) => !matchFn(e));
+      const obj = currentData as { events?: CalendarEventData[] };
+      if (obj.events) return { ...obj, events: obj.events.filter((e: CalendarEventData) => !matchFn(e)) };
+      return currentData;
+    }, { revalidate: false });
+  }, [mutateEvents]);
+
   const handleDeleteTask = useCallback(async (taskId: string) => {
+    optimisticRemoveEvent((e) => e.taskId === taskId || e.id === `task-${taskId}`);
+    toast.success('Task deleted');
     try {
       const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('Task deleted');
-        setSelectedEventPopover(null);
-        mutateEvents();
-        onRefresh?.();
-      } else {
-        toast.error('Failed to delete task');
-      }
+      if (!res.ok) toast.error('Failed to delete task');
+      mutateEvents();
+      onRefresh?.();
     } catch {
       toast.error('Failed to delete task');
+      mutateEvents();
     }
-  }, [toast, mutateEvents, onRefresh]);
+  }, [toast, mutateEvents, onRefresh, optimisticRemoveEvent]);
 
   const handleDeleteAim = useCallback(async (aimInstanceId: string) => {
+    optimisticRemoveEvent((e) => e.aimInstanceId === aimInstanceId || e.id === `aim-${aimInstanceId}`);
+    toast.success('Aim removed');
     try {
       const res = await fetch(`/api/aims/instances/${aimInstanceId}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('Aim removed');
-        setSelectedEventPopover(null);
-        mutateEvents();
-        onRefresh?.();
-      } else {
-        toast.error('Failed to delete aim');
-      }
+      if (!res.ok) toast.error('Failed to delete aim');
+      mutateEvents();
+      onRefresh?.();
     } catch {
       toast.error('Failed to delete aim');
+      mutateEvents();
     }
-  }, [toast, mutateEvents, onRefresh]);
+  }, [toast, mutateEvents, onRefresh, optimisticRemoveEvent]);
 
   const handleDeleteGoogleEvent = useCallback(async (gcalEventId: string, calendarId: string) => {
+    optimisticRemoveEvent((e) => e.gcalEventId === gcalEventId || e.id === gcalEventId);
+    toast.success('Event deleted from Google Calendar');
     try {
       const res = await fetch(`/api/calendar/events/${gcalEventId}?calendarId=${encodeURIComponent(calendarId)}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('Event deleted from Google Calendar');
-        setSelectedEventPopover(null);
-        mutateEvents();
-        onRefresh?.();
-      } else {
-        toast.error('Failed to delete Google Calendar event');
-      }
+      if (!res.ok) toast.error('Failed to delete Google Calendar event');
+      mutateEvents();
+      onRefresh?.();
     } catch {
       toast.error('Failed to delete Google Calendar event');
+      mutateEvents();
     }
-  }, [toast, mutateEvents, onRefresh]);
+  }, [toast, mutateEvents, onRefresh, optimisticRemoveEvent]);
 
   // --- Event click handler ---
   const handleEventClick = useCallback((info: EventClickArg) => {
@@ -815,20 +823,25 @@ export function CalendarSplitView({
       ];
       mutateEvents((currentData: unknown) => currentData, { revalidate: false });
 
-      try {
-        await onSchedule(itemId, itemType, snapStart, snapEnd);
-        // Refetch calendar events and sidebar items from server
-        await mutateEvents();
-        onRefresh?.();
-      } catch {
-        // Remove the placeholder on failure
-        pendingScheduledItems.current = pendingScheduledItems.current.filter(
-          (evt) => !(evt.itemId === itemId && evt.itemType === itemType),
-        );
-        await mutateEvents();
-        onRefresh?.();
-        toast.error('Failed to schedule item. Please try again.');
-      }
+      // Fire-and-forget: schedule in background, keep pending placeholder for instant UI
+      Promise.resolve(onSchedule(itemId, itemType, snapStart, snapEnd))
+        .then(() => {
+          // Clear the specific pending item before revalidating to prevent duplication
+          pendingScheduledItems.current = pendingScheduledItems.current.filter(
+            (evt) => !(evt.itemId === itemId && evt.itemType === itemType),
+          );
+          mutateEvents();
+          onRefresh?.();
+        })
+        .catch(() => {
+          // Remove the placeholder on failure
+          pendingScheduledItems.current = pendingScheduledItems.current.filter(
+            (evt) => !(evt.itemId === itemId && evt.itemType === itemType),
+          );
+          mutateEvents();
+          onRefresh?.();
+          toast.error('Failed to schedule item. Please try again.');
+        });
     },
     [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast],
   );

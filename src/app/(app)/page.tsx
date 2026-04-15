@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Focus, AlertTriangle, Lightbulb, Moon, Check } from 'lucide-react';
+import { Focus, AlertTriangle, Lightbulb, Moon, Check, Flame, ChevronDown, Inbox } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { getLocalDateString, toLocalDateKey, formatDisplayDate } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -143,6 +143,7 @@ export default function DashboardPage() {
 
   const [showWinCelebration, setShowWinCelebration] = useState(false);
   const [showDoneTasks, setShowDoneTasks] = useState(false);
+  const [showUnscheduled, setShowUnscheduled] = useState(false);
 
   // Calculate week range for weekly view
   // Week starts on Sunday (consistent with Calendar page)
@@ -161,9 +162,13 @@ export default function DashboardPage() {
 
   const taskKey = viewMode === 'weekly'
     ? `/api/tasks?startDate=${weekRange.start}&endDate=${weekRange.end}`
-    : `/api/tasks?date=${today}&includeUnscheduled=true`;
+    : `/api/tasks?date=${today}`;
   const { data: tasks, mutate, isLoading: tasksLoading } = useSWR<DashboardTask[]>(taskKey, { revalidateOnFocus: true });
   const list: DashboardTask[] = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
+
+  // Separate fetch for unscheduled tasks
+  const { data: unscheduledTasks, mutate: mutateUnscheduled } = useSWR<DashboardTask[]>('/api/tasks?unscheduledOnly=true');
+  const unscheduledList: DashboardTask[] = useMemo(() => (Array.isArray(unscheduledTasks) ? unscheduledTasks : []), [unscheduledTasks]);
 
   // Group tasks by day for weekly view
   const weeklyGrouped = useMemo(() => {
@@ -197,6 +202,10 @@ export default function DashboardPage() {
 
   // Batch-fetch derail info
   const { data: derailBatch } = useSWR<DerailBatchResponse>('/api/aims/derail-batch?days=14');
+
+  // Fetch streak data for dashboard display
+  const { data: allStreaks } = useSWR<{ id: string; streakType: string; currentCount: number; bestCount: number; lastActiveDate: string | null; isActive: boolean }[]>('/api/streaks');
+  const dailyStreak = useMemo(() => (allStreaks ?? []).find((s) => s.streakType === 'daily'), [allStreaks]);
 
   // Fetch user settings and today's PowerDown session
   const { data: userSettings } = useUserSettings();
@@ -359,7 +368,29 @@ export default function DashboardPage() {
 
   const handleEdit = useCallback((task: DashboardTask) => setEditingTask(task), []);
   const handleDelete = useCallback(async (id: string) => {
+    // Optimistic removal
+    mutate((prev: DashboardTask[] | undefined) =>
+      (Array.isArray(prev) ? prev : []).filter((t) => t.id !== id),
+      false
+    );
     await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+    mutate();
+    mutateUnscheduled();
+  }, [mutate, mutateUnscheduled]);
+  const handleWinTheDayToggle = useCallback(async (task: DashboardTask) => {
+    const newValue = !task.isWinTheDay;
+    mutate(
+      (prev: DashboardTask[] | undefined) =>
+        (Array.isArray(prev) ? prev : []).map((t) =>
+          t.id === task.id ? { ...t, isWinTheDay: newValue } : t
+        ),
+      false
+    );
+    await fetch(`/api/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isWinTheDay: newValue }),
+    });
     mutate();
   }, [mutate]);
   const handleFocusStatusChange = useCallback((taskId: string, newStatus: string) => {
@@ -550,7 +581,15 @@ export default function DashboardPage() {
           {/* Weekly View */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
+                {dailyStreak && dailyStreak.currentCount > 0 && (
+                  <Link href="/streaks" className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-400/15 text-yellow-400 text-sm font-medium hover:bg-yellow-400/25 transition-colors">
+                    <Flame className="h-3.5 w-3.5" />
+                    {dailyStreak.currentCount}
+                  </Link>
+                )}
+              </div>
               <p className="text-sm text-[var(--text-secondary)]">{formatDisplayDate(today, { weekday: true })}</p>
               <p className="text-sm text-[var(--text-muted)]">
                 Week of {new Date(weekRange.start + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(weekRange.end + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -620,7 +659,15 @@ export default function DashboardPage() {
           {/* Greeting bar */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
+                {dailyStreak && dailyStreak.currentCount > 0 && (
+                  <Link href="/streaks" className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-400/15 text-yellow-400 text-sm font-medium hover:bg-yellow-400/25 transition-colors">
+                    <Flame className="h-3.5 w-3.5" />
+                    {dailyStreak.currentCount}
+                  </Link>
+                )}
+              </div>
               <p className="text-sm text-[var(--text-secondary)]">{formatDisplayDate(today, { weekday: true })}</p>
               <p className="text-sm text-[var(--text-muted)]">
                 {isLoading ? 'Loading...' : `${scheduledCount} item${scheduledCount !== 1 ? 's' : ''} scheduled today`}
@@ -679,6 +726,8 @@ export default function DashboardPage() {
                             onDelete={handleDelete}
                             onClick={handleTaskClick}
                             onStatusChange={handleFocusStatusChange}
+                            onWinTheDayToggle={handleWinTheDayToggle}
+                            hideClearGoals={expandedTaskId === task.id}
                           />
                           {expandedTaskId === task.id && (
                             <div className="ml-8 mt-1 mb-2 space-y-2">
@@ -759,6 +808,35 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Unscheduled Tasks */}
+          {unscheduledList.length > 0 && (
+            <div className="mb-6">
+              <button
+                onClick={() => setShowUnscheduled(!showUnscheduled)}
+                className="flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)] mb-2 hover:text-[var(--text-secondary)] transition-colors"
+              >
+                <Inbox className="h-4 w-4" />
+                Unscheduled ({unscheduledList.length})
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showUnscheduled ? 'rotate-180' : ''}`} />
+              </button>
+              {showUnscheduled && (
+                <div className="space-y-2 border-l-2 border-dashed border-[var(--border-color)] pl-4">
+                  {unscheduledList.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onToggle={handleTaskToggle}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      onClick={handleTaskClick}
+                      onWinTheDayToggle={handleWinTheDayToggle}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Power Down reminder */}
           <Link

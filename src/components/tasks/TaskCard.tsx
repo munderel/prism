@@ -16,9 +16,13 @@ interface TaskCardProps {
   onClick?: (task: any) => void;
   onStatusChange?: (taskId: string, newStatus: string) => void;
   onWinTheDayToggle?: (task: any) => void;
+  hideClearGoals?: boolean;
+  isSelectable?: boolean;
+  isSelected?: boolean;
+  onSelect?: (taskId: string) => void;
 }
 
-export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick, onStatusChange, onWinTheDayToggle }: TaskCardProps) {
+export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick, onStatusChange, onWinTheDayToggle, hideClearGoals, isSelectable, isSelected, onSelect }: TaskCardProps) {
   const isDone = task.status === 'DONE';
   const isOverdue = isTaskOverdue(task);
 
@@ -34,6 +38,26 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
         className={`flex items-center gap-3 glass-panel px-4 py-3 hover:border-[var(--glass-border)] transition-colors cursor-pointer ${isDone ? 'opacity-50' : ''} ${task.isWinTheDay ? 'border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.15)]' : ''}`}
         onClick={() => onClick?.(task)}
       >
+        {/* Selection checkbox (multi-select mode) */}
+        {isSelectable && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect?.(task.id);
+            }}
+            className={`flex-shrink-0 h-5 w-5 rounded border-2 transition-colors ${
+              isSelected
+                ? 'bg-indigo-600 border-indigo-600'
+                : 'border-[var(--border-color)] hover:border-indigo-500'
+            }`}
+          >
+            {isSelected && (
+              <svg viewBox="0 0 20 20" className="h-full w-full text-white">
+                <path fill="currentColor" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
+              </svg>
+            )}
+          </button>
+        )}
         {/* Checkbox */}
         <button
           onClick={(e) => {
@@ -154,9 +178,11 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
           </button>
         </div>
       </div>
-      <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-2">
-        <ClearGoalsDisplay taskId={task.id} editable={false} compact />
-      </div>
+      {!hideClearGoals && (
+        <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-2">
+          <ClearGoalsDisplay taskId={task.id} editable={false} compact />
+        </div>
+      )}
     </m.div>
   );
 });

@@ -53,6 +53,25 @@ export async function GET(request: NextRequest) {
     ];
   }
 
+  // Unscheduled-only mode: return only tasks with no date and no time block
+  const unscheduledOnly = searchParams.get('unscheduledOnly') === 'true';
+  if (unscheduledOnly) {
+    const tasks = await prisma.task.findMany({
+      where: {
+        AND: [
+          accessFilter,
+          { dueDate: null, timeBlockStart: null },
+          { parentId: null },
+          ...(status ? [{ status }] : []),
+          ...(taskType ? [{ taskType }] : []),
+        ],
+      },
+      include: { goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } }, _count: { select: { comments: true, children: true } }, children: { select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true } } },
+      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+    });
+    return Response.json(tasks, { headers: cacheHeaders(0) });
+  }
+
   // Build date filter
   const dateFilter: Record<string, unknown> = {};
   if ((startDate && endDate) || date) {

@@ -12,6 +12,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useToast } from '@/components/ui/ToastProvider';
 import { freshFetcher } from '@/lib/fetcher';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
 
 
 // FullCalendar needs dynamic import (no SSR)
@@ -501,6 +502,13 @@ export default function CalendarPage() {
               <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
                 {allUnscheduledItems.length}
               </span>
+            </div>
+
+            <div className="mb-3">
+              <InlineTaskCreator
+                placeholder="Quick chore..."
+                onCreated={() => { mutateTasks(); }}
+              />
             </div>
 
             <p className="text-xs text-[var(--text-muted)] mb-3">

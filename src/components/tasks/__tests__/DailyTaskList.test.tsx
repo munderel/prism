@@ -49,7 +49,7 @@ describe('DailyTaskList', () => {
       expect(screen.getByText('(2)')).toBeInTheDocument();
     });
     expect(screen.getByText('(1)')).toBeInTheDocument();
-    expect(screen.getAllByText('(0)').length).toBe(2);
+    expect(screen.getAllByText('(0)').length).toBe(3);
   });
 
   it('renders task titles in their sections', async () => {
@@ -73,7 +73,7 @@ describe('DailyTaskList', () => {
       { swrData: { '/api/tasks': [] } },
     );
     await waitFor(() => {
-      expect(screen.getAllByText('No tasks').length).toBe(4);
+      expect(screen.getAllByText('No tasks').length).toBe(5);
     });
   });
 

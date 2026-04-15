@@ -214,7 +214,7 @@ export async function GET(request: NextRequest) {
   let googleError: string | undefined;
 
   // Run independent queries in parallel
-  const [tasks, reviews, meetings, googleEvents, pdSessions, aimInstances, teamReviews, calendarProcesses] = await Promise.all([
+  const [tasks, reviews, meetings, googleEvents, pdSessions, aimInstances, teamReviews, calendarProcesses, processTasks] = await Promise.all([
     (fetchAll || source === 'tasks')
       ? prisma.task.findMany({
           where: {
@@ -325,6 +325,29 @@ export async function GET(request: NextRequest) {
           },
         })
       : Promise.resolve([]),
+    // Process-linked tasks — fetched separately for dedup with process cadence events
+    (fetchAll || source === 'processes')
+      ? prisma.task.findMany({
+          where: {
+            AND: [
+              {
+                OR: [
+                  { assigneeId: auth.userId },
+                  { ownerId: auth.userId, assigneeId: null },
+                ],
+              },
+              {
+                OR: [
+                  { timeBlockStart: { gte: rangeStart, lte: rangeEnd } },
+                  { dueDate: { gte: rangeStart, lte: rangeEnd } },
+                ],
+              },
+              { processId: { not: null } },
+            ],
+          },
+          select: { processId: true, timeBlockStart: true, dueDate: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   // Detect "not connected" — Google was requested but returned empty without error
@@ -337,8 +360,9 @@ export async function GET(request: NextRequest) {
 
   // Build set of process+dateKey combos already covered by Task records (for dedup).
   // Use the user's timezone for date keys to match forEachDayInRange output.
+  // Uses processTasks (separate query) since the main tasks query excludes process-linked tasks.
   const taskProcessDates = new Set<string>();
-  for (const task of tasks) {
+  for (const task of processTasks) {
     if (task.processId) {
       const dateSource = task.timeBlockStart || task.dueDate;
       if (dateSource) {
