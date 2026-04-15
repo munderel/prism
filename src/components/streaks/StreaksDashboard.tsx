@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import {
   Flame, ListChecks, ClipboardCheck, Moon, Trophy, Star,
-  ChevronDown, Pause, Play,
+  ChevronDown, Pause, Play, Info,
 } from 'lucide-react';
 import useSWR, { useSWRConfig } from 'swr';
 import { PRISM_COLORS } from '@/lib/prism-colors';
@@ -40,10 +40,10 @@ const MILESTONES = [
 ];
 
 const CATEGORIES = [
-  { key: 'aims', label: 'Aims', prefix: 'aim_', Icon: Flame, prismKey: 'AIM' as const },
-  { key: 'processes', label: 'Processes', prefix: 'process_', Icon: ListChecks, prismKey: 'MAINTENANCE' as const },
-  { key: 'reviews', label: 'Reviews', exact: 'review', Icon: ClipboardCheck, prismKey: 'REVIEW' as const },
-  { key: 'powerdown', label: 'Power Down', exact: 'powerdown', Icon: Moon, prismKey: 'POWER_DOWN' as const },
+  { key: 'aims', label: 'Aims', prefix: 'aim_', Icon: Flame, prismKey: 'AIM' as const, unit: 'week', description: 'Consecutive weeks hitting your target frequency' },
+  { key: 'processes', label: 'Processes', prefix: 'process_', Icon: ListChecks, prismKey: 'MAINTENANCE' as const, unit: 'day', description: 'Consecutive completions within the process cadence' },
+  { key: 'reviews', label: 'Reviews', exact: 'review', Icon: ClipboardCheck, prismKey: 'REVIEW' as const, unit: 'day', description: 'Consecutive review completions' },
+  { key: 'powerdown', label: 'Power Down', exact: 'powerdown', Icon: Moon, prismKey: 'POWER_DOWN' as const, unit: 'day', description: 'Consecutive evenings completing your power-down' },
 ] as const;
 
 // --- Helpers ---
@@ -70,7 +70,7 @@ function getHighestMilestone(bestCount: number): number {
 // --- Components ---
 
 function CategoryCard({
-  label, Icon, streaks, color, bg, border,
+  label, Icon, streaks, color, bg, border, unit, description,
 }: {
   label: string;
   Icon: React.ElementType;
@@ -78,6 +78,8 @@ function CategoryCard({
   color: string;
   bg: string;
   border: string;
+  unit: string;
+  description: string;
 }) {
   const best = Math.max(0, ...streaks.map((s) => s.currentCount));
   const allTimeBest = Math.max(0, ...streaks.map((s) => s.bestCount));
@@ -98,10 +100,11 @@ function CategoryCard({
       </div>
       <div className="flex items-baseline gap-1">
         <span className="text-2xl font-bold text-[var(--text-primary)]">{best}</span>
-        <span className="text-xs text-[var(--text-muted)]">current best</span>
+        <span className="text-xs text-[var(--text-muted)]">{unit}{best !== 1 ? 's' : ''}</span>
       </div>
-      <div className="mt-1 flex items-center gap-3 text-xs text-[var(--text-muted)]">
-        <span>All-time: {allTimeBest}</span>
+      <p className="mt-1 text-[10px] text-[var(--text-muted)] leading-tight">{description}</p>
+      <div className="mt-1.5 flex items-center gap-3 text-xs text-[var(--text-muted)]">
+        <span>Best: {allTimeBest}</span>
         <span>{active} active</span>
       </div>
     </m.div>
@@ -311,6 +314,8 @@ export function StreaksDashboard() {
               color={colors.color}
               bg={colors.bgClass}
               border={colors.border}
+              unit={cat.unit}
+              description={cat.description}
             />
           );
         })}
@@ -355,6 +360,31 @@ export function StreaksDashboard() {
             onTogglePause={togglePause}
           />
         ))}
+      </div>
+
+      {/* How Streaks Work */}
+      <div className="glass-panel p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Info className="h-4 w-4 text-[var(--text-muted)]" />
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">How Streaks Work</h2>
+        </div>
+        <div className="space-y-2 text-xs text-[var(--text-muted)] leading-relaxed">
+          <p>
+            <strong className="text-[var(--text-secondary)]">Daily streak</strong> increments each day you complete at least one enabled activity (aims, processes, reviews, or power-down). Miss a day and it resets.
+          </p>
+          <p>
+            <strong className="text-[var(--text-secondary)]">Aim streaks</strong> track consecutive weeks where you hit your target frequency. If your aim is 3x/week, completing 3 or more sessions that week counts as on-target.
+          </p>
+          <p>
+            <strong className="text-[var(--text-secondary)]">Process streaks</strong> track consecutive completions within the process cadence. A weekly process gives you 7 days to complete it before the streak breaks.
+          </p>
+          <p>
+            <strong className="text-[var(--text-secondary)]">Pausing</strong> a streak freezes it in place. It won&apos;t increment or break while paused. Your best count is always preserved.
+          </p>
+          <p>
+            You can enable a <strong className="text-[var(--text-secondary)]">grace day</strong> in Settings to get 1 extra day before any streak breaks.
+          </p>
+        </div>
       </div>
     </div>
   );

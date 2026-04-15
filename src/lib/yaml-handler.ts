@@ -167,6 +167,11 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
   if (obj.end_date) node.endDate = obj.end_date;
 
   if (obj.tasks && Array.isArray(obj.tasks)) {
+    if (level !== 'WEEKLY') {
+      throw new Error(
+        `Tasks can only exist under WEEKLY goals. Found tasks under ${level} goal: '${obj.title}'`
+      );
+    }
     node.tasks = obj.tasks.map((t: any) => {
       const task: TaskNode = {
         title: t.title,

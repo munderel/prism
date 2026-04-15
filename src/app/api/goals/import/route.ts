@@ -403,6 +403,13 @@ async function createNewGoals(
       });
       counter.count++;
 
+      // Validate: tasks can only exist under WEEKLY goals
+      if (node.level !== 'WEEKLY' && node.tasks?.length) {
+        throw new Error(
+          `Tasks can only exist under WEEKLY goals. Found tasks under ${node.level} goal: '${node.title}'`
+        );
+      }
+
       // Create tasks linked to this goal
       if (node.tasks?.length && ownerId) {
         for (const task of node.tasks) {

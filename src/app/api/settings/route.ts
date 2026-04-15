@@ -40,6 +40,7 @@ const USER_SETTINGS_SELECT = {
   streakCountProcesses: true,
   streakCountReviews: true,
   streakCountPowerdown: true,
+  streakGraceDays: false,
   beeminderAuthToken: true,
   beeminderGoalSlug: true,
 } as const;
@@ -52,7 +53,7 @@ const USER_UPDATABLE_FIELDS = [
   'monthlyReviewRecurrenceRule', 'monthlyReviewTime', 'monthlyReviewDuration',
   'yearlyReviewRecurrenceRule', 'yearlyReviewTime', 'yearlyReviewDuration',
   'isPublicOnLeaderboard',
-  'streakCountAims', 'streakCountProcesses', 'streakCountReviews', 'streakCountPowerdown',
+  'streakCountAims', 'streakCountProcesses', 'streakCountReviews', 'streakCountPowerdown', 'streakGraceDays',
   'beeminderAuthToken', 'beeminderGoalSlug',
 ];
 

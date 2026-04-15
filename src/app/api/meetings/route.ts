@@ -62,6 +62,17 @@ export async function POST(request: NextRequest) {
     });
     const tz = user?.timezone ?? 'America/New_York';
 
+    // Resolve attendee IDs to email addresses for Google Calendar invitations
+    const resolvedAttendeeIds = meeting.attendeeIds as string[];
+    let attendeeEmails: Array<{ email: string }> = [];
+    if (resolvedAttendeeIds.length > 0) {
+      const attendees = await prisma.user.findMany({
+        where: { id: { in: resolvedAttendeeIds } },
+        select: { email: true },
+      });
+      attendeeEmails = attendees.map(a => ({ email: a.email }));
+    }
+
     // Determine the first event date
     let dateStr: string;
     if (cadence === 'ONE_TIME' && occurDate) {
@@ -89,8 +100,9 @@ export async function POST(request: NextRequest) {
       start: new Date(`${dateStr}T${timeStart}:00`).toISOString(),
       end: new Date(`${dateStr}T${timeEnd}:00`).toISOString(),
       timeZone: tz,
-      addMeetLink: !!addMeetLink,
+      addMeetLink: addMeetLink !== false,
       recurrence,
+      attendees: attendeeEmails,
     }, targetCalendarId);
 
     if (gcalEvent?.id) {

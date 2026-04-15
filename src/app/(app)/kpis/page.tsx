@@ -200,7 +200,7 @@ export default function KpiDashboardPage() {
       {!isLoading && (
         <>
           {/* Summary stat cards */}
-          <KpiDashboardSummary processes={processes} />
+          <KpiDashboardSummary processes={processes} daysElapsed={daysElapsed} totalDays={totalDays} />
 
           {/* Process KPI rows */}
           {processes.length === 0 ? (
@@ -222,7 +222,7 @@ export default function KpiDashboardPage() {
             <div className="space-y-4">
               {processes.map((process) => (
                 <div key={process.processId}>
-                  <ProcessKpiRow process={process} />
+                  <ProcessKpiRow process={process} daysElapsed={daysElapsed} totalDays={totalDays} />
 
                   {/* Sub-period charts for Monthly / Yearly views */}
                   {showSubPeriods &&

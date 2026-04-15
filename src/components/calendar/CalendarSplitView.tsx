@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING } from '@/lib/prism-colors';
 import type { ColorDef } from '@/lib/prism-colors';
+import { getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -371,6 +372,24 @@ export function CalendarSplitView({
     visibleRange?.end ?? null,
   );
 
+  // When in day view, fetch the full week's events for the weekly hour target bar.
+  // In week view the visible range already covers the full week, so we skip the extra fetch.
+  const weekRange = useMemo(() => {
+    const ref = new Date(dateRange.start);
+    const { start, end } = getWeekBoundaries(ref);
+    // getWeekBoundaries returns YYYY-MM-DD strings; convert to ISO for the API
+    const weekStart = parseLocalDate(start).toISOString();
+    const weekEndDate = parseLocalDate(end);
+    weekEndDate.setDate(weekEndDate.getDate() + 1); // make end exclusive (Mon-Sun → Mon 00:00 to next Mon 00:00)
+    return { start: weekStart, end: weekEndDate.toISOString() };
+  }, [dateRange.start]);
+
+  const needsWeekFetch = viewMode === 'day';
+  const { events: weeklyEvents } = useCalendarEvents(
+    needsWeekFetch ? weekRange.start : null,
+    needsWeekFetch ? weekRange.end : null,
+  );
+
   // Merge pending work block placeholders with server events.
   // Placeholders are auto-removed once a matching server event appears (by time overlap).
   const displayEvents = useMemo(() => {
@@ -447,22 +466,28 @@ export function CalendarSplitView({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [selectedEventPopover]);
 
-  // Calculate scheduled hours within the date range
+  // Calculate scheduled hours for the FULL WEEK for the weekly target bar.
+  // In week view the display events already cover the week; in day view we use
+  // a separate week-scoped fetch so the bar always reflects the whole week.
   const scheduledMinutes = useMemo(() => {
-    if (!displayEvents.length) return 0;
-    const activeRange = visibleRange ?? dateRange;
-    const rangeStart = new Date(activeRange.start).getTime();
-    const rangeEnd = new Date(activeRange.end).getTime();
+    const eventsForWeek = needsWeekFetch ? (weeklyEvents ?? []) : displayEvents;
+    if (!eventsForWeek.length) return 0;
 
-    // Count tasks, aims, and Google Calendar events from selected calendars
-    const workEvents = displayEvents.filter((evt: CalendarEventData) =>
+    const rangeStart = new Date(weekRange.start).getTime();
+    const rangeEnd = new Date(weekRange.end).getTime();
+
+    // Count tasks, aims, and Google Calendar events from selected calendars.
+    // When weeklyTargetCalendarIds is empty/undefined, fall back to counting
+    // ALL Google calendar events (default = primary calendar behaviour).
+    const hasCalendarFilter = weeklyTargetCalendarIds && weeklyTargetCalendarIds.length > 0;
+    const workEvents = eventsForWeek.filter((evt: CalendarEventData) =>
       evt.source === 'tasks' || evt.source === 'aims' ||
-      (evt.source === 'google' && weeklyTargetCalendarIds && weeklyTargetCalendarIds.length > 0 && !!evt.calendarId && weeklyTargetCalendarIds.includes(evt.calendarId))
+      (evt.source === 'google' && (hasCalendarFilter ? !!evt.calendarId && weeklyTargetCalendarIds!.includes(evt.calendarId) : true))
     );
     return workEvents.reduce((total: number, evt: CalendarEventData) => {
       const evtStart = new Date(evt.start).getTime();
       const evtEnd = new Date(evt.end).getTime();
-      // Only count events within the date range
+      // Only count events within the week range
       if (evtEnd > rangeStart && evtStart < rangeEnd) {
         const overlapStart = Math.max(evtStart, rangeStart);
         const overlapEnd = Math.min(evtEnd, rangeEnd);
@@ -470,7 +495,7 @@ export function CalendarSplitView({
       }
       return total;
     }, 0);
-  }, [displayEvents, visibleRange, dateRange, weeklyTargetCalendarIds]);
+  }, [needsWeekFetch, weeklyEvents, displayEvents, weekRange, weeklyTargetCalendarIds]);
 
   // Group unscheduled items
   const groupedItems = useMemo(() => {

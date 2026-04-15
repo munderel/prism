@@ -10,6 +10,7 @@ export type ItemType =
   | 'MAINTENANCE'
   | 'AIM'
   | 'REVIEW'
+  | 'CHORE'
   | 'GOOGLE_CAL'
   | 'POWER_DOWN'
   | 'MEETING';
@@ -103,6 +104,19 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     borderClass: 'border-rose-500/40',
     label: 'Review',
   },
+  CHORE: {
+    color: '#94a3b8',
+    emoji: '🧹',
+    bg: 'rgba(148,163,184,0.15)',
+    border: '#94a3b8',
+    textLight: '#334155',
+    textDark: '#cbd5e1',
+    textClass: 'text-slate-700 dark:text-slate-400',
+    bgClass: 'bg-slate-500/15',
+    borderClass: 'border-slate-500/40',
+    label: 'Chore',
+    description: 'One-off admin or household tasks',
+  },
   GOOGLE_CAL: {
     color: '#a855f7',
     emoji: '🟣',
@@ -141,7 +155,7 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
   },
 };
 
-const TASK_TYPE_KEYS: Set<string> = new Set(['IMPROVE', 'REACT', 'MAINTENANCE', 'REVIEW']);
+const TASK_TYPE_KEYS: Set<string> = new Set(['IMPROVE', 'REACT', 'MAINTENANCE', 'REVIEW', 'CHORE']);
 
 /** Map task type enum values to Prism color keys */
 export function taskTypeToColorKey(taskType: string): ItemType {

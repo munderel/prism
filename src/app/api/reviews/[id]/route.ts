@@ -59,7 +59,7 @@ export async function PATCH(
   if (body.complete) data.completedAt = new Date();
 
   if (body.complete && !review.completedAt) {
-    updateSpecificStreak(auth.userId, 'reviews').catch((err) => console.warn('[streak] update failed:', err));
+    await updateSpecificStreak(auth.userId, 'reviews').catch((err) => console.warn('[streak] review streak update failed:', err));
     const streakResult = await updateDailyStreak(auth.userId, 'reviews').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
     if (streakResult?.beeminder?.ok === false) {
       beeminderError = streakResult.beeminder.error;

@@ -75,7 +75,7 @@ export async function POST(
       });
 
       // Update streak
-      updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) => console.warn('[streak] update failed:', err));
+      await updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) => console.warn('[streak] process streak update failed:', err));
       const streakResult = await updateDailyStreak(auth.userId, 'processes').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
       const beeminderError = streakResult?.beeminder?.ok === false ? streakResult.beeminder.error : undefined;
 
