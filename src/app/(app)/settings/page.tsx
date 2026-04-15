@@ -905,19 +905,15 @@ export default function SettingsPage() {
             </>
           )}
           {calendarError && (
-            <div className="mt-3 flex flex-col gap-2">
-              <p className="text-sm text-amber-400">{calendarError}</p>
-              {googleCalConnected && (
-                <button
-                  onClick={() => signIn('google', { callbackUrl: '/settings' })}
-                  className="self-start flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Reconnect Google Calendar
-                </button>
-              )}
-            </div>
+            <p className="mt-3 text-sm text-amber-400">{calendarError}</p>
           )}
+          <button
+            onClick={() => signIn('google', { callbackUrl: '/settings' })}
+            className="mt-4 flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-[var(--border-color)] hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"
+          >
+            <RefreshCw className="h-4 w-4" />
+            {googleCalConnected ? 'Reconnect Google Calendar' : 'Connect Google Calendar'}
+          </button>
           <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
 
