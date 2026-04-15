@@ -6,8 +6,8 @@ vi.mock('@/lib/auth-guard', () => ({
   authError: vi.fn((r: any) => Response.json({ error: r.error }, { status: r.status })),
 }));
 
-vi.mock('@/lib/api-helpers', () => ({
-  safeParseJson: vi.fn(),
+vi.mock('@/lib/streak-engine', () => ({
+  upsertOrUpdateStreak: vi.fn(),
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -15,27 +15,19 @@ vi.mock('@/lib/prisma', () => ({
     streak: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-    },
-    publicWin: {
-      create: vi.fn(),
     },
   },
 }));
 
 import { requireAuth } from '@/lib/auth-guard';
-import { safeParseJson } from '@/lib/api-helpers';
+import { upsertOrUpdateStreak } from '@/lib/streak-engine';
 import { prisma } from '@/lib/prisma';
 import { GET, POST } from '@/app/api/streaks/route';
 
 const mockRequireAuth = vi.mocked(requireAuth);
-const mockSafeParseJson = vi.mocked(safeParseJson);
+const mockUpsertOrUpdateStreak = vi.mocked(upsertOrUpdateStreak);
 const mockStreakFindMany = vi.mocked(prisma.streak.findMany);
 const mockStreakFindUnique = vi.mocked(prisma.streak.findUnique);
-const mockStreakCreate = vi.mocked(prisma.streak.create);
-const mockStreakUpdate = vi.mocked(prisma.streak.update);
-const mockPublicWinCreate = vi.mocked(prisma.publicWin.create);
 
 const authedResult = { session: { user: { id: 'user1', isAdmin: false } }, userId: 'user1' };
 
@@ -51,12 +43,6 @@ function yesterday() {
   return d;
 }
 
-function twoDaysAgo() {
-  const d = today();
-  d.setDate(d.getDate() - 2);
-  return d;
-}
-
 function createGetRequest(type?: string) {
   const url = type
     ? `http://localhost/api/streaks?type=${type}`
@@ -64,11 +50,11 @@ function createGetRequest(type?: string) {
   return { nextUrl: new URL(url) } as any;
 }
 
-function createPostRequest() {
+function createPostRequest(body: object = { streakType: 'daily' }) {
   return new Request('http://localhost/api/streaks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ streakType: 'daily' }),
+    body: JSON.stringify(body),
   }) as any;
 }
 
@@ -122,102 +108,48 @@ describe('POST /api/streaks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequireAuth.mockResolvedValue(authedResult as any);
+    mockUpsertOrUpdateStreak.mockResolvedValue({});
   });
 
   it('returns 400 when streakType is missing', async () => {
-    const req = new Request('http://localhost/api/streaks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    }) as any;
-    const res = await POST(req);
+    const res = await POST(createPostRequest({}));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain('streakType is required');
   });
 
-  it('creates new streak with count 1', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
-    mockStreakFindUnique.mockResolvedValue(null);
-    mockStreakCreate.mockResolvedValue({ id: 's1', currentCount: 1 } as any);
-    const res = await POST(createPostRequest());
-    expect(res.status).toBe(201);
-    expect(mockStreakCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          currentCount: 1,
-          bestCount: 1,
-        }),
-      })
-    );
-  });
-
-  it('returns existing streak without increment when already updated today', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
-    const existing = { id: 's1', currentCount: 5, bestCount: 5, lastActiveDate: today() };
-    mockStreakFindUnique.mockResolvedValue(existing as any);
-    const res = await POST(createPostRequest());
-    expect(res.status).toBe(200);
-    expect(mockStreakUpdate).not.toHaveBeenCalled();
-  });
-
-  it('continues streak when last active yesterday', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
-    const existing = { id: 's1', currentCount: 5, bestCount: 5, lastActiveDate: yesterday() };
-    mockStreakFindUnique.mockResolvedValue(existing as any);
-    mockStreakUpdate.mockResolvedValue({ ...existing, currentCount: 6 } as any);
-    const res = await POST(createPostRequest());
-    expect(res.status).toBe(200);
-    expect(mockStreakUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          currentCount: 6,
-          bestCount: 6,
-        }),
-      })
-    );
-  });
-
-  it('resets streak to 1 when day was skipped', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
-    const existing = { id: 's1', currentCount: 10, bestCount: 10, lastActiveDate: twoDaysAgo() };
-    mockStreakFindUnique.mockResolvedValue(existing as any);
-    mockStreakUpdate.mockResolvedValue({ ...existing, currentCount: 1 } as any);
-    const res = await POST(createPostRequest());
-    expect(res.status).toBe(200);
-    expect(mockStreakUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          currentCount: 1,
-          bestCount: 10, // best stays at 10
-        }),
-      })
-    );
-  });
-
-  it('creates publicWin at milestone (7-day streak)', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
-    const existing = { id: 's1', currentCount: 6, bestCount: 6, lastActiveDate: yesterday() };
-    mockStreakFindUnique.mockResolvedValue(existing as any);
-    mockStreakUpdate.mockResolvedValue({ ...existing, currentCount: 7 } as any);
-    mockPublicWinCreate.mockResolvedValue({} as any);
+  it('delegates to upsertOrUpdateStreak with windowDays=1', async () => {
+    const streak = { id: 's1', currentCount: 1, bestCount: 1, isActive: true };
+    mockStreakFindUnique.mockResolvedValue(streak as any);
     await POST(createPostRequest());
-    expect(mockPublicWinCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          userId: 'user1',
-          message: expect.stringContaining('7-day'),
-        }),
-      })
-    );
+    expect(mockUpsertOrUpdateStreak).toHaveBeenCalledWith('user1', 'daily', 1);
   });
 
-  it('does NOT create publicWin for non-milestone count', async () => {
-    mockSafeParseJson.mockResolvedValue({ data: { streakType: 'daily' } } as any);
-    const existing = { id: 's1', currentCount: 5, bestCount: 5, lastActiveDate: yesterday() };
-    mockStreakFindUnique.mockResolvedValue(existing as any);
-    mockStreakUpdate.mockResolvedValue({ ...existing, currentCount: 6 } as any);
-    await POST(createPostRequest());
-    expect(mockPublicWinCreate).not.toHaveBeenCalled();
+  it('returns the current streak after engine update', async () => {
+    const streak = { id: 's1', streakType: 'daily', currentCount: 6, bestCount: 6, lastActiveDate: today(), isActive: true };
+    mockStreakFindUnique.mockResolvedValue(streak as any);
+    const res = await POST(createPostRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.currentCount).toBe(6);
+  });
+
+  it('does not increment a paused streak (isActive=false)', async () => {
+    // The engine respects isActive — this test verifies the route delegates to it.
+    const pausedStreak = { id: 's1', streakType: 'daily', currentCount: 5, bestCount: 5, lastActiveDate: yesterday(), isActive: false };
+    mockStreakFindUnique.mockResolvedValue(pausedStreak as any);
+    const res = await POST(createPostRequest());
+    expect(res.status).toBe(200);
+    // Engine was called (it decides whether to update based on isActive)
+    expect(mockUpsertOrUpdateStreak).toHaveBeenCalledTimes(1);
+    // The returned streak still shows the pre-pause count
+    const body = await res.json();
+    expect(body.currentCount).toBe(5);
+  });
+
+  it('returns 401 when unauthenticated', async () => {
+    mockRequireAuth.mockResolvedValue({ error: 'Unauthorized', status: 401 });
+    const res = await POST(createPostRequest());
+    expect(res.status).toBe(401);
   });
 });

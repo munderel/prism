@@ -321,8 +321,18 @@ export default function DashboardPage() {
       REACT: [],
       MAINTENANCE: [],
       REVIEW: [],
+      CHORE: [],
     };
-    const visible = showDoneTasks ? list : list.filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED');
+    const todayStr = getLocalDateString();
+    const visible = list.filter((t) => {
+      if (t.status === 'DROPPED') return showDoneTasks;
+      if (t.status === 'DONE') {
+        // Show today's completed tasks in-place (strikethrough); older completions only when toggled
+        if (t.completedAt && t.completedAt.startsWith(todayStr)) return true;
+        return showDoneTasks;
+      }
+      return true;
+    });
     for (const t of visible) {
       const type = t.taskType || 'IMPROVE';
       if (groups[type]) {
@@ -335,7 +345,10 @@ export default function DashboardPage() {
   }, [list, showDoneTasks]);
 
   const doneTotalDashboard = useMemo(
-    () => list.filter((t) => t.status === 'DONE' || t.status === 'DROPPED').length,
+    () => {
+      const todayStr = getLocalDateString();
+      return list.filter((t) => (t.status === 'DONE' || t.status === 'DROPPED') && !(t.completedAt && t.completedAt.startsWith(todayStr))).length;
+    },
     [list],
   );
 
@@ -468,7 +481,16 @@ export default function DashboardPage() {
   }, [router]);
 
   const handleTaskToggle = useCallback((t: DashboardTask) => {
-    handleFocusStatusChange(t.id, t.status === 'DONE' ? 'TODO' : 'DONE');
+    const newStatus = t.status === 'DONE' ? 'TODO' : 'DONE';
+    handleFocusStatusChange(t.id, newStatus);
+    if (newStatus === 'DONE') {
+      // Play completion sound
+      try { new Audio('/sounds/complete.wav').play(); } catch {}
+      // Fire confetti
+      import('canvas-confetti').then(({ default: confetti }) => {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 }, colors: ['#818cf8', '#22d3ee', '#10b981', '#f59e0b'] });
+      });
+    }
   }, [handleFocusStatusChange]);
 
   const isLoading = sessionStatus === 'loading' || tasksLoading;
@@ -661,7 +683,7 @@ export default function DashboardPage() {
                           {expandedTaskId === task.id && (
                             <div className="ml-8 mt-1 mb-2 space-y-2">
                               <SubtaskList parentId={task.id} initialChildren={task.children} compact onMutate={() => mutate()} />
-                              <ClearGoalsDisplay taskId={task.id} editable collapsible />
+                              <ClearGoalsDisplay taskId={task.id} editable collapsible defaultExpanded />
                             </div>
                           )}
                         </div>

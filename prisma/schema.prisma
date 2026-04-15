@@ -57,6 +57,7 @@ model User {
   streakCountProcesses Boolean @default(true)
   streakCountReviews   Boolean @default(true)
   streakCountPowerdown Boolean @default(true)
+  streakGraceDays      Boolean @default(false) // When true, adds 1 grace day to all streak continuation windows
   beeminderAuthToken   String?
   beeminderGoalSlug    String?
   taskSchedulePeriod    String?   // "working" | "casual" | "both"
@@ -207,6 +208,7 @@ enum TaskType {
   REACT
   MAINTENANCE
   REVIEW
+  CHORE
 }
 
 enum TaskStatus {
@@ -293,6 +295,7 @@ model Streak {
   bestCount      Int       @default(0)
   lastActiveDate DateTime?
   isActive       Boolean   @default(true)
+  breakReason    String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

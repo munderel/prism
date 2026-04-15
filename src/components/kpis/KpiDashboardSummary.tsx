@@ -5,6 +5,8 @@ import { m } from 'framer-motion';
 
 interface KpiData {
   kpiId: string;
+  aggregatedValue: number;
+  targetValue: number | null;
   progressPct: number | null;
 }
 
@@ -15,6 +17,8 @@ interface ProcessKpiAggregation {
 
 interface KpiDashboardSummaryProps {
   processes: ProcessKpiAggregation[];
+  daysElapsed: number;
+  totalDays: number;
 }
 
 interface StatCardProps {
@@ -48,7 +52,7 @@ function StatCard({ label, value, colorClass, colorBg, icon, index }: StatCardPr
   );
 }
 
-export function KpiDashboardSummary({ processes }: KpiDashboardSummaryProps) {
+export function KpiDashboardSummary({ processes, daysElapsed, totalDays }: KpiDashboardSummaryProps) {
   const allKpis = processes.flatMap((p) => p.kpis);
   const total = allKpis.length;
 
@@ -56,9 +60,19 @@ export function KpiDashboardSummary({ processes }: KpiDashboardSummaryProps) {
   let atRisk = 0;
   let behind = 0;
   for (const k of allKpis) {
-    const pct = k.progressPct ?? 0;
-    if (pct >= 70) onTrack++;
-    else if (pct >= 40) atRisk++;
+    // Use projection-based status: extrapolate current pace to end of period
+    const target = k.targetValue ?? 0;
+    if (target <= 0 || daysElapsed <= 0) {
+      // No valid target or period hasn't started — fall back to behind
+      behind++;
+      continue;
+    }
+    const currentPace = k.aggregatedValue / daysElapsed;
+    const projectedTotal = currentPace * totalDays;
+    const projectedPct = (projectedTotal / target) * 100;
+
+    if (projectedPct >= 100) onTrack++;
+    else if (projectedPct >= 70) atRisk++;
     else behind++;
   }
 

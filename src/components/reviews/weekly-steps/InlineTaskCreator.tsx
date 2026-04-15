@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import useSWR from 'swr';
-import { Plus, Pencil, Trash2, Save, X, Loader2, BarChart3 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Save, X, Loader2, BarChart3, AlertTriangle } from 'lucide-react';
 import { formatGoalDateRange } from '@/lib/goal-constants';
 import { getPriorityBadgeClass } from '../shared/review-types';
 
@@ -16,6 +16,7 @@ interface Task {
   priority: string;
   status: string;
   goalId?: string | null;
+  dueDate?: string | null;
 }
 
 interface WeeklyGoal {
@@ -280,6 +281,27 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
     };
   }, [activeTasks, weeklyGoals]);
 
+  // REACT tasks requiring attention: overdue or due this week
+  const reactTasks = useMemo(() => {
+    const now = new Date();
+    const dow = now.getDay();
+    const off = dow === 0 ? -6 : 1 - dow;
+    const thisMonday = new Date(now);
+    thisMonday.setDate(now.getDate() + off);
+    thisMonday.setHours(0, 0, 0, 0);
+    const thisSunday = new Date(thisMonday);
+    thisSunday.setDate(thisMonday.getDate() + 6);
+    thisSunday.setHours(23, 59, 59, 999);
+
+    return activeTasks.filter((t) => {
+      if (t.taskType !== 'REACT') return false;
+      if (!t.dueDate) return false;
+      const due = new Date(t.dueDate);
+      // Overdue (before this week) OR due this week
+      return due <= thisSunday;
+    });
+  }, [activeTasks]);
+
   const renderTaskRow = (task: Task) => {
     if (editingId === task.id) {
       return (
@@ -379,6 +401,22 @@ export function InlineTaskCreator({ isTeamReview }: InlineTaskCreatorProps) {
         </p>
       ) : (
         <div className="space-y-4 max-h-80 overflow-y-auto">
+          {/* Reactive tasks requiring attention */}
+          {reactTasks.length > 0 && (
+            <div className="space-y-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3">
+              <div className="flex items-center gap-2 px-1">
+                <AlertTriangle className="h-3.5 w-3.5 text-orange-400" />
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-orange-400">
+                  Reactive Tasks Requiring Attention
+                </h4>
+                <span className="ml-auto text-xs text-orange-400/70">{reactTasks.length}</span>
+              </div>
+              <div className="space-y-2">
+                {reactTasks.map(renderTaskRow)}
+              </div>
+            </div>
+          )}
+
           {/* Sections for each weekly goal */}
           {goalSections.map(({ goal, tasks: goalTasks }) => (
             <div key={goal.id} className="space-y-2">

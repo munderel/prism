@@ -61,6 +61,17 @@ export async function PATCH(
       const newDayOfWeek = body.dayOfWeek !== undefined ? body.dayOfWeek : meeting.dayOfWeek;
       const recurrence = buildMeetingRecurrence(newCadence, newDayOfWeek);
 
+      // Resolve attendee IDs to email addresses for Google Calendar invitations
+      const resolvedAttendeeIds = (updated.attendeeIds ?? []) as string[];
+      let attendeeEmails: Array<{ email: string }> = [];
+      if (resolvedAttendeeIds.length > 0) {
+        const attendeeUsers = await prisma.user.findMany({
+          where: { id: { in: resolvedAttendeeIds } },
+          select: { email: true },
+        });
+        attendeeEmails = attendeeUsers.map(a => ({ email: a.email }));
+      }
+
       let dateStr: string;
       if (newCadence === 'ONE_TIME' && (body.occurDate || meeting.occurDate)) {
         dateStr = new Date(body.occurDate || meeting.occurDate!).toISOString().split('T')[0];
@@ -87,6 +98,7 @@ export async function PATCH(
         timeZone: tz,
         addMeetLink: !!meeting.meetLink,
         recurrence,
+        attendees: attendeeEmails,
       }, targetCalendarId);
 
       if (gcalEvent?.id) {

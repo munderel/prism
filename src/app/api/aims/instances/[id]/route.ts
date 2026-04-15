@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { toZonedTime } from 'date-fns-tz';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, updateAimInstanceSchema } from '@/lib/schemas';
@@ -17,54 +18,99 @@ const INSTANCE_INCLUDE = {
 } as const;
 
 
+/**
+ * Recalculate aim progress using "consecutive weeks on-target" streaks.
+ *
+ * Weeks are Mon-Sun in the user's timezone. A week is "on-target" when the
+ * number of completed instances that week >= the aim's frequency
+ * (customFrequency ?? defaultFrequency). The streak counts consecutive
+ * on-target weeks. If the current week isn't on-target yet, the streak
+ * reflects the run ending at the most recent fully on-target week.
+ */
 async function recalculateUserAimProgress(userId: string, aimCategoryId: string) {
   const userAim = await prisma.userAim.findUnique({
-    where: {
-      userId_aimCategoryId: {
-        userId,
-        aimCategoryId,
-      },
-    },
+    where: { userId_aimCategoryId: { userId, aimCategoryId } },
+    include: { aimCategory: { select: { defaultFrequency: true } } },
   });
-
   if (!userAim) return;
 
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  const timezone = user?.timezone ?? 'America/New_York';
+
+  const frequency = userAim.customFrequency ?? userAim.aimCategory.defaultFrequency;
+
   const completedInstances = await prisma.aimInstance.findMany({
-    where: {
-      userId,
-      aimCategoryId,
-      status: 'COMPLETED',
-    },
+    where: { userId, aimCategoryId, status: 'COMPLETED' },
     orderBy: { scheduledDate: 'asc' },
     select: { scheduledDate: true, completedAt: true },
   });
 
-  const uniqueCompletionDates: string[] = [];
-  for (const instance of completedInstances) {
-    const date = new Date(instance.scheduledDate);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    if (uniqueCompletionDates[uniqueCompletionDates.length - 1] !== key) {
-      uniqueCompletionDates.push(key);
-    }
+  // Bucket completions by Mon-Sun week key (ISO week start date)
+  const weekCounts = new Map<string, number>();
+  for (const inst of completedInstances) {
+    const d = toZonedTime(new Date(inst.scheduledDate), timezone);
+    // Shift so Monday = 0
+    const dayOfWeek = (d.getDay() + 6) % 7;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - dayOfWeek);
+    const key = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+    weekCounts.set(key, (weekCounts.get(key) ?? 0) + 1);
   }
 
+  // Sort week keys chronologically
+  const sortedWeeks = Array.from(weekCounts.keys()).sort();
+
+  // Count consecutive on-target weeks
   let currentStreak = 0;
   let bestStreak = 0;
   let runningStreak = 0;
-  let previousDate: Date | null = null;
+  let previousMonday: Date | null = null;
 
-  for (const key of uniqueCompletionDates) {
-    const [year, month, day] = key.split('-').map(Number);
-    const currentDate = new Date(year, month - 1, day);
-    if (!previousDate) {
+  for (const weekKey of sortedWeeks) {
+    const count = weekCounts.get(weekKey)!;
+    const [y, m, d] = weekKey.split('-').map(Number);
+    const thisMonday = new Date(y, m - 1, d);
+
+    if (count < frequency) {
+      // Week not on-target — break the streak
+      runningStreak = 0;
+      previousMonday = thisMonday;
+      continue;
+    }
+
+    // On-target week
+    if (!previousMonday) {
       runningStreak = 1;
     } else {
-      const diffDays = Math.round((currentDate.getTime() - previousDate.getTime()) / 86400000);
-      runningStreak = diffDays === 1 ? runningStreak + 1 : 1;
+      const diffDays = Math.round((thisMonday.getTime() - previousMonday.getTime()) / 86400000);
+      runningStreak = diffDays === 7 ? runningStreak + 1 : 1;
     }
     bestStreak = Math.max(bestStreak, runningStreak);
     currentStreak = runningStreak;
-    previousDate = currentDate;
+    previousMonday = thisMonday;
+  }
+
+  // If the most recent on-target week isn't this week or last week, streak is broken
+  if (sortedWeeks.length > 0 && currentStreak > 0) {
+    const now = toZonedTime(new Date(), timezone);
+    const todayDow = (now.getDay() + 6) % 7;
+    const thisMonday = new Date(now);
+    thisMonday.setDate(now.getDate() - todayDow);
+    thisMonday.setHours(0, 0, 0, 0);
+    const lastMonday = new Date(thisMonday);
+    lastMonday.setDate(thisMonday.getDate() - 7);
+
+    const lastOnTargetKey = sortedWeeks.filter(k => weekCounts.get(k)! >= frequency).pop();
+    if (lastOnTargetKey) {
+      const [y, m, d] = lastOnTargetKey.split('-').map(Number);
+      const lastOnTargetMonday = new Date(y, m - 1, d);
+      if (lastOnTargetMonday < lastMonday) {
+        currentStreak = 0;
+      }
+    }
   }
 
   await prisma.userAim.update({
@@ -73,7 +119,7 @@ async function recalculateUserAimProgress(userId: string, aimCategoryId: string)
       completionCount: completedInstances.length,
       currentStreak,
       bestStreak,
-      lastCompletedAt: completedInstances[completedInstances.length - 1]?.completedAt ?? null,
+      lastCompletedAt: completedInstances[completedInstances.length - 1]?.scheduledDate ?? null,
     },
   });
 }
@@ -188,9 +234,9 @@ export async function PATCH(
       }
     }
 
-    // Update streak records
-    updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch((err) => console.warn('[streak] update failed:', err));
-    const streakResult = await updateDailyStreak(existing.userId, 'aims').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
+    // Update streak records — await both so failures are visible
+    await updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch((err) => console.warn('[streak] aim streak update failed:', err));
+    const streakResult = await updateDailyStreak(existing.userId, 'aims').catch((err) => { console.warn('[streak] daily streak update failed:', err); return {} as StreakUpdateResult; });
     if (streakResult?.beeminder?.ok === false) {
       beeminderError = streakResult.beeminder.error;
     }
