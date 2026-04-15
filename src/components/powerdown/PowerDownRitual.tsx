@@ -472,21 +472,9 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   };
 
   const handleItemScheduled = useCallback(async (itemId: string, itemType: string, start: Date, end: Date) => {
-    if (itemType === 'task') {
-      const res = await fetch(`/api/tasks/${itemId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          timeBlockStart: start.toISOString(),
-          timeBlockEnd: end.toISOString(),
-        }),
-      });
-      if (!res.ok) throw new Error(`Failed to schedule task: ${res.status}`);
-    } else if (itemType === 'aim') {
-      const instanceId = itemId.startsWith('aim-instance-')
-        ? itemId.replace('aim-instance-', '') : null;
-      if (instanceId) {
-        const res = await fetch(`/api/aims/instances/${instanceId}`, {
+    try {
+      if (itemType === 'task') {
+        const res = await fetch(`/api/tasks/${itemId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -494,12 +482,27 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
             timeBlockEnd: end.toISOString(),
           }),
         });
-        if (!res.ok) throw new Error(`Failed to schedule aim: ${res.status}`);
+        if (!res.ok) throw new Error(`Failed to schedule task: ${res.status}`);
+      } else if (itemType === 'aim') {
+        const instanceId = itemId.startsWith('aim-instance-')
+          ? itemId.replace('aim-instance-', '') : null;
+        if (instanceId) {
+          const res = await fetch(`/api/aims/instances/${instanceId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              timeBlockStart: start.toISOString(),
+              timeBlockEnd: end.toISOString(),
+            }),
+          });
+          if (!res.ok) throw new Error(`Failed to schedule aim: ${res.status}`);
+        }
       }
+      setUnscheduledTomorrowItems((prev) => prev.filter((item) => item.id !== itemId));
+      fetchTomorrowTasks();
+    } catch {
+      toast.error('Failed to schedule item. Please try again.');
     }
-    setUnscheduledTomorrowItems((prev) => prev.filter((item) => item.id !== itemId));
-    setCalendarReviewed(true);
-    fetchTomorrowTasks();
   }, [fetchTomorrowTasks]);
 
   const handleItemUnscheduled = useCallback(async (itemId: string, itemType: string) => {

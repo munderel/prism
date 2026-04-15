@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { requireCronSecret } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 import { checkTaskDerailStatus } from '@/lib/derailing';
+import { checkAndBreakMissedStreaks } from '@/lib/streak-engine';
 import { notifyUser } from '@/lib/notifications';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -57,7 +58,15 @@ export async function GET(request: NextRequest) {
 
     await Promise.all(notifications);
 
-    return Response.json({ ok: true, checked: tasks.length, notified: notifications.length });
+    // Check and break streaks for missed AIMs, Processes, Reviews
+    const allUsers = await prisma.user.findMany({ select: { id: true } });
+    let streaksBroken = 0;
+    for (const user of allUsers) {
+      const breaks = await checkAndBreakMissedStreaks(user.id);
+      streaksBroken += breaks.length;
+    }
+
+    return Response.json({ ok: true, checked: tasks.length, notified: notifications.length, streaksBroken });
   } catch (error) {
     console.error('[cron/derailing] Unhandled error:', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });

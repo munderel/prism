@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useSession, signIn } from 'next-auth/react';
 import { useTheme } from 'next-themes';
 import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, RefreshCw, Link2, Check, Flame, User } from 'lucide-react';
 import { useSWRConfig } from 'swr';
@@ -145,6 +145,7 @@ export default function SettingsPage() {
   const [streakCountProcesses, setStreakCountProcesses] = useState(true);
   const [streakCountReviews, setStreakCountReviews] = useState(true);
   const [streakCountPowerdown, setStreakCountPowerdown] = useState(true);
+  const [streakGraceDays, setStreakGraceDays] = useState(false);
 
   // Beeminder
   const [beeminderAuthToken, setBeeminderAuthToken] = useState('');
@@ -229,6 +230,7 @@ export default function SettingsPage() {
       if (data.streakCountProcesses !== undefined) setStreakCountProcesses(data.streakCountProcesses);
       if (data.streakCountReviews !== undefined) setStreakCountReviews(data.streakCountReviews);
       if (data.streakCountPowerdown !== undefined) setStreakCountPowerdown(data.streakCountPowerdown);
+      if (data.streakGraceDays !== undefined) setStreakGraceDays(data.streakGraceDays);
       if (data.beeminderAuthToken) setBeeminderAuthToken(data.beeminderAuthToken);
       if (data.beeminderGoalSlug) setBeeminderGoalSlug(data.beeminderGoalSlug);
       if (data.weeklyReviewDayOfWeek != null) setWeeklyReviewDayOfWeek(data.weeklyReviewDayOfWeek);
@@ -286,7 +288,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakCountAims, streakCountProcesses, streakCountReviews, streakCountPowerdown, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
+        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakCountAims, streakCountProcesses, streakCountReviews, streakCountPowerdown, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
       });
 
       if (!res.ok) {
@@ -811,7 +813,16 @@ export default function SettingsPage() {
           {loadingCalendars ? (
             <p className="text-sm text-[var(--text-muted)]">Loading calendars...</p>
           ) : !googleCalConnected ? (
-            <p className="text-sm text-[var(--text-muted)]">Google Calendar not connected. Sign out and sign in again with Google to grant calendar access.</p>
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-[var(--text-muted)]">Google Calendar is not connected or your access has expired.</p>
+              <button
+                onClick={() => signIn('google', { callbackUrl: '/settings' })}
+                className="self-start flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Reconnect Google Calendar
+              </button>
+            </div>
           ) : availableCalendars.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">No calendars found in your Google account.</p>
           ) : (
@@ -894,7 +905,18 @@ export default function SettingsPage() {
             </>
           )}
           {calendarError && (
-            <p className="mt-3 text-sm text-amber-400">{calendarError}</p>
+            <div className="mt-3 flex flex-col gap-2">
+              <p className="text-sm text-amber-400">{calendarError}</p>
+              {googleCalConnected && (
+                <button
+                  onClick={() => signIn('google', { callbackUrl: '/settings' })}
+                  className="self-start flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Reconnect Google Calendar
+                </button>
+              )}
+            </div>
           )}
           <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
@@ -941,6 +963,20 @@ export default function SettingsPage() {
                 />
               </label>
             ))}
+          </div>
+          <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+            <label className="flex items-center justify-between">
+              <div>
+                <span className="text-sm text-[var(--text-secondary)]">Grace Day</span>
+                <p className="text-xs text-[var(--text-muted)]">Allow 1 extra day before a streak breaks</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={streakGraceDays}
+                onChange={(e) => setStreakGraceDays(e.target.checked)}
+                className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+              />
+            </label>
           </div>
           <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>

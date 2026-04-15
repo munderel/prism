@@ -141,6 +141,9 @@ export async function POST(request: NextRequest) {
     if (!goal || goal.deletedAt) {
       return Response.json({ error: 'Goal not found' }, { status: 404 });
     }
+    if (goal.level !== 'WEEKLY') {
+      return Response.json({ error: 'Tasks can only be created under WEEKLY goals' }, { status: 400 });
+    }
     const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
     if (accessDenied) return accessDenied;
   }

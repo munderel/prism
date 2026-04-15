@@ -287,21 +287,23 @@ export const authOptions: NextAuthOptions = {
           return;
         }
 
-        // Store Google refresh token (encrypted)
+        // Store Google refresh token (encrypted if key is available, plaintext fallback)
         if (account.refresh_token) {
+          const tokenToStore = process.env.TOKEN_ENCRYPTION_KEY
+            ? encryptToken(account.refresh_token)
+            : account.refresh_token;
           if (!process.env.TOKEN_ENCRYPTION_KEY) {
-            console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — skipping refresh token storage');
-          } else {
-            await prisma.user.update({
-              where: { id: user.id },
-              data: {
-                googleRefreshToken: encryptToken(account.refresh_token),
-                googleTokenExpiresAt: account.expires_at
-                  ? new Date(account.expires_at * 1000)
-                  : null,
-              },
-            });
+            console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — storing refresh token as plaintext. Set this key in production.');
           }
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              googleRefreshToken: tokenToStore,
+              googleTokenExpiresAt: account.expires_at
+                ? new Date(account.expires_at * 1000)
+                : null,
+            },
+          });
         }
 
         // Auto-promote first user to admin

@@ -168,7 +168,7 @@ export async function PATCH(request: NextRequest) {
   let beeminderError: string | undefined;
   if (body.complete && !session.completedAt) data.completedAt = new Date();
   if (body.complete && !session.completedAt) {
-    updateSpecificStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] update failed:', err));
+    await updateSpecificStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] powerdown streak update failed:', err));
     const streakResult = await updateDailyStreak(auth.userId, 'powerdown').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
     if (streakResult?.beeminder?.ok === false) {
       beeminderError = streakResult.beeminder.error;

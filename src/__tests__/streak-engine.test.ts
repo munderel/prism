@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('date-fns-tz', () => ({
+  toZonedTime: vi.fn((date: Date) => date), // pass through — test dates are already local
+}));
+
+vi.mock('@/lib/beeminder', () => ({
+  maybePostBeeminder: vi.fn().mockResolvedValue({ ok: true }),
+}));
+
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     streak: {
@@ -55,6 +63,15 @@ beforeEach(() => {
   mockCreate.mockResolvedValue({} as any);
   mockUpdate.mockResolvedValue({} as any);
   mockPublicWinCreate.mockResolvedValue({} as any);
+  // Default: return user settings for timezone/grace queries
+  mockUserFindUnique.mockResolvedValue({
+    timezone: 'America/New_York',
+    streakGraceDays: false,
+    streakCountAims: true,
+    streakCountProcesses: true,
+    streakCountReviews: true,
+    streakCountPowerdown: true,
+  } as any);
 });
 
 describe('updateSpecificStreak', () => {
@@ -102,8 +119,8 @@ describe('updateSpecificStreak', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it('uses cadence-aware window for WEEKLY process (9 days)', async () => {
-    mockFindUnique.mockResolvedValue(makeStreak({ currentCount: 2, bestCount: 2, lastActiveDate: daysAgo(8) }));
+  it('uses cadence-aware window for WEEKLY process (7 days)', async () => {
+    mockFindUnique.mockResolvedValue(makeStreak({ currentCount: 2, bestCount: 2, lastActiveDate: daysAgo(6) }));
     await updateSpecificStreak('u1', 'process_abc', 'WEEKLY');
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -113,7 +130,7 @@ describe('updateSpecificStreak', () => {
   });
 
   it('resets process streak when gap exceeds cadence window', async () => {
-    mockFindUnique.mockResolvedValue(makeStreak({ currentCount: 5, bestCount: 8, lastActiveDate: daysAgo(10) }));
+    mockFindUnique.mockResolvedValue(makeStreak({ currentCount: 5, bestCount: 8, lastActiveDate: daysAgo(8) }));
     await updateSpecificStreak('u1', 'process_abc', 'WEEKLY');
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
