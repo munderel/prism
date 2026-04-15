@@ -31,7 +31,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
       className="group"
     >
       <div
-        className={`flex items-center gap-3 glass-panel px-4 py-3 hover:border-[var(--glass-border)] transition-colors cursor-pointer ${task.isWinTheDay ? 'border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.15)]' : ''}`}
+        className={`flex items-center gap-3 glass-panel px-4 py-3 hover:border-[var(--glass-border)] transition-colors cursor-pointer ${isDone ? 'opacity-50' : ''} ${task.isWinTheDay ? 'border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.15)]' : ''}`}
         onClick={() => onClick?.(task)}
       >
         {/* Checkbox */}
@@ -155,7 +155,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
         </div>
       </div>
       <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-2">
-        <ClearGoalsDisplay taskId={task.id} editable={false} compact collapsible />
+        <ClearGoalsDisplay taskId={task.id} editable={false} compact />
       </div>
     </m.div>
   );

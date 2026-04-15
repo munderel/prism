@@ -23,7 +23,7 @@ export const registerSchema = z.object({
 // === TASKS ===
 
 export const createTaskSchema = z.object({
-  taskType: z.enum(['IMPROVE', 'REACT', 'MAINTENANCE', 'REVIEW']),
+  taskType: z.enum(['IMPROVE', 'REACT', 'MAINTENANCE', 'REVIEW', 'CHORE']),
   title: z.string().min(1, 'Title is required').max(500),
   description: z.string().max(5000).optional().nullable(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
@@ -112,6 +112,7 @@ export const updateSettingsSchema = z.object({
   streakCountProcesses: z.boolean().optional(),
   streakCountReviews:   z.boolean().optional(),
   streakCountPowerdown: z.boolean().optional(),
+  streakGraceDays:      z.boolean().optional(),
   beeminderAuthToken: z.string().max(200).optional().nullable(),
   beeminderGoalSlug: z.string().max(200).optional().nullable(),
   companyMtp: z.string().max(10000).optional(),

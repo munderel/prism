@@ -20,9 +20,11 @@ interface ProcessKpiRowProps {
       entryCount: number;
     }>;
   };
+  daysElapsed?: number;
+  totalDays?: number;
 }
 
-export function ProcessKpiRow({ process }: ProcessKpiRowProps) {
+export function ProcessKpiRow({ process, daysElapsed, totalDays }: ProcessKpiRowProps) {
   return (
     <m.div
       initial={{ opacity: 0, y: 8 }}
@@ -69,6 +71,8 @@ export function ProcessKpiRow({ process }: ProcessKpiRowProps) {
                 target={kpi.targetValue ?? 0}
                 unit={kpi.unit}
                 showValues
+                daysElapsed={daysElapsed}
+                totalDays={totalDays}
               />
             </div>
           ))}

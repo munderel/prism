@@ -14,6 +14,7 @@ const SECTIONS = [
   { key: 'REACT', label: 'React', color: 'text-amber-700 dark:text-yellow-400' },
   { key: 'MAINTENANCE', label: 'Maintenance', color: 'text-cyan-700 dark:text-cyan-400' },
   { key: 'REVIEW', label: 'Review', color: 'text-rose-600 dark:text-rose-400' },
+  { key: 'CHORE', label: 'Chore', color: 'text-gray-600 dark:text-gray-400' },
 ] as const;
 
 /** Task shape returned by the /api/tasks endpoint */

@@ -15,6 +15,7 @@ interface ClearGoalsDisplayProps {
   editable?: boolean;
   compact?: boolean;
   collapsible?: boolean;
+  defaultExpanded?: boolean;
 }
 
 export function ClearGoalsDisplay({
@@ -22,6 +23,7 @@ export function ClearGoalsDisplay({
   editable = false,
   compact = false,
   collapsible = false,
+  defaultExpanded = false,
 }: ClearGoalsDisplayProps) {
   const apiUrl = `/api/tasks/${taskId}/clear-goals`;
   const { data, error, isLoading, mutate } = useSWR<ClearGoal[]>(apiUrl);
@@ -29,7 +31,7 @@ export function ClearGoalsDisplay({
   const [newGoalText, setNewGoalText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
-  const [collapsed, setCollapsed] = useState(collapsible && !editable);
+  const [collapsed, setCollapsed] = useState(collapsible && !editable && !defaultExpanded);
 
   if (isLoading) {
     return (

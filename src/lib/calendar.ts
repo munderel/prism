@@ -297,6 +297,7 @@ export async function createGoogleEvent(
     timeZone?: string;
     addMeetLink?: boolean;
     recurrence?: string[];
+    attendees?: Array<{ email: string }>;
   },
   calendarId: string = 'primary'
 ) {
@@ -331,10 +332,15 @@ export async function createGoogleEvent(
       eventBody.recurrence = event.recurrence;
     }
 
+    if (event.attendees?.length) {
+      eventBody.attendees = event.attendees;
+    }
+
     const response = await calendar.events.insert({
       calendarId,
       requestBody: eventBody,
       conferenceDataVersion: event.addMeetLink ? 1 : 0,
+      sendUpdates: event.attendees?.length ? 'all' : 'none',
     });
 
     return response.data;

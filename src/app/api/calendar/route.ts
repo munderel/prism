@@ -231,6 +231,7 @@ export async function GET(request: NextRequest) {
                   { dueDate: { gte: rangeStart, lte: rangeEnd } },
                 ],
               },
+              { processId: null },
             ],
           },
           include: { goal: { select: { title: true } } },
