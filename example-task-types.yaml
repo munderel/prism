@@ -1,0 +1,170 @@
+meta:
+  name: "Task Types Example Stack"
+  owner: "munder.elgummi@gmail.com"
+  is_company: false
+  exported_at: "2026-04-15T00:00:00Z"
+  mtp: "Demonstrate all task types and weekly goal dates"
+
+high_hard_goal:
+  title: "Build UpWhiten into a $50M oral care brand"
+  description: "Scale from 0 to 16-20 locations + DTC channel over 5 years."
+  status: "IN_PROGRESS"
+  date: "2031-12-31"
+  start_date: "2026-01-01"
+  end_date: "2031-12-31"
+
+  kpis:
+    - name: "Annual Revenue"
+      type: "numeric"
+      unit: "$"
+      target: 50000000
+      actual: 0
+    - name: "Locations Open"
+      type: "numeric"
+      target: 20
+      actual: 0
+
+  strategic_goals:
+    - title: "Launch Ottawa flagship clinic"
+      description: "Open first location and prove the model."
+      status: "IN_PROGRESS"
+      start_date: "2026-04-01"
+      end_date: "2026-12-31"
+
+      monthly_goals:
+        - title: "April 2026: Finalize clinic setup"
+          status: "IN_PROGRESS"
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+
+          kpis:
+            - name: "Setup Tasks Completed"
+              type: "numeric"
+              target: 15
+              actual: 4
+
+          weekly_goals:
+            # Weekly goal WITH start/end dates
+            - title: "Week of Apr 14: Location & permits"
+              status: "IN_PROGRESS"
+              date: "2026-04-20"
+              start_date: "2026-04-14"
+              end_date: "2026-04-20"
+
+              kpis:
+                - name: "Permits Filed"
+                  type: "numeric"
+                  target: 3
+                  actual: 1
+                  linked_to: "Setup Tasks Completed"
+
+              tasks:
+                # IMPROVE (default) - goal stack work, no task_type needed
+                - title: "Sign lease agreement"
+                  description: "Final review and signing with landlord"
+                  deliverable: "Signed lease document"
+                  status: "IN_PROGRESS"
+                  priority: "URGENT"
+                  date: "2026-04-16"
+                  estimated_minutes: 120
+                  time_block_start: "2026-04-16T10:00:00Z"
+                  time_block_end: "2026-04-16T12:00:00Z"
+                  win_the_day: true
+                  preferred_time_start: "10:00"
+                  preferred_time_end: "12:00"
+
+                # REACT - urgent response to external event
+                - title: "Respond to city inspector questions"
+                  description: "Inspector requested additional documentation"
+                  task_type: "REACT"
+                  status: "TODO"
+                  priority: "HIGH"
+                  date: "2026-04-17"
+                  estimated_minutes: 45
+
+                # MAINTENANCE - recurring operational task
+                - title: "Weekly contractor progress check-in"
+                  description: "Review buildout progress and budget"
+                  task_type: "MAINTENANCE"
+                  status: "TODO"
+                  priority: "MEDIUM"
+                  recurrence_rule: "FREQ=WEEKLY;BYDAY=FR"
+                  estimated_minutes: 30
+
+                # REVIEW - evaluation/assessment task
+                - title: "Review equipment vendor proposals"
+                  description: "Compare 3 dental equipment vendors on price, quality, warranty"
+                  deliverable: "Vendor comparison spreadsheet"
+                  task_type: "REVIEW"
+                  status: "TODO"
+                  priority: "HIGH"
+                  date: "2026-04-18"
+                  estimated_minutes: 90
+
+                # CHORE - admin/housekeeping task
+                - title: "File business registration paperwork"
+                  description: "Submit Ontario business registration forms"
+                  task_type: "CHORE"
+                  status: "TODO"
+                  priority: "LOW"
+                  date: "2026-04-19"
+                  estimated_minutes: 30
+
+                # Minimal task - tests all defaults (status=TODO, priority=MEDIUM, task_type=IMPROVE)
+                - title: "Order clinic signage"
+
+              daily_goals:
+                - title: "Drop off lease deposit at bank"
+                  status: "NOT_STARTED"
+                - title: "Call insurance broker for clinic policy quote"
+
+            # Second weekly goal with start/end dates
+            - title: "Week of Apr 21: Equipment & hiring"
+              status: "NOT_STARTED"
+              start_date: "2026-04-21"
+              end_date: "2026-04-27"
+
+              tasks:
+                - title: "Place dental chair order"
+                  status: "TODO"
+                  priority: "HIGH"
+                  estimated_minutes: 60
+
+                - title: "Post hygienist job listing"
+                  task_type: "CHORE"
+                  status: "TODO"
+                  priority: "MEDIUM"
+
+                - title: "Review applicant resumes"
+                  task_type: "REVIEW"
+                  status: "TODO"
+                  priority: "MEDIUM"
+                  estimated_minutes: 45
+
+    - title: "Build digital presence and marketing"
+      status: "NOT_STARTED"
+      start_date: "2026-06-01"
+      end_date: "2027-06-30"
+
+      monthly_goals:
+        - title: "June 2026: Launch website and social media"
+          start_date: "2026-06-01"
+          end_date: "2026-06-30"
+
+          weekly_goals:
+            - title: "Week 1: Website MVP"
+              start_date: "2026-06-01"
+              end_date: "2026-06-07"
+
+              tasks:
+                - title: "Design homepage wireframes"
+                  priority: "HIGH"
+                  estimated_minutes: 180
+
+                - title: "Set up Google Business Profile"
+                  task_type: "CHORE"
+                  estimated_minutes: 30
+
+                - title: "Review competitor websites for inspiration"
+                  task_type: "REVIEW"
+                  estimated_minutes: 60

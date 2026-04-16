@@ -1,0 +1,218 @@
+meta:
+  name: "All-Features Test Stack"
+  owner: "munder.elgummi@gmail.com"
+  is_company: false
+  exported_at: "2026-04-15T00:00:00Z"
+  mtp: "Test every import feature in a single file"
+
+high_hard_goal:
+  title: "Grow UpWhiten to $10M ARR by 2028"
+  description: "Scale the oral care prevention brand from startup to market leader."
+  status: "IN_PROGRESS"
+  date: "2028-12-31"
+  start_date: "2026-01-01"
+  end_date: "2028-12-31"
+
+  # --- KPIs at HHG level (feature 9: KPIs on any level) ---
+  kpis:
+    - name: "Annual Recurring Revenue"
+      type: "numeric"
+      unit: "$"
+      target: 10000000
+      actual: 120000
+    - name: "Brand Launched"
+      type: "binary"
+      complete: false
+
+  strategic_goals:
+    # --- Strategic goal with KPIs (feature 9) ---
+    - title: "Launch first 3 clinic locations"
+      description: "Open Ottawa flagship + 2 satellite clinics."
+      status: "IN_PROGRESS"
+      date: "2027-06-30"
+      start_date: "2026-04-01"
+      end_date: "2027-06-30"
+      kpis:
+        - name: "Locations Open"
+          type: "numeric"
+          target: 3
+          actual: 0
+        - name: "Monthly New Customers"
+          type: "numeric"
+          unit: "customers"
+          target: 200
+          actual: 0
+
+      monthly_goals:
+        # --- Monthly goal with KPIs that weekly KPIs link to (feature 11) ---
+        - title: "Finalize clinic lease and buildout plan"
+          description: "Secure location, negotiate lease, hire contractor."
+          status: "IN_PROGRESS"
+          date: "2026-04-30"
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+          kpis:
+            - name: "Lease Signed"
+              type: "binary"
+              complete: false
+            - name: "Buildout Budget Approved"
+              type: "numeric"
+              unit: "$"
+              target: 150000
+              actual: 0
+            - name: "Tasks Completed"
+              type: "numeric"
+              target: 10
+              actual: 0
+
+          weekly_goals:
+            # --- Weekly goal with FULL task coverage (all task fields + all statuses/priorities) ---
+            - title: "Tour locations and shortlist top 3"
+              description: "Visit 8 potential sites, narrow to top 3."
+              status: "IN_PROGRESS"
+              date: "2026-04-20"
+              start_date: "2026-04-14"
+              end_date: "2026-04-20"
+
+              # KPIs on weekly level with linked_to (parent linking)
+              kpis:
+                - name: "Sites Toured"
+                  type: "numeric"
+                  target: 8
+                  actual: 3
+                  linked_to: "Tasks Completed"
+                - name: "Shortlist Done"
+                  type: "binary"
+                  complete: false
+                  linked_to: "Lease Signed"
+
+              tasks:
+                # Task with ALL fields populated
+                - title: "Visit downtown Ottawa locations"
+                  description: "Tour 3 locations on Bank St and Elgin St corridors"
+                  deliverable: "Location scorecard with photos and rent comparisons"
+                  status: "IN_PROGRESS"
+                  priority: "HIGH"
+                  date: "2026-04-17"
+                  estimated_minutes: 180
+                  time_block_start: "2026-04-17T09:00:00Z"
+                  time_block_end: "2026-04-17T12:00:00Z"
+                  win_the_day: true
+                  preferred_time_start: "09:00"
+                  preferred_time_end: "12:00"
+
+                # Task with recurrence + MAINTENANCE type
+                - title: "Weekly location search check-in"
+                  description: "Review new listings and broker updates"
+                  status: "TODO"
+                  priority: "MEDIUM"
+                  task_type: "MAINTENANCE"
+                  recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
+                  estimated_minutes: 30
+
+                # Completed task (DONE status) + REVIEW type
+                - title: "Create location evaluation rubric"
+                  status: "DONE"
+                  priority: "HIGH"
+                  task_type: "REVIEW"
+                  deliverable: "Scoring spreadsheet with 12 criteria"
+
+                # Minimal task — tests defaults (status→TODO, priority→MEDIUM)
+                - title: "Request quotes from 3 contractors"
+
+                # LOW priority task
+                - title: "Research zoning requirements"
+                  status: "TODO"
+                  priority: "LOW"
+                  estimated_minutes: 60
+
+                # URGENT priority + REACT type
+                - title: "Submit lease application before deadline"
+                  status: "TODO"
+                  priority: "URGENT"
+                  task_type: "REACT"
+                  date: "2026-04-19"
+
+                # DROPPED task + CHORE type
+                - title: "Consider suburban location"
+                  status: "DROPPED"
+                  task_type: "CHORE"
+                  description: "Decided to focus on downtown core only"
+
+              daily_goals:
+                - title: "Visit Bank St locations in the morning"
+                  status: "COMPLETED"
+                - title: "Score each location on the rubric"
+                  status: "IN_PROGRESS"
+
+            # --- Second weekly goal — with start/end dates ---
+            - title: "Draft lease negotiation strategy"
+              status: "NOT_STARTED"
+              start_date: "2026-04-21"
+              end_date: "2026-04-27"
+              tasks:
+                - title: "Review comparable lease terms in the area"
+                  status: "TODO"
+
+              daily_goals:
+                - title: "Research average lease rates on Bank St"
+                  status: "NOT_STARTED"
+                - title: "List non-negotiable lease terms"
+
+            # --- Weekly goal with daily goals only (no tasks) ---
+            - title: "Finalize buildout scope"
+              date: "2026-04-27"
+              daily_goals:
+                - title: "Measure selected space dimensions"
+                  status: "COMPLETED"
+                - title: "Get 3 contractor quotes"
+                  status: "IN_PROGRESS"
+                - title: "Create buildout timeline"
+
+        # --- Second monthly goal — COMPLETED status ---
+        - title: "Complete market research for Ottawa"
+          description: "Analyze competition, demographics, and demand."
+          status: "COMPLETED"
+          date: "2026-03-31"
+          kpis:
+            - name: "Competitor Analysis"
+              type: "binary"
+              complete: true
+              completed_at: "2026-03-25T00:00:00Z"
+            - name: "TAM Calculated"
+              type: "numeric"
+              unit: "$"
+              target: 5000000
+              actual: 5200000
+          weekly_goals:
+            - title: "Map all dental clinics within 10km"
+              status: "COMPLETED"
+              tasks:
+                - title: "Scrape Google Maps for dental clinics"
+                  status: "DONE"
+                - title: "Build competitive pricing spreadsheet"
+                  status: "DONE"
+                  priority: "HIGH"
+              daily_goals:
+                - title: "Scrape Google Maps for dental clinics"
+                  status: "COMPLETED"
+
+    # --- Second strategic goal — ABANDONED status ---
+    - title: "Launch DTC subscription box (deprioritized)"
+      description: "Originally planned DTC channel, now focusing on clinics first."
+      status: "ABANDONED"
+      date: "2027-12-31"
+
+    # --- Third strategic goal — minimal, tests NOT_STARTED default ---
+    - title: "Build digital marketing engine"
+      date: "2027-03-31"
+      monthly_goals:
+        - title: "Set up paid acquisition channels"
+          date: "2026-06-30"
+          weekly_goals:
+            - title: "Launch Google Ads campaign"
+              tasks:
+                - title: "Create ad copy and landing page"
+                  status: "TODO"
+                  priority: "HIGH"
+                  estimated_minutes: 120

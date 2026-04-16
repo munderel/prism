@@ -110,7 +110,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const [kpiNotes, setKpiNotes] = useState('');
   const [taskBlockAssignments, setTaskBlockAssignments] = useState<Record<string, string>>({});
   const [finalNotes, setFinalNotes] = useState('');
-  const [mitTaskPoolSize, setMitTaskPoolSize] = useState<number | null>(null);
+  const [_mitTaskPoolSize, setMitTaskPoolSize] = useState<number | null>(null);
 
 
   // Upcoming week boundaries (Mon-Sun)
