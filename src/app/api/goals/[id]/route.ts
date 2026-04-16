@@ -165,7 +165,12 @@ async function softDeleteDescendants(goalId: string, now: Date) {
     idsToDelete.push(...frontier);
   }
 
-  // Batch update all descendants at once
+  // Hard-delete all tasks linked to goals being deleted
+  await prisma.task.deleteMany({
+    where: { goalId: { in: idsToDelete } },
+  });
+
+  // Soft-delete all goals
   await prisma.goal.updateMany({
     where: { id: { in: idsToDelete } },
     data: { deletedAt: now },

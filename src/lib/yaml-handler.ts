@@ -15,6 +15,7 @@ export interface TaskNode {
   isWinTheDay?: boolean;
   preferredTimeStart?: string;
   preferredTimeEnd?: string;
+  taskType?: string;
 }
 
 export interface KpiNode {
@@ -117,6 +118,7 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
       if (t.deliverable) tObj.deliverable = t.deliverable;
       if (t.status && t.status !== 'TODO') tObj.status = t.status;
       if (t.priority && t.priority !== 'MEDIUM') tObj.priority = t.priority;
+      if (t.taskType && t.taskType !== 'IMPROVE') tObj.task_type = t.taskType;
       if (t.dueDate) tObj.date = t.dueDate;
       if (t.estimatedMinutes != null) tObj.estimated_minutes = t.estimatedMinutes;
       if (t.timeBlockStart) tObj.time_block_start = t.timeBlockStart;
@@ -179,6 +181,7 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
         priority: t.priority ?? 'MEDIUM',
       };
       if (t.id) task.id = t.id;
+      if (t.task_type !== undefined) task.taskType = t.task_type;
       if (t.description !== undefined) task.description = t.description;
       if (t.deliverable !== undefined) task.deliverable = t.deliverable;
       if (t.date !== undefined) task.dueDate = t.date;
@@ -523,6 +526,7 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
         isWinTheDay: t.isWinTheDay || undefined,
         preferredTimeStart: t.preferredTimeStart ?? undefined,
         preferredTimeEnd: t.preferredTimeEnd ?? undefined,
+        taskType: t.taskType ?? undefined,
       }));
     }
 
@@ -593,6 +597,7 @@ const TASK_DIFF_FIELDS: (keyof TaskNode)[] = [
   'deliverable',
   'status',
   'priority',
+  'taskType',
   'dueDate',
   'estimatedMinutes',
   'timeBlockStart',

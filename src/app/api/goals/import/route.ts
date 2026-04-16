@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
         orderBy: { sortOrder: 'asc' },
         include: { linkedKpi: { select: { name: true } } },
       },
+      tasks: {
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+      },
     },
   });
 
@@ -99,7 +102,7 @@ export async function POST(request: NextRequest) {
 
   // Resolve KPI links (two-pass: monthly KPIs created first, now link weekly KPIs)
   if (kpiLinkQueue.length > 0) {
-    const parentIds = [...new Set(kpiLinkQueue.map((l) => l.parentGoalId))];
+    const parentIds = Array.from(new Set(kpiLinkQueue.map((l) => l.parentGoalId)));
     const allMonthlyKpis = await prisma.kpi.findMany({
       where: { goalId: { in: parentIds } },
     });
@@ -133,7 +136,7 @@ export async function POST(request: NextRequest) {
         data: {
           ownerId: auth.userId,
           goalId: entry.goalId,
-          taskType: 'IMPROVE',
+          taskType: (task.taskType as any) ?? 'IMPROVE',
           title: task.title,
           description: task.description ?? null,
           deliverable: task.deliverable ?? null,
@@ -420,7 +423,7 @@ async function createNewGoals(
             data: {
               ownerId,
               goalId: created.id,
-              taskType: 'IMPROVE',
+              taskType: (task.taskType as any) ?? 'IMPROVE',
               title: task.title,
               description: task.description ?? null,
               deliverable: task.deliverable ?? null,
