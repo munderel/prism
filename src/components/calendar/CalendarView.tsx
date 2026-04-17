@@ -1349,6 +1349,9 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           nowIndicator={true}
           slotMinTime="06:00:00"
           slotMaxTime="24:00:00"
+          slotDuration="00:15:00"
+          slotLabelInterval="01:00:00"
+          snapDuration="00:05:00"
           eventDidMount={(info) => {
             const props = info.event.extendedProps || {};
             // Dim and strike-through DONE/DROPPED task events
