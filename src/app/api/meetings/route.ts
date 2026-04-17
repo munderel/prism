@@ -78,16 +78,19 @@ export async function POST(request: NextRequest) {
     if (cadence === 'ONE_TIME' && occurDate) {
       dateStr = new Date(occurDate).toISOString().split('T')[0];
     } else {
-      // For recurring: compute next occurrence of dayOfWeek from today
+      // For recurring: compute the next occurrence of dayOfWeek starting today.
+      // Using `|| 7` previously meant a meeting scheduled for today's
+      // weekday was bumped out by a full week, so attendees would not see
+      // an event on their calendar until 7 days later.
       const today = new Date();
       if (dayOfWeek != null) {
         const currentDow = today.getDay();
-        const daysUntil = (dayOfWeek - currentDow + 7) % 7 || 7;
+        const daysUntil = (dayOfWeek - currentDow + 7) % 7;
         const nextDate = new Date(today);
         nextDate.setDate(today.getDate() + daysUntil);
         dateStr = nextDate.toISOString().split('T')[0];
       } else {
-        // No specific day — start tomorrow for daily, or today
+        // No specific day — start today
         dateStr = today.toISOString().split('T')[0];
       }
     }
