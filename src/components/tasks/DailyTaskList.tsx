@@ -10,12 +10,13 @@ import { TaskCompletionKpiModal } from './TaskCompletionKpiModal';
 import { useKpiCompletionPrompt } from '@/hooks/useKpiCompletionPrompt';
 import { playCompletionFeedback } from '@/lib/completion-feedback';
 
+// CHORE is deprecated — hidden from section list. Pre-existing CHORE tasks
+// are folded into the REACT section so they remain visible until migrated.
 const SECTIONS = [
   { key: 'IMPROVE', label: 'Improve', color: 'text-indigo-600 dark:text-indigo-400' },
   { key: 'REACT', label: 'React', color: 'text-amber-700 dark:text-yellow-400' },
   { key: 'MAINTENANCE', label: 'Maintenance', color: 'text-cyan-700 dark:text-cyan-400' },
   { key: 'REVIEW', label: 'Review', color: 'text-rose-600 dark:text-rose-400' },
-  { key: 'CHORE', label: 'Chore', color: 'text-gray-600 dark:text-gray-400' },
 ] as const;
 
 /** Task shape returned by the /api/tasks endpoint */
@@ -160,7 +161,11 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
   );
 
   const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => {
-    const all = tasks.filter((t: DailyTask) => t.taskType === key);
+    // Fold legacy CHORE tasks into REACT so they remain visible after CHORE
+    // was removed from the active task-type list.
+    const all = key === 'REACT'
+      ? tasks.filter((t: DailyTask) => t.taskType === 'REACT' || t.taskType === 'CHORE')
+      : tasks.filter((t: DailyTask) => t.taskType === key);
     const active = all.filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED');
     return { key, label, color, tasks: active };
   }), [tasks]);

@@ -177,7 +177,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-1">Task Type <span className="text-red-400">*</span></label>
                 <div className="flex gap-2">
-                  {['IMPROVE', 'REACT', 'MAINTENANCE', 'CHORE'].map((t) => (
+                  {['IMPROVE', 'REACT', 'MAINTENANCE'].map((t) => (
                     <button
                       key={t}
                       type="button"
@@ -188,7 +188,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                           : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
                       }`}
                     >
-                      {t === 'IMPROVE' ? 'Improve' : t === 'REACT' ? 'React' : t === 'CHORE' ? 'Chore' : 'Maintenance'}
+                      {t === 'IMPROVE' ? 'Improve' : t === 'REACT' ? 'React' : 'Maintenance'}
                     </button>
                   ))}
                 </div>
