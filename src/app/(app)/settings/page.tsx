@@ -140,11 +140,8 @@ export default function SettingsPage() {
   // Powerdown Time
   const [powerdownTime, setPowerdownTime] = useState('17:30');
 
-  // Streak preferences
-  const [streakCountAims, setStreakCountAims] = useState(true);
-  const [streakCountProcesses, setStreakCountProcesses] = useState(true);
-  const [streakCountReviews, setStreakCountReviews] = useState(true);
-  const [streakCountPowerdown, setStreakCountPowerdown] = useState(true);
+  // Streak preferences — daily streak now fires solely on powerdown completion;
+  // the per-category opt-in flags were removed.
   const [streakGraceDays, setStreakGraceDays] = useState(false);
 
   // Beeminder
@@ -226,10 +223,6 @@ export default function SettingsPage() {
         setCalendarColorOverrides({});
       }
       if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
-      if (data.streakCountAims !== undefined) setStreakCountAims(data.streakCountAims);
-      if (data.streakCountProcesses !== undefined) setStreakCountProcesses(data.streakCountProcesses);
-      if (data.streakCountReviews !== undefined) setStreakCountReviews(data.streakCountReviews);
-      if (data.streakCountPowerdown !== undefined) setStreakCountPowerdown(data.streakCountPowerdown);
       if (data.streakGraceDays !== undefined) setStreakGraceDays(data.streakGraceDays);
       if (data.beeminderAuthToken) setBeeminderAuthToken(data.beeminderAuthToken);
       if (data.beeminderGoalSlug) setBeeminderGoalSlug(data.beeminderGoalSlug);
@@ -288,7 +281,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakCountAims, streakCountProcesses, streakCountReviews, streakCountPowerdown, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
+        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
       });
 
       if (!res.ok) {
@@ -937,43 +930,23 @@ export default function SettingsPage() {
         <section className="glass-panel p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-1 flex items-center gap-2">
             <Flame className="h-5 w-5 text-amber-400" />
-            Daily Streak — What Counts
+            Daily Streak
           </h2>
           <p className="text-sm text-[var(--text-muted)] mb-4">
-            Choose which activity types contribute to your master daily streak.
+            Your daily streak advances when you complete a Power Down that day.
           </p>
-          <div className="space-y-3">
-            {[
-              { label: 'Aims', value: streakCountAims, setter: setStreakCountAims },
-              { label: 'Processes', value: streakCountProcesses, setter: setStreakCountProcesses },
-              { label: 'Reviews', value: streakCountReviews, setter: setStreakCountReviews },
-              { label: 'Power Down', value: streakCountPowerdown, setter: setStreakCountPowerdown },
-            ].map(({ label, value, setter }) => (
-              <label key={label} className="flex items-center justify-between">
-                <span className="text-sm text-[var(--text-secondary)]">{label}</span>
-                <input
-                  type="checkbox"
-                  checked={value}
-                  onChange={(e) => setter(e.target.checked)}
-                  className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
-                />
-              </label>
-            ))}
-          </div>
-          <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
-            <label className="flex items-center justify-between">
-              <div>
-                <span className="text-sm text-[var(--text-secondary)]">Grace Day</span>
-                <p className="text-xs text-[var(--text-muted)]">Allow 1 extra day before a streak breaks</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={streakGraceDays}
-                onChange={(e) => setStreakGraceDays(e.target.checked)}
-                className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
-              />
-            </label>
-          </div>
+          <label className="flex items-center justify-between">
+            <div>
+              <span className="text-sm text-[var(--text-secondary)]">Grace Day</span>
+              <p className="text-xs text-[var(--text-muted)]">Allow 1 extra day before a streak breaks</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={streakGraceDays}
+              onChange={(e) => setStreakGraceDays(e.target.checked)}
+              className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
+            />
+          </label>
           <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
 

@@ -67,10 +67,6 @@ beforeEach(() => {
   mockUserFindUnique.mockResolvedValue({
     timezone: 'America/New_York',
     streakGraceDays: false,
-    streakCountAims: true,
-    streakCountProcesses: true,
-    streakCountReviews: true,
-    streakCountPowerdown: true,
   } as any);
 });
 
@@ -159,10 +155,6 @@ describe('updateSpecificStreak', () => {
     mockUserFindUnique.mockResolvedValue({
       timezone: 'America/New_York',
       streakGraceDays: true,
-      streakCountAims: true,
-      streakCountProcesses: true,
-      streakCountReviews: true,
-      streakCountPowerdown: true,
     } as any);
     mockFindUnique.mockResolvedValue(makeStreak({ currentCount: 3, bestCount: 5, lastActiveDate: daysAgo(2) }));
     await updateSpecificStreak('u1', 'aim_cat1');
@@ -187,17 +179,13 @@ describe('updateSpecificStreak', () => {
 });
 
 describe('updateDailyStreak', () => {
-  it('updates the daily streak when category is enabled', async () => {
+  it('advances the daily streak on powerdown completion', async () => {
     mockUserFindUnique.mockResolvedValue({
       timezone: 'America/New_York',
       streakGraceDays: false,
-      streakCountAims: true,
-      streakCountProcesses: true,
-      streakCountReviews: true,
-      streakCountPowerdown: true,
     } as any);
     mockFindUnique.mockResolvedValue(null);
-    await updateDailyStreak('u1', 'aims');
+    await updateDailyStreak('u1', 'powerdown');
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ streakType: 'daily' }),
@@ -205,23 +193,9 @@ describe('updateDailyStreak', () => {
     );
   });
 
-  it('skips update when category is disabled', async () => {
-    mockUserFindUnique.mockResolvedValue({
-      timezone: 'America/New_York',
-      streakGraceDays: false,
-      streakCountAims: false,
-      streakCountProcesses: true,
-      streakCountReviews: true,
-      streakCountPowerdown: true,
-    } as any);
-    await updateDailyStreak('u1', 'aims');
-    expect(mockCreate).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
-  });
-
   it('returns silently when user not found', async () => {
     mockUserFindUnique.mockResolvedValue(null);
-    await expect(updateDailyStreak('u1', 'aims')).resolves.toEqual({});
+    await expect(updateDailyStreak('u1', 'powerdown')).resolves.toEqual({});
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });

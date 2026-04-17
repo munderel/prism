@@ -6,7 +6,7 @@ import { notFoundResponse, forbiddenResponse, pickDefined, NO_STORE } from '@/li
 import { parseBody, updateReviewSchema } from '@/lib/schemas';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { cancelManagedSeriesInstance, syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
-import { updateSpecificStreak, updateDailyStreak, type StreakUpdateResult } from '@/lib/streak-engine';
+import { updateSpecificStreak } from '@/lib/streak-engine';
 
 type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
 
@@ -52,18 +52,14 @@ export async function PATCH(
   const body = parsed.data;
 
   const data: Record<string, unknown> = pickDefined(body, ['checklistState', 'notes']);
-  let beeminderError: string | undefined;
 
   if (body.timeBlockStart !== undefined) data.timeBlockStart = body.timeBlockStart ? new Date(body.timeBlockStart) : null;
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = body.timeBlockEnd ? new Date(body.timeBlockEnd) : null;
   if (body.complete) data.completedAt = new Date();
 
   if (body.complete && !review.completedAt) {
+    // Per-review streak. Daily streak is driven solely by powerdown.
     await updateSpecificStreak(auth.userId, 'review').catch((err) => console.warn('[streak] review streak update failed:', err));
-    const streakResult = await updateDailyStreak(auth.userId, 'reviews').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
-    if (streakResult?.beeminder?.ok === false) {
-      beeminderError = streakResult.beeminder.error;
-    }
   }
 
   const updated = await prisma.review.update({ where: { id }, data });
@@ -131,7 +127,7 @@ export async function PATCH(
     syncToGcal().catch((err) => console.warn(`[reviews] Google Calendar sync failed for user=${review.userId} reviewType=${review.reviewType} reviewId=${id}:`, err));
   }
 
-  return Response.json({ ...updated, beeminderError }, NO_STORE);
+  return Response.json(updated, NO_STORE);
 }
 
 export async function DELETE(
