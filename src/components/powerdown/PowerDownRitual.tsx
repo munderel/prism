@@ -419,6 +419,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       { key: 'top3', title: 'Select Top 3 for Tomorrow', description: 'Pick your top 3 most important tasks for tomorrow, ranked 1st, 2nd, 3rd.' },
       { key: 'calendar', title: "Tomorrow's Calendar", description: 'Drag tasks into tomorrow\'s time blocks. Fully editable — move, resize, or cancel blocks.' },
       { key: 'clear_goals', title: 'Clear Goals', description: 'Create a clear goal checklist for each task scheduled tomorrow, starting with your top 3.' },
+      { key: 'lubricate', title: 'Lubricate Tomorrow', description: 'Pre-stage your top 3 — open the doc, type the title, set up the file. Make starting frictionless.' },
       { key: 'goal_summary', title: 'Goal Clarity Summary', description: 'Final checklist of tomorrow\'s tasks with clear goals. Review and edit.' },
       { key: 'ideas', title: 'Capture Ideas', description: 'Dump any ideas — they\'ll be auto-saved to your Ideas list.' },
       { key: 'distractions', title: 'Record Distractions', description: 'What pulled you off track today? Log it so you can guard against it.' },
@@ -569,8 +570,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     try {
     const next = currentStep + 1;
 
-    // On step 8 completion, persist distractions to DistractionLog API
-    if (currentStep === 8 && distractions.length > 0) {
+    // On distractions step completion, persist to DistractionLog API.
+    // Key-based guards are resilient to the dynamic STEPS list (KPI step,
+    // Lubricate Tomorrow step, etc.) changing the numeric position.
+    if (currentStepKey === 'distractions' && distractions.length > 0) {
       for (const d of distractions) {
         try {
           await fetch('/api/distractions', {
@@ -589,9 +592,9 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       }
     }
 
-    if (next > 9) {
+    if (next > STEPS.length) {
       // Complete session
-      await persistStep(9, { complete: true });
+      await persistStep(currentStep, { complete: true });
       // Apply Win The Day flags for tomorrow from tomorrowPlan
       if (tomorrowPlan.length > 0) {
         await fetch('/api/tasks/batch-win-the-day', {
@@ -1318,6 +1321,44 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 ))}
                 </div>
               </>
+            )}
+
+            {/* Lubricate Tomorrow — explanatory prompt; pre-stage the top 3 artifacts */}
+            {currentStepKey === 'lubricate' && (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--text-secondary)]">
+                  For each of tomorrow&apos;s top tasks, go do the smallest physical
+                  setup now — open the doc, type the title, save the file with
+                  tomorrow&apos;s name, pin the tab. The goal is zero activation
+                  energy when you sit down tomorrow. Starting is almost always
+                  the hardest part; lubricate it tonight.
+                </p>
+                {tomorrowPlan.length === 0 ? (
+                  <p className="text-sm text-[var(--text-muted)]">
+                    No top 3 selected yet. Go back to Step 4 to pick them.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {tomorrowPlan.map((taskId, i) => {
+                      const t = tomorrowTasks.find((x: any) => x.id === taskId)
+                        ?? scheduledPlanTasks.find((x: any) => x.id === taskId);
+                      const title = t?.title ?? 'Task';
+                      return (
+                        <li key={taskId} className="flex items-center gap-3 rounded-lg bg-[var(--surface-raised)]/50 px-4 py-3">
+                          <span className="text-xs font-bold text-indigo-400 bg-indigo-400/20 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0">
+                            {i + 1}
+                          </span>
+                          <span className="text-sm text-[var(--text-primary)]">{title}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <p className="text-xs text-[var(--text-muted)] italic">
+                  This step is intentional friction — when you&apos;re done staging,
+                  hit Next.
+                </p>
+              </div>
             )}
 
             {/* Step 6/7: Goal Clarity Summary — read-only preview */}
