@@ -827,6 +827,30 @@ export async function GET(request: NextRequest) {
     console.warn(`[calendar] 0 events returned for user ${auth.userId}, range ${start} – ${end}, source=${source}`);
   }
 
+  // Food / eating blocks — user-created meal windows.
+  if (fetchAll || source === 'food') {
+    const foodBlocks = await prisma.foodBlock.findMany({
+      where: {
+        userId: auth.userId,
+        startAt: { gte: rangeStart, lte: rangeEnd },
+      },
+    });
+    for (const f of foodBlocks) {
+      events.push({
+        id: `food-${f.id}`,
+        title: `🍽️ ${f.title}`,
+        start: f.startAt.toISOString(),
+        end: f.endAt.toISOString(),
+        allDay: false,
+        source: 'food',
+        itemType: 'food',
+        itemId: f.id,
+        backgroundColor: '#f59e0b',
+        color: '#f59e0b',
+      });
+    }
+  }
+
   // Debug: count events by source
   const sourceCounts: Record<string, number> = {};
   for (const e of events) {

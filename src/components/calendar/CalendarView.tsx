@@ -122,6 +122,7 @@ const SOURCE_FILTERS: Array<{ key: string; label: string; colorHex: string }> = 
   { key: 'google', label: 'Google Calendar', colorHex: PRISM_COLORS.GOOGLE_CAL.color },
   { key: 'powerdown', label: 'Power Down', colorHex: PRISM_COLORS.POWER_DOWN.color },
   { key: 'processes', label: 'Processes', colorHex: PRISM_COLORS.MAINTENANCE.color },
+  { key: 'food', label: 'Food', colorHex: PRISM_COLORS.FOOD.color },
 ];
 
 // Task-type badge styles derived from PRISM_COLORS so subtype chips in the
