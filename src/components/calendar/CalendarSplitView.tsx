@@ -900,21 +900,19 @@ export function CalendarSplitView({
       const end = info.event.end as Date;
       try {
         await onSchedule(itemId, itemType, start, end);
-        pendingScheduledItems.current = [
-          ...pendingScheduledItems.current.filter((evt) => !(evt.itemId === itemId && evt.itemType === itemType)),
-          {
-            id: `pending-${itemType}-${itemId}`,
-            title: info.event.title,
-            start: start.toISOString(),
-            end: end.toISOString(),
-            allDay: false,
-            source: itemType === 'aim' ? 'aims' : 'tasks',
-            itemId,
-            itemType,
-            ...(itemType === 'aim' ? { aimInstanceId: itemId } : { taskId: itemId }),
-          },
-        ];
-        mutateEvents((currentData: unknown) => currentData, { revalidate: false });
+        // Do NOT push a pending placeholder here: FullCalendar has already
+        // moved the existing event optimistically to its new time, so adding
+        // a second "pending" copy at the same time causes a visual duplicate
+        // that lingers until the pending entry is reconciled with the server
+        // response. Pending placeholders are only needed for external sidebar
+        // drops (see the drop handler above) where the item isn't yet on the
+        // canvas.
+        // Also drop any stale pending entry for this item that may exist from
+        // a prior external drop so it doesn't coexist with the refreshed
+        // server event.
+        pendingScheduledItems.current = pendingScheduledItems.current.filter(
+          (evt) => !(evt.itemId === itemId && evt.itemType === itemType)
+        );
         await mutateEvents();
         onRefresh?.();
       } catch {
