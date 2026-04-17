@@ -13,7 +13,8 @@ export type ItemType =
   | 'CHORE'
   | 'GOOGLE_CAL'
   | 'POWER_DOWN'
-  | 'MEETING';
+  | 'MEETING'
+  | 'FOOD';
 
 export interface ColorDef {
   /** Primary hex color */
@@ -152,6 +153,19 @@ export const PRISM_COLORS: Record<ItemType, ColorDef> = {
     bgClass: 'bg-emerald-500/15',
     borderClass: 'border-emerald-500/40',
     label: 'Meeting',
+  },
+  FOOD: {
+    color: '#f59e0b',
+    emoji: '🍽️',
+    bg: 'rgba(245,158,11,0.15)',
+    border: '#f59e0b',
+    textLight: '#92400e',
+    textDark: '#fcd34d',
+    textClass: 'text-amber-700 dark:text-amber-400',
+    bgClass: 'bg-amber-500/15',
+    borderClass: 'border-amber-500/40',
+    label: 'Food',
+    description: 'Meal / eating block',
   },
 };
 
