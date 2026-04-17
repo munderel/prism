@@ -534,7 +534,11 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       return;
     }
 
-    await persistCurrentStep();
+    // Fire persistence in the background. The Next button previously awaited
+    // the POST which made every click feel sluggish while the wizard waited
+    // for a round trip. Optimistic navigation is fine here — the answer POST
+    // is idempotent per stepKey (upsert) and failures are logged.
+    void persistCurrentStep();
 
     if (currentStep === TOTAL_STEPS - 1) {
       try {
@@ -555,10 +559,10 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     setCurrentStep(currentStep + 1);
   };
 
-  const goBack = async () => {
+  const goBack = () => {
     if (currentStep > 0) {
-      // Persist before going back too
-      await persistCurrentStep();
+      // Same optimistic pattern as Next — don't block on a round trip.
+      void persistCurrentStep();
       setCurrentStep(currentStep - 1);
     }
   };
