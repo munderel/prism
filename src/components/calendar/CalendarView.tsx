@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { PRISM_COLORS } from '@/lib/prism-colors';
 
 interface SelectedEventPopover {
   eventId: string;
@@ -109,20 +110,26 @@ interface CalendarViewProps {
   navigateTo?: string;
 }
 
-const SOURCE_FILTERS = [
-  { key: 'tasks', label: 'My Tasks', color: 'bg-indigo-500' },
-  { key: 'reviews', label: 'Reviews', color: 'bg-yellow-500' },
-  { key: 'meetings', label: 'Meetings', color: 'bg-emerald-500' },
-  { key: 'aims', label: 'Aims', color: 'bg-teal-500' },
-  { key: 'google', label: 'Google Calendar', color: 'bg-purple-500' },
-  { key: 'powerdown', label: 'Power Down', color: 'bg-violet-500' },
-  { key: 'processes', label: 'Processes', color: 'bg-cyan-500' },
+// Source filters pull their dot color from PRISM_COLORS so the filter chip
+// and the actual events on the grid always match. Keep "tasks" generic
+// (indigo / Improve) since tasks span multiple sub-types rendered with their
+// own PRISM_COLORS entry per-event.
+const SOURCE_FILTERS: Array<{ key: string; label: string; colorHex: string }> = [
+  { key: 'tasks', label: 'My Tasks', colorHex: PRISM_COLORS.IMPROVE.color },
+  { key: 'reviews', label: 'Reviews', colorHex: PRISM_COLORS.REVIEW.color },
+  { key: 'meetings', label: 'Meetings', colorHex: PRISM_COLORS.MEETING.color },
+  { key: 'aims', label: 'Aims', colorHex: PRISM_COLORS.AIM.color },
+  { key: 'google', label: 'Google Calendar', colorHex: PRISM_COLORS.GOOGLE_CAL.color },
+  { key: 'powerdown', label: 'Power Down', colorHex: PRISM_COLORS.POWER_DOWN.color },
+  { key: 'processes', label: 'Processes', colorHex: PRISM_COLORS.MAINTENANCE.color },
 ];
 
+// Task-type badge styles derived from PRISM_COLORS so subtype chips in the
+// calendar event popover match the grid event colors.
 const TASK_TYPE_BADGE_STYLES: Record<string, string> = {
-  IMPROVE: 'bg-indigo-500/15 text-indigo-400',
-  REACT: 'bg-yellow-500/15 text-yellow-400',
-  MAINTENANCE: 'bg-cyan-500/15 text-cyan-400',
+  IMPROVE: `${PRISM_COLORS.IMPROVE.bgClass} ${PRISM_COLORS.IMPROVE.textClass}`,
+  REACT: `${PRISM_COLORS.REACT.bgClass} ${PRISM_COLORS.REACT.textClass}`,
+  MAINTENANCE: `${PRISM_COLORS.MAINTENANCE.bgClass} ${PRISM_COLORS.MAINTENANCE.textClass}`,
 };
 
 const TASK_STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
@@ -907,7 +914,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       )}
       {/* Filter toggles */}
       <div className="flex items-center gap-2 flex-wrap mb-4">
-        {SOURCE_FILTERS.map(({ key, label, color }) => (
+        {SOURCE_FILTERS.map(({ key, label, colorHex }) => (
           <button
             key={key}
             onClick={() => toggleFilter(key)}
@@ -918,7 +925,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                 : 'text-[var(--text-muted)] border border-[var(--surface-raised)] opacity-50'
             }`}
           >
-            <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colorHex }} />
             <span className="hidden sm:inline">{label}</span>
           </button>
         ))}
