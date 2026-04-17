@@ -53,6 +53,7 @@ model User {
   is2FAEnabled          Boolean   @default(false)
   isLockedOut           Boolean   @default(false)
   isPublicOnLeaderboard Boolean   @default(true)
+  leaderboardResetAt    DateTime? // Marker: only items completed after this count toward leaderboard score.
   // Deprecated: daily streak now fires solely on powerdown completion.
   // Kept in schema/DB to avoid a destructive migration; no longer read by application code.
   streakCountAims      Boolean @default(true)
