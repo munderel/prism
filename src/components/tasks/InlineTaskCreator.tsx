@@ -12,7 +12,7 @@ interface InlineTaskCreatorProps {
   placeholder?: string;
 }
 
-export function InlineTaskCreator({ defaultDate, onCreated, placeholder = 'Add a quick task...' }: InlineTaskCreatorProps) {
+export function InlineTaskCreator({ defaultDate, onCreated, placeholder = 'Quick React — type a title and hit Enter' }: InlineTaskCreatorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,7 +33,9 @@ export function InlineTaskCreator({ defaultDate, onCreated, placeholder = 'Add a
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: trimmed,
-          taskType: 'CHORE',
+          // Quick React: fastest possible task creation — title only,
+          // React type (responds to an incoming need), medium priority.
+          taskType: 'REACT',
           priority: 'MEDIUM',
           ...(defaultDate ? { dueDate: defaultDate } : {}),
         }),
