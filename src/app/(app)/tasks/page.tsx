@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import useSWR from 'swr';
-import { ListTodo, ChevronLeft, ChevronRight, CalendarRange, Inbox, ChevronDown } from 'lucide-react';
+import { ListTodo, ChevronLeft, ChevronRight, CalendarRange, Inbox, ChevronDown, ClipboardCheck } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { AgendaView } from '@/components/tasks/AgendaView';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
@@ -125,6 +126,18 @@ export default function TasksPage() {
   // Unscheduled tasks (no date, no time block)
   const { data: unscheduledData, mutate: mutateUnscheduled } = useSWR('/api/tasks?unscheduledOnly=true');
   const unscheduledTasks = useMemo(() => (Array.isArray(unscheduledData) ? unscheduledData : []), [unscheduledData]);
+
+  // Reviews due on the currently-viewed date (weekly/monthly/yearly). Surfaces
+  // the review in the Tasks view so it's not only visible on the calendar.
+  const reviewsKey = useMemo(() => {
+    if (viewMode !== 'day' && viewMode !== 'agenda') return null;
+    return `/api/reviews?scope=individual&from=${date}&to=${date}`;
+  }, [date, viewMode]);
+  const { data: reviewsData } = useSWR<Array<{ id: string; reviewType: string; completedAt: string | null; isTeamReview: boolean }>>(reviewsKey);
+  const reviewsDueToday = useMemo(
+    () => (Array.isArray(reviewsData) ? reviewsData.filter((r) => !r.completedAt && !r.isTeamReview) : []),
+    [reviewsData],
+  );
 
   const refresh = useCallback(() => {
     mutateRange();
@@ -343,16 +356,40 @@ export default function TasksPage() {
             />
           ) : viewMode === 'day' ? (
             /* Day view: single DailyTaskList */
-            <DailyTaskList
-              date={date}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onClick={handleTaskClick}
-              onStatusChange={() => mutateRange()}
-              selectionMode={selectionMode}
-              selectedIds={selectedIds}
-              onSelect={toggleSelection}
-            />
+            <>
+              {reviewsDueToday.length > 0 && (
+                <div className="mb-4 space-y-2">
+                  {reviewsDueToday.map((r) => (
+                    <Link
+                      key={r.id}
+                      href={`/reviews/${r.id}/complete`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-pink-500/40 bg-pink-500/10 px-4 py-3 transition hover:bg-pink-500/20"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ClipboardCheck className="h-5 w-5 text-pink-400" />
+                        <div>
+                          <div className="text-sm font-semibold text-pink-300">
+                            {r.reviewType.charAt(0) + r.reviewType.slice(1).toLowerCase()} Review due today
+                          </div>
+                          <div className="text-xs text-[var(--text-muted)]">Tap to complete</div>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-pink-400" />
+                    </Link>
+                  ))}
+                </div>
+              )}
+              <DailyTaskList
+                date={date}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onClick={handleTaskClick}
+                onStatusChange={() => mutateRange()}
+                selectionMode={selectionMode}
+                selectedIds={selectedIds}
+                onSelect={toggleSelection}
+              />
+            </>
           ) : rangeLoading ? (
             <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>
           ) : (
