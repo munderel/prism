@@ -174,16 +174,30 @@ export async function PATCH(request: NextRequest) {
 
   const data: Record<string, unknown> = pickDefined(body, SESSION_UPDATABLE_FIELDS);
   let beeminderError: string | undefined;
-  if (body.complete && !session.completedAt) data.completedAt = new Date();
-  if (body.complete && !session.completedAt) {
+  if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
+  if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
+
+  // Atomic completion: only one concurrent request can transition completedAt
+  // null -> now(). The winner fires the streak update exactly once. Previous
+  // logic used a read-then-write guard that could double-fire under a race
+  // (two PATCHes seeing session.completedAt=null) and could show a streak of
+  // "2 on day 1".
+  let didCompleteNow = false;
+  if (body.complete) {
+    const completionResult = await prisma.powerdownSession.updateMany({
+      where: { id: body.sessionId, completedAt: null },
+      data: { completedAt: new Date() },
+    });
+    didCompleteNow = completionResult.count === 1;
+  }
+
+  if (didCompleteNow) {
     await updateSpecificStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] powerdown streak update failed:', err));
     const streakResult = await updateDailyStreak(auth.userId, 'powerdown').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
     if (streakResult?.beeminder?.ok === false) {
       beeminderError = streakResult.beeminder.error;
     }
   }
-  if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
-  if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
 
   const updated = await prisma.powerdownSession.update({ where: { id: body.sessionId }, data });
 
