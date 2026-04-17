@@ -68,6 +68,38 @@ interface WeeklyReviewWizardProps {
   isTeamReview?: boolean;
 }
 
+// Render any saved answerData blob as readable text. Covers the common
+// shapes used by the wizard's steps; falls back to pretty JSON.
+function formatAnswerForDisplay(data: unknown): string {
+  if (data == null) return '—';
+  if (typeof data === 'string') return data;
+  if (typeof data !== 'object') return String(data);
+  const d = data as Record<string, unknown>;
+
+  if (Array.isArray(d.successes) || Array.isArray(d.difficulties)) {
+    const parts: string[] = [];
+    if (Array.isArray(d.successes) && d.successes.length) {
+      parts.push(`Successes:\n${(d.successes as string[]).map((s) => `  • ${s}`).join('\n')}`);
+    }
+    if (Array.isArray(d.difficulties) && d.difficulties.length) {
+      parts.push(`Difficulties:\n${(d.difficulties as string[]).map((s) => `  • ${s}`).join('\n')}`);
+    }
+    return parts.join('\n\n') || '—';
+  }
+  if (typeof d.notes === 'string' && d.notes) return d.notes;
+  if (typeof d.text === 'string' && d.text) return d.text;
+  if (Array.isArray(d.taskIds)) return `${d.taskIds.length} tasks selected`;
+  if (Array.isArray(d.blocks)) return `${d.blocks.length} work block(s) planned`;
+  if (d.assignments && typeof d.assignments === 'object') {
+    return `${Object.keys(d.assignments).length} task(s) assigned to blocks`;
+  }
+  if (d.decisions && typeof d.decisions === 'object') {
+    const decisions = d.decisions as Record<string, string>;
+    return Object.entries(decisions).map(([k, v]) => `${k}: ${v}`).join('\n') || '—';
+  }
+  return JSON.stringify(data, null, 2);
+}
+
 export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -267,25 +299,34 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       .catch(() => {}); // non-critical
   }, []);
 
+  const [savedAnswers, setSavedAnswers] = useState<ReviewAnswerData[]>([]);
+
   const fetchReviewAndAnswers = async () => {
     try {
       // Fetch review
       const reviewRes = await fetch(`/api/reviews/${reviewId}`);
+      let alreadyCompleted = false;
       if (reviewRes.ok) {
         const reviewData = await reviewRes.json();
         setReview(reviewData);
 
         if (reviewData.completedAt) {
+          alreadyCompleted = true;
           setCompleted(true);
-          setLoading(false);
-          return;
         }
       }
 
-      // Fetch existing answers to hydrate state
+      // Always fetch existing answers — for completed reviews we render them
+      // as a read-only transcript; for in-progress reviews we hydrate state.
       const answersRes = await fetch(`/api/reviews/${reviewId}/answers`);
       if (answersRes.ok) {
         const answersData: ReviewAnswerData[] = await answersRes.json();
+        setSavedAnswers(answersData);
+
+        if (alreadyCompleted) {
+          setLoading(false);
+          return;
+        }
 
         for (const ans of answersData) {
           // Hydrate step state from saved answers
@@ -533,21 +574,44 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   if (completed) {
     return (
       <m.div
-        initial={{ opacity: 0, scale: 0.9 }}
+        initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="text-center py-16"
+        className="space-y-6"
       >
-        <PartyPopper className="h-16 w-16 text-yellow-400 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Weekly Review Complete!</h2>
-        <p className="text-[var(--text-muted)] mb-6">
-          Great work reflecting on your week. You&apos;re set up for a productive week ahead.
-        </p>
-        <button
-          onClick={() => router.push('/reviews')}
-          className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
-        >
-          Back to Reviews
-        </button>
+        <div className="text-center">
+          <PartyPopper className="h-14 w-14 text-yellow-400 mx-auto mb-3" />
+          <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-1">Weekly Review Complete</h2>
+          <p className="text-sm text-[var(--text-muted)]">Your saved answers are below.</p>
+        </div>
+
+        {savedAnswers.length === 0 ? (
+          <p className="text-center text-sm text-[var(--text-muted)] py-6">No saved answers on this review.</p>
+        ) : (
+          <div className="space-y-4">
+            {savedAnswers.map((ans) => {
+              const stepTitle = STEPS.find((s) => s.key === ans.stepKey)?.title ?? ans.stepKey;
+              return (
+                <div key={ans.stepKey} className="glass-panel p-4">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-indigo-400 mb-2">
+                    {stepTitle}
+                  </div>
+                  <pre className="whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)] font-sans">
+                    {formatAnswerForDisplay(ans.answerData)}
+                  </pre>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="text-center pt-2">
+          <button
+            onClick={() => router.push('/reviews')}
+            className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+          >
+            Back to Reviews
+          </button>
+        </div>
       </m.div>
     );
   }
