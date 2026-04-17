@@ -50,7 +50,11 @@ const CONTINUATION_WINDOW_DAYS: Record<ProcessCadence, number> = {
   YEARLY: 366,   // within 1 year (accounts for leap years)
 };
 
-export type StreakCategory = 'aims' | 'processes' | 'reviews' | 'powerdown';
+/**
+ * Kept as a type alias for back-compat with existing callers (powerdown only).
+ * The daily streak now fires solely on powerdown completion — see updateDailyStreak.
+ */
+export type StreakCategory = 'powerdown';
 
 export interface StreakUpdateResult {
   beeminder?: BeeminderResult;
@@ -151,21 +155,18 @@ export async function breakStreak(
 }
 
 /**
- * Check due items for a user and break streaks for anything missed.
+ * Check whether the user missed yesterday's powerdown and break the daily streak if so.
  * Called nightly by the derailing cron job.
+ *
+ * Per the simplified rule: the daily streak depends only on powerdown completion.
+ * Missed AIMs / processes / reviews break their OWN per-item streaks (handled
+ * separately when those items go overdue) but do not derail the daily streak.
  */
 export async function checkAndBreakMissedStreaks(userId: string): Promise<string[]> {
   const reasons: string[] = [];
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      streakCountAims: true,
-      streakCountProcesses: true,
-      streakCountReviews: true,
-      streakCountPowerdown: true,
-      streakGraceDays: true,
-      timezone: true,
-    },
+    select: { streakGraceDays: true, timezone: true },
   });
   if (!user) return reasons;
 
@@ -175,65 +176,18 @@ export async function checkAndBreakMissedStreaks(userId: string): Promise<string
   const cutoff = new Date(today);
   cutoff.setDate(cutoff.getDate() - lookbackDays);
 
-  // Check AIMs: find aim instances due within the lookback window and not completed
-  if (user.streakCountAims) {
-    const missedAims = await prisma.aimInstance.findMany({
-      where: {
-        userId,
-        scheduledDate: { gte: cutoff, lt: today },
-        status: { not: 'COMPLETED' },
-      },
-      include: { aimCategory: { select: { name: true } } },
-    });
-    for (const aim of missedAims) {
-      const reason = `Missed AIM '${aim.aimCategory?.name ?? 'Unknown'}' due ${cutoff.toISOString().slice(0, 10)}`;
-      await breakStreak(userId, 'daily', reason);
-      reasons.push(reason);
-      break; // One break is enough for the daily streak
-    }
-  }
-
-  // Check Processes: find process tasks due within lookback window that are not done
-  if (user.streakCountProcesses) {
-    const missedProcessTasks = await prisma.task.findMany({
-      where: {
-        ownerId: userId,
-        processId: { not: null },
-        dueDate: { gte: cutoff, lt: today },
-        status: { notIn: ['DONE', 'DROPPED'] },
-      },
-      include: { processExecution: { include: { process: { select: { title: true } } } } },
-      take: 1,
-    });
-    for (const task of missedProcessTasks) {
-      const processName = task.processExecution?.process?.title ?? 'Unknown process';
-      const reason = `Missed process '${processName}' due ${cutoff.toISOString().slice(0, 10)}`;
-      if (reasons.length === 0) {
-        await breakStreak(userId, 'daily', reason);
-      }
-      reasons.push(reason);
-      break;
-    }
-  }
-
-  // Check Reviews: find overdue reviews
-  if (user.streakCountReviews) {
-    const overdueReviews = await prisma.review.findMany({
-      where: {
-        userId,
-        scheduledDate: { lt: today },
-        completedAt: null,
-      },
-      take: 1,
-    });
-    for (const review of overdueReviews) {
-      const reason = `Overdue ${review.reviewType} review scheduled ${review.scheduledDate.toISOString().slice(0, 10)}`;
-      if (reasons.length === 0) {
-        await breakStreak(userId, 'daily', reason);
-      }
-      reasons.push(reason);
-      break;
-    }
+  // Did the user complete a powerdown anywhere from cutoff to today (exclusive)?
+  const recentPowerdown = await prisma.powerdownSession.findFirst({
+    where: {
+      userId,
+      completedAt: { not: null, gte: cutoff, lt: today },
+    },
+    select: { id: true },
+  });
+  if (!recentPowerdown) {
+    const reason = `Missed powerdown for ${cutoff.toISOString().slice(0, 10)}`;
+    await breakStreak(userId, 'daily', reason);
+    reasons.push(reason);
   }
 
   return reasons;
@@ -256,35 +210,22 @@ export async function updateSpecificStreak(
 }
 
 /**
- * Update the master 'daily' streak if the user has the given category enabled.
- * Reads user.streakCount<Category> — skips entirely if that flag is false.
- * Also respects the isActive flag on the existing 'daily' streak record (via upsertOrUpdateStreak).
+ * Update the master 'daily' streak. Per the simplified rule, this fires only
+ * for powerdown completions; non-powerdown callers are no-ops kept for
+ * back-compat so existing code doesn't crash before being cleaned up.
+ *
+ * Respects isActive on the existing 'daily' streak record (via upsertOrUpdateStreak).
  */
 export async function updateDailyStreak(
   userId: string,
   category: StreakCategory,
 ): Promise<StreakUpdateResult> {
+  if (category !== 'powerdown') return {};
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      timezone: true,
-      streakGraceDays: true,
-      streakCountAims: true,
-      streakCountProcesses: true,
-      streakCountReviews: true,
-      streakCountPowerdown: true,
-    },
+    select: { timezone: true, streakGraceDays: true },
   });
   if (!user) return {};
-
-  const enabled: Record<StreakCategory, boolean> = {
-    aims: user.streakCountAims,
-    processes: user.streakCountProcesses,
-    reviews: user.streakCountReviews,
-    powerdown: user.streakCountPowerdown,
-  };
-
-  if (!enabled[category]) return {};
   return upsertOrUpdateStreak(userId, 'daily', 1, {
     timezone: user.timezone,
     graceDays: user.streakGraceDays,

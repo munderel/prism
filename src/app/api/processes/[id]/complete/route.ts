@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { notFoundResponse, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, completeProcessSchema } from '@/lib/schemas';
-import { updateSpecificStreak, updateDailyStreak, type StreakUpdateResult } from '@/lib/streak-engine';
+import { updateSpecificStreak } from '@/lib/streak-engine';
 
 export async function POST(
   request: NextRequest,
@@ -74,12 +74,10 @@ export async function POST(
         data: { completedAt: new Date() },
       });
 
-      // Update streak
+      // Per-process streak. Daily streak is driven solely by powerdown.
       await updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) => console.warn('[streak] process streak update failed:', err));
-      const streakResult = await updateDailyStreak(auth.userId, 'processes').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
-      const beeminderError = streakResult?.beeminder?.ok === false ? streakResult.beeminder.error : undefined;
 
-      return Response.json({ execution: updated, completed: true, beeminderError }, NO_STORE);
+      return Response.json({ execution: updated, completed: true }, NO_STORE);
     }
   }
 
@@ -99,10 +97,8 @@ export async function POST(
     data: { lastRunAt: new Date() },
   });
 
-  // Update streak
+  // Per-process streak. Daily streak is driven solely by powerdown.
   await updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) => console.warn('[streak] process streak update failed:', err));
-  const streakResult = await updateDailyStreak(auth.userId, 'processes').catch((err) => { console.warn('[streak] daily streak update failed:', err); return {} as StreakUpdateResult; });
-  const beeminderError = streakResult?.beeminder?.ok === false ? streakResult.beeminder.error : undefined;
 
-  return Response.json({ execution, completed: true, beeminderError }, { status: 201, ...NO_STORE });
+  return Response.json({ execution, completed: true }, { status: 201, ...NO_STORE });
 }

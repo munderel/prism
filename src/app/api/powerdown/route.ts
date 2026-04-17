@@ -75,11 +75,17 @@ export async function GET(request: NextRequest) {
     return Response.json(sessions);
   }
 
-  // Default: today's session
+  // Default: today's session — strictly today, not future-dated sessions
+  // (calendar drag-to-tomorrow can create sessions with sessionDate=tomorrow
+  // and any currentStep, which would otherwise be returned here.)
+  const today = startOfToday();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
   const session = await prisma.powerdownSession.findFirst({
     where: {
       userId: auth.userId,
-      sessionDate: { gte: startOfToday() },
+      sessionDate: { gte: today, lt: tomorrow },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -92,11 +98,13 @@ export async function POST() {
   if ('error' in auth) return authError(auth);
 
   const today = startOfToday();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
   const existing = await prisma.powerdownSession.findFirst({
     where: {
       userId: auth.userId,
-      sessionDate: { gte: today },
+      sessionDate: { gte: today, lt: tomorrow },
     },
     orderBy: { createdAt: 'desc' },
   });
