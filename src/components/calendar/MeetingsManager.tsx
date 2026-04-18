@@ -96,9 +96,19 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
   // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [cadence, setCadence] = useState('WEEKLY');
+  // Default new meetings to ONE_TIME so the date picker shows immediately
+  // and users pick a specific date instead of a weekday.
+  const [cadence, setCadence] = useState('ONE_TIME');
   const [dayOfWeek, setDayOfWeek] = useState<number | null>(1);
-  const [occurDate, setOccurDate] = useState('');
+  // Default occurDate to today so "book a meeting for right now" is a
+  // one-click change rather than navigating the date picker from empty.
+  const [occurDate, setOccurDate] = useState<string>(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
   const [timeStart, setTimeStart] = useState('09:00');
   const [timeEnd, setTimeEnd] = useState('10:00');
   const [selectedAttendees, setSelectedAttendees] = useState<UserOption[]>([]);
@@ -202,9 +212,13 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
   const resetForm = () => {
     setTitle('');
     setDescription('');
-    setCadence('WEEKLY');
+    setCadence('ONE_TIME');
     setDayOfWeek(1);
-    setOccurDate('');
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    setOccurDate(`${y}-${m}-${day}`);
     setTimeStart('09:00');
     setTimeEnd('10:00');
     setSelectedAttendees([]);
@@ -245,7 +259,11 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
       description: description || null,
       cadence,
       dayOfWeek: cadence === 'ONE_TIME' ? null : dayOfWeek,
-      occurDate: cadence === 'ONE_TIME' && occurDate ? new Date(occurDate).toISOString() : null,
+      // Send the bare YYYY-MM-DD string so the server parses it in the
+      // user's local timezone. new Date('2026-04-18').toISOString() would
+      // anchor to UTC midnight and shift to the previous day for users in
+      // negative UTC offsets.
+      occurDate: cadence === 'ONE_TIME' && occurDate ? occurDate : null,
       timeStart,
       timeEnd,
       attendeeIds: selectedAttendees.map((a) => a.id),
