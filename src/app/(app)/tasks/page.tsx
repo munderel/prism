@@ -5,6 +5,7 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import { ListTodo, ChevronLeft, ChevronRight, CalendarRange, Inbox, ChevronDown, ClipboardCheck } from 'lucide-react';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
+import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
 import { AgendaView } from '@/components/tasks/AgendaView';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { TaskComments } from '@/components/tasks/TaskComments';
@@ -379,6 +380,9 @@ export default function TasksPage() {
                   ))}
                 </div>
               )}
+              <div className="mb-3">
+                <InlineTaskCreator defaultDate={date} onCreated={() => mutateRange()} />
+              </div>
               <DailyTaskList
                 date={date}
                 onEdit={handleEdit}
