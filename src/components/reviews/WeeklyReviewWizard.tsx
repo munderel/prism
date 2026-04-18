@@ -440,6 +440,13 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   }, [mutate, weekTasksSWRKey, weekAimsSWRKey]);
 
   const handleUnscheduleItem = useCallback(async (itemId: string, itemType: string) => {
+    // Food blocks are deleted on unschedule (no "unscheduled" state for meals).
+    if (itemType === 'food') {
+      await fetch(`/api/food-blocks/${itemId}`, { method: 'DELETE' });
+      mutate(weekTasksSWRKey);
+      mutate(weekAimsSWRKey);
+      return;
+    }
     const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
     await fetch(endpoint, {
       method: 'PATCH',

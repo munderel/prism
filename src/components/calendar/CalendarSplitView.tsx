@@ -161,6 +161,26 @@ const WORK_BLOCK_TEMPLATE_ID = '__work_block_template__';
 
 const DEEP_WORK_TEMPLATE_ID = '__deep_work_template__';
 
+const FOOD_BLOCK_TEMPLATE_ID = '__food_block_template__';
+
+function FoodBlockTemplateCard() {
+  return (
+    <div
+      className="fc-event cursor-grab rounded-lg border px-3 py-2 mb-1.5 hover:shadow-md transition-shadow"
+      style={{ backgroundColor: 'rgba(245,158,11,0.15)', borderColor: '#f59e0b', borderWidth: '1px' }}
+      data-event={JSON.stringify({
+        id: FOOD_BLOCK_TEMPLATE_ID,
+        title: 'Meal',
+        duration: { minutes: 30 },
+        extendedProps: { itemId: FOOD_BLOCK_TEMPLATE_ID, itemType: 'food_block_template' },
+      })}
+    >
+      <span className="text-sm font-medium text-[var(--text-primary)]">🍽️ Meal</span>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">30m · reusable</div>
+    </div>
+  );
+}
+
 function WorkBlockTemplateCard() {
   return (
     <div
@@ -801,6 +821,28 @@ export function CalendarSplitView({
       ({ start, end } = snapToNow(start, end));
       const title = info.event.title;
 
+      // Food block template: create a FoodBlock row (separate data plane)
+      if (itemType === 'food_block_template') {
+        info.event.remove();
+        try {
+          const res = await fetch('/api/food-blocks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: title || 'Meal',
+              startAt: start.toISOString(),
+              endAt: end.toISOString(),
+            }),
+          });
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+          await mutateEvents();
+          onRefresh?.();
+        } catch {
+          toast.error('Failed to create food block.');
+        }
+        return;
+      }
+
       // Work block template: create a Google Calendar event rather than scheduling a task
       if (itemType === 'work_block_template') {
         info.event.remove();
@@ -923,6 +965,26 @@ export function CalendarSplitView({
       let end = info.event.end as Date;
       // Snap to now red line on internal drag when landing close to it.
       ({ start, end } = snapToNow(start, end));
+
+      // Food blocks have their own data plane — PATCH /api/food-blocks/[id]
+      // directly instead of going through the task/aim onSchedule path.
+      if (itemType === 'food') {
+        try {
+          const res = await fetch(`/api/food-blocks/${itemId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ startAt: start.toISOString(), endAt: end.toISOString() }),
+          });
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+          await mutateEvents();
+          onRefresh?.();
+        } catch {
+          info.revert();
+          toast.error('Failed to move food block. Please try again.');
+        }
+        return;
+      }
+
       try {
         await onSchedule(itemId, itemType, start, end);
         // Do NOT push a pending placeholder here: FullCalendar has already
@@ -1052,6 +1114,16 @@ export function CalendarSplitView({
                 </div>
                 <WorkBlockTemplateCard />
               </div>
+
+              {/* Food block — drag a meal onto the calendar. */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-amber-500">
+                    Food
+                  </span>
+                </div>
+                <FoodBlockTemplateCard />
+              </div>
             </>
           ) : (
             <>
@@ -1097,6 +1169,15 @@ export function CalendarSplitView({
                   <DeepWorkTemplateCard duration={aimBlockDuration} />
                 </div>
               )}
+
+              <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-amber-500">
+                    Food
+                  </span>
+                </div>
+                <FoodBlockTemplateCard />
+              </div>
             </>
           )}
         </div>

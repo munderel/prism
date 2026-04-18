@@ -522,6 +522,9 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
       });
+    } else if (itemType === 'food') {
+      // Food blocks have no "unscheduled" state — unschedule = delete.
+      await fetch(`/api/food-blocks/${itemId}`, { method: 'DELETE' });
     }
     fetchUnscheduledTomorrow();
     fetchTomorrowTasks();
