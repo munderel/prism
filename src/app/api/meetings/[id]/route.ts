@@ -4,6 +4,7 @@ import { requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateMeetingSchema } from '@/lib/schemas';
 import { deleteGoogleEvent, updateGoogleEvent, createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
+import { getLocalDateString } from '@/lib/date-utils';
 
 const MEETING_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
@@ -74,17 +75,19 @@ export async function PATCH(
 
       let dateStr: string;
       if (newCadence === 'ONE_TIME' && (body.occurDate || meeting.occurDate)) {
-        dateStr = new Date(body.occurDate || meeting.occurDate!).toISOString().split('T')[0];
-      } else {
+        const raw = body.occurDate || meeting.occurDate!;
+        const asString = typeof raw === 'string' ? raw : new Date(raw).toISOString();
+        dateStr = /^\d{4}-\d{2}-\d{2}$/.test(asString) ? asString : getLocalDateString(new Date(asString));
+      } else if (newDayOfWeek != null) {
         const today = new Date();
-        if (newDayOfWeek != null) {
-          const daysUntil = (newDayOfWeek - today.getDay() + 7) % 7 || 7;
-          const nextDate = new Date(today);
-          nextDate.setDate(today.getDate() + daysUntil);
-          dateStr = nextDate.toISOString().split('T')[0];
-        } else {
-          dateStr = today.toISOString().split('T')[0];
-        }
+        // Drop the `|| 7` — a meeting whose weekday matches today should
+        // stay on today, not be bumped a week forward.
+        const daysUntil = (newDayOfWeek - today.getDay() + 7) % 7;
+        const nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + daysUntil);
+        dateStr = getLocalDateString(nextDate);
+      } else {
+        dateStr = getLocalDateString();
       }
 
       const ts = body.timeStart ?? meeting.timeStart;

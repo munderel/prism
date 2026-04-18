@@ -637,6 +637,8 @@ model Meeting {
   calendarEventId String?         // Google Calendar event ID for sync
   meetLink            String?         // Google Meet link (hangoutLink)
   lastReminderSentAt  DateTime?       // prevents duplicate reminder notifications
+  syncedAt        DateTime?       // last successful push to Google Calendar
+  syncError       String?         // last Google Calendar error message; null on success
   createdById     String
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt

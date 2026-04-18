@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { parseBody, createMeetingSchema } from '@/lib/schemas';
 import { createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
+import { getLocalDateString } from '@/lib/date-utils';
 
 const MEETING_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
@@ -50,19 +51,21 @@ export async function POST(request: NextRequest) {
     include: MEETING_INCLUDE,
   });
 
-  // Sync meeting to Google Calendar (all cadences) — fire-and-forget
-  const syncToGcal = async () => {
+  // Sync meeting to Google Calendar (all cadences). Fire-and-forget, but
+  // the outcome (success or error message) is persisted on the meeting row
+  // so the UI can surface sync failures instead of swallowing them.
+  const syncToGcal = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
     const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
-    if (!hasGoogle) return;
+    if (!hasGoogle) {
+      return { ok: false, error: 'Google Calendar is not connected. Reconnect in Settings.' };
+    }
 
-    // Get user timezone for correct recurring event handling
     const user = await prisma.user.findUnique({
       where: { id: auth.userId },
       select: { timezone: true },
     });
     const tz = user?.timezone ?? 'America/New_York';
 
-    // Resolve attendee IDs to email addresses for Google Calendar invitations
     const resolvedAttendeeIds = meeting.attendeeIds as string[];
     let attendeeEmails: Array<{ email: string }> = [];
     if (resolvedAttendeeIds.length > 0) {
@@ -70,55 +73,74 @@ export async function POST(request: NextRequest) {
         where: { id: { in: resolvedAttendeeIds } },
         select: { email: true },
       });
-      attendeeEmails = attendees.map(a => ({ email: a.email }));
+      attendeeEmails = attendees
+        .filter((a) => a.email && /.+@.+\..+/.test(a.email))
+        .map((a) => ({ email: a.email }));
     }
 
-    // Determine the first event date
+    // Determine the first occurrence date. Use user-local date keys (not
+    // UTC) so evening creators in negative UTC offsets don't shift the
+    // meeting to the next calendar day on Google's side.
     let dateStr: string;
     if (cadence === 'ONE_TIME' && occurDate) {
-      dateStr = new Date(occurDate).toISOString().split('T')[0];
-    } else {
-      // For recurring: compute the next occurrence of dayOfWeek starting today.
-      // Using `|| 7` previously meant a meeting scheduled for today's
-      // weekday was bumped out by a full week, so attendees would not see
-      // an event on their calendar until 7 days later.
+      // occurDate from the form is a YYYY-MM-DD string; normalize rather
+      // than round-tripping through toISOString (which forces UTC).
+      const asString = typeof occurDate === 'string' ? occurDate : new Date(occurDate).toISOString();
+      dateStr = /^\d{4}-\d{2}-\d{2}$/.test(asString) ? asString : getLocalDateString(new Date(asString));
+    } else if (dayOfWeek != null) {
       const today = new Date();
-      if (dayOfWeek != null) {
-        const currentDow = today.getDay();
-        const daysUntil = (dayOfWeek - currentDow + 7) % 7;
-        const nextDate = new Date(today);
-        nextDate.setDate(today.getDate() + daysUntil);
-        dateStr = nextDate.toISOString().split('T')[0];
-      } else {
-        // No specific day — start today
-        dateStr = today.toISOString().split('T')[0];
-      }
+      const currentDow = today.getDay();
+      const daysUntil = (dayOfWeek - currentDow + 7) % 7;
+      const nextDate = new Date(today);
+      nextDate.setDate(today.getDate() + daysUntil);
+      dateStr = getLocalDateString(nextDate);
+    } else {
+      dateStr = getLocalDateString();
     }
 
     const recurrence = buildMeetingRecurrence(cadence, dayOfWeek ?? null);
 
-    const gcalEvent = await createGoogleEvent(auth.userId, {
-      summary: title,
-      description: description || undefined,
-      start: new Date(`${dateStr}T${timeStart}:00`).toISOString(),
-      end: new Date(`${dateStr}T${timeEnd}:00`).toISOString(),
-      timeZone: tz,
-      addMeetLink: addMeetLink !== false,
-      recurrence,
-      attendees: attendeeEmails,
-    }, targetCalendarId);
+    try {
+      const gcalEvent = await createGoogleEvent(auth.userId, {
+        summary: title,
+        description: description || undefined,
+        start: new Date(`${dateStr}T${timeStart}:00`).toISOString(),
+        end: new Date(`${dateStr}T${timeEnd}:00`).toISOString(),
+        timeZone: tz,
+        addMeetLink: addMeetLink !== false,
+        recurrence,
+        attendees: attendeeEmails,
+      }, targetCalendarId);
 
-    if (gcalEvent?.id) {
-      const updateData: { calendarEventId: string; meetLink?: string } = {
+      if (!gcalEvent?.id) {
+        return { ok: false, error: 'Google did not return an event id. Check calendar permissions.' };
+      }
+
+      const updateData: { calendarEventId: string; meetLink?: string; syncedAt: Date; syncError: null } = {
         calendarEventId: gcalEvent.id,
+        syncedAt: new Date(),
+        syncError: null,
       };
       if (gcalEvent.hangoutLink) {
         updateData.meetLink = gcalEvent.hangoutLink;
       }
       await prisma.meeting.update({ where: { id: meeting.id }, data: updateData });
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown Google Calendar error';
+      return { ok: false, error: message };
     }
   };
-  syncToGcal().catch((err) => console.warn('[meetings] Google Calendar sync failed:', err));
+
+  syncToGcal().then(async (result) => {
+    if (!result.ok) {
+      console.warn('[meetings] Google Calendar sync failed:', result.error);
+      await prisma.meeting.update({
+        where: { id: meeting.id },
+        data: { syncError: result.error, syncedAt: null },
+      }).catch(() => {});
+    }
+  }).catch((err) => console.warn('[meetings] Google Calendar sync threw:', err));
 
   return Response.json(meeting, { status: 201 });
 }
