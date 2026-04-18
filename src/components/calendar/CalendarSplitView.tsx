@@ -14,6 +14,7 @@ import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useToast } from '@/components/ui/ToastProvider';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
+import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
 import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING } from '@/lib/prism-colors';
 import type { ColorDef } from '@/lib/prism-colors';
 import { getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
@@ -1026,6 +1027,12 @@ export function CalendarSplitView({
             </>
           ) : (
             <>
+              {/* Quick React — fastest path to create a reactive task from
+                  the calendar without leaving the sidebar. */}
+              <div className="pb-3 border-b border-[var(--border-color)]">
+                <InlineTaskCreator onCreated={() => { void onRefresh?.(); }} />
+              </div>
+
               {groupedItems.length === 0 && (
                 <div className="text-center text-sm text-[var(--text-muted)] py-8">
                   All items scheduled
