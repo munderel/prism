@@ -12,11 +12,13 @@ import { playCompletionFeedback } from '@/lib/completion-feedback';
 
 // CHORE is deprecated — hidden from section list. Pre-existing CHORE tasks
 // are folded into the REACT section so they remain visible until migrated.
+// REVIEW is intentionally omitted here: weekly/monthly/yearly reviews are
+// Review rows (not Task rows) and surface via the pink banner on the Tasks
+// page. An empty REVIEW group in the daily task list was redundant.
 const SECTIONS = [
   { key: 'IMPROVE', label: 'Improve', color: 'text-indigo-600 dark:text-indigo-400' },
   { key: 'REACT', label: 'React', color: 'text-amber-700 dark:text-yellow-400' },
   { key: 'MAINTENANCE', label: 'Maintenance', color: 'text-cyan-700 dark:text-cyan-400' },
-  { key: 'REVIEW', label: 'Review', color: 'text-rose-600 dark:text-rose-400' },
 ] as const;
 
 /** Task shape returned by the /api/tasks endpoint */
