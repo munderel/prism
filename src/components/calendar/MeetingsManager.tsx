@@ -15,6 +15,9 @@ interface Meeting {
   timeEnd: string;
   attendeeIds: string[];
   meetLink: string | null;
+  calendarEventId: string | null;
+  syncedAt: string | null;
+  syncError: string | null;
   createdBy: { id: string; name: string | null; email: string };
 }
 
@@ -493,6 +496,29 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
                       </a>
                     )}
                   </div>
+                  {m.syncError && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-red-500/15 px-2 py-0.5 text-red-300 border border-red-500/40">
+                        Google Calendar sync failed
+                      </span>
+                      <span className="text-[var(--text-muted)] truncate max-w-md">{m.syncError}</span>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const res = await fetch(`/api/meetings/${m.id}/sync`, { method: 'POST' });
+                          if (res.ok) {
+                            await fetchMeetings();
+                          } else {
+                            const data = await res.json().catch(() => ({}));
+                            alert(`Retry failed: ${data.error || 'Unknown error'}`);
+                          }
+                        }}
+                        className="rounded bg-[var(--surface-raised)] px-2 py-0.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)]"
+                      >
+                        Retry sync
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 ml-4">
                   <button
