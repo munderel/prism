@@ -23,10 +23,17 @@ function getStreakStyle(atRisk: boolean, count: number): { container: string; fl
 
 export function StreakCounter({ streakType = 'daily', atRisk = false, compact = false }: StreakCounterProps) {
   const { data: streaks } = useSWR('/api/streaks');
-  const streak = useMemo(
-    () => Array.isArray(streaks) ? streaks.find((s: any) => s.streakType === streakType) : null,
-    [streaks, streakType]
-  );
+  const streak = useMemo(() => {
+    if (!Array.isArray(streaks)) return null;
+    const exact = streaks.find((s: any) => s.streakType === streakType);
+    if (exact) return exact;
+    // Daily streak is driven by powerdown; fall back to the powerdown row
+    // when no 'daily' row exists yet (e.g. fresh user, post-reset).
+    if (streakType === 'daily') {
+      return streaks.find((s: any) => s.streakType === 'powerdown') ?? null;
+    }
+    return null;
+  }, [streaks, streakType]);
 
   const count = streak?.currentCount ?? 0;
   const style = getStreakStyle(atRisk, count);
