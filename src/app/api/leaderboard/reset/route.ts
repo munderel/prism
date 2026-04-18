@@ -10,7 +10,11 @@ import { requireAuth, authError } from '@/lib/auth-guard';
  * after `leaderboardResetAt`. In addition:
  * - Aim instance pointsEarned is zeroed (those are user-owned non-history data)
  * - PublicWin rows are deleted (they are milestone announcements tied to the streak)
- * - The "daily" Streak row is zeroed (currentCount -> 0, bestCount preserved)
+ * - All of the user's Streak rows are zeroed (currentCount -> 0, bestCount
+ *   preserved). This includes 'daily', 'powerdown', per-aim (aim_<id>), and
+ *   per-process (process_<id>) streaks. Zeroing only the 'daily' row left
+ *   stale 'powerdown' rows at inflated counts that pre-dated the atomicity
+ *   fix, so a fresh reset never fully cleared the visible streaks.
  */
 export async function POST() {
   const auth = await requireAuth();
@@ -31,7 +35,7 @@ export async function POST() {
       where: { userId: auth.userId },
     }),
     prisma.streak.updateMany({
-      where: { userId: auth.userId, streakType: 'daily' },
+      where: { userId: auth.userId },
       data: { currentCount: 0 },
     }),
   ]);

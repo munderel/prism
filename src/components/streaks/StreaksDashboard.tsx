@@ -219,10 +219,13 @@ export function StreaksDashboard() {
   const { data: functions } = useSWR<BusinessFunction[]>('/api/processes');
   const { mutate } = useSWRConfig();
 
-  const daily = useMemo(
-    () => (streaks ?? []).find((s) => s.streakType === 'daily'),
-    [streaks],
-  );
+  // Under the simplified rule the daily streak is driven by powerdown, so if
+  // the 'daily' row is missing (first powerdown ever, or a reset wiped it)
+  // fall back to the 'powerdown' row so the hero card reflects reality.
+  const daily = useMemo(() => {
+    const list = streaks ?? [];
+    return list.find((s) => s.streakType === 'daily') ?? list.find((s) => s.streakType === 'powerdown');
+  }, [streaks]);
 
   const categorized = useMemo(() => {
     if (!streaks) return new Map<string, Streak[]>();
