@@ -566,79 +566,72 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const advanceStep = async () => {
     if (!session || saving) return;
-    setSaving(true);
-    try {
     const next = currentStep + 1;
 
-    // On distractions step completion, persist to DistractionLog API.
-    // Key-based guards are resilient to the dynamic STEPS list (KPI step,
-    // Lubricate Tomorrow step, etc.) changing the numeric position.
+    // Fire-and-forget the DistractionLog writes so the user doesn't wait
+    // on N round-trips when leaving the distractions step.
     if (currentStepKey === 'distractions' && distractions.length > 0) {
       for (const d of distractions) {
-        try {
-          await fetch('/api/distractions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              content: d.content,
-              notes: d.notes || null,
-              logDate: sessionToday,
-              source: 'powerdown',
-            }),
-          });
-        } catch {
+        void fetch('/api/distractions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: d.content,
+            notes: d.notes || null,
+            logDate: sessionToday,
+            source: 'powerdown',
+          }),
+        }).catch(() => {
           // Non-critical — session JSON still has the data
-        }
+        });
       }
     }
 
     if (next > STEPS.length) {
-      // Complete session
-      await persistStep(currentStep, { complete: true });
-      // Apply Win The Day flags for tomorrow from tomorrowPlan
-      if (tomorrowPlan.length > 0) {
-        await fetch('/api/tasks/batch-win-the-day', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ taskIds: tomorrowPlan, dueDate: sessionTomorrow }),
-        }).catch((err) => console.error('[powerdown] Failed to apply WTD flags:', err));
+      // Completing the session is the only path we keep awaited so the user
+      // sees the celebration only on a confirmed success.
+      setSaving(true);
+      try {
+        await persistStep(currentStep, { complete: true });
+        if (tomorrowPlan.length > 0) {
+          void fetch('/api/tasks/batch-win-the-day', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskIds: tomorrowPlan, dueDate: sessionTomorrow }),
+          }).catch((err) => console.error('[powerdown] Failed to apply WTD flags:', err));
+        }
+        for (const idea of ideas) {
+          if (!idea.trim()) continue;
+          void fetch('/api/ideas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: idea.trim(),
+              description: idea.trim(),
+              confidenceScore: 0,
+              easeScore: 0,
+              impactScore: 0,
+            }),
+          }).catch((err) => console.error('Failed to save idea:', err));
+        }
+        setCompleted(true);
+      } finally {
+        setSaving(false);
       }
-      // Auto-save captured ideas to /api/ideas
-      for (const idea of ideas) {
-        if (!idea.trim()) continue;
-        await fetch('/api/ideas', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: idea.trim(),
-            description: idea.trim(),
-            confidenceScore: 0,
-            easeScore: 0,
-            impactScore: 0,
-          }),
-        }).catch((err) => console.error('Failed to save idea:', err));
-      }
-      setCompleted(true);
       return;
     }
 
-    await persistStep(next);
+    // Optimistic navigation — persist in the background so Next feels
+    // instant. Same pattern used by the weekly review wizard.
+    void persistStep(next);
     setCurrentStep(next);
-    } finally {
-      setSaving(false);
-    }
   };
 
-  const goBack = async () => {
-    if (currentStep <= 1 || saving) return;
-    setSaving(true);
-    try {
-      const prev = currentStep - 1;
-      await persistStep(prev);
-      setCurrentStep(prev);
-    } finally {
-      setSaving(false);
-    }
+  const goBack = () => {
+    if (currentStep <= 1) return;
+    const prev = currentStep - 1;
+    void persistStep(prev);
+    setCurrentStep(prev);
   };
 
   const toggleTaskStatus = async (task: any, ...refetchFns: (() => void)[]) => {
