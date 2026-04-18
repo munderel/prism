@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
-import { Download, Upload, X, Check, FileText } from 'lucide-react';
+import { Download, Upload, X, Check, FileText, ChevronDown } from 'lucide-react';
 
 interface DiffSectionProps {
   items: any[];
@@ -43,6 +43,19 @@ export function YamlImportExport({
   const [diff, setDiff] = useState<any>(null);
   const [yamlContent, setYamlContent] = useState('');
   const [importing, setImporting] = useState(false);
+  const [exampleMenuOpen, setExampleMenuOpen] = useState(false);
+  const exampleMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!exampleMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (exampleMenuRef.current && !exampleMenuRef.current.contains(e.target as Node)) {
+        setExampleMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [exampleMenuOpen]);
 
   const handleExport = async () => {
     const res = await fetch(`/api/stacks/${stackId}/export`);
@@ -57,17 +70,18 @@ export function YamlImportExport({
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadExample = async () => {
-    const res = await fetch('/example-goal-stack-full.yaml');
+  const downloadFile = async (path: string, filename: string) => {
+    const res = await fetch(path);
     if (!res.ok) return;
     const yaml = await res.text();
     const blob = new Blob([yaml], { type: 'text/yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'example-goal-stack-full.yaml';
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+    setExampleMenuOpen(false);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,14 +134,35 @@ export function YamlImportExport({
           Export YAML
         </button>
 
-        <button
-          onClick={handleDownloadExample}
-          title="Download an example YAML with every field documented"
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:border-[var(--glass-border)] hover:text-[var(--text-primary)] transition-colors"
-        >
-          <FileText className="h-4 w-4" />
-          Example
-        </button>
+        <div className="relative" ref={exampleMenuRef}>
+          <button
+            onClick={() => setExampleMenuOpen((o) => !o)}
+            title="Download an example YAML"
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:border-[var(--glass-border)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            <FileText className="h-4 w-4" />
+            Example
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          {exampleMenuOpen && (
+            <div className="absolute left-0 top-full mt-1 z-20 min-w-[220px] rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-lg py-1">
+              <button
+                onClick={() => downloadFile('/example-goal-stack-full.yaml', 'example-goal-stack-full.yaml')}
+                className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--glass-bg)] transition-colors"
+              >
+                <div className="font-medium">Full goal stack</div>
+                <div className="text-xs text-[var(--text-muted)]">All fields, KPIs, links</div>
+              </button>
+              <button
+                onClick={() => downloadFile('/example-task-types.yaml', 'example-task-types.yaml')}
+                className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--glass-bg)] transition-colors"
+              >
+                <div className="font-medium">Task types + weekly dates</div>
+                <div className="text-xs text-[var(--text-muted)]">IMPROVE, REACT, MAINTENANCE, REVIEW</div>
+              </button>
+            </div>
+          )}
+        </div>
 
         <button
           onClick={() => fileInputRef.current?.click()}
