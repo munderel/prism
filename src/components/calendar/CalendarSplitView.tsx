@@ -934,23 +934,27 @@ export function CalendarSplitView({
       const durationMs = (eventInfo.event.end?.getTime() ?? 0) - (eventInfo.event.start?.getTime() ?? 0);
       const isShort = durationMs > 0 && durationMs <= 10 * 60 * 1000;
 
+      // Unified styling matching the main CalendarView page: solid color
+      // background from PRISM_COLORS (per type) with always-white title text
+      // for consistent readability. Only differentiation is the background
+      // color; no per-type text-color variation.
       return (
         <div
           className={`relative h-full w-full overflow-hidden rounded px-1.5 text-xs leading-tight ${isShort ? 'py-0.5' : 'py-1'}`}
           style={{
-            backgroundColor: colors.bg,
+            backgroundColor: colors.border,
             borderLeft: `3px solid ${colors.border}`,
-            color: colors.text,
+            color: '#ffffff',
           }}
         >
-          <div className="font-medium truncate pr-5">{eventInfo.event.title}</div>
+          <div className="font-medium truncate pr-5 text-white">{eventInfo.event.title}</div>
           {eventInfo.timeText && !isShort && (
-            <div className="text-[10px] opacity-75 mt-0.5">{eventInfo.timeText}</div>
+            <div className="text-[10px] text-white/80 mt-0.5">{eventInfo.timeText}</div>
           )}
           {!isGoogleEvent && itemId && (
             <button
               type="button"
-              className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-[var(--surface-raised)]/80 hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-colors text-[10px] leading-none"
+              className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-black/30 hover:bg-red-500/80 text-white/80 hover:text-white transition-colors text-[10px] leading-none"
               title="Unschedule"
               onClick={async (e) => {
                 e.stopPropagation();
