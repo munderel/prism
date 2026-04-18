@@ -769,14 +769,36 @@ export function CalendarSplitView({
     }
   }, []);
 
+  // If a drop lands within SNAP_NOW_WINDOW_MS of the current time on today's
+  // column, snap the start to "now" rounded to the nearest 5 minutes. Mirrors
+  // Google Calendar's magnetic nowIndicator behavior. Preserves the original
+  // event duration so the end shifts along with the start.
+  const snapToNow = useCallback((start: Date, end: Date): { start: Date; end: Date } => {
+    const SNAP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes on either side of now
+    const now = new Date();
+    const sameDay = start.getFullYear() === now.getFullYear()
+      && start.getMonth() === now.getMonth()
+      && start.getDate() === now.getDate();
+    if (!sameDay) return { start, end };
+    if (Math.abs(start.getTime() - now.getTime()) > SNAP_WINDOW_MS) return { start, end };
+    const snapped = new Date(now);
+    const minutes = snapped.getMinutes();
+    snapped.setMinutes(Math.round(minutes / 5) * 5, 0, 0);
+    const durationMs = end.getTime() - start.getTime();
+    const snappedEnd = new Date(snapped.getTime() + durationMs);
+    return { start: snapped, end: snappedEnd };
+  }, []);
+
   // FullCalendar event receive handler (external drop)
   const handleEventReceive = useCallback(
     async (info: EventReceiveArg) => {
       const { itemId, itemType, durationMin } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
-      const start = info.event.start as Date;
+      let start = info.event.start as Date;
       const fallbackMs = (durationMin ?? 60) * 60 * 1000;
-      const end = info.event.end ?? new Date(start.getTime() + fallbackMs);
+      let end = info.event.end ?? new Date(start.getTime() + fallbackMs);
+      // Snap-to-now if drop is near the red "current time" line on today.
+      ({ start, end } = snapToNow(start, end));
       const title = info.event.title;
 
       // Work block template: create a Google Calendar event rather than scheduling a task
@@ -860,7 +882,7 @@ export function CalendarSplitView({
           toast.error('Failed to schedule item. Please try again.');
         });
     },
-    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast],
+    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast, snapToNow],
   );
 
   // Shared handler for event resize and internal drag-move
@@ -897,8 +919,10 @@ export function CalendarSplitView({
       }
 
       if (!itemId || !itemType) return;
-      const start = info.event.start as Date;
-      const end = info.event.end as Date;
+      let start = info.event.start as Date;
+      let end = info.event.end as Date;
+      // Snap to now red line on internal drag when landing close to it.
+      ({ start, end } = snapToNow(start, end));
       try {
         await onSchedule(itemId, itemType, start, end);
         // Do NOT push a pending placeholder here: FullCalendar has already
@@ -921,7 +945,7 @@ export function CalendarSplitView({
         toast.error('Failed to update scheduled item. Please try again.');
       }
     },
-    [onSchedule, mutateEvents, onRefresh, toast],
+    [onSchedule, mutateEvents, onRefresh, toast, snapToNow],
   );
 
   // Custom event content renderer with unschedule button
