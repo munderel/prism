@@ -101,10 +101,10 @@ high_hard_goal:
                   date: "2026-04-18"
                   estimated_minutes: 90
 
-                # CHORE - admin/housekeeping task
+                # MAINTENANCE - admin/housekeeping task
                 - title: "File business registration paperwork"
                   description: "Submit Ontario business registration forms"
-                  task_type: "CHORE"
+                  task_type: "MAINTENANCE"
                   status: "TODO"
                   priority: "LOW"
                   date: "2026-04-19"
@@ -131,7 +131,7 @@ high_hard_goal:
                   estimated_minutes: 60
 
                 - title: "Post hygienist job listing"
-                  task_type: "CHORE"
+                  task_type: "MAINTENANCE"
                   status: "TODO"
                   priority: "MEDIUM"
 
@@ -162,7 +162,7 @@ high_hard_goal:
                   estimated_minutes: 180
 
                 - title: "Set up Google Business Profile"
-                  task_type: "CHORE"
+                  task_type: "MAINTENANCE"
                   estimated_minutes: 30
 
                 - title: "Review competitor websites for inspiration"

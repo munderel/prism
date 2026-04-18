@@ -330,7 +330,6 @@ export default function DashboardPage() {
       REACT: [],
       MAINTENANCE: [],
       REVIEW: [],
-      CHORE: [],
     };
     const todayStr = getLocalDateString();
     const visible = list.filter((t) => {

@@ -133,10 +133,10 @@ high_hard_goal:
                   task_type: "REACT"
                   date: "2026-04-19"
 
-                # DROPPED task + CHORE type
+                # DROPPED task + MAINTENANCE type
                 - title: "Consider suburban location"
                   status: "DROPPED"
-                  task_type: "CHORE"
+                  task_type: "MAINTENANCE"
                   description: "Decided to focus on downtown core only"
 
               daily_goals:
