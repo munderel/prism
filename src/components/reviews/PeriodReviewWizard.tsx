@@ -844,12 +844,14 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
       return;
     }
 
+    // Fire persistence in the background on Next. Keep the final-step
+    // complete PATCH awaited so the celebration only renders on success.
     if (step.key === 'difficulties') {
-      await persistAnswer('difficulties', 'text', { text: difficulties });
+      void persistAnswer('difficulties', 'text', { text: difficulties });
     } else if (step.key === 'on-track') {
-      await persistAnswer('on-track', 'goal_list', { assessments });
+      void persistAnswer('on-track', 'goal_list', { assessments });
     } else if (step.key === 'notes-completion') {
-      await persistAnswer('notes-completion', 'text', { text: notes });
+      void persistAnswer('notes-completion', 'text', { text: notes });
       try {
         await fetch(`/api/reviews/${reviewId}`, {
           method: 'PATCH',
