@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { freshFetcher } from '@/lib/fetcher';
 import {
   DndContext,
@@ -166,6 +166,7 @@ export function GoalStackTree({
   showDueToday,
 }: GoalStackTreeProps) {
   const { data: goalsData, isLoading, mutate: mutateGoals } = useSWR(`/api/goals?stackId=${stackId}`);
+  const { mutate: globalMutate } = useSWRConfig();
 
   const flatItems = useMemo(() => {
     const data = Array.isArray(goalsData) ? goalsData : [];
@@ -270,7 +271,8 @@ export function GoalStackTree({
     if (!confirm('Delete this goal and all its children?')) return;
     await fetch(`/api/goals/${goalId}`, { method: 'DELETE' });
     mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
-  }, [mutateGoals, stackId]);
+    globalMutate('/api/stacks');
+  }, [mutateGoals, stackId, globalMutate]);
 
   const handleEdit = useCallback((goal: GoalTreeItem) => {
     setEditorState({ open: true, goal });
@@ -328,7 +330,8 @@ export function GoalStackTree({
       body: JSON.stringify({ status }),
     });
     mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
-  }, [mutateGoals, stackId]);
+    globalMutate('/api/stacks');
+  }, [mutateGoals, stackId, globalMutate]);
 
   const handleKpiClick = useCallback((goal: GoalTreeItem) => {
     setSelectedGoalForKpi((prev: GoalTreeItem | null) => prev?.id === goal.id ? null : goal);
@@ -342,13 +345,15 @@ export function GoalStackTree({
     setEditorState({ open: false });
     // Pass a fresh fetch to mutate so it bypasses SWR's dedupingInterval
     mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
-  }, [mutateGoals, stackId]);
+    globalMutate('/api/stacks');
+  }, [mutateGoals, stackId, globalMutate]);
 
   const handleTaskEditorSave = useCallback(async () => {
     setTaskEditorState({ open: false });
     // Await fresh fetch then revalidate to ensure new tasks appear immediately
     await mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: true });
-  }, [mutateGoals, stackId]);
+    globalMutate('/api/stacks');
+  }, [mutateGoals, stackId, globalMutate]);
 
   if (isLoading) {
     return (

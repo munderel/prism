@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { Prisma, GoalLevel, GoalStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { cacheHeaders, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
+import { NO_STORE, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
 import { parseBody, createGoalSchema } from '@/lib/schemas';
 import {
   requireAuth,
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const stackIds = stacks.map((s) => s.id);
 
     if (stackIds.length === 0) {
-      return Response.json([], { headers: cacheHeaders(10, 60) });
+      return Response.json([], NO_STORE);
     }
 
     const goalWhere: Prisma.GoalWhereInput = { stackId: { in: stackIds }, deletedAt: null };
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return Response.json(goals, { headers: cacheHeaders(10, 60) });
+    return Response.json(goals, NO_STORE);
   }
 
   if (!stackId) {
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return Response.json(goals, { headers: cacheHeaders(10, 60) });
+  return Response.json(goals, NO_STORE);
 }
 
 export async function POST(request: NextRequest) {

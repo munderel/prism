@@ -99,7 +99,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
       if (dueDate) body.dueDate = dueDate;
       if (preferredTimeStart) body.preferredTimeStart = preferredTimeStart;
       if (preferredTimeEnd) body.preferredTimeEnd = preferredTimeEnd;
-      if (assigneeId) body.assigneeId = assigneeId;
+      body.assigneeId = assigneeId || null;
 
 
       if (isEditing) {

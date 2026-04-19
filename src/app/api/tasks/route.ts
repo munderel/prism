@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
-import { cacheHeaders } from '@/lib/api-helpers';
+import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, createTaskSchema } from '@/lib/schemas';
 import { parseRRule } from '@/lib/recurrence';
 import { parseLocalDate } from '@/lib/date-utils';
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
       include: { goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } }, _count: { select: { comments: true, children: true } }, children: { select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true } } },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
-    return Response.json(tasks, { headers: cacheHeaders(0) });
+    return Response.json(tasks, NO_STORE);
   }
 
   // Build date filter
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return Response.json(tasks, { headers: cacheHeaders(5, 10) });
+  return Response.json(tasks, NO_STORE);
 }
 
 export async function POST(request: NextRequest) {
