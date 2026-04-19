@@ -51,10 +51,10 @@ const CONTINUATION_WINDOW_DAYS: Record<ProcessCadence, number> = {
 };
 
 /**
- * Kept as a type alias for back-compat with existing callers (powerdown only).
- * The daily streak now fires solely on powerdown completion — see updateDailyStreak.
+ * Daily-streak trigger categories. A day now "counts" when EITHER the user
+ * completes Power Down OR all of their active daily aims are completed.
  */
-export type StreakCategory = 'powerdown';
+export type StreakCategory = 'powerdown' | 'daily_aims_complete';
 
 export interface StreakUpdateResult {
   beeminder?: BeeminderResult;
@@ -220,7 +220,7 @@ export async function updateDailyStreak(
   userId: string,
   category: StreakCategory,
 ): Promise<StreakUpdateResult> {
-  if (category !== 'powerdown') return {};
+  if (category !== 'powerdown' && category !== 'daily_aims_complete') return {};
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { timezone: true, streakGraceDays: true },
@@ -230,4 +230,43 @@ export async function updateDailyStreak(
     timezone: user.timezone,
     graceDays: user.streakGraceDays,
   });
+}
+
+/**
+ * If the user has just completed every active daily UserAim for today, tick
+ * the daily streak. Safe to call after every AimInstance completion — the
+ * underlying upsert is idempotent per-day via `lastActiveDate`.
+ */
+export async function maybeIncrementDailyStreakIfDayComplete(
+  userId: string,
+): Promise<StreakUpdateResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  const timezone = user?.timezone ?? 'America/New_York';
+  const dayStart = startOfUserToday(timezone);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const activeDailyAims = await prisma.userAim.findMany({
+    where: { userId, isActive: true, aimCategory: { isDaily: true } },
+    select: { aimCategoryId: true },
+  });
+  if (activeDailyAims.length === 0) return {};
+
+  const completedCategoryIds = await prisma.aimInstance.findMany({
+    where: {
+      userId,
+      status: 'COMPLETED',
+      aimCategoryId: { in: activeDailyAims.map((a) => a.aimCategoryId) },
+      scheduledDate: { gte: dayStart, lt: dayEnd },
+    },
+    select: { aimCategoryId: true },
+    distinct: ['aimCategoryId'],
+  });
+
+  if (completedCategoryIds.length < activeDailyAims.length) return {};
+
+  return updateDailyStreak(userId, 'daily_aims_complete');
 }

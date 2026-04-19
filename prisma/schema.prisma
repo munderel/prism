@@ -635,6 +635,8 @@ model Meeting {
   timeEnd     String          // "10:00" format
   attendeeIds     Json            // String[] of user IDs
   calendarEventId String?         // Google Calendar event ID for sync
+  calendarIdUsed  String?         // which Google calendarId the event was written to
+  htmlLink        String?         // Google Calendar web URL for the event
   meetLink            String?         // Google Meet link (hangoutLink)
   lastReminderSentAt  DateTime?       // prevents duplicate reminder notifications
   syncedAt        DateTime?       // last successful push to Google Calendar
@@ -785,6 +787,9 @@ model UserAim {
   lastCompletedAt      DateTime?
   derailSensitivityDays Int      @default(1)   // missed days before "derailing"
   reminderTimeMinutes  Int?                     // minutes before end of day to remind
+  safetyBufferDays      Float     @default(7)   // Beeminder-style slack days remaining
+  safetyBufferUpdatedAt DateTime?                // last recompute timestamp for buffer
+  derailedAt            DateTime?                // set when buffer hits 0; cleared by "back on track"
   createdAt            DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)

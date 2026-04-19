@@ -10,7 +10,8 @@ import {
 } from '@/lib/aim-phases';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { getAimCompletionUrl } from '@/lib/completion-token';
-import { updateSpecificStreak } from '@/lib/streak-engine';
+import { updateSpecificStreak, maybeIncrementDailyStreakIfDayComplete } from '@/lib/streak-engine';
+import { applyBufferOnCompletion } from '@/lib/derailing-buffer';
 
 const INSTANCE_INCLUDE = {
   aimCategory: true,
@@ -232,8 +233,11 @@ export async function PATCH(
       }
     }
 
-    // Per-aim streak. Daily streak is driven solely by powerdown (not aims).
+    // Per-aim streak, daily streak (if all daily aims done), and Beeminder-
+    // style safety buffer increment. All best-effort — log and continue.
     await updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch((err) => console.warn('[streak] aim streak update failed:', err));
+    await maybeIncrementDailyStreakIfDayComplete(existing.userId).catch((err) => console.warn('[streak] daily streak update failed:', err));
+    await applyBufferOnCompletion(existing.userId, existing.aimCategoryId).catch((err) => console.warn('[buffer] completion update failed:', err));
   }
 
   const updated = await prisma.aimInstance.update({

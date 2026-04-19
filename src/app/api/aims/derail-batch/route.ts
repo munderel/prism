@@ -1,15 +1,14 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { computeDerailInfo, type DerailInfo } from '@/lib/derailing';
+import { computeBufferDerailInfo, type BufferDerailInfo } from '@/lib/derailing-buffer';
 import { buildDailyHistory, buildDateRange, computeExpectedPerDay } from '@/lib/aim-history';
 
 /**
  * GET /api/aims/derail-batch?days=14
  *
- * Returns derail info + recent history for ALL active aims belonging to the
- * authenticated user. This replaces N individual calls to
- * /api/aims/history?aimCategoryId=X&days=14 that previously fired per-card.
+ * Returns Beeminder-style buffer derail info + recent history for ALL
+ * active aims belonging to the authenticated user.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -18,17 +17,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const days = Math.min(Number(searchParams.get('days') || '14'), 90);
 
-  const [userAims, user] = await Promise.all([
-    prisma.userAim.findMany({
-      where: { userId: auth.userId, isActive: true },
-      include: { aimCategory: true },
-    }),
-    prisma.user.findUnique({
-      where: { id: auth.userId },
-      select: { timezone: true },
-    }),
-  ]);
-  const timezone = user?.timezone || 'UTC';
+  const userAims = await prisma.userAim.findMany({
+    where: { userId: auth.userId, isActive: true },
+    include: { aimCategory: true },
+  });
 
   if (userAims.length === 0) {
     return Response.json({});
@@ -46,7 +38,6 @@ export async function GET(request: NextRequest) {
     orderBy: { scheduledDate: 'asc' },
   });
 
-  // Group instances by aimCategoryId
   const instancesByCategory = new Map<string, typeof allInstances>();
   for (const inst of allInstances) {
     const list = instancesByCategory.get(inst.aimCategoryId) ?? [];
@@ -54,27 +45,25 @@ export async function GET(request: NextRequest) {
     instancesByCategory.set(inst.aimCategoryId, list);
   }
 
-  const now = new Date();
-  const fourteenDaysAgo = new Date(now);
-  fourteenDaysAgo.setDate(now.getDate() - 14);
-
   const result: Record<
     string,
-    { derailInfo: DerailInfo; history: { date: string; completed: boolean; status: string }[]; expectedPerDay: number }
+    {
+      derailInfo: BufferDerailInfo;
+      history: { date: string; completed: boolean; status: string }[];
+      expectedPerDay: number;
+    }
   > = {};
 
+  const now = new Date();
   for (const userAim of userAims) {
     const catId = userAim.aimCategoryId;
     const instances = instancesByCategory.get(catId) ?? [];
-
     const history = buildDailyHistory(instances, startDate, endDate);
-
-    const recentInstances = instances.filter(
-      (i) => new Date(i.scheduledDate) >= fourteenDaysAgo,
+    const derailInfo = computeBufferDerailInfo(
+      userAim as unknown as Parameters<typeof computeBufferDerailInfo>[0],
+      now,
     );
-    const derailInfo = computeDerailInfo(userAim, recentInstances, 14, timezone);
     const expectedPerDay = computeExpectedPerDay(userAim);
-
     result[catId] = { derailInfo, history, expectedPerDay };
   }
 

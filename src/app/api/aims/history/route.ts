@@ -1,13 +1,14 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { computeDerailInfo, type DerailInfo } from '@/lib/derailing';
+import { computeBufferDerailInfo, type BufferDerailInfo } from '@/lib/derailing-buffer';
 import { buildDailyHistory, buildDateRange, computeExpectedPerDay } from '@/lib/aim-history';
 
 /**
  * GET /api/aims/history?aimCategoryId=X&days=30
  *
- * Returns daily history for a single aim category, plus the computed derail info.
+ * Returns daily history for a single aim category, plus the computed
+ * Beeminder-style buffer derail info.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -48,13 +49,9 @@ export async function GET(request: NextRequest) {
 
   const history = buildDailyHistory(instances, startDate, endDate);
 
-  // Compute derail info using the last 14 days of data
-  const fourteenDaysAgo = new Date();
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-  const recentInstances = instances.filter(
-    (i) => new Date(i.scheduledDate) >= fourteenDaysAgo,
+  const derailInfo: BufferDerailInfo = computeBufferDerailInfo(
+    userAim as unknown as Parameters<typeof computeBufferDerailInfo>[0],
   );
-  const derailInfo: DerailInfo = computeDerailInfo(userAim, recentInstances, 14);
 
   const expectedPerDay = computeExpectedPerDay(userAim);
 
