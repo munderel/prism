@@ -337,11 +337,12 @@ export default function DashboardPage() {
 
   // Group tasks by type for checklist view
   const groupedTasks = useMemo(() => {
+    // REVIEW is intentionally omitted: weekly/monthly/yearly reviews are
+    // Review rows (not Task rows) and surface via the pink ReviewDueBanner.
     const groups: Record<string, DashboardTask[]> = {
       IMPROVE: [],
       REACT: [],
       MAINTENANCE: [],
-      REVIEW: [],
     };
     const todayStr = getLocalDateString();
     const visible = list.filter((t) => {
