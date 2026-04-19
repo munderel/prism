@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { cacheHeaders, NO_STORE } from '@/lib/api-helpers';
+import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, createStackSchema } from '@/lib/schemas';
 
 export async function GET() {
@@ -24,7 +24,7 @@ export async function GET() {
     orderBy: [{ isCompany: 'desc' }, { createdAt: 'asc' }],
   });
 
-  return Response.json(stacks, { headers: cacheHeaders(30, 120) });
+  return Response.json(stacks, NO_STORE);
 }
 
 export async function POST(request: NextRequest) {
