@@ -336,11 +336,43 @@ export async function createGoogleEvent(
       eventBody.attendees = event.attendees;
     }
 
+    // If a non-primary target calendar was requested, verify we can still
+    // write to it. If the calendar was deleted or unsubscribed, writing
+    // succeeds but the event "disappears" from the user's default view.
+    // Fall back to 'primary' in that case and clear the stale setting.
+    let effectiveCalendarId = calendarId;
+    if (calendarId !== 'primary') {
+      try {
+        await calendar.calendarList.get({ calendarId });
+      } catch (listErr) {
+        console.warn(
+          `[calendar] syncTargetCalendarId "${calendarId}" is no longer accessible; falling back to primary.`,
+          listErr instanceof Error ? listErr.message : listErr,
+        );
+        effectiveCalendarId = 'primary';
+        try {
+          await prisma.user.update({
+            where: { id: userId },
+            data: { syncTargetCalendarId: null },
+          });
+        } catch {
+          // best-effort cleanup; don't fail the insert
+        }
+      }
+    }
+
     const response = await calendar.events.insert({
-      calendarId,
+      calendarId: effectiveCalendarId,
       requestBody: eventBody,
       conferenceDataVersion: event.addMeetLink ? 1 : 0,
-      sendUpdates: event.attendees?.length ? 'all' : 'none',
+      sendUpdates: 'all',
+    });
+
+    console.info('[calendar] createGoogleEvent ok', {
+      calendarIdUsed: effectiveCalendarId,
+      eventId: response.data.id,
+      htmlLink: response.data.htmlLink,
+      attendeeCount: event.attendees?.length ?? 0,
     });
 
     return response.data;

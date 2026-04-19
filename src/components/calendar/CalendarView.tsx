@@ -616,6 +616,15 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         });
         if (!res.ok) throw new Error('Failed to create work block');
         refreshEvents();
+      } else if (itemType === 'food') {
+        const title = info.event.title || 'Meal';
+        const res = await fetch('/api/food-blocks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, startAt: startISO, endAt: endISO }),
+        });
+        if (!res.ok) throw new Error('Failed to create food block');
+        refreshEvents();
       } else {
         const taskId = (props.taskId as string) || info.event.id?.replace('task-', '');
         if (!taskId) return;

@@ -322,6 +322,8 @@ export async function GET(request: NextRequest) {
             scheduledDayOfWeek: true,
             scheduledDayOfMonth: true,
             defaultDurationMinutes: true,
+            scheduleStartDate: true,
+            durationEndDate: true,
           },
         })
       : Promise.resolve([]),
@@ -746,6 +748,9 @@ export async function GET(request: NextRequest) {
       const duration = proc.defaultDurationMinutes;
 
       forEachDayInRange(rangeStart, rangeEnd, userTz, (zonedCursor, dateKey) => {
+        if (proc.scheduleStartDate && zonedCursor < toZonedTime(proc.scheduleStartDate, userTz)) return;
+        if (proc.durationEndDate && zonedCursor > toZonedTime(proc.durationEndDate, userTz)) return;
+
         const dow = zonedCursor.getDay();
         let matches = false;
 

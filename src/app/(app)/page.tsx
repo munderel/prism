@@ -14,6 +14,7 @@ import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
 import { SubtaskList } from '@/components/tasks/SubtaskList';
 import { WinTheDayCard } from '@/components/dashboard/WinTheDayCard';
+import { ReviewDueBanner, type ReviewDueItem } from '@/components/reviews/ReviewDueBanner';
 const WinTheDayCelebration = dynamic(
   () => import('@/components/dopamine/WinTheDayCelebration').then((m) => m.WinTheDayCelebration),
   { ssr: false }
@@ -24,7 +25,7 @@ import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { setTimeOnDate } from '@/lib/scheduling-engine';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import type { DerailInfo } from '@/lib/derailing';
+import type { BufferDerailInfo as DerailInfo } from '@/lib/derailing-buffer';
 
 // --- Dashboard-specific interfaces based on API response shapes ---
 
@@ -169,6 +170,17 @@ export default function DashboardPage() {
   // Separate fetch for unscheduled tasks
   const { data: unscheduledTasks, mutate: mutateUnscheduled } = useSWR<DashboardTask[]>('/api/tasks?unscheduledOnly=true');
   const unscheduledList: DashboardTask[] = useMemo(() => (Array.isArray(unscheduledTasks) ? unscheduledTasks : []), [unscheduledTasks]);
+
+  // Reviews due in the visible window (today or current week). Surfaces the
+  // review as a banner so the user can complete it without navigating away.
+  const reviewsBannerKey = viewMode === 'weekly'
+    ? `/api/reviews?scope=individual&from=${weekRange.start}&to=${weekRange.end}`
+    : `/api/reviews?scope=individual&from=${today}&to=${today}`;
+  const { data: reviewsBannerData } = useSWR<ReviewDueItem[]>(reviewsBannerKey);
+  const reviewsDue: ReviewDueItem[] = useMemo(
+    () => (Array.isArray(reviewsBannerData) ? reviewsBannerData : []),
+    [reviewsBannerData],
+  );
 
   // Group tasks by day for weekly view
   const weeklyGrouped = useMemo(() => {
@@ -807,6 +819,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Review due banner — mirrors the tasks-page pattern */}
+          <ReviewDueBanner reviews={reviewsDue} />
 
           {/* Unscheduled Tasks */}
           {unscheduledList.length > 0 && (

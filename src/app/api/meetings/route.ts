@@ -100,6 +100,15 @@ export async function POST(request: NextRequest) {
 
     const recurrence = buildMeetingRecurrence(cadence, dayOfWeek ?? null);
 
+    console.info('[meetings] syncing to Google Calendar', {
+      meetingId: meeting.id,
+      targetCalendarId,
+      attendeeCount: attendeeEmails.length,
+      attendeeDomains: Array.from(
+        new Set(attendeeEmails.map((a) => a.email.split('@')[1]).filter(Boolean)),
+      ),
+    });
+
     try {
       const gcalEvent = await createGoogleEvent(auth.userId, {
         summary: title,
@@ -116,13 +125,24 @@ export async function POST(request: NextRequest) {
         return { ok: false, error: 'Google did not return an event id. Check calendar permissions.' };
       }
 
-      const updateData: { calendarEventId: string; meetLink?: string; syncedAt: Date; syncError: null } = {
+      const updateData: {
+        calendarEventId: string;
+        calendarIdUsed?: string;
+        htmlLink?: string;
+        meetLink?: string;
+        syncedAt: Date;
+        syncError: null;
+      } = {
         calendarEventId: gcalEvent.id,
+        calendarIdUsed: targetCalendarId,
         syncedAt: new Date(),
         syncError: null,
       };
       if (gcalEvent.hangoutLink) {
         updateData.meetLink = gcalEvent.hangoutLink;
+      }
+      if (gcalEvent.htmlLink) {
+        updateData.htmlLink = gcalEvent.htmlLink;
       }
       await prisma.meeting.update({ where: { id: meeting.id }, data: updateData });
       return { ok: true };

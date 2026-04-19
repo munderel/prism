@@ -28,7 +28,8 @@ import StreakHeatmap from '@/components/aims/StreakHeatmap';
 import { AimProgressChart } from '@/components/aims/AimProgressChart';
 import { AimCard as AimCardSimplified } from '@/components/aims/AimCard';
 import { WorkoutSubTypes } from '@/components/aims/WorkoutSubTypes';
-import type { DerailInfo } from '@/lib/derailing';
+import type { BufferDerailInfo } from '@/lib/derailing-buffer';
+type DerailInfo = BufferDerailInfo;
 import {
   PHASE_LABELS as PHASE_LABELS_MAP,
   getEffectiveDuration,
@@ -823,6 +824,28 @@ function AimCard({
         </div>
       </div>
 
+      {/* Get back on track — shown when the aim has derailed. */}
+      {active && derailInfo?.status === 'derailed' && (
+        <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2">
+          <p className="text-xs text-red-300">
+            You&apos;ve derailed on this aim. Reset your buffer and try again.
+          </p>
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch(`/api/aims/${category.id}/back-on-track`, { method: 'POST' });
+                if (res.ok && typeof window !== 'undefined') window.location.reload();
+              } catch {
+                // best-effort
+              }
+            }}
+            className="text-xs font-semibold text-red-200 bg-red-500/30 hover:bg-red-500/40 rounded px-2 py-1 transition-colors shrink-0"
+          >
+            Get back on track
+          </button>
+        </div>
+      )}
+
       {/* Phase description */}
       {active && (
         <div className="mt-2">
@@ -1111,22 +1134,26 @@ function AimCard({
 
 const DERAIL_STYLES: Record<string, { dot: string; text: string; bg: string; label: string }> = {
   on_track:  { dot: 'bg-green-500', text: 'text-green-500', bg: 'bg-green-500/10', label: 'On Track' },
-  caution:   { dot: 'bg-yellow-500', text: 'text-yellow-500', bg: 'bg-yellow-500/10', label: 'Caution' },
+  caution:   { dot: 'bg-yellow-500', text: 'text-yellow-500', bg: 'bg-yellow-500/10', label: 'Heads up' },
   derailing: { dot: 'bg-red-500', text: 'text-red-500', bg: 'bg-red-500/10', label: 'Derailing!' },
+  derailed:  { dot: 'bg-red-600', text: 'text-red-400', bg: 'bg-red-600/10', label: 'Derailed' },
 };
 
 function DerailStatusBadge({ derailInfo }: { derailInfo: DerailInfo }) {
   const style = DERAIL_STYLES[derailInfo.status] || DERAIL_STYLES.on_track;
+  const buf = derailInfo.safetyBufferDays;
   return (
     <span
       className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${style.text} ${style.bg} shrink-0`}
       title={derailInfo.message}
     >
-      {derailInfo.status === 'derailing' && <AlertTriangle className="h-3 w-3" />}
+      {(derailInfo.status === 'derailing' || derailInfo.status === 'derailed') && (
+        <AlertTriangle className="h-3 w-3" />
+      )}
       <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
       {style.label}
-      {derailInfo.daysUntilDerail !== null && derailInfo.status !== 'derailing' && (
-        <span className="ml-0.5 opacity-70">({derailInfo.daysUntilDerail}d)</span>
+      {derailInfo.status !== 'derailed' && (
+        <span className="ml-0.5 opacity-70">({buf.toFixed(1)}d buffer)</span>
       )}
     </span>
   );

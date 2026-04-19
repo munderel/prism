@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import dynamic from 'next/dynamic';
-import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw, X, CalendarPlus, Loader2 } from 'lucide-react';
+import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw, X, CalendarPlus, Loader2, Utensils } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import type { Draggable } from '@fullcalendar/interaction';
 import { LazyMotion, domAnimation, m, AnimatePresence } from 'framer-motion';
@@ -47,7 +47,7 @@ interface UnscheduledAim {
 
 type UnscheduledItem = {
   id: string;
-  itemType: 'task' | 'aim' | 'work_block';
+  itemType: 'task' | 'aim' | 'work_block' | 'food';
   title: string;
   duration: number; // minutes
   // Task-specific
@@ -294,6 +294,7 @@ export default function CalendarPage() {
           task: { bg: '#6366f1', border: '#4f46e5' },
           aim: { bg: '#14b8a6', border: '#0d9488' },
           work_block: { bg: '#6366f1', border: '#4f46e5' },
+          food: { bg: '#f59e0b', border: '#d97706' },
         };
 
         const { bg, border } = colors[itemType] || colors.task;
@@ -583,6 +584,32 @@ export default function CalendarPage() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Food Block Templates */}
+            <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+              <div className="flex items-center gap-2 mb-3">
+                <Utensils className="h-4 w-4 text-amber-400" />
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Food Blocks</h3>
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mb-2">Drag onto calendar to schedule a meal.</p>
+              <div className="space-y-2">
+                <div
+                  className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-amber-500/30 border-l-4 border-l-amber-500 bg-amber-500/10 p-3 hover:bg-amber-500/20 transition-colors"
+                  data-item-type="food"
+                  data-item-id="__food_block_template__"
+                  data-item-title="Meal"
+                  data-duration="30"
+                >
+                  <div className="flex items-start gap-2">
+                    <Utensils className="h-4 w-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-[var(--text-primary)] font-medium">Meal</p>
+                      <p className="text-xs text-[var(--text-muted)] mt-0.5">30min</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

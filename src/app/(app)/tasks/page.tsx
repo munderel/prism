@@ -3,7 +3,8 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
-import { ListTodo, ChevronLeft, ChevronRight, CalendarRange, Inbox, ChevronDown, ClipboardCheck } from 'lucide-react';
+import { ListTodo, ChevronLeft, ChevronRight, CalendarRange, Inbox, ChevronDown } from 'lucide-react';
+import { ReviewDueBanner } from '@/components/reviews/ReviewDueBanner';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
 import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
 import { AgendaView } from '@/components/tasks/AgendaView';
@@ -358,28 +359,7 @@ export default function TasksPage() {
           ) : viewMode === 'day' ? (
             /* Day view: single DailyTaskList */
             <>
-              {reviewsDueToday.length > 0 && (
-                <div className="mb-4 space-y-2">
-                  {reviewsDueToday.map((r) => (
-                    <Link
-                      key={r.id}
-                      href={`/reviews/${r.id}/complete`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-pink-500/40 bg-pink-500/10 px-4 py-3 transition hover:bg-pink-500/20"
-                    >
-                      <div className="flex items-center gap-3">
-                        <ClipboardCheck className="h-5 w-5 text-pink-400" />
-                        <div>
-                          <div className="text-sm font-semibold text-pink-300">
-                            {r.reviewType.charAt(0) + r.reviewType.slice(1).toLowerCase()} Review due today
-                          </div>
-                          <div className="text-xs text-[var(--text-muted)]">Tap to complete</div>
-                        </div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-pink-400" />
-                    </Link>
-                  ))}
-                </div>
-              )}
+              <ReviewDueBanner reviews={reviewsDueToday} />
               <div className="mb-3">
                 <InlineTaskCreator defaultDate={date} onCreated={() => mutateRange()} />
               </div>
