@@ -25,6 +25,9 @@ interface AimCardProps {
   onComplete?: (instanceId: string) => void;
   onUndo?: (instanceId: string) => void;
   onExpand?: (aimId: string) => void;
+  // Lets the parent handle completion when no todayInstance exists yet (e.g.,
+  // simplified view where the instance is created on first click).
+  onCompleteCategory?: () => void | Promise<void>;
 }
 
 const phaseConfig: Record<string, { label: string; bg: string; text: string }> = {
@@ -41,15 +44,27 @@ function formatTime(isoOrTime?: string): string | null {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export function AimCard({ aim, todayInstance, onComplete, onUndo, onExpand }: AimCardProps) {
+export function AimCard({
+  aim,
+  todayInstance,
+  onComplete,
+  onUndo,
+  onExpand,
+  onCompleteCategory,
+}: AimCardProps) {
   const phase = phaseConfig[aim.currentPhase] ?? phaseConfig.SEED;
   const isCompleted = todayInstance?.status === 'COMPLETED';
   const scheduledTime = formatTime(todayInstance?.timeBlockStart);
+  const showCheckbox =
+    aim.isActive && (todayInstance != null || onCompleteCategory != null);
 
   const handleComplete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (todayInstance && onComplete && !isCompleted) {
+    if (isCompleted) return;
+    if (todayInstance && onComplete) {
       onComplete(todayInstance.id);
+    } else if (onCompleteCategory) {
+      void onCompleteCategory();
     }
   };
 
@@ -71,7 +86,7 @@ export function AimCard({ aim, todayInstance, onComplete, onUndo, onExpand }: Ai
       style={aim.isActive ? { borderLeftWidth: 3, borderLeftColor: PRISM_COLORS.AIM.color } : undefined}
     >
       {/* Complete checkbox */}
-      {todayInstance && (
+      {showCheckbox && (
         <button
           onClick={isCompleted ? handleUndo : handleComplete}
           className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${

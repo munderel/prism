@@ -13,7 +13,7 @@ import {
   Wrench, BarChart3, FileText, CalendarClock,
 } from 'lucide-react';
 
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, getUpcomingWeekBoundaries } from '@/lib/date-utils';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 import { StepCurrentGoals } from './weekly-steps/StepCurrentGoals';
 import { StepReviewTasks } from './weekly-steps/StepReviewTasks';
@@ -172,6 +172,18 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const upcomingWeekStartStr = getLocalDateString(upcomingWeekStart);
 
   const nextWeekEndStr = getLocalDateString(nextWeekEnd);
+
+  // Planning steps (work_blocks, schedule_tasks) anchor the calendar to the
+  // actual upcoming week — the Mon–Sun *after* the current week. The review is
+  // typically run on Sunday, so this lands the calendar on the week the user is
+  // about to plan, not the one they just lived through.
+  // NOTE: `upcomingWeekStart` above is misleadingly named — it's actually the
+  // start of the *current* week. `getUpcomingWeekBoundaries` returns the week
+  // after that.
+  const { start: planningWeekStartStr, end: planningWeekEndStr } = useMemo(
+    () => getUpcomingWeekBoundaries(),
+    [todayKey],
+  );
 
   // Fetch the same task pool the calendar should care about here: current week + next week.
   const reviewScopeParam = isTeamReview ? '&scope=company' : '&scope=individual';
@@ -749,7 +761,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 calendarModalOpen={calendarModalOpen}
                 onOpenModal={() => setCalendarModalOpen(true)}
                 onCloseModal={() => setCalendarModalOpen(false)}
-                dateRange={{ start: `${upcomingWeekStartStr}T00:00:00`, end: `${nextWeekEndStr}T23:59:59` }}
+                dateRange={{ start: `${planningWeekStartStr}T00:00:00`, end: `${planningWeekEndStr}T23:59:59` }}
                 unscheduledItems={unscheduledForCalendar}
                 aimBlockDuration={step.key === 'work_blocks' ? aimBlockDuration : undefined}
                 onCreateWorkBlock={step.key === 'work_blocks' ? handleCreateWorkBlock : undefined}

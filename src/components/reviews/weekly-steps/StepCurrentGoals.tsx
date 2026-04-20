@@ -1,9 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Target, TrendingUp, ChevronRight } from 'lucide-react';
+import { Target, TrendingUp, ChevronRight, Building2, Lock } from 'lucide-react';
 import { formatGoalDateRange } from '@/lib/goal-constants';
 import { getStatusBadgeClass } from '../shared/review-types';
+
+interface CompanyGoalItem {
+  id: string;
+  title: string;
+  level: string;
+  status: string;
+  progressPct: number;
+  isAssignedToMe: boolean;
+}
 
 interface GoalParent {
   id: string;
@@ -164,11 +173,36 @@ function getHierarchyPath(goal: Goal): { hhg: string; yearly: string } {
 
 export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurrentGoalsProps) {
   const [hierarchy, setHierarchy] = useState<HierarchyNode[]>([]);
+  const [companyGoals, setCompanyGoals] = useState<CompanyGoalItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchFilteredGoals();
+    // Pull company goals independently — they're read-only context for the user
+    // and don't depend on the personal goal filtering logic above.
+    void fetchCompanyGoals();
   }, []);
+
+  const fetchCompanyGoals = async () => {
+    try {
+      const res = await fetch('/api/goals?isCompany=true&withAssignments=true');
+      if (!res.ok) return;
+      const raw = await res.json();
+      if (!Array.isArray(raw)) return;
+      setCompanyGoals(
+        raw.map((g) => ({
+          id: g.id,
+          title: g.title,
+          level: g.level,
+          status: g.status,
+          progressPct: g.progressPct ?? 0,
+          isAssignedToMe: Boolean(g.isAssignedToMe),
+        })),
+      );
+    } catch (err) {
+      console.warn('[current goals] company goal fetch failed:', err);
+    }
+  };
 
   const fetchFilteredGoals = async () => {
     try {
@@ -257,6 +291,56 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
         <TrendingUp className="h-4 w-4" />
         <p className="text-sm">Here are your current goals. Review them before continuing.</p>
       </div>
+
+      {companyGoals.length > 0 && !isTeamReview && (
+        <div className="space-y-2 rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-indigo-400" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400">
+              Company Goals
+            </h3>
+          </div>
+          <p className="text-xs text-[var(--text-muted)]">
+            Read-only context. Goals assigned to you are highlighted.
+          </p>
+          <div className="space-y-2">
+            {companyGoals.map((g) => (
+              <div
+                key={g.id}
+                className="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-2"
+              >
+                <Lock className="h-4 w-4 flex-shrink-0 text-[var(--text-muted)]" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                      {g.title}
+                    </p>
+                    <span className="flex-none rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-400">
+                      Company
+                    </span>
+                    {g.isAssignedToMe && (
+                      <span className="flex-none rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+                        Assigned to you
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <div className="h-2 w-20 overflow-hidden rounded-full bg-[var(--surface-raised)]">
+                    <div
+                      className="h-full rounded-full bg-indigo-500 transition-all"
+                      style={{ width: `${Math.min(100, g.progressPct)}%` }}
+                    />
+                  </div>
+                  <span className="w-8 text-right text-xs text-[var(--text-muted)]">
+                    {Math.round(g.progressPct)}%
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!hasGoals && (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">

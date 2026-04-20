@@ -62,7 +62,7 @@ export function QuickAddMenu({ className }: QuickAddMenuProps) {
         >
           <div className="px-3 py-2 border-b border-[var(--border-color)]">
             <InlineTaskCreator
-              placeholder="Quick chore..."
+              placeholder="Quick task..."
               onCreated={() => {
                 mutate((key: string) => typeof key === 'string' && key.startsWith('/api/tasks'));
               }}
