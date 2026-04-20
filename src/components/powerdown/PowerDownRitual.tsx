@@ -200,6 +200,77 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   // KPI processes due today (conditional step)
   const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
 
+  // Today's work blocks — powered by WorkBlock feature. Reviewed in the Review Work Blocks step.
+  interface PowerdownWorkBlock {
+    id: string;
+    start: string;
+    end: string;
+    mainObjective: string;
+    completionStatus: 'PENDING' | 'COMPLETED' | 'PARTIAL' | 'MISSED';
+    actualMinutes: number | null;
+    notes: string | null;
+    task: { id: string; title: string };
+    clearGoals: Array<{ id: string; text: string; isComplete: boolean }>;
+  }
+  const [todayWorkBlocks, setTodayWorkBlocks] = useState<PowerdownWorkBlock[]>([]);
+  const [blockReviewPicks, setBlockReviewPicks] = useState<Record<string, 'COMPLETED' | 'PARTIAL' | 'MISSED'>>({});
+  const [blockReviewNotes, setBlockReviewNotes] = useState<Record<string, string>>({});
+  const [blockReviewActual, setBlockReviewActual] = useState<Record<string, number>>({});
+
+  const fetchTodayWorkBlocks = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/work-blocks?date=${sessionToday}`);
+      if (res.ok) {
+        const blocks: PowerdownWorkBlock[] = await res.json();
+        setTodayWorkBlocks(blocks);
+        const picks: Record<string, 'COMPLETED' | 'PARTIAL' | 'MISSED'> = {};
+        const notes: Record<string, string> = {};
+        const actual: Record<string, number> = {};
+        blocks.forEach((b) => {
+          if (b.completionStatus === 'COMPLETED' || b.completionStatus === 'PARTIAL' || b.completionStatus === 'MISSED') {
+            picks[b.id] = b.completionStatus;
+          }
+          notes[b.id] = b.notes ?? '';
+          const scheduled = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
+          actual[b.id] = b.actualMinutes ?? scheduled;
+        });
+        setBlockReviewPicks(picks);
+        setBlockReviewNotes(notes);
+        setBlockReviewActual(actual);
+      }
+    } catch {
+      // non-critical
+    }
+  }, [sessionToday]);
+
+  const toggleBlockClearGoal = async (goalId: string, isComplete: boolean) => {
+    // optimistic
+    setTodayWorkBlocks((prev) =>
+      prev.map((b) => ({
+        ...b,
+        clearGoals: b.clearGoals.map((g) => (g.id === goalId ? { ...g, isComplete: !isComplete } : g)),
+      }))
+    );
+    try {
+      // Resolve taskId from the block containing this goal
+      let taskId: string | undefined;
+      for (const b of todayWorkBlocks) {
+        if (b.clearGoals.some((g) => g.id === goalId)) {
+          taskId = b.task.id;
+          break;
+        }
+      }
+      if (!taskId) return;
+      await fetch(`/api/tasks/${taskId}/clear-goals`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goals: [{ id: goalId, isComplete: !isComplete }] }),
+      });
+    } catch {
+      fetchTodayWorkBlocks();
+    }
+  };
+
   const [timerSeconds, setTimerSeconds] = useState(300);
   const [timerRunning, setTimerRunning] = useState(false);
 
@@ -232,6 +303,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchAimInstances();
     fetchWeeklyGoals();
     fetchDueKpiProcesses();
+    fetchTodayWorkBlocks();
     // Fetch user aims to compute Deep Work block duration
     fetch('/api/aims/user').then(r => r.ok ? r.json() : []).then((userAims: any[]) => {
       if (!Array.isArray(userAims)) return;
@@ -412,6 +484,9 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const STEPS = useMemo(() => {
     const list = [
       { key: 'review_today', title: 'Review Today', description: 'Review today\'s completions and wins.' },
+      ...(todayWorkBlocks.length > 0
+        ? [{ key: 'review_blocks', title: 'Review Work Blocks', description: 'Mark each of today\'s scheduled work blocks as completed, partial, or missed.' }]
+        : []),
       ...(dueKpiProcesses.length > 0
         ? [{ key: 'log_kpis', title: 'Log Process KPIs', description: 'Log KPI progress for processes scheduled today.' }]
         : []),
@@ -426,7 +501,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       { key: 'gratitude', title: 'Daily Gratitude', description: 'Spend a few minutes reflecting on what you\'re grateful for.' },
     ];
     return list.map((s, i) => ({ ...s, num: i + 1 }));
-  }, [dueKpiProcesses]);
+  }, [dueKpiProcesses, todayWorkBlocks.length]);
 
   // Get current step key for rendering
   const currentStepKey = STEPS[currentStep - 1]?.key || 'review_today';
@@ -570,6 +645,32 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const advanceStep = async () => {
     if (!session || saving) return;
     const next = currentStep + 1;
+
+    // When leaving the review_blocks step, persist reviews and write the aggregated PowerdownWorkBlockReview row.
+    if (currentStepKey === 'review_blocks' && todayWorkBlocks.length > 0) {
+      const reviews = todayWorkBlocks
+        .filter((b) => !!blockReviewPicks[b.id])
+        .map((b) => {
+          const scheduledMin = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
+          return {
+            workBlockId: b.id,
+            completionStatus: blockReviewPicks[b.id],
+            actualMinutes: blockReviewActual[b.id] ?? scheduledMin,
+            notes: blockReviewNotes[b.id]?.trim() || null,
+          };
+        });
+      if (reviews.length > 0) {
+        try {
+          await fetch('/api/work-blocks/review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ powerdownSessionId: session.id, reviews }),
+          });
+        } catch {
+          toast.error('Failed to save work block reviews');
+        }
+      }
+    }
 
     // Fire-and-forget the DistractionLog writes so the user doesn't wait
     // on N round-trips when leaving the distractions step.
@@ -868,6 +969,48 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                   )}
                 </div>
 
+                {/* Today's Clear Goals — sub-area listing goals from each of today's work blocks */}
+                {todayWorkBlocks.some((b) => b.clearGoals.length > 0 || b.mainObjective) && (
+                  <div className="space-y-3 border-t border-[var(--border-color)] pt-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Target className="h-4 w-4 text-indigo-400" />
+                      <p className="text-sm text-[var(--text-secondary)] font-medium">Today&apos;s Clear Goals</p>
+                    </div>
+                    <p className="text-xs text-[var(--text-muted)] -mt-1 mb-2">
+                      Tick the goals you actually hit in each work block today.
+                    </p>
+                    {todayWorkBlocks.map((b) => (
+                      <div key={`cg-${b.id}`} className="rounded-lg bg-[var(--surface-raised)]/40 px-3 py-2">
+                        <div className="text-xs font-medium text-[var(--text-primary)]">
+                          {b.task.title}
+                          <span className="text-[var(--text-muted)] font-normal ml-2">
+                            {new Date(b.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
+                            {new Date(b.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div className="text-xs text-indigo-300 mt-1">Objective: {b.mainObjective}</div>
+                        {b.clearGoals.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {b.clearGoals.map((g) => (
+                              <label key={g.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={g.isComplete}
+                                  onChange={() => toggleBlockClearGoal(g.id, g.isComplete)}
+                                  className="rounded border-[var(--border-color)] text-indigo-500 focus:ring-indigo-500/30 h-3.5 w-3.5"
+                                />
+                                <span className={g.isComplete ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}>
+                                  {g.text}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* AIM Instances */}
                 {aimInstances.length > 0 && (
                   <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
@@ -899,6 +1042,84 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Review Work Blocks (conditional): per-block completion confirmation */}
+            {currentStepKey === 'review_blocks' && (
+              <div className="space-y-3">
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Did you complete today&apos;s scheduled work blocks? Pick one for each — this feeds your progress history.
+                </p>
+                {todayWorkBlocks.length === 0 && (
+                  <p className="text-sm text-[var(--text-muted)]">No work blocks scheduled today.</p>
+                )}
+                {todayWorkBlocks.map((b) => {
+                  const scheduledMin = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
+                  const pick = blockReviewPicks[b.id];
+                  return (
+                    <div key={b.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-4 py-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-medium text-[var(--text-primary)]">{b.task.title}</div>
+                          <div className="text-xs text-[var(--text-muted)]">
+                            {new Date(b.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
+                            {new Date(b.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            <span className="mx-1">•</span>
+                            {scheduledMin}m scheduled
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-indigo-300">Objective: {b.mainObjective}</div>
+                      <div className="flex gap-2">
+                        {(['COMPLETED', 'PARTIAL', 'MISSED'] as const).map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => setBlockReviewPicks((prev) => ({ ...prev, [b.id]: opt }))}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                              pick === opt
+                                ? opt === 'COMPLETED'
+                                  ? 'bg-emerald-600 text-white'
+                                  : opt === 'PARTIAL'
+                                  ? 'bg-amber-600 text-white'
+                                  : 'bg-gray-600 text-white'
+                                : 'bg-[var(--surface-raised)] text-[var(--text-secondary)] hover:bg-[var(--border-color)]'
+                            }`}
+                          >
+                            {opt === 'COMPLETED' ? 'Completed' : opt === 'PARTIAL' ? 'Partial' : 'Missed'}
+                          </button>
+                        ))}
+                      </div>
+                      {pick && pick !== 'MISSED' && (
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-[var(--text-muted)]">Actual time</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={480}
+                            step={5}
+                            value={blockReviewActual[b.id] ?? scheduledMin}
+                            onChange={(e) =>
+                              setBlockReviewActual((prev) => ({
+                                ...prev,
+                                [b.id]: Math.max(0, Math.min(480, Number(e.target.value) || 0)),
+                              }))
+                            }
+                            className="w-20 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                          />
+                          <span className="text-xs text-[var(--text-muted)]">min</span>
+                        </div>
+                      )}
+                      <textarea
+                        value={blockReviewNotes[b.id] ?? ''}
+                        onChange={(e) => setBlockReviewNotes((prev) => ({ ...prev, [b.id]: e.target.value }))}
+                        placeholder="Optional notes"
+                        rows={2}
+                        className="w-full rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)]"
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
 

@@ -1,5 +1,19 @@
 import { prisma } from '@/lib/prisma';
 
+// Re-export pure work-block progress helpers for server callers (they live in workblock-progress.ts
+// so client components can import them without pulling in prisma / pg).
+export {
+  computeScheduledMinutes,
+  computeCompletedMinutes,
+  computeTaskTimeProgress,
+  computeTaskGoalsProgress,
+  computeTaskScheduleState,
+  computeNextBlockMinutes,
+} from './workblock-progress';
+export type { WorkBlockForProgress, ClearGoalForProgress, TaskScheduleState } from './workblock-progress';
+
+// === GOAL PROGRESS ===
+
 type TaskLike = { status: string };
 type GoalLike = { progressPct: number };
 type LinkLike = { weight: number; individualGoal: { progressPct: number } };

@@ -69,6 +69,7 @@ model User {
   calendarColorOverrides Json     @default("{}") // Record<calendarId, hexColor> overrides
   weeklyTargetCalendarIds Json   @default("[]") // String[] of Google Calendar IDs that count toward weekly hour target
   googleSyncState       Json      @default("{}") // Recurring Google Calendar sync metadata and exceptions
+  defaultWorkBlockMinutes Int     @default(90)   // Minutes used when dragging a task onto the calendar as a work block
   powerdownTime         String?   // "HH:mm" format, e.g. "17:30"
   weeklyReviewDayOfWeek Int?      // 0=Sun,1=Mon,...6=Sat
   weeklyReviewTime      String?   // "HH:mm" format, e.g. "10:00"
@@ -104,6 +105,7 @@ model User {
   assignedTasks        Task[]             @relation("TaskAssignee")
   userAims             UserAim[]
   aimInstances         AimInstance[]
+  createdAimCategories AimCategory[] @relation("CreatedAimCategories")
   distractionLogs      DistractionLog[]
   trainingItems        TrainingItem[]
   feedback             Feedback[]
@@ -111,6 +113,9 @@ model User {
   processKpiEntries    ProcessKpiEntry[]
   recurringTeamReviews RecurringTeamReview[] @relation("TeamReviewCreator")
   teamReviewMemberships RecurringTeamReviewMember[]
+  workBlocks           WorkBlock[]
+  powerdownWorkBlockReviews PowerdownWorkBlockReview[]
+  taskCompletionSnapshots TaskCompletionSnapshot[]
 }
 
 model CompanySettings {
@@ -155,6 +160,7 @@ enum GoalStatus {
 enum KpiType {
   NUMERIC
   BINARY
+  PERCENTAGE
 }
 
 model Goal {
@@ -238,6 +244,8 @@ model Task {
   title          String
   description    String?      @db.Text
   deliverable    String?      @db.Text
+  deliverableDone Boolean     @default(false)
+  successCriteria Json?
   status         TaskStatus   @default(TODO)
   priority       TaskPriority @default(MEDIUM)
   dueDate        DateTime?
@@ -277,6 +285,8 @@ model Task {
   idea     Idea?
   trainingTask TrainingTask?
   clearGoals   ClearGoal[]
+  workBlocks   WorkBlock[]
+  completionSnapshot TaskCompletionSnapshot?
 
   @@index([ownerId])
   @@index([dueDate])
@@ -764,10 +774,15 @@ model AimCategory {
   isDaily           Boolean  @default(false)
   activities        Json?
   schedulePeriod    String   @default("both") // "working" | "casual" | "both"
+  createdByUserId   String?
+  isUserHabit       Boolean  @default(false)
   createdAt         DateTime @default(now())
 
+  createdBy    User?         @relation("CreatedAimCategories", fields: [createdByUserId], references: [id], onDelete: SetNull)
   userAims     UserAim[]
   aimInstances AimInstance[]
+
+  @@index([createdByUserId])
 }
 
 model UserAim {
@@ -920,6 +935,7 @@ model DistractionLog {
 model ClearGoal {
   id                  String    @id @default(cuid())
   taskId              String
+  workBlockId         String?   // when set, this goal is scoped to a specific work block (sub-goal for that session)
   text                String
   isComplete          Boolean   @default(false)
   sortOrder           Int       @default(0)
@@ -927,9 +943,11 @@ model ClearGoal {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workBlock WorkBlock? @relation(fields: [workBlockId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
+  @@index([workBlockId])
 }
 
 // === GOAL ASSIGNEES ===
@@ -986,6 +1004,7 @@ model ProcessKpi {
   id          String   @id @default(cuid())
   processId   String
   name        String
+  type        KpiType  @default(NUMERIC)
   unit        String?
   targetValue Float?
   goalId      String?
@@ -1037,4 +1056,84 @@ model ProcessKpiGoal {
 
   @@unique([kpiId, timeLevel])
   @@index([kpiId])
+}
+
+// === WORK BLOCKS ===
+// A WorkBlock is one scheduled session of work on a task. A task can have many work blocks.
+// Used to break a long-estimate task into multiple calendar sessions, each with its own
+// main objective (required) and optional sub-goals (stored as ClearGoal records linked via workBlockId).
+
+enum WorkBlockStatus {
+  PENDING   // not yet reviewed in a powerdown
+  COMPLETED
+  PARTIAL
+  MISSED
+}
+
+model WorkBlock {
+  id                String          @id @default(cuid())
+  taskId            String
+  userId            String
+  start             DateTime
+  end               DateTime
+  mainObjective     String
+  completionStatus  WorkBlockStatus @default(PENDING)
+  actualMinutes     Int?            // overrideable; when null, treat as (end - start)
+  reviewedAt        DateTime?
+  notes             String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  task       Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clearGoals ClearGoal[]
+
+  @@index([userId, start])
+  @@index([taskId])
+  @@index([completionStatus])
+}
+
+// Written when user clicks "Mark complete" on a task. Freezes the time+goals
+// stats at the moment of completion so historical reports are stable even if
+// blocks are later edited.
+model TaskCompletionSnapshot {
+  id                String   @id @default(cuid())
+  taskId            String   @unique
+  userId            String
+  completedAt       DateTime
+  estimatedMinutes  Int
+  completedMinutes  Int
+  scheduledMinutes  Int
+  goalsHit          Int
+  goalsDefined      Int
+  overrunMinutes    Int      // positive if over estimate, negative if under
+  blocksCompleted   Int
+  blocksMissed      Int
+  blocksPartial     Int
+  createdAt         DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, completedAt])
+}
+
+// Aggregated per-day result of the "Review Work Blocks" step in Power Down.
+model PowerdownWorkBlockReview {
+  id                      String   @id @default(cuid())
+  powerdownSessionId      String
+  userId                  String
+  reviewDate              DateTime
+  blocksTotal             Int
+  blocksCompleted         Int
+  blocksPartial           Int
+  blocksMissed            Int
+  totalScheduledMinutes   Int
+  totalCompletedMinutes   Int
+  createdAt               DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, reviewDate])
+  @@index([powerdownSessionId])
 }

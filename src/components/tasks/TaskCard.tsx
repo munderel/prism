@@ -2,11 +2,35 @@
 
 import React from 'react';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star, ListChecks } from 'lucide-react';
+import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star, ListChecks, Clock } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
 import { isTaskOverdue, subtaskDoneCount } from '@/lib/task-utils';
 import { StatusChip } from './StatusChip';
 import { ClearGoalsDisplay } from './ClearGoalsDisplay';
+import {
+  computeTaskTimeProgress,
+  computeTaskGoalsProgress,
+  computeTaskScheduleState,
+  computeScheduledMinutes,
+  type WorkBlockForProgress,
+  type TaskScheduleState,
+} from '@/lib/workblock-progress';
+
+const SCHEDULE_STATE_STYLES: Record<TaskScheduleState, { label: string; className: string }> = {
+  UNSCHEDULED: { label: 'Unscheduled', className: 'bg-gray-500/15 text-gray-400' },
+  PARTIALLY_SCHEDULED: { label: 'Partially scheduled', className: 'bg-amber-500/15 text-amber-400 border border-amber-500/30 border-dashed' },
+  FULLY_SCHEDULED: { label: 'Fully scheduled', className: 'bg-emerald-500/15 text-emerald-400' },
+  OVER_SCHEDULED: { label: 'Over-scheduled', className: 'bg-orange-500/20 text-orange-300 border border-orange-500/40' },
+};
+
+function formatMinutes(mins: number): string {
+  if (mins <= 0) return '0m';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
 
 interface TaskCardProps {
   task: any;
@@ -25,6 +49,17 @@ interface TaskCardProps {
 export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick, onStatusChange, onWinTheDayToggle, hideClearGoals, isSelectable, isSelected, onSelect }: TaskCardProps) {
   const isDone = task.status === 'DONE';
   const isOverdue = isTaskOverdue(task);
+
+  const blocks: WorkBlockForProgress[] = Array.isArray(task.workBlocks) ? task.workBlocks : [];
+  const estimatedMinutes: number = typeof task.estimatedMinutes === 'number' ? task.estimatedMinutes : 60;
+  const time = computeTaskTimeProgress(blocks, estimatedMinutes);
+  const goals = computeTaskGoalsProgress(Array.isArray(task.clearGoals) ? task.clearGoals : []);
+  const scheduleState = computeTaskScheduleState(blocks, estimatedMinutes);
+  const scheduledMinutes = computeScheduledMinutes(blocks);
+  const schedulePercent = estimatedMinutes > 0 ? Math.min(100, Math.round((scheduledMinutes / estimatedMinutes) * 100)) : 0;
+  const timePercentCapped = Math.min(100, time.percent);
+  const statePill = SCHEDULE_STATE_STYLES[scheduleState];
+  const showProgress = blocks.length > 0 || scheduleState !== 'UNSCHEDULED' || time.completedMinutes > 0;
 
   return (
     <m.div
@@ -178,6 +213,36 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
           </button>
         </div>
       </div>
+      {showProgress && (
+        <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-2 space-y-1.5">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statePill.className}`}>
+              {statePill.label}
+            </span>
+            <span className="flex items-center gap-1 text-[var(--text-muted)]">
+              <Clock className="h-3 w-3" />
+              {formatMinutes(time.completedMinutes)} of {formatMinutes(estimatedMinutes)}
+              {time.isOverrun && <span className="text-orange-400 font-medium">&nbsp;({time.percent}%)</span>}
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full bg-[var(--surface-raised)] overflow-hidden">
+            <div
+              className={`h-full transition-all ${time.isOverrun ? 'bg-orange-500' : 'bg-indigo-500'}`}
+              style={{ width: `${Math.min(100, timePercentCapped)}%` }}
+            />
+          </div>
+          {scheduledMinutes > 0 && scheduledMinutes !== time.completedMinutes && (
+            <div className="h-[3px] rounded-full bg-[var(--surface-raised)] overflow-hidden" title={`${formatMinutes(scheduledMinutes)} scheduled of ${formatMinutes(estimatedMinutes)}`}>
+              <div className="h-full bg-indigo-300/50" style={{ width: `${schedulePercent}%` }} />
+            </div>
+          )}
+          {goals.goalsDefined > 0 && (
+            <div className="text-[11px] text-[var(--text-muted)]">
+              {goals.goalsHit} of {goals.goalsDefined} goals hit
+            </div>
+          )}
+        </div>
+      )}
       {!hideClearGoals && (
         <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-2">
           <ClearGoalsDisplay taskId={task.id} editable={false} compact />

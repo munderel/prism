@@ -93,6 +93,61 @@ export async function PATCH(
 
   const updated = await prisma.task.update({ where: { id }, data });
 
+  // When the task is marked DONE: snapshot progress at this moment and mark remaining PENDING blocks as MISSED.
+  // Completion is always user-declared: we never auto-flip when completedMinutes crosses estimate.
+  if (status === 'DONE' && task.status !== 'DONE') {
+    try {
+      const blocks = await prisma.workBlock.findMany({ where: { taskId: id } });
+      const clearGoals = await prisma.clearGoal.findMany({ where: { taskId: id } });
+
+      const scheduledMinutes = blocks.reduce((acc, b) => acc + Math.max(0, Math.round((b.end.getTime() - b.start.getTime()) / 60000)), 0);
+      const completedMinutes = blocks
+        .filter((b) => b.completionStatus === 'COMPLETED' || b.completionStatus === 'PARTIAL')
+        .reduce((acc, b) => acc + (b.actualMinutes ?? Math.max(0, Math.round((b.end.getTime() - b.start.getTime()) / 60000))), 0);
+
+      const estimated = task.estimatedMinutes ?? 0;
+      const completedAt = (data.completedAt as Date) ?? new Date();
+
+      await prisma.$transaction([
+        prisma.workBlock.updateMany({
+          where: { taskId: id, completionStatus: 'PENDING' },
+          data: { completionStatus: 'MISSED', reviewedAt: completedAt },
+        }),
+        prisma.taskCompletionSnapshot.upsert({
+          where: { taskId: id },
+          update: {
+            completedAt,
+            estimatedMinutes: estimated,
+            completedMinutes,
+            scheduledMinutes,
+            goalsHit: clearGoals.filter((g) => g.isComplete).length,
+            goalsDefined: clearGoals.length,
+            overrunMinutes: completedMinutes - estimated,
+            blocksCompleted: blocks.filter((b) => b.completionStatus === 'COMPLETED').length,
+            blocksPartial: blocks.filter((b) => b.completionStatus === 'PARTIAL').length,
+            blocksMissed: blocks.filter((b) => b.completionStatus === 'MISSED').length,
+          },
+          create: {
+            taskId: id,
+            userId: task.ownerId,
+            completedAt,
+            estimatedMinutes: estimated,
+            completedMinutes,
+            scheduledMinutes,
+            goalsHit: clearGoals.filter((g) => g.isComplete).length,
+            goalsDefined: clearGoals.length,
+            overrunMinutes: completedMinutes - estimated,
+            blocksCompleted: blocks.filter((b) => b.completionStatus === 'COMPLETED').length,
+            blocksPartial: blocks.filter((b) => b.completionStatus === 'PARTIAL').length,
+            blocksMissed: blocks.filter((b) => b.completionStatus === 'MISSED').length,
+          },
+        }),
+      ]);
+    } catch (err) {
+      console.warn('[tasks] completion snapshot failed:', err);
+    }
+  }
+
   // On completion or drop: handle recurrence + progress cascade (fire-and-forget to avoid blocking response)
   if (status === 'DONE' || status === 'DROPPED') {
     const postUpdate = async () => {

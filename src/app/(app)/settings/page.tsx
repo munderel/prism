@@ -139,6 +139,7 @@ export default function SettingsPage() {
 
   // Powerdown Time
   const [powerdownTime, setPowerdownTime] = useState('17:30');
+  const [defaultWorkBlockMinutes, setDefaultWorkBlockMinutes] = useState(90);
 
   // Streak preferences — daily streak now fires solely on powerdown completion;
   // the per-category opt-in flags were removed.
@@ -223,6 +224,7 @@ export default function SettingsPage() {
         setCalendarColorOverrides({});
       }
       if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
+      if (typeof data.defaultWorkBlockMinutes === 'number') setDefaultWorkBlockMinutes(data.defaultWorkBlockMinutes);
       if (data.streakGraceDays !== undefined) setStreakGraceDays(data.streakGraceDays);
       if (data.beeminderAuthToken) setBeeminderAuthToken(data.beeminderAuthToken);
       if (data.beeminderGoalSlug) setBeeminderGoalSlug(data.beeminderGoalSlug);
@@ -281,7 +283,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
+        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, defaultWorkBlockMinutes, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
       });
 
       if (!res.ok) {
@@ -777,6 +779,25 @@ export default function SettingsPage() {
                   onChange={(e) => setCasualHoursEnd(e.target.value)}
                   className={inputClasses}
                 />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--text-secondary)]">Default work-block duration</label>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5 mb-2">
+                Length of a new work block when a task is dragged onto the calendar. Capped by the task&apos;s remaining estimate.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={15}
+                  max={480}
+                  step={5}
+                  value={defaultWorkBlockMinutes}
+                  onChange={(e) => setDefaultWorkBlockMinutes(Math.max(15, Math.min(480, Number(e.target.value) || 0)))}
+                  className={`${inputClasses} w-32`}
+                />
+                <span className="text-sm text-[var(--text-muted)]">minutes</span>
               </div>
             </div>
 

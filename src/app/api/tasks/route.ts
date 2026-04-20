@@ -66,7 +66,13 @@ export async function GET(request: NextRequest) {
           ...(taskType ? [{ taskType }] : []),
         ],
       },
-      include: { goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } }, _count: { select: { comments: true, children: true } }, children: { select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true } } },
+      include: {
+        goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } },
+        _count: { select: { comments: true, children: true } },
+        children: { select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true } },
+        workBlocks: { select: { id: true, start: true, end: true, completionStatus: true, actualMinutes: true } },
+        clearGoals: { select: { id: true, isComplete: true, workBlockId: true } },
+      },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
     return Response.json(tasks, NO_STORE);
@@ -133,6 +139,8 @@ export async function GET(request: NextRequest) {
         select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true },
         orderBy: { createdAt: 'asc' },
       },
+      workBlocks: { select: { id: true, start: true, end: true, completionStatus: true, actualMinutes: true } },
+      clearGoals: { select: { id: true, isComplete: true, workBlockId: true } },
     },
   });
 
