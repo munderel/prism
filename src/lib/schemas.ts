@@ -102,6 +102,7 @@ export const updateSettingsSchema = z.object({
   calendarColorOverrides: z.record(z.string(), z.string()).optional(),
   weeklyTargetCalendarIds: z.array(z.string()).optional(),
   powerdownTime: hhmmTime,
+  defaultWorkBlockMinutes: z.number().int().min(15).max(480).optional(),
   weeklyReviewDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   weeklyReviewTime: hhmmTime,
   weeklyReviewDuration: reviewDuration,
@@ -706,6 +707,37 @@ export const updateCalendarEventSchema = z.object({
   start: z.string().min(1, 'start is required'),
   end: z.string().min(1, 'end is required'),
   calendarId: z.string().optional(),
+});
+
+// === WORK BLOCKS ===
+
+export const createWorkBlockSchema = z.object({
+  taskId: z.string().min(1, 'taskId is required'),
+  start: z.string().min(1, 'start is required'),
+  end: z.string().min(1, 'end is required'),
+  mainObjective: z.string().min(1, 'mainObjective is required').max(500),
+  subGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
+});
+
+export const updateWorkBlockSchema = z.object({
+  start: z.string().optional(),
+  end: z.string().optional(),
+  mainObjective: z.string().min(1).max(500).optional(),
+  completionStatus: z.enum(['PENDING', 'COMPLETED', 'PARTIAL', 'MISSED']).optional(),
+  actualMinutes: z.number().int().min(0).max(1440).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+export const reviewWorkBlocksSchema = z.object({
+  powerdownSessionId: z.string().min(1),
+  reviews: z.array(
+    z.object({
+      workBlockId: z.string().min(1),
+      completionStatus: z.enum(['COMPLETED', 'PARTIAL', 'MISSED']),
+      actualMinutes: z.number().int().min(0).max(1440).optional().nullable(),
+      notes: z.string().max(2000).optional().nullable(),
+    })
+  ).min(1),
 });
 
 // === HELPER ===

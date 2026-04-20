@@ -214,7 +214,7 @@ export async function GET(request: NextRequest) {
   let googleError: string | undefined;
 
   // Run independent queries in parallel
-  const [tasks, reviews, meetings, googleEvents, pdSessions, aimInstances, teamReviews, calendarProcesses, processTasks] = await Promise.all([
+  const [tasks, reviews, meetings, googleEvents, pdSessions, aimInstances, teamReviews, calendarProcesses, processTasks, workBlocks] = await Promise.all([
     (fetchAll || source === 'tasks')
       ? prisma.task.findMany({
           where: {
@@ -350,6 +350,18 @@ export async function GET(request: NextRequest) {
           select: { processId: true, timeBlockStart: true, dueDate: true },
         })
       : Promise.resolve([]),
+    // WorkBlocks — per-session scheduling. Supersedes Task.timeBlockStart events for tasks that have blocks.
+    (fetchAll || source === 'tasks')
+      ? prisma.workBlock.findMany({
+          where: {
+            userId: auth.userId,
+            start: { gte: rangeStart, lte: rangeEnd },
+          },
+          include: {
+            task: { select: { id: true, title: true, description: true, taskType: true, priority: true, status: true, goal: { select: { title: true } } } },
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   // Detect "not connected" — Google was requested but returned empty without error
@@ -375,7 +387,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Tasks that have at least one WorkBlock in this range are represented by workblock events (below), not timeBlock events.
+  const tasksWithBlocks = new Set<string>(workBlocks.map((b) => b.taskId));
+
   for (const task of tasks) {
+    // If the task has a WorkBlock in range, skip the legacy timeBlock event to avoid double-rendering.
+    // We still emit an all-day due-date event if the task has a dueDate and no time block.
+    if (tasksWithBlocks.has(task.id)) continue;
     events.push({
       id: `task-${task.id}`,
       title: task.title,
@@ -392,6 +410,29 @@ export async function GET(request: NextRequest) {
       priority: task.priority,
       goalTitle: task.goal?.title,
       color: getTaskTypeColor(task.taskType).color,
+    });
+  }
+
+  for (const block of workBlocks) {
+    events.push({
+      id: `workblock-${block.id}`,
+      title: block.task.title,
+      description: block.mainObjective,
+      start: block.start.toISOString(),
+      end: block.end.toISOString(),
+      allDay: false,
+      source: 'tasks',
+      taskId: block.taskId,
+      workBlockId: block.id,
+      itemId: block.id,
+      itemType: 'workblock',
+      status: block.task.status,
+      taskType: block.task.taskType,
+      priority: block.task.priority,
+      goalTitle: block.task.goal?.title,
+      mainObjective: block.mainObjective,
+      completionStatus: block.completionStatus,
+      color: getTaskTypeColor(block.task.taskType).color,
     });
   }
 

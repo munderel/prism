@@ -11,11 +11,12 @@ import {
   BarChart3,
   Target,
   CheckSquare,
+  Clock,
 } from 'lucide-react';
 
 import { getLocalDateString, formatDisplayDate } from '@/lib/date-utils';
 
-type Tab = 'reviews' | 'tasks' | 'aims' | 'goals' | 'ideas' | 'distractions' | 'gratitudes';
+type Tab = 'reviews' | 'tasks' | 'work_blocks' | 'aims' | 'goals' | 'ideas' | 'distractions' | 'gratitudes';
 
 interface ReviewAnswerRow {
   stepKey: string;
@@ -160,6 +161,7 @@ export default function ReportsExportPage() {
   const tabs: { key: Tab; label: string; icon: ReactNode }[] = [
     { key: 'reviews', label: 'Reviews', icon: <FileText className="h-4 w-4" /> },
     { key: 'tasks', label: 'Tasks', icon: <CheckSquare className="h-4 w-4" /> },
+    { key: 'work_blocks', label: 'Work Blocks', icon: <Clock className="h-4 w-4" /> },
     { key: 'aims', label: 'AIMs', icon: <Target className="h-4 w-4" /> },
     { key: 'goals', label: 'Goals', icon: <BarChart3 className="h-4 w-4" /> },
     { key: 'ideas', label: 'Ideas', icon: <FileText className="h-4 w-4" /> },
@@ -211,6 +213,7 @@ export default function ReportsExportPage() {
       {/* Tab content */}
       {activeTab === 'reviews' && <ReviewsTab from={from} to={to} />}
       {activeTab === 'tasks' && <TasksTab from={from} to={to} />}
+      {activeTab === 'work_blocks' && <WorkBlocksTab from={from} to={to} />}
       {activeTab === 'aims' && <AIMsTab />}
       {activeTab === 'goals' && <GoalsTab />}
       {activeTab === 'ideas' && <IdeasTab from={from} to={to} />}
@@ -633,6 +636,143 @@ function ErrorMessage({ message }: { message: string }) {
   return (
     <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
       {message}
+    </div>
+  );
+}
+
+interface PowerdownReviewRow {
+  id: string;
+  reviewDate: string;
+  blocksTotal: number;
+  blocksCompleted: number;
+  blocksPartial: number;
+  blocksMissed: number;
+  totalScheduledMinutes: number;
+  totalCompletedMinutes: number;
+}
+
+interface CompletionSnapshotRow {
+  id: string;
+  completedAt: string;
+  estimatedMinutes: number;
+  completedMinutes: number;
+  scheduledMinutes: number;
+  goalsHit: number;
+  goalsDefined: number;
+  overrunMinutes: number;
+  blocksCompleted: number;
+  blocksPartial: number;
+  blocksMissed: number;
+  task: { id: string; title: string; taskType: string };
+}
+
+function formatMinutesH(mins: number): string {
+  if (mins <= 0) return '0m';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function WorkBlocksTab({ from, to }: { from: string; to: string }) {
+  const { data, error, isLoading } = useSWR<{ powerdownReviews: PowerdownReviewRow[]; taskCompletions: CompletionSnapshotRow[] }>(
+    `/api/reports/work-blocks?from=${from}&to=${to}`,
+    { revalidateOnFocus: false }
+  );
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message="Failed to load work-block reports." />;
+
+  const pdReviews = data?.powerdownReviews ?? [];
+  const completions = data?.taskCompletions ?? [];
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-[var(--text-primary)]">Daily Work-Block Reviews</h2>
+        <p className="mb-3 text-xs text-[var(--text-muted)]">
+          Each row is one Power Down&apos;s aggregated result of the &quot;Review Work Blocks&quot; step.
+        </p>
+        {pdReviews.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">No power-down block reviews in this range.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-[var(--border-color)] text-sm">
+              <thead>
+                <tr className="text-left text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Total</th>
+                  <th className="px-3 py-2 text-emerald-400">Completed</th>
+                  <th className="px-3 py-2 text-amber-400">Partial</th>
+                  <th className="px-3 py-2 text-gray-400">Missed</th>
+                  <th className="px-3 py-2">Scheduled</th>
+                  <th className="px-3 py-2">Time Done</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-color)]">
+                {pdReviews.map((r) => (
+                  <tr key={r.id}>
+                    <td className="px-3 py-2 text-[var(--text-primary)]">{formatDisplayDate(r.reviewDate)}</td>
+                    <td className="px-3 py-2 text-[var(--text-secondary)]">{r.blocksTotal}</td>
+                    <td className="px-3 py-2 text-emerald-400">{r.blocksCompleted}</td>
+                    <td className="px-3 py-2 text-amber-400">{r.blocksPartial}</td>
+                    <td className="px-3 py-2 text-gray-400">{r.blocksMissed}</td>
+                    <td className="px-3 py-2 text-[var(--text-secondary)]">{formatMinutesH(r.totalScheduledMinutes)}</td>
+                    <td className="px-3 py-2 text-[var(--text-primary)]">{formatMinutesH(r.totalCompletedMinutes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-[var(--text-primary)]">Task Completion Snapshots</h2>
+        <p className="mb-3 text-xs text-[var(--text-muted)]">
+          Frozen at the moment each task was marked done — estimate vs. actual and goals hit.
+        </p>
+        {completions.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">No completed tasks in this range.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-[var(--border-color)] text-sm">
+              <thead>
+                <tr className="text-left text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+                  <th className="px-3 py-2">Completed</th>
+                  <th className="px-3 py-2">Task</th>
+                  <th className="px-3 py-2">Estimate</th>
+                  <th className="px-3 py-2">Actual</th>
+                  <th className="px-3 py-2">Overrun</th>
+                  <th className="px-3 py-2">Goals</th>
+                  <th className="px-3 py-2">Blocks</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-color)]">
+                {completions.map((c) => {
+                  const overrun = c.overrunMinutes;
+                  const overrunLabel = overrun === 0 ? 'On target' : overrun > 0 ? `+${formatMinutesH(overrun)}` : `−${formatMinutesH(-overrun)}`;
+                  const overrunClass = overrun > 0 ? 'text-orange-400' : overrun < 0 ? 'text-emerald-400' : 'text-[var(--text-muted)]';
+                  return (
+                    <tr key={c.id}>
+                      <td className="px-3 py-2 text-[var(--text-primary)]">{formatDisplayDate(c.completedAt)}</td>
+                      <td className="px-3 py-2 text-[var(--text-primary)]">{c.task.title}</td>
+                      <td className="px-3 py-2 text-[var(--text-secondary)]">{formatMinutesH(c.estimatedMinutes)}</td>
+                      <td className="px-3 py-2 text-[var(--text-secondary)]">{formatMinutesH(c.completedMinutes)}</td>
+                      <td className={`px-3 py-2 ${overrunClass}`}>{overrunLabel}</td>
+                      <td className="px-3 py-2 text-[var(--text-secondary)]">{c.goalsHit}/{c.goalsDefined}</td>
+                      <td className="px-3 py-2 text-[var(--text-secondary)]">
+                        {c.blocksCompleted}✓ {c.blocksPartial}~ {c.blocksMissed}✗
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

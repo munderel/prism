@@ -11,8 +11,10 @@ import type { EventReceiveArg, EventResizeDoneArg } from '@fullcalendar/interact
 import { type ProposedSlot } from '@/lib/scheduling-engine';
 import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
+import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload } from './WorkBlockObjectiveModal';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
+import { useUserSettings } from '@/hooks/useUserSettings';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -215,6 +217,16 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
   // Task editor modal state
   const [editingTask, setEditingTask] = useState<Record<string, unknown> | null>(null);
+
+  // Work-block objective modal state (opens when a task is dropped on calendar).
+  // `pendingTempEventId` is the FullCalendar event id created by the drop; we remove it if user cancels.
+  const { data: userSettingsData } = useUserSettings();
+  const defaultWorkBlockMinutes =
+    typeof userSettingsData?.defaultWorkBlockMinutes === 'number'
+      ? (userSettingsData.defaultWorkBlockMinutes as number)
+      : 90;
+  const [workBlockModalInput, setWorkBlockModalInput] = useState<WorkBlockObjectiveInput | null>(null);
+  const [pendingWorkBlockInfo, setPendingWorkBlockInfo] = useState<EventReceiveArg | null>(null);
 
   // Task assignment panel state (Deep Work as task container)
   const [selectedAimInstance, setSelectedAimInstance] = useState<SelectedAimInstance | null>(null);
@@ -463,8 +475,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       return;
     }
 
-    // If this is a task event, show popover with Complete action
-    if (props.taskId || info.event.id?.startsWith('task-')) {
+    // If this is a task or workblock event, show popover with Complete action
+    if (props.taskId || info.event.id?.startsWith('task-') || info.event.id?.startsWith('workblock-')) {
       setSelectedEventPopover({
         eventId: info.event.id,
         title: info.event.title,
@@ -629,17 +641,85 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         const taskId = (props.taskId as string) || info.event.id?.replace('task-', '');
         if (!taskId) return;
 
-        const res = await scheduleItem('task', taskId, startISO, endISO, { dueDate: startISO });
-        if (!res.ok) throw new Error('Failed to schedule task');
+        // Compute proposed block size: min(defaultWorkBlockMinutes, remaining estimate)
+        let proposedMinutes = defaultWorkBlockMinutes;
+        let taskTitle = info.event.title;
+        try {
+          const taskRes = await fetch(`/api/tasks/${taskId}`);
+          if (taskRes.ok) {
+            const task = await taskRes.json();
+            const estimated = task.estimatedMinutes ?? 60;
+            const scheduled = (task.workBlocks ?? []).reduce((acc: number, b: { start: string; end: string }) => {
+              const dur = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
+              return acc + dur;
+            }, 0);
+            const remaining = Math.max(0, estimated - scheduled);
+            proposedMinutes = remaining === 0 ? defaultWorkBlockMinutes : Math.min(defaultWorkBlockMinutes, remaining);
+            taskTitle = task.title ?? taskTitle;
+          }
+        } catch {
+          // fall back to default
+        }
 
-        refreshEvents();
-        onExternalDrop?.(taskId, start, end, 'task');
+        // Open modal; keep the temp event around for now. Modal save/cancel handles it.
+        setWorkBlockModalInput({
+          taskId,
+          taskTitle,
+          start,
+          end: new Date(start.getTime() + proposedMinutes * 60000),
+          proposedMinutes,
+        });
+        setPendingWorkBlockInfo(info);
       }
     } catch {
       info.event.remove();
       toast.error('Failed to schedule item. Please try again.');
     }
   };
+
+  const handleWorkBlockModalSave = useCallback(async (payload: WorkBlockObjectivePayload) => {
+    if (!workBlockModalInput) return;
+    const res = await fetch('/api/work-blocks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        taskId: workBlockModalInput.taskId,
+        start: payload.start,
+        end: payload.end,
+        mainObjective: payload.mainObjective,
+        subGoals: payload.subGoals,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error((await res.json().catch(() => ({}))).error || 'Failed to create work block');
+    }
+    // Remove the temporary FullCalendar event; the refresh will pull the real workblock event back in.
+    if (pendingWorkBlockInfo) pendingWorkBlockInfo.event.remove();
+    setPendingWorkBlockInfo(null);
+    setWorkBlockModalInput(null);
+    refreshEvents();
+  }, [workBlockModalInput, pendingWorkBlockInfo, refreshEvents]);
+
+  const handleWorkBlockModalCancel = useCallback(() => {
+    if (pendingWorkBlockInfo) pendingWorkBlockInfo.event.remove();
+    setPendingWorkBlockInfo(null);
+    setWorkBlockModalInput(null);
+  }, [pendingWorkBlockInfo]);
+
+  const handleDeleteWorkBlock = useCallback(async (workBlockId: string) => {
+    try {
+      const res = await fetch(`/api/work-blocks/${workBlockId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Work block removed');
+        setSelectedEventPopover(null);
+        refreshEvents();
+      } else {
+        toast.error('Failed to delete work block');
+      }
+    } catch {
+      toast.error('Failed to delete work block');
+    }
+  }, [toast, refreshEvents]);
 
   const handleEventDrop = async (info: EventDropArg | EventResizeDoneArg) => {
     const eventId = info.event.id;
@@ -706,6 +786,13 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
             timeBlockStart: newStart,
             timeBlockEnd: newEnd,
           }),
+        });
+      } else if (eventId.startsWith('workblock-')) {
+        const workBlockId = eventId.replace('workblock-', '');
+        res = await fetch(`/api/work-blocks/${workBlockId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start: newStart, end: newEnd }),
         });
       } else if (eventId.startsWith('task-')) {
         const taskId = eventId.replace('task-', '');
@@ -974,6 +1061,14 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         aimName={pendingAimName}
       />
 
+      {/* Work Block objective modal (fired when user drops a task on calendar) */}
+      <WorkBlockObjectiveModal
+        open={!!workBlockModalInput}
+        input={workBlockModalInput}
+        onSave={handleWorkBlockModalSave}
+        onCancel={handleWorkBlockModalCancel}
+      />
+
       {/* Event Detail Popover */}
       {selectedEventPopover && (
         <>
@@ -1212,21 +1307,37 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
             )}
             {selectedEventPopover.source === 'task' && selectedEventPopover.taskId && (
               <>
-                <button
-                  onClick={() => handleUnschedule(`/api/tasks/${selectedEventPopover.taskId}`, 'Task')}
-                  disabled={completingEvent}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
-                >
-                  <CalendarX2 className="h-3.5 w-3.5" />
-                  Unschedule
-                </button>
-                <button
-                  onClick={() => selectedEventPopover.taskId && handleDeleteTask(selectedEventPopover.taskId)}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
-                </button>
+                {selectedEventPopover.eventId?.startsWith('workblock-') ? (
+                  <button
+                    onClick={() => {
+                      const wbId = selectedEventPopover.eventId.replace('workblock-', '');
+                      handleDeleteWorkBlock(wbId);
+                    }}
+                    disabled={completingEvent}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+                  >
+                    <CalendarX2 className="h-3.5 w-3.5" />
+                    Remove block
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleUnschedule(`/api/tasks/${selectedEventPopover.taskId}`, 'Task')}
+                    disabled={completingEvent}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors"
+                  >
+                    <CalendarX2 className="h-3.5 w-3.5" />
+                    Unschedule
+                  </button>
+                )}
+                {!selectedEventPopover.eventId?.startsWith('workblock-') && (
+                  <button
+                    onClick={() => selectedEventPopover.taskId && handleDeleteTask(selectedEventPopover.taskId)}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                )}
               </>
             )}
 
