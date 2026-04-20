@@ -123,6 +123,24 @@ export function getWeekBoundaries(date?: Date): DateBoundary {
 }
 
 /**
+ * Returns the Monday–Sunday boundaries of the week *after* the week containing
+ * the given date (defaults to today) as YYYY-MM-DD strings in local timezone.
+ * Used by weekly review planning steps that look at the upcoming week.
+ */
+export function getUpcomingWeekBoundaries(date?: Date): DateBoundary {
+  const d = date ? new Date(date) : new Date();
+  const dayOfWeek = (d.getDay() + 6) % 7;
+  const upcomingMonday = new Date(d);
+  upcomingMonday.setDate(d.getDate() - dayOfWeek + 7);
+  const upcomingSunday = new Date(upcomingMonday);
+  upcomingSunday.setDate(upcomingMonday.getDate() + 6);
+  return {
+    start: getLocalDateString(upcomingMonday),
+    end: getLocalDateString(upcomingSunday),
+  };
+}
+
+/**
  * Returns the first and last day of the month containing the given date
  * (defaults to today) as YYYY-MM-DD strings in local timezone.
  */

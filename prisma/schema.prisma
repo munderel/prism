@@ -116,6 +116,22 @@ model User {
   workBlocks           WorkBlock[]
   powerdownWorkBlockReviews PowerdownWorkBlockReview[]
   taskCompletionSnapshots TaskCompletionSnapshot[]
+  taskTypeColors       UserTaskTypeColor[]
+  companyGoalAssignments CompanyGoalAssignment[]
+}
+
+model UserTaskTypeColor {
+  id        String   @id @default(cuid())
+  userId    String
+  itemType  String   // matches ItemType key in src/lib/prism-colors.ts (IMPROVE, REACT, etc.)
+  color     String   // hex code, e.g. "#818cf8"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemType])
+  @@index([userId])
 }
 
 model CompanySettings {
@@ -138,8 +154,27 @@ model GoalStack {
   owner          User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   goals          Goal[]
   configVersions ConfigVersion[]
+  assignments    CompanyGoalAssignment[]
 
   @@index([ownerId])
+}
+
+model CompanyGoalAssignment {
+  id           String   @id @default(cuid())
+  goalStackId  String
+  userId       String
+  assignedAt   DateTime @default(now())
+  assignedById String?  // admin userId who made the assignment
+  notes        String?  // optional context ("owns customer acquisition slice")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  goalStack GoalStack @relation(fields: [goalStackId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([goalStackId, userId])
+  @@index([userId])
+  @@index([goalStackId])
 }
 
 enum GoalLevel {
@@ -218,7 +253,6 @@ enum TaskType {
   REACT
   MAINTENANCE
   REVIEW
-  CHORE
 }
 
 enum TaskStatus {

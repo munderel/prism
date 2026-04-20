@@ -12,7 +12,7 @@ import { playCompletionFeedback } from '@/lib/completion-feedback';
 
 // REVIEW is intentionally omitted here: weekly/monthly/yearly reviews are
 // Review rows (not Task rows) and surface via the pink banner on the Tasks
-// page. CHORE is fully deprecated and migrated to REACT.
+// page.
 const SECTIONS = [
   { key: 'IMPROVE', label: 'Improve', color: 'text-indigo-600 dark:text-indigo-400' },
   { key: 'REACT', label: 'React', color: 'text-amber-700 dark:text-yellow-400' },

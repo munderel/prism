@@ -7,6 +7,16 @@ import { parseBody, updateReviewSchema } from '@/lib/schemas';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { cancelManagedSeriesInstance, syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
 import { updateSpecificStreak } from '@/lib/streak-engine';
+import { ProcessCadence } from '@prisma/client';
+
+// Maps review cadence to a continuation window for the review-specific streak.
+// Without this mapping, a weekly review completion would be treated as a daily
+// streak (1-day window) and reset every week instead of continuing.
+const REVIEW_TYPE_TO_CADENCE: Record<ReviewType, ProcessCadence> = {
+  WEEKLY: ProcessCadence.WEEKLY,
+  MONTHLY: ProcessCadence.MONTHLY,
+  YEARLY: ProcessCadence.YEARLY,
+};
 
 type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
 
@@ -58,8 +68,19 @@ export async function PATCH(
   if (body.complete) data.completedAt = new Date();
 
   if (body.complete && !review.completedAt) {
-    // Per-review streak. Daily streak is driven solely by powerdown.
-    await updateSpecificStreak(auth.userId, 'review').catch((err) => console.warn('[streak] review streak update failed:', err));
+    // Per-review streak, using a distinct streak type per review cadence so
+    // weekly / monthly / yearly streaks don't collide. Cadence-specific
+    // continuation windows come from CONTINUATION_WINDOW_DAYS in streak-engine.
+    const cadence = REVIEW_TYPE_TO_CADENCE[review.reviewType];
+    const streakType = `review_${review.reviewType.toLowerCase()}`;
+    await updateSpecificStreak(auth.userId, streakType, cadence).catch((err) =>
+      console.warn(`[streak] ${streakType} streak update failed:`, err),
+    );
+    // Back-compat: keep updating the legacy 'review' streak too so leaderboards
+    // that haven't been migrated still show movement.
+    await updateSpecificStreak(auth.userId, 'review', cadence).catch((err) =>
+      console.warn('[streak] review streak update failed:', err),
+    );
   }
 
   const updated = await prisma.review.update({ where: { id }, data });

@@ -516,7 +516,7 @@ export default function CalendarPage() {
 
             <div className="mb-3">
               <InlineTaskCreator
-                placeholder="Quick chore..."
+                placeholder="Quick task..."
                 onCreated={() => { mutateTasks(); }}
               />
             </div>

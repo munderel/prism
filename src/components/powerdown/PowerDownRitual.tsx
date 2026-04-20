@@ -1355,7 +1355,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 <div className="mb-2">
                   <InlineTaskCreator
                     defaultDate={tomorrowDateRange.start}
-                    placeholder="Add a quick chore for tomorrow..."
+                    placeholder="Add a quick task for tomorrow..."
                     onCreated={() => fetchTomorrowTasks()}
                   />
                 </div>

@@ -15,8 +15,9 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useToast } from '@/components/ui/ToastProvider';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
-import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING } from '@/lib/prism-colors';
-import type { ColorDef } from '@/lib/prism-colors';
+import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING, taskTypeToColorKey } from '@/lib/prism-colors';
+import type { ColorDef, ItemType } from '@/lib/prism-colors';
+import { useTaskTypeColors } from '@/hooks/useTaskTypeColors';
 import { getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
 
 // ---------------------------------------------------------------------------
@@ -401,6 +402,11 @@ export function CalendarSplitView({
   const [completingEvent, setCompletingEvent] = useState(false);
   const [editingTask, setEditingTask] = useState<Record<string, unknown> | null>(null);
   const [visibleRange, setVisibleRange] = useState<{ start: string; end: string } | null>(null);
+
+  // Per-user task-type color overrides. Viewer-scoped: the logged-in user's
+  // overrides apply regardless of whose data is being rendered, so an admin
+  // scanning a user's schedule sees their own palette.
+  const { colors: userColors } = useTaskTypeColors();
 
   // Match the main calendar's data flow: fetch the exact visible range
   // reported by FullCalendar instead of a parent-supplied approximation.
@@ -815,8 +821,15 @@ export function CalendarSplitView({
       const { itemId, itemType, durationMin } = info.event.extendedProps ?? {};
       if (!itemId || !itemType) return;
       let start = info.event.start as Date;
-      const fallbackMs = (durationMin ?? 60) * 60 * 1000;
-      let end = info.event.end ?? new Date(start.getTime() + fallbackMs);
+      // Dropped item's own duration is authoritative. Ignore info.event.end,
+      // which FullCalendar sets to the target event's end when the drop lands
+      // on top of an existing event — that was expanding short tasks to the
+      // size of long work blocks (e.g. a 1-hour improve task becoming 10 hours
+      // when dropped on a 10-hour block).
+      const effectiveDurationMin =
+        typeof durationMin === 'number' && durationMin > 0 ? durationMin : 60;
+      const durationMs = effectiveDurationMin * 60 * 1000;
+      let end = new Date(start.getTime() + durationMs);
       // Snap-to-now if drop is near the red "current time" line on today.
       ({ start, end } = snapToNow(start, end));
       const title = info.event.title;
@@ -880,8 +893,12 @@ export function CalendarSplitView({
           return start >= evtStart && start < evtEnd;
         });
         if (block) {
+          // Anchor to the block's start but preserve the task's own duration,
+          // clamping the end to the block's end if the task would overflow.
           snapStart = new Date(block.start);
-          snapEnd = new Date(block.end);
+          const blockEnd = new Date(block.end);
+          const desiredEnd = new Date(snapStart.getTime() + durationMs);
+          snapEnd = desiredEnd > blockEnd ? blockEnd : desiredEnd;
         }
       }
 
@@ -930,7 +947,41 @@ export function CalendarSplitView({
   // Shared handler for event resize and internal drag-move
   const handleEventUpdate = useCallback(
     async (info: EventDropArg | EventResizeDoneArg) => {
-      const { itemId, itemType, meetingId, cadence } = info.event.extendedProps ?? {};
+      const { itemId, itemType, meetingId, cadence, source, calendarId } =
+        info.event.extendedProps ?? {};
+
+      // Google Calendar events (work blocks and other GCal entries) — PATCH the
+      // Google event directly. Without this path, the event would snap back:
+      // FullCalendar moves the event optimistically, but no server update fires,
+      // and the next SWR revalidation reads the stale Google time.
+      if (source === 'google' && typeof info.event.id === 'string' && info.event.id.startsWith('google-')) {
+        const gcalEventId = info.event.id.slice('google-'.length);
+        const startDate = info.event.start;
+        const endDate = info.event.end;
+        if (!startDate || !endDate) {
+          info.revert();
+          return;
+        }
+        try {
+          const res = await fetch(`/api/calendar/events/${gcalEventId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              start: startDate.toISOString(),
+              end: endDate.toISOString(),
+              calendarId: typeof calendarId === 'string' ? calendarId : 'primary',
+            }),
+          });
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+          await mutateEvents();
+          onRefresh?.();
+        } catch {
+          info.revert();
+          await mutateEvents();
+          toast.error('Failed to move calendar event. Please try again.');
+        }
+        return;
+      }
 
       // Meeting events don't have itemId/itemType — handle separately
       if (meetingId) {
@@ -969,17 +1020,44 @@ export function CalendarSplitView({
       // Food blocks have their own data plane — PATCH /api/food-blocks/[id]
       // directly instead of going through the task/aim onSchedule path.
       if (itemType === 'food') {
+        // Optimistically patch the event in the SWR cache so the block stays
+        // on screen during the round-trip. Without this, a refetch race could
+        // briefly render the calendar without the block and the user would
+        // see it flicker away.
+        const optimisticStart = start.toISOString();
+        const optimisticEnd = end.toISOString();
+        mutateEvents(
+          (current: unknown) => {
+            if (!current) return current;
+            const list = Array.isArray(current)
+              ? current
+              : (current as { events?: unknown[] }).events;
+            if (!Array.isArray(list)) return current;
+            const next = list.map((evt) => {
+              const e = evt as { itemId?: string; itemType?: string };
+              if (e.itemType === 'food' && e.itemId === itemId) {
+                return { ...e, start: optimisticStart, end: optimisticEnd };
+              }
+              return evt;
+            });
+            return Array.isArray(current)
+              ? next
+              : { ...(current as object), events: next };
+          },
+          { revalidate: false },
+        );
         try {
           const res = await fetch(`/api/food-blocks/${itemId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ startAt: start.toISOString(), endAt: end.toISOString() }),
+            body: JSON.stringify({ startAt: optimisticStart, endAt: optimisticEnd }),
           });
           if (!res.ok) throw new Error(`API returned ${res.status}`);
           await mutateEvents();
           onRefresh?.();
         } catch {
           info.revert();
+          await mutateEvents();
           toast.error('Failed to move food block. Please try again.');
         }
         return;
@@ -1010,33 +1088,78 @@ export function CalendarSplitView({
     [onSchedule, mutateEvents, onRefresh, toast, snapToNow],
   );
 
-  // Custom event content renderer with unschedule button
+  // Custom event content renderer: Google-Calendar-style single-line layout
+  // with an emoji prefix derived from the task type.
   const renderEventContent = useCallback(
     (eventInfo: EventContentArg) => {
-      const { itemId, itemType, source } = eventInfo.event.extendedProps ?? {};
-      const colors = getEventColor(eventInfo.event, isDark);
+      const { itemId, itemType, source, taskType } =
+        eventInfo.event.extendedProps ?? {};
+      let colors = getEventColor(eventInfo.event, isDark);
+      // Apply user task-type color override on top of the server/default color.
+      // Keyed by taskType (IMPROVE/REACT/...) or itemType fallback (AIM/FOOD).
+      let overrideKey: ItemType | null = null;
+      if (itemType === 'task' && typeof taskType === 'string') {
+        overrideKey = taskTypeToColorKey(taskType);
+      } else if (itemType === 'aim') {
+        overrideKey = 'AIM';
+      } else if (itemType === 'food') {
+        overrideKey = 'FOOD';
+      } else if (source === 'meetings') {
+        overrideKey = 'MEETING';
+      } else if (source === 'powerdown') {
+        overrideKey = 'POWER_DOWN';
+      }
+      if (overrideKey && userColors[overrideKey]) {
+        const hex = userColors[overrideKey].color;
+        colors = { ...colors, border: hex };
+      }
       const isGoogleEvent = source === 'google';
-      // Detect short events (≤ 10 min) to reduce padding and hide time text
-      const durationMs = (eventInfo.event.end?.getTime() ?? 0) - (eventInfo.event.start?.getTime() ?? 0);
+      const durationMs =
+        (eventInfo.event.end?.getTime() ?? 0) -
+        (eventInfo.event.start?.getTime() ?? 0);
       const isShort = durationMs > 0 && durationMs <= 10 * 60 * 1000;
 
-      // Unified styling matching the main CalendarView page: solid color
-      // background from PRISM_COLORS (per type) with always-white title text
-      // for consistent readability. Only differentiation is the background
-      // color; no per-type text-color variation.
+      // Pick emoji from the PRISM_COLORS entry matching the source/itemType:
+      // - tasks: taskType → IMPROVE/REACT/MAINTENANCE/REVIEW
+      // - aims: AIM
+      // - meetings: MEETING
+      // - food: FOOD
+      // - google: GOOGLE_CAL
+      let emoji = '';
+      if (itemType === 'task' && typeof taskType === 'string') {
+        emoji = PRISM_COLORS[taskTypeToColorKey(taskType)]?.emoji ?? '';
+      } else if (itemType === 'aim') {
+        emoji = PRISM_COLORS.AIM.emoji;
+      } else if (itemType === 'food') {
+        emoji = PRISM_COLORS.FOOD.emoji;
+      } else if (source === 'meetings') {
+        emoji = PRISM_COLORS.MEETING.emoji;
+      } else if (source === 'powerdown') {
+        emoji = PRISM_COLORS.POWER_DOWN.emoji;
+      }
+      // Strip a leading emoji already baked into the title (e.g. food blocks
+      // are returned as `🍽️ Lunch`) so we don't render it twice.
+      const rawTitle = eventInfo.event.title ?? '';
+      const displayTitle = emoji && rawTitle.startsWith(emoji)
+        ? rawTitle.slice(emoji.length).trimStart()
+        : rawTitle;
+
       return (
         <div
-          className={`relative h-full w-full overflow-hidden rounded px-1.5 text-xs leading-tight ${isShort ? 'py-0.5' : 'py-1'}`}
+          className={`relative h-full w-full overflow-hidden rounded px-1.5 text-[11px] leading-tight ${isShort ? 'py-0' : 'py-0.5'}`}
           style={{
             backgroundColor: colors.border,
             borderLeft: `3px solid ${colors.border}`,
             color: '#ffffff',
           }}
         >
-          <div className="font-medium truncate pr-5 text-white">{eventInfo.event.title}</div>
-          {eventInfo.timeText && !isShort && (
-            <div className="text-[10px] text-white/80 mt-0.5">{eventInfo.timeText}</div>
-          )}
+          <div className="flex items-baseline gap-1 truncate pr-4 text-white">
+            {emoji && <span aria-hidden className="flex-none">{emoji}</span>}
+            <span className="truncate font-medium">{displayTitle}</span>
+            {eventInfo.timeText && !isShort && (
+              <span className="ml-auto flex-none text-[10px] text-white/75">{eventInfo.timeText}</span>
+            )}
+          </div>
           {!isGoogleEvent && itemId && (
             <button
               type="button"
@@ -1055,7 +1178,7 @@ export function CalendarSplitView({
         </div>
       );
     },
-    [onUnschedule, mutateEvents, onRefresh, isDark],
+    [onUnschedule, mutateEvents, onRefresh, isDark, userColors],
   );
 
   return (
@@ -1228,10 +1351,10 @@ export function CalendarSplitView({
                 info.el.appendChild(badge);
               }
             }}
-            slotMinTime="06:00:00"
+            slotMinTime="00:00:00"
             slotMaxTime="24:00:00"
-            scrollTime="06:00:00"
-            slotDuration="00:15:00"
+            scrollTime="08:00:00"
+            slotDuration="00:30:00"
             slotLabelInterval="01:00:00"
             snapDuration="00:05:00"
             allDaySlot={false}
@@ -1239,6 +1362,8 @@ export function CalendarSplitView({
             height="100%"
             expandRows
             stickyHeaderDates={false}
+            dayMaxEvents
+            slotLabelFormat={{ hour: 'numeric', minute: '2-digit', meridiem: 'short' }}
           />
         </div>
       </div>

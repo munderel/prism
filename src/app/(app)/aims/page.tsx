@@ -451,6 +451,7 @@ export default function AimsPage() {
                 todayInstance={inst ? { id: inst.id, status: inst.status } : undefined}
                 onComplete={completeInstance}
                 onUndo={undoCompleteInstance}
+                onCompleteCategory={() => completeToday(cat.id)}
               />
             );
           })}
