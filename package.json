@@ -9,7 +9,8 @@
     "build": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
@@ -68,6 +69,7 @@
     "@types/react-dom": "^18",
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "jsdom": "^29.0.1",
