@@ -53,6 +53,10 @@ vi.mock('@/lib/process-task-checker', () => ({
   checkAndCreateDueProcessTasks: vi.fn(),
 }));
 
+vi.mock('@/lib/task-completion', () => ({
+  completeTask: vi.fn(),
+}));
+
 vi.mock('@/lib/progress', () => ({
   cascadeProgressUp: vi.fn(),
 }));

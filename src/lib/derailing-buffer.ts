@@ -22,7 +22,7 @@ import { getEffectiveFrequency, type UserAimLike } from '@/lib/aim-phases';
  * Buffer is capped at 30 to prevent unbounded accumulation from streaks.
  */
 
-export type AimDerailStatus = 'on_track' | 'caution' | 'derailing' | 'derailed';
+export type AimDerailStatus = 'on_track' | 'caution' | 'derailed';
 
 export interface BufferDerailInfo {
   status: AimDerailStatus;
@@ -33,6 +33,13 @@ export interface BufferDerailInfo {
 }
 
 const BUFFER_CAP_DAYS = 30;
+/**
+ * Days of buffer handed back when a user clicks "Get back on track." Kept
+ * short on purpose: the user already missed their streak, so giving them a
+ * full INITIAL_BUFFER_DAYS reset would remove the pressure that makes the
+ * derail-and-recover loop meaningful. Three days is enough to complete the
+ * aim at the typical ≤ 3x/week frequency before derailing again.
+ */
 const BACK_ON_TRACK_DAYS = 3;
 const INITIAL_BUFFER_DAYS = 7;
 

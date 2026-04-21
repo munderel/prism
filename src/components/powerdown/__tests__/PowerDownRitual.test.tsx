@@ -196,11 +196,12 @@ describe('PowerDownRitual', () => {
     });
   });
 
-  it('shows Goal Clarity Summary on step 6', async () => {
+  it('shows Goal Clarity Summary on its step', async () => {
+    // With no work blocks and no due KPI processes, goal_summary is step 7.
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
-        return { id: 'session-1', currentStep: 6, tomorrowPlan: [] };
+        return { id: 'session-1', currentStep: 7, tomorrowPlan: [] };
       },
       '/api/tasks': [
         { id: 't1', title: 'Tomorrow task A', status: 'TODO' },
@@ -210,7 +211,7 @@ describe('PowerDownRitual', () => {
     renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Step 6/)).toBeInTheDocument();
+      expect(screen.getByText(/Step 7/)).toBeInTheDocument();
     });
     expect(screen.getByText(/Goal Clarity Summary/)).toBeInTheDocument();
   });
