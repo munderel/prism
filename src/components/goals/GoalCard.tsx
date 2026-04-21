@@ -3,7 +3,8 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3 } from 'lucide-react';
+import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3, UserPlus } from 'lucide-react';
+import { GoalAssigneesModal } from './GoalAssigneesModal';
 import { GoalProgressBar } from './GoalProgressBar';
 import { TimeUrgencyBadge } from './TimeUrgencyBadge';
 import {
@@ -82,6 +83,7 @@ export const GoalCard = React.memo(function GoalCard({
   const canAddChild = !['DAILY', 'WEEKLY'].includes(goal.level);
   const canAddTask = goal.level === 'WEEKLY';
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [assigneesOpen, setAssigneesOpen] = useState(false);
   const statusRef = useRef<HTMLDivElement>(null);
   const styles = getLevelCardStyles(goal.level);
   const dateLabel = formatGoalDateRange(goal.level, goal.startDate, goal.endDate);
@@ -174,6 +176,47 @@ export const GoalCard = React.memo(function GoalCard({
           </div>
         </div>
 
+        {/* Assignees avatar stack (up to 3 + overflow count) */}
+        <button
+          onClick={(e) => { e.stopPropagation(); setAssigneesOpen(true); }}
+          className="flex items-center shrink-0 rounded hover:bg-[var(--hover-bg)] px-1 py-0.5"
+          title={goal.assignees?.length
+            ? `${goal.assignees.length} assignee${goal.assignees.length > 1 ? 's' : ''} — click to manage`
+            : 'No assignee — click to assign'}
+        >
+          {goal.assignees && goal.assignees.length > 0 ? (
+            <div className="flex -space-x-1.5">
+              {goal.assignees.slice(0, 3).map((a: { id: string; user: { id: string; name: string | null; email: string; image: string | null } }) => {
+                const label = a.user.name ?? a.user.email;
+                const initials = label.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || label[0]?.toUpperCase() || '?';
+                return a.user.image ? (
+                  <img
+                    key={a.id}
+                    src={a.user.image}
+                    alt={label}
+                    className="h-5 w-5 rounded-full border border-[var(--glass-bg)] object-cover"
+                  />
+                ) : (
+                  <span
+                    key={a.id}
+                    className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--glass-bg)] bg-indigo-500/60 text-[9px] font-semibold text-white"
+                    title={label}
+                  >
+                    {initials}
+                  </span>
+                );
+              })}
+              {goal.assignees.length > 3 && (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--glass-bg)] bg-[var(--hover-bg)] text-[9px] font-semibold text-[var(--text-muted)]">
+                  +{goal.assignees.length - 3}
+                </span>
+              )}
+            </div>
+          ) : (
+            <UserPlus className="h-3.5 w-3.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
+        </button>
+
         {/* Urgency badge based on end date */}
         {goal.endDate && (
           <div className="flex items-center gap-2 shrink-0">
@@ -217,6 +260,14 @@ export const GoalCard = React.memo(function GoalCard({
           </button>
         </div>
       </div>
+
+      {assigneesOpen && (
+        <GoalAssigneesModal
+          goalId={goal.id}
+          goalTitle={goal.title}
+          onClose={() => setAssigneesOpen(false)}
+        />
+      )}
     </m.div>
   );
 });

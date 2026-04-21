@@ -57,6 +57,11 @@ export async function GET(
           companyGoal: { select: { id: true, title: true } },
         },
       },
+      assignees: {
+        include: {
+          user: { select: { id: true, name: true, email: true, image: true } },
+        },
+      },
       ...parentInclude,
     },
   });
