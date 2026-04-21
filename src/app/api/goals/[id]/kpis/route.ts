@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackReadAccess, checkStackWriteAccess } from '@/lib/auth-guard';
 import { notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, createKpiSchema } from '@/lib/schemas';
 import { validateKpiLevel, validateKpiLink } from '@/lib/goal-validation';
@@ -20,7 +20,12 @@ export async function GET(
 
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  const accessDenied = await checkStackReadAccess(
+    goal.stack,
+    auth.userId,
+    auth.session.user.isAdmin,
+    { goalId }
+  );
   if (accessDenied) return accessDenied;
 
   const kpis = await prisma.kpi.findMany({
@@ -83,7 +88,12 @@ export async function POST(
 
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  // Creating a KPI is a structural write — admin or stack owner only.
+  const accessDenied = await checkStackWriteAccess(
+    goal.stack,
+    auth.userId,
+    auth.session.user.isAdmin
+  );
   if (accessDenied) return accessDenied;
 
   if (!validateKpiLevel(goal.level)) {

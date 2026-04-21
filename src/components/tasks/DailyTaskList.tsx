@@ -33,6 +33,7 @@ interface DailyTask {
   isPinned: boolean;
   estimatedMinutes: number;
   assigneeId: string | null;
+  assignee?: { id: string; name: string | null; image: string | null } | null;
   deliverable: string | null;
   preferredTimeStart: string | null;
   preferredTimeEnd: string | null;
