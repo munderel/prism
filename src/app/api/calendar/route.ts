@@ -359,7 +359,9 @@ export async function GET(request: NextRequest) {
       ? prisma.workBlock.findMany({
           where: {
             userId: auth.userId,
-            start: { gte: rangeStart, lte: rangeEnd },
+            // `lt` on the end side mirrors the half-open [start, end) pattern
+            // used by forEachDayInRange and the rest of the day-iteration code.
+            start: { gte: rangeStart, lt: rangeEnd },
           },
           include: {
             task: { select: { id: true, title: true, description: true, taskType: true, priority: true, status: true, goal: { select: { title: true } } } },

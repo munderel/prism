@@ -48,10 +48,14 @@ function toTimeInputValue(d: Date): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function combineDateTime(dateStr: string, timeStr: string): Date {
+function combineDateTime(dateStr: string, timeStr: string): Date | null {
+  // Return null rather than falling back to 1970-01-01 when the user has
+  // cleared one of the inputs. Save is gated on this being non-null.
   const [y, m, day] = dateStr.split('-').map(Number);
   const [h, min] = timeStr.split(':').map(Number);
-  return new Date(y, (m ?? 1) - 1, day ?? 1, h ?? 0, min ?? 0, 0, 0);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day)) return null;
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+  return new Date(y, m - 1, day, h, min, 0, 0);
 }
 
 export function WorkBlockObjectiveModal({
@@ -96,14 +100,22 @@ export function WorkBlockObjectiveModal({
     setDurationMinutes((prev) => Math.max(15, Math.min(480, prev + delta)));
   };
 
-  const resolvedStart = editableStart && startDate && startTime
+  const combined = editableStart && startDate && startTime
     ? combineDateTime(startDate, startTime)
-    : input.start;
+    : null;
+  const resolvedStart = combined ?? input.start;
+  const hasValidDateTime = !editableStart || combined !== null;
+
+  const canSave = hasValidDateTime && mainObjective.trim().length > 0 && !saving;
 
   const save = async () => {
     const objective = mainObjective.trim();
     if (!objective) {
       setError('Main objective is required');
+      return;
+    }
+    if (!hasValidDateTime) {
+      setError('Enter a valid date and time');
       return;
     }
     setSaving(true);
@@ -271,7 +283,8 @@ export function WorkBlockObjectiveModal({
           </button>
           <button
             onClick={save}
-            disabled={saving}
+            disabled={!canSave}
+            title={!hasValidDateTime ? 'Enter a valid date and time' : undefined}
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
             {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
