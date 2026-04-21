@@ -78,26 +78,11 @@ const passwordProvider = CredentialsProvider({
         where: { email: normalizedEmail },
       });
 
-      // Allow first user (bootstrap admin) to skip password check
-      const adminCount = await prisma.user.count({ where: { isAdmin: true } });
-
-      if (!user) {
-        if (adminCount === 0) {
-          // Bootstrap first admin user with this email and password
-          const bcryptPassword = await bcrypt.hash(credentials.password, 10);
-          const newUser = await prisma.user.create({
-            data: {
-              email: normalizedEmail,
-              name: normalizedEmail.split('@')[0],
-              isAdmin: true,
-              passwordHash: bcryptPassword,
-            },
-          });
-          if (isDev) console.log('[auth] authorize — bootstrap user created:', newUser.id);
-          return { id: newUser.id, email: newUser.email, name: newUser.name, isAdmin: true };
-        }
-        return null;
-      }
+      if (!user) return null;
+      // Bootstrap admin now goes through scripts/bootstrap-admin.ts (env-driven,
+      // race-safe, idempotent). Removing the credential-path auto-admin closes
+      // Critical #2 and H#8: two concurrent POSTs can no longer both become
+      // admin, and an unauthenticated request cannot create one at all.
 
       if (!user.passwordHash) return null;
       if (user.isLockedOut) return null;
