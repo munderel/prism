@@ -94,9 +94,13 @@ ALTER TABLE "PowerdownWorkBlockReview"
   ADD CONSTRAINT "PowerdownWorkBlockReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- 7. Backfill: every existing task with a time block becomes one WorkBlock.
+-- IDs are generated via gen_random_uuid() (Postgres 13+, built in without
+-- pgcrypto). The original `'t_' || md5(random() || clock_timestamp())`
+-- approach relied on md5 collision resistance for uniqueness and didn't
+-- match the cuid shape the rest of the schema uses.
 INSERT INTO "WorkBlock" ("id", "taskId", "userId", "start", "end", "mainObjective", "completionStatus", "createdAt", "updatedAt")
 SELECT
-  't_' || substr(md5(random()::text || clock_timestamp()::text), 1, 24) AS "id",
+  gen_random_uuid()::text AS "id",
   t."id" AS "taskId",
   t."ownerId" AS "userId",
   t."timeBlockStart" AS "start",

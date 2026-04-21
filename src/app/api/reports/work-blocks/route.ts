@@ -24,14 +24,18 @@ export async function GET(request: NextRequest) {
     dateFilter.lt = end;
   }
 
-  const [powerdownReviews, taskCompletions] = await Promise.all([
+  // Fetch one row past the page size so we can tell the UI there's more to
+  // page through without a separate count query. Prefer surfacing this as a
+  // hint rather than silently truncating.
+  const PAGE_SIZE = 200;
+  const [powerdownReviewsPlus, taskCompletionsPlus] = await Promise.all([
     prisma.powerdownWorkBlockReview.findMany({
       where: {
         userId: auth.userId,
         ...(Object.keys(dateFilter).length > 0 ? { reviewDate: dateFilter } : {}),
       },
       orderBy: { reviewDate: 'desc' },
-      take: 200,
+      take: PAGE_SIZE + 1,
     }),
     prisma.taskCompletionSnapshot.findMany({
       where: {
@@ -39,12 +43,28 @@ export async function GET(request: NextRequest) {
         ...(Object.keys(dateFilter).length > 0 ? { completedAt: dateFilter } : {}),
       },
       orderBy: { completedAt: 'desc' },
-      take: 200,
+      take: PAGE_SIZE + 1,
       include: {
         task: { select: { id: true, title: true, taskType: true } },
       },
     }),
   ]);
 
-  return Response.json({ powerdownReviews, taskCompletions }, NO_STORE);
+  const powerdownHasMore = powerdownReviewsPlus.length > PAGE_SIZE;
+  const taskHasMore = taskCompletionsPlus.length > PAGE_SIZE;
+  const powerdownReviews = powerdownHasMore ? powerdownReviewsPlus.slice(0, PAGE_SIZE) : powerdownReviewsPlus;
+  const taskCompletions = taskHasMore ? taskCompletionsPlus.slice(0, PAGE_SIZE) : taskCompletionsPlus;
+
+  return Response.json(
+    {
+      powerdownReviews,
+      taskCompletions,
+      pagination: {
+        pageSize: PAGE_SIZE,
+        powerdownHasMore,
+        taskHasMore,
+      },
+    },
+    NO_STORE,
+  );
 }
