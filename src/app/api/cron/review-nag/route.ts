@@ -3,6 +3,8 @@ import { requireCronSecret } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 import { notifyUser } from '@/lib/notifications';
 
+const NAG_LOOKBACK_DAYS = 30;
+
 export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -10,18 +12,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const now = new Date();
-
-    // Clean up stale REVIEW tasks created by previous versions of this cron.
-    // The dashboard and tasks page now surface overdue reviews directly from
-    // the Review model via a banner; surrogate REVIEW tasks are redundant and
-    // were leaking into the unscheduled-task lists.
-    const cleanupRes = await prisma.task.deleteMany({
-      where: { taskType: 'REVIEW' },
-    });
+    // Only nag about reviews missed in the last N days. Without a lower bound
+    // we'd re-notify users about reviews skipped a year ago on every run.
+    const nagFloor = new Date(now);
+    nagFloor.setDate(nagFloor.getDate() - NAG_LOOKBACK_DAYS);
 
     const overdueReviews = await prisma.review.findMany({
       where: {
-        scheduledDate: { lt: now },
+        scheduledDate: { gte: nagFloor, lt: now },
         completedAt: null,
       },
       include: {
@@ -55,7 +53,6 @@ export async function GET(request: NextRequest) {
       ok: true,
       overdue: overdueReviews.length,
       notified: notifications.length,
-      staleTasksRemoved: cleanupRes.count,
     });
   } catch (error) {
     console.error('[cron/review-nag] Unhandled error:', error);
