@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import { encryptToken } from './crypto';
 import { prisma } from './prisma';
 import { INVITE_EXPIRY_MS } from './api-helpers';
+import { checkLockout, recordLoginAttempt } from './login-lockout';
 
 // Fields that exist on the Prisma Account model. NextAuth spreads the raw
 // OAuth token response (`...tokens`) into the data passed to linkAccount,
@@ -74,21 +75,34 @@ const passwordProvider = CredentialsProvider({
       const normalizedEmail = credentials.email.trim().toLowerCase();
       if (isDev) console.log('[auth] authorize — attempt for:', normalizedEmail);
 
+      // Lockout check BEFORE password work. checkLockout auto-clears
+      // expired locks so a user naturally recovers after the window.
+      const lockoutStatus = await checkLockout(prisma, normalizedEmail);
+      if (lockoutStatus.locked) {
+        // Record the attempt so the attacker's timeline stays visible, but
+        // don't extend the lock — they're already capped until `until`.
+        await recordLoginAttempt(prisma, { email: normalizedEmail, success: false });
+        return null;
+      }
+
       const user = await prisma.user.findUnique({
         where: { email: normalizedEmail },
       });
 
-      if (!user) return null;
       // Bootstrap admin now goes through scripts/bootstrap-admin.ts (env-driven,
       // race-safe, idempotent). Removing the credential-path auto-admin closes
       // Critical #2 and H#8: two concurrent POSTs can no longer both become
       // admin, and an unauthenticated request cannot create one at all.
-
-      if (!user.passwordHash) return null;
-      if (user.isLockedOut) return null;
+      if (!user || !user.passwordHash) {
+        await recordLoginAttempt(prisma, { email: normalizedEmail, success: false });
+        return null;
+      }
 
       const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
-      if (!isValid) return null;
+      if (!isValid) {
+        await recordLoginAttempt(prisma, { email: normalizedEmail, success: false });
+        return null;
+      }
 
       // Check 2FA if enabled
       if (user.is2FAEnabled && user.totpSecret) {
@@ -117,6 +131,10 @@ const passwordProvider = CredentialsProvider({
         console.error('[auth] authorize — failed to check company auth:', e instanceof Error ? e.message : e);
       }
 
+      // Record success only after all auth steps pass. Writing success on
+      // a 2FA_REQUIRED throw would prematurely clear the failure tally.
+      await recordLoginAttempt(prisma, { email: normalizedEmail, success: true });
+
       return {
         id: user.id,
         email: user.email,
@@ -124,8 +142,16 @@ const passwordProvider = CredentialsProvider({
         isAdmin: user.isAdmin,
       };
     } catch (error) {
-      // Re-throw 2FA signals so NextAuth can pass them to the client
-      if (error instanceof Error && ['2FA_REQUIRED', '2FA_SETUP_REQUIRED', 'INVALID_2FA_CODE'].includes(error.message)) {
+      // Re-throw 2FA signals so NextAuth can pass them to the client.
+      // An INVALID_2FA_CODE is still a failed attempt for lockout purposes.
+      if (error instanceof Error && error.message === 'INVALID_2FA_CODE') {
+        await recordLoginAttempt(prisma, {
+          email: credentials?.email?.trim().toLowerCase() ?? '',
+          success: false,
+        }).catch(() => {});
+        throw error;
+      }
+      if (error instanceof Error && ['2FA_REQUIRED', '2FA_SETUP_REQUIRED'].includes(error.message)) {
         throw error;
       }
       console.error('[auth] authorize — unexpected error:', error instanceof Error ? error.message : error);

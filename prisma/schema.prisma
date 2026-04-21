@@ -51,6 +51,7 @@ model User {
   totpSecret                    String?   @db.Text
   is2FAEnabled                  Boolean   @default(false)
   isLockedOut                   Boolean   @default(false)
+  lockoutUntil                  DateTime? // auto-expires once this instant passes; see src/lib/login-lockout.ts
   isPublicOnLeaderboard         Boolean   @default(true)
   leaderboardResetAt            DateTime? // Marker: only items completed after this count toward leaderboard score.
   // Deprecated: daily streak now fires solely on powerdown completion.
