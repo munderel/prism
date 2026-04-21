@@ -31,7 +31,10 @@ function formatRange(startISO: string, endISO: string): string {
 
 export function TodayWorkBlocks() {
   const date = todayKey();
-  const swrKey = `/api/work-blocks?date=${date}`;
+  // Pass the browser's IANA timezone so the server computes the day window in
+  // the user's zone, not the server's local time (see /api/work-blocks).
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const swrKey = `/api/work-blocks?date=${date}&tz=${encodeURIComponent(tz)}`;
   const { data } = useSWR<WorkBlock[]>(swrKey, fetcher, { revalidateOnFocus: false });
   const blocks = Array.isArray(data) ? data : [];
 

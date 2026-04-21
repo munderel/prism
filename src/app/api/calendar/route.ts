@@ -12,6 +12,10 @@ import { getTaskTypeColor } from '@/lib/prism-colors';
 
 const MAX_DAYS = 366;
 
+// 26 hours: safe margin when widening a UTC range to cover a "1 zoned day"
+// boundary. Covers DST transitions (23h/25h days) and all UTC offsets ≤ ±14h.
+const TZ_SAFE_WIDEN_MS = 26 * 60 * 60 * 1000;
+
 /** Iterate day-by-day through a date range, calling `onDay` for each day.
  *  The callback receives a zoned cursor (local day/date/month values) and a YYYY-MM-DD dateKey. */
 function forEachDayInRange(
@@ -589,9 +593,11 @@ export async function GET(request: NextRequest) {
       pdOverrides.set(utcKey, override);
     }
 
-    // Widen iteration by 1 day each side to handle timezone boundary mismatches
-    const pdIterStart = new Date(rangeStart.getTime() - 86400000);
-    const pdIterEnd = new Date(rangeEnd.getTime() + 86400000);
+    // Widen iteration by 26h each side to handle timezone boundary mismatches
+    // AND DST transitions (a spring-forward day is only 23h of UTC elapsed, so
+    // a flat 24h widening can land on the same zoned day near transitions).
+    const pdIterStart = new Date(rangeStart.getTime() - TZ_SAFE_WIDEN_MS);
+    const pdIterEnd = new Date(rangeEnd.getTime() + TZ_SAFE_WIDEN_MS);
     const pdSeenDates = new Set<string>();
     forEachDayInRange(pdIterStart, pdIterEnd, userTz, (_zonedCursor, dateKey) => {
       if (pdSeenDates.has(dateKey)) return;
@@ -692,10 +698,10 @@ export async function GET(request: NextRequest) {
 
     for (const config of reviewConfigs) {
       const [h, m] = config.time.split(':').map(Number);
-      // Widen iteration range by 1 day each side to handle UTC/timezone boundary mismatches
-      // (pushTimedEvent already filters events outside the actual rangeStart–rangeEnd)
-      const reviewIterStart = new Date(rangeStart.getTime() - 86400000);
-      const reviewIterEnd = new Date(rangeEnd.getTime() + 86400000);
+      // Widen iteration by 26h each side to handle UTC/timezone boundary and
+      // DST transitions. (pushTimedEvent filters events outside rangeStart-rangeEnd.)
+      const reviewIterStart = new Date(rangeStart.getTime() - TZ_SAFE_WIDEN_MS);
+      const reviewIterEnd = new Date(rangeEnd.getTime() + TZ_SAFE_WIDEN_MS);
       forEachDayInRange(reviewIterStart, reviewIterEnd, userTz, (zonedCursor, dateKey) => {
         if (config.matchFn(zonedCursor)) {
           // Skip if a DB Review record already exists for this date+type (prevents duplicates)
