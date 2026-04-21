@@ -50,7 +50,10 @@ describe('YamlImportExport', () => {
     });
 
     render(<YamlImportExport {...defaultProps} />);
+    // "Example" is now a dropdown trigger — click it to reveal the options,
+    // then click the "Full goal stack" item which drives the download.
     await user.click(screen.getByText('Example'));
+    await user.click(screen.getByText('Full goal stack'));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith('/example-goal-stack-full.yaml');

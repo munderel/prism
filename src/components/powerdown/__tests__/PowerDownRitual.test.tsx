@@ -95,33 +95,35 @@ describe('PowerDownRitual', () => {
     expect(screen.getByText(/Weekly Goals & Tasks/)).toBeInTheDocument();
   });
 
-  it('shows step 9 with Complete Power Down button', async () => {
+  // With no work blocks and no due KPI processes, the STEPS array has 10 entries;
+  // the final step (gratitude) is where the "Complete Power Down" button lives.
+  it('shows final step with Complete Power Down button', async () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
-        return { id: 'session-1', currentStep: 9, tomorrowPlan: [] };
+        return { id: 'session-1', currentStep: 10, tomorrowPlan: [] };
       },
     });
     renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Step 9/)).toBeInTheDocument();
+      expect(screen.getByText(/Step 10/)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: /Complete Power Down/i })).toBeInTheDocument();
   });
 
-  it('shows completion screen after completing step 9', async () => {
+  it('shows completion screen after completing final step', async () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
-        return { id: 'session-1', currentStep: 9, tomorrowPlan: [] };
+        return { id: 'session-1', currentStep: 10, tomorrowPlan: [] };
       },
     });
     const user = userEvent.setup();
     renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Step 9/)).toBeInTheDocument();
+      expect(screen.getByText(/Step 10/)).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole('button', { name: /Complete Power Down/i }));
@@ -136,14 +138,14 @@ describe('PowerDownRitual', () => {
     setup({
       '/api/powerdown': (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') return { ok: true };
-        return { id: 'session-1', currentStep: 9, tomorrowPlan: [] };
+        return { id: 'session-1', currentStep: 10, tomorrowPlan: [] };
       },
     });
     const user = userEvent.setup();
     renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Step 9/)).toBeInTheDocument();
+      expect(screen.getByText(/Step 10/)).toBeInTheDocument();
     });
     await user.click(screen.getByRole('button', { name: /Complete Power Down/i }));
 

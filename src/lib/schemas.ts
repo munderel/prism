@@ -755,6 +755,20 @@ export const updateWorkBlockSchema = z
     { message: 'end must be after start', path: ['end'] },
   );
 
+export const splitTaskSchema = z.object({
+  sessions: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(200),
+        durationMinutes: z.number().int().min(1).max(1440),
+      }),
+    )
+    // At least two sessions — a single "split" makes no sense; the caller
+    // should just edit the original task.
+    .min(2)
+    .max(20),
+});
+
 export const reviewWorkBlocksSchema = z.object({
   powerdownSessionId: z.string().min(1),
   reviews: z.array(

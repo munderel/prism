@@ -22,7 +22,9 @@ describe('DailyTaskList', () => {
     expect(screen.getByText('Loading tasks...')).toBeInTheDocument();
   });
 
-  it('renders four sections with correct labels', async () => {
+  it('renders three sections with correct labels', async () => {
+    // REVIEW is intentionally not a section here — reviews surface via the
+    // pink banner on the Tasks page, not as a task row.
     renderWithProviders(
       <DailyTaskList date={date} onEdit={onEdit} onDelete={onDelete} />,
       { swrData: { '/api/tasks': [] } },
@@ -32,7 +34,7 @@ describe('DailyTaskList', () => {
     });
     expect(screen.getByText('React')).toBeInTheDocument();
     expect(screen.getByText('Maintenance')).toBeInTheDocument();
-    expect(screen.getByText('Review')).toBeInTheDocument();
+    expect(screen.queryByText('Review')).not.toBeInTheDocument();
   });
 
   it('shows task counts per section', async () => {
@@ -49,7 +51,8 @@ describe('DailyTaskList', () => {
       expect(screen.getByText('(2)')).toBeInTheDocument();
     });
     expect(screen.getByText('(1)')).toBeInTheDocument();
-    expect(screen.getAllByText('(0)').length).toBe(3);
+    // Only MAINTENANCE is empty here (IMPROVE=2, REACT=1, MAINTENANCE=0).
+    expect(screen.getAllByText('(0)').length).toBe(1);
   });
 
   it('renders task titles in their sections', async () => {
@@ -73,7 +76,8 @@ describe('DailyTaskList', () => {
       { swrData: { '/api/tasks': [] } },
     );
     await waitFor(() => {
-      expect(screen.getAllByText('No tasks').length).toBe(5);
+      // One "No tasks" per section: IMPROVE, REACT, MAINTENANCE.
+      expect(screen.getAllByText('No tasks').length).toBe(3);
     });
   });
 
