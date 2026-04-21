@@ -27,106 +27,106 @@ model Account {
   @@unique([provider, providerAccountId])
 }
 
-
 // === CORE MODELS ===
 
 model User {
-  id                    String    @id @default(cuid())
-  email                 String    @unique
-  name                  String?
-  image                 String?
-  emailVerified         DateTime?
-  googleRefreshToken    String?   @db.Text
-  googleTokenExpiresAt  DateTime?
-  mtp                   String?   @db.Text
-  isAdmin               Boolean   @default(false)
-  hasCompletedOnboarding Boolean  @default(false)
-  timezone              String    @default("America/New_York")
-  hiddenFeatures        Json      @default("[]")
-  workingHoursStart     String?   // "HH:mm" format, e.g. "09:00"
-  workingHoursEnd       String?   // "HH:mm" format, e.g. "17:00"
-  casualHoursStart      String?   // "HH:mm" format, e.g. "17:00"
-  casualHoursEnd        String?   // "HH:mm" format, e.g. "22:00"
+  id                            String    @id @default(cuid())
+  email                         String    @unique
+  name                          String?
+  image                         String?
+  emailVerified                 DateTime?
+  googleRefreshToken            String?   @db.Text
+  googleTokenExpiresAt          DateTime?
+  mtp                           String?   @db.Text
+  isAdmin                       Boolean   @default(false)
+  hasCompletedOnboarding        Boolean   @default(false)
+  timezone                      String    @default("America/New_York")
+  hiddenFeatures                Json      @default("[]")
+  workingHoursStart             String? // "HH:mm" format, e.g. "09:00"
+  workingHoursEnd               String? // "HH:mm" format, e.g. "17:00"
+  casualHoursStart              String? // "HH:mm" format, e.g. "17:00"
+  casualHoursEnd                String? // "HH:mm" format, e.g. "22:00"
   // Auth fields
-  passwordHash          String?   @db.Text
-  totpSecret            String?   @db.Text
-  is2FAEnabled          Boolean   @default(false)
-  isLockedOut           Boolean   @default(false)
-  isPublicOnLeaderboard Boolean   @default(true)
-  leaderboardResetAt    DateTime? // Marker: only items completed after this count toward leaderboard score.
+  passwordHash                  String?   @db.Text
+  totpSecret                    String?   @db.Text
+  is2FAEnabled                  Boolean   @default(false)
+  isLockedOut                   Boolean   @default(false)
+  isPublicOnLeaderboard         Boolean   @default(true)
+  leaderboardResetAt            DateTime? // Marker: only items completed after this count toward leaderboard score.
   // Deprecated: daily streak now fires solely on powerdown completion.
   // Kept in schema/DB to avoid a destructive migration; no longer read by application code.
-  streakCountAims      Boolean @default(true)
-  streakCountProcesses Boolean @default(true)
-  streakCountReviews   Boolean @default(true)
-  streakCountPowerdown Boolean @default(true)
-  streakGraceDays      Boolean @default(false) // When true, adds 1 grace day to all streak continuation windows
-  beeminderAuthToken   String?
-  beeminderGoalSlug    String?
-  taskSchedulePeriod    String?   // "working" | "casual" | "both"
-  selectedCalendarIds   Json      @default("[]") // String[] of Google Calendar IDs to sync
-  syncTargetCalendarId  String?   // Google Calendar ID to push events to (null = 'primary')
-  calendarColorOverrides Json     @default("{}") // Record<calendarId, hexColor> overrides
-  weeklyTargetCalendarIds Json   @default("[]") // String[] of Google Calendar IDs that count toward weekly hour target
-  googleSyncState       Json      @default("{}") // Recurring Google Calendar sync metadata and exceptions
-  defaultWorkBlockMinutes Int     @default(90)   // Minutes used when dragging a task onto the calendar as a work block (matches migration default)
-  alwaysPromptForBlockObjective Boolean @default(false) // When true, always show the objective modal on drag; otherwise short tasks (remaining ≤ default) schedule immediately
-  powerdownTime         String?   // "HH:mm" format, e.g. "17:30"
-  weeklyReviewDayOfWeek Int?      // 0=Sun,1=Mon,...6=Sat
-  weeklyReviewTime      String?   // "HH:mm" format, e.g. "10:00"
-  weeklyReviewDuration  Int?      // minutes, defaults to 60
-  monthlyReviewRecurrenceRule String? // "last-friday", "1st-monday", "15th", etc.
-  monthlyReviewTime            String? // "HH:mm" format
-  monthlyReviewDuration        Int?    // minutes
-  yearlyReviewRecurrenceRule   String? // "dec-30", "last-sat-dec", "custom:MM-DD"
-  yearlyReviewTime             String? // "HH:mm" format
-  yearlyReviewDuration         Int?    // minutes
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  streakCountAims               Boolean   @default(true)
+  streakCountProcesses          Boolean   @default(true)
+  streakCountReviews            Boolean   @default(true)
+  streakCountPowerdown          Boolean   @default(true)
+  streakGraceDays               Boolean   @default(false) // When true, adds 1 grace day to all streak continuation windows
+  beeminderAuthToken            String?
+  beeminderGoalSlug             String?
+  taskSchedulePeriod            String? // "working" | "casual" | "both"
+  selectedCalendarIds           Json      @default("[]") // String[] of Google Calendar IDs to sync
+  syncTargetCalendarId          String? // Google Calendar ID to push events to (null = 'primary')
+  calendarColorOverrides        Json      @default("{}") // Record<calendarId, hexColor> overrides
+  weeklyTargetCalendarIds       Json      @default("[]") // String[] of Google Calendar IDs that count toward weekly hour target
+  googleSyncState               Json      @default("{}") // Recurring Google Calendar sync metadata and exceptions
+  defaultWorkBlockMinutes       Int       @default(90) // Minutes used when dragging a task onto the calendar as a work block (matches migration default)
+  alwaysPromptForBlockObjective Boolean   @default(false) // When true, always show the objective modal on drag; otherwise short tasks (remaining ≤ default) schedule immediately
+  powerdownTime                 String? // "HH:mm" format, e.g. "17:30"
+  weeklyReviewDayOfWeek         Int? // 0=Sun,1=Mon,...6=Sat
+  weeklyReviewTime              String? // "HH:mm" format, e.g. "10:00"
+  weeklyReviewDuration          Int? // minutes, defaults to 60
+  monthlyReviewRecurrenceRule   String? // "last-friday", "1st-monday", "15th", etc.
+  monthlyReviewTime             String? // "HH:mm" format
+  monthlyReviewDuration         Int? // minutes
+  yearlyReviewRecurrenceRule    String? // "dec-30", "last-sat-dec", "custom:MM-DD"
+  yearlyReviewTime              String? // "HH:mm" format
+  yearlyReviewDuration          Int? // minutes
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
 
-  accounts              Account[]
-  goalStacks            GoalStack[]
-  tasks                 Task[]
-  reviews               Review[]
-  streaks               Streak[]
-  publicWins            PublicWin[]
-  powerdownSessions     PowerdownSession[]
-  foodBlocks            FoodBlock[]
-  taskComments          TaskComment[]
-  commentMentions       CommentMention[]
-  pushSubscriptions     PushSubscription[]
-  notificationPreference NotificationPreference?
-  configVersions        ConfigVersion[]
-  invitations           Invitation[]
-  assignedProcesses    Process[]          @relation("ProcessAssignee")
-  delegatedProcesses   Process[]          @relation("ProcessDelegate")
-  processExecutions    ProcessExecution[]
-  meetings             Meeting[]
-  ideas                Idea[]
-  assignedTasks        Task[]             @relation("TaskAssignee")
-  userAims             UserAim[]
-  aimInstances         AimInstance[]
-  createdAimCategories AimCategory[] @relation("CreatedAimCategories")
-  distractionLogs      DistractionLog[]
-  trainingItems        TrainingItem[]
-  feedback             Feedback[]
-  goalAssignments      GoalAssignee[]
-  processKpiEntries    ProcessKpiEntry[]
-  recurringTeamReviews RecurringTeamReview[] @relation("TeamReviewCreator")
-  teamReviewMemberships RecurringTeamReviewMember[]
-  workBlocks           WorkBlock[]
+  accounts                  Account[]
+  goalStacks                GoalStack[]
+  tasks                     Task[]
+  reviews                   Review[]
+  streaks                   Streak[]
+  publicWins                PublicWin[]
+  powerdownSessions         PowerdownSession[]
+  foodBlocks                FoodBlock[]
+  taskComments              TaskComment[]
+  commentMentions           CommentMention[]
+  pushSubscriptions         PushSubscription[]
+  notificationPreference    NotificationPreference?
+  configVersions            ConfigVersion[]
+  invitations               Invitation[]
+  assignedProcesses         Process[]                   @relation("ProcessAssignee")
+  delegatedProcesses        Process[]                   @relation("ProcessDelegate")
+  processExecutions         ProcessExecution[]
+  meetings                  Meeting[]
+  ideas                     Idea[]
+  assignedTasks             Task[]                      @relation("TaskAssignee")
+  userAims                  UserAim[]
+  aimInstances              AimInstance[]
+  createdAimCategories      AimCategory[]               @relation("CreatedAimCategories")
+  distractionLogs           DistractionLog[]
+  trainingItems             TrainingItem[]
+  feedback                  Feedback[]
+  goalAssignments           GoalAssignee[]
+  processKpiEntries         ProcessKpiEntry[]
+  recurringTeamReviews      RecurringTeamReview[]       @relation("TeamReviewCreator")
+  teamReviewMemberships     RecurringTeamReviewMember[]
+  workBlocks                WorkBlock[]
   powerdownWorkBlockReviews PowerdownWorkBlockReview[]
-  taskCompletionSnapshots TaskCompletionSnapshot[]
-  taskTypeColors       UserTaskTypeColor[]
-  companyGoalAssignments CompanyGoalAssignment[]
-  ownedKpis            Kpi[]              @relation("KpiOwner")
+  taskCompletionSnapshots   TaskCompletionSnapshot[]
+  taskTypeColors            UserTaskTypeColor[]
+  companyGoalAssignments    CompanyGoalAssignment[]
+  ownedKpis                 Kpi[]                       @relation("KpiOwner")
+  auditLogs                 AuditLog[]                  @relation("AuditLogActor")
 }
 
 model UserTaskTypeColor {
   id        String   @id @default(cuid())
   userId    String
-  itemType  String   // matches ItemType key in src/lib/prism-colors.ts (IMPROVE, REACT, etc.)
-  color     String   // hex code, e.g. "#818cf8"
+  itemType  String // matches ItemType key in src/lib/prism-colors.ts (IMPROVE, REACT, etc.)
+  color     String // hex code, e.g. "#818cf8"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -144,16 +144,16 @@ model CompanySettings {
 }
 
 model GoalStack {
-  id         String   @id @default(cuid())
-  ownerId    String
-  name       String
-  isCompany  Boolean  @default(false)
+  id           String   @id @default(cuid())
+  ownerId      String
+  name         String
+  isCompany    Boolean  @default(false)
   visibility   String   @default("private") // "private" | "group" | "company"
-  weekStartDay Int      @default(0)         // 0 = Sunday, 1 = Monday
+  weekStartDay Int      @default(0) // 0 = Sunday, 1 = Monday
   createdAt    DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  updatedAt    DateTime @updatedAt
 
-  owner          User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner          User                    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   goals          Goal[]
   configVersions ConfigVersion[]
   assignments    CompanyGoalAssignment[]
@@ -166,8 +166,8 @@ model CompanyGoalAssignment {
   goalStackId  String
   userId       String
   assignedAt   DateTime @default(now())
-  assignedById String?  // admin userId who made the assignment
-  notes        String?  // optional context ("owns customer acquisition slice")
+  assignedById String? // admin userId who made the assignment
+  notes        String? // optional context ("owns customer acquisition slice")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -217,17 +217,17 @@ model Goal {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  stack              GoalStack  @relation(fields: [stackId], references: [id], onDelete: Cascade)
-  parent             Goal?      @relation("GoalHierarchy", fields: [parentId], references: [id])
-  children           Goal[]     @relation("GoalHierarchy")
-  tasks              Task[]
-  companyGoalLinks   GoalLink[] @relation("CompanyGoal")
-  individualGoalLinks GoalLink[] @relation("IndividualGoal")
-  publicWins         PublicWin[]
-  kpis               Kpi[]
-  processKpis        ProcessKpi[]
-  trainingItems      TrainingItem[]
-  assignees          GoalAssignee[]
+  stack               GoalStack      @relation(fields: [stackId], references: [id], onDelete: Cascade)
+  parent              Goal?          @relation("GoalHierarchy", fields: [parentId], references: [id])
+  children            Goal[]         @relation("GoalHierarchy")
+  tasks               Task[]
+  companyGoalLinks    GoalLink[]     @relation("CompanyGoal")
+  individualGoalLinks GoalLink[]     @relation("IndividualGoal")
+  publicWins          PublicWin[]
+  kpis                Kpi[]
+  processKpis         ProcessKpi[]
+  trainingItems       TrainingItem[]
+  assignees           GoalAssignee[]
 
   @@index([stackId])
   @@index([parentId])
@@ -251,7 +251,7 @@ model GoalLink {
 // === TASKS & TRACKING ===
 
 enum TaskType {
-  IMPROVE    @map("GOAL_STACK")
+  IMPROVE     @map("GOAL_STACK")
   REACT
   MAINTENANCE
   REVIEW
@@ -272,56 +272,56 @@ enum TaskPriority {
 }
 
 model Task {
-  id             String       @id @default(cuid())
-  ownerId        String
-  goalId         String?
-  processId      String?
-  taskType       TaskType
-  title          String
-  description    String?      @db.Text
-  deliverable    String?      @db.Text
-  deliverableDone Boolean     @default(false)
-  successCriteria Json?
-  status         TaskStatus   @default(TODO)
-  priority       TaskPriority @default(MEDIUM)
-  dueDate        DateTime?
-  recurrenceRule String?
-  calendarEventId String?
-  timeBlockStart DateTime?
-  timeBlockEnd   DateTime?
-  estimatedMinutes    Int              @default(60)
-  preferredTimeStart  String?
-  preferredTimeEnd    String?
-  isPinned            Boolean          @default(false)
-  isAutoScheduled     Boolean          @default(false)
-  isWinTheDay         Boolean          @default(false)
-  winTheDayRank       Int?
-  startedAt      DateTime?
-  completedAt    DateTime?
-  failedAt       DateTime?
-  rescheduledTo  DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                 String       @id @default(cuid())
+  ownerId            String
+  goalId             String?
+  processId          String?
+  taskType           TaskType
+  title              String
+  description        String?      @db.Text
+  deliverable        String?      @db.Text
+  deliverableDone    Boolean      @default(false)
+  successCriteria    Json?
+  status             TaskStatus   @default(TODO)
+  priority           TaskPriority @default(MEDIUM)
+  dueDate            DateTime?
+  recurrenceRule     String?
+  calendarEventId    String?
+  timeBlockStart     DateTime?
+  timeBlockEnd       DateTime?
+  estimatedMinutes   Int          @default(60)
+  preferredTimeStart String?
+  preferredTimeEnd   String?
+  isPinned           Boolean      @default(false)
+  isAutoScheduled    Boolean      @default(false)
+  isWinTheDay        Boolean      @default(false)
+  winTheDayRank      Int?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  failedAt           DateTime?
+  rescheduledTo      DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  aimInstanceId  String?
-  assigneeId     String?
-  parentId       String?
+  aimInstanceId String?
+  assigneeId    String?
+  parentId      String?
 
-  owner    User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  assignee User?         @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  goal     Goal?         @relation(fields: [goalId], references: [id])
-  process  Process?      @relation("TaskProcess", fields: [processId], references: [id])
-  aimInstance AimInstance? @relation(fields: [aimInstanceId], references: [id])
-  parent   Task?         @relation("TaskHierarchy", fields: [parentId], references: [id])
-  children Task[]        @relation("TaskHierarchy")
-  comments TaskComment[]
-  publicWins PublicWin[]
-  processExecution ProcessExecution?
-  attachments TaskAttachment[]
-  idea     Idea?
-  trainingTask TrainingTask?
-  clearGoals   ClearGoal[]
-  workBlocks   WorkBlock[]
+  owner              User                    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  assignee           User?                   @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  goal               Goal?                   @relation(fields: [goalId], references: [id])
+  process            Process?                @relation("TaskProcess", fields: [processId], references: [id])
+  aimInstance        AimInstance?            @relation(fields: [aimInstanceId], references: [id])
+  parent             Task?                   @relation("TaskHierarchy", fields: [parentId], references: [id])
+  children           Task[]                  @relation("TaskHierarchy")
+  comments           TaskComment[]
+  publicWins         PublicWin[]
+  processExecution   ProcessExecution?
+  attachments        TaskAttachment[]
+  idea               Idea?
+  trainingTask       TrainingTask?
+  clearGoals         ClearGoal[]
+  workBlocks         WorkBlock[]
   completionSnapshot TaskCompletionSnapshot?
 
   @@index([ownerId])
@@ -413,17 +413,17 @@ model ReviewTemplate {
 }
 
 model PowerdownSession {
-  id             String    @id @default(cuid())
-  userId         String
-  sessionDate    DateTime
-  currentStep    Int       @default(1)
-  checklistState Json?
-  tomorrowPlan   Json?
-  distractions   Json?
-  gratitudes     Json?
-  ideas          Json?
-  clearGoals     Json?
-  completedAt    DateTime?
+  id              String    @id @default(cuid())
+  userId          String
+  sessionDate     DateTime
+  currentStep     Int       @default(1)
+  checklistState  Json?
+  tomorrowPlan    Json?
+  distractions    Json?
+  gratitudes      Json?
+  ideas           Json?
+  clearGoals      Json?
+  completedAt     DateTime?
   timeBlockStart  DateTime?
   timeBlockEnd    DateTime?
   calendarEventId String?
@@ -453,18 +453,18 @@ model FoodBlock {
 // === RECURRING TEAM REVIEWS ===
 
 model RecurringTeamReview {
-  id              String     @id @default(cuid())
-  reviewType      ReviewType
-  dayOfWeek       Int?       // 0=Sun, 1=Mon, ..., 6=Sat (required for WEEKLY)
-  recurrenceRule  String?    // for monthly/yearly rules (e.g. "last-friday", "dec-30")
-  time            String     // "HH:mm"
-  duration        Int        @default(60)
-  isActive        Boolean    @default(true)
-  createdById     String
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id             String     @id @default(cuid())
+  reviewType     ReviewType
+  dayOfWeek      Int? // 0=Sun, 1=Mon, ..., 6=Sat (required for WEEKLY)
+  recurrenceRule String? // for monthly/yearly rules (e.g. "last-friday", "dec-30")
+  time           String // "HH:mm"
+  duration       Int        @default(60)
+  isActive       Boolean    @default(true)
+  createdById    String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
-  createdBy User                      @relation("TeamReviewCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy User                        @relation("TeamReviewCreator", fields: [createdById], references: [id], onDelete: Cascade)
   members   RecurringTeamReviewMember[]
 }
 
@@ -524,12 +524,12 @@ model PushSubscription {
 }
 
 model NotificationPreference {
-  id              String  @id @default(cuid())
-  userId          String  @unique
-  emailEnabled    Boolean @default(true)
-  pushEnabled     Boolean @default(true)
-  derailingAlerts Boolean @default(true)
-  mentionAlerts   Boolean @default(true)
+  id               String  @id @default(cuid())
+  userId           String  @unique
+  emailEnabled     Boolean @default(true)
+  pushEnabled      Boolean @default(true)
+  derailingAlerts  Boolean @default(true)
+  mentionAlerts    Boolean @default(true)
   reviewNags       Boolean @default(true)
   meetingReminders Boolean @default(true)
 
@@ -585,48 +585,48 @@ enum SubtaskMode {
 }
 
 model BusinessFunction {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
-  description String?   @db.Text
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  description String?  @db.Text
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  processes   Process[]
+  processes Process[]
 }
 
 model Process {
-  id            String          @id @default(cuid())
-  functionId    String
-  title         String
-  description   String?         @db.Text
-  assigneeId    String?
-  delegateId    String?
-  delegateUntil DateTime?
-  cadence       ProcessCadence
-  cadenceRule   String?
-  mode          ProcessMode    @default(BASIC)
-  subtaskMode   SubtaskMode    @default(PAIRED)
-  defaultDurationMinutes Int    @default(60)
-  scheduledTime       String?
-  scheduledDayOfWeek  Int?
-  scheduledDayOfMonth Int?
-  scheduleStartDate   DateTime?
-  sortOrder     Int             @default(0)
-  lastRunAt     DateTime?
-  nextDueAt     DateTime?
-  durationEndDate DateTime?   // null = runs indefinitely
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                     String         @id @default(cuid())
+  functionId             String
+  title                  String
+  description            String?        @db.Text
+  assigneeId             String?
+  delegateId             String?
+  delegateUntil          DateTime?
+  cadence                ProcessCadence
+  cadenceRule            String?
+  mode                   ProcessMode    @default(BASIC)
+  subtaskMode            SubtaskMode    @default(PAIRED)
+  defaultDurationMinutes Int            @default(60)
+  scheduledTime          String?
+  scheduledDayOfWeek     Int?
+  scheduledDayOfMonth    Int?
+  scheduleStartDate      DateTime?
+  sortOrder              Int            @default(0)
+  lastRunAt              DateTime?
+  nextDueAt              DateTime?
+  durationEndDate        DateTime? // null = runs indefinitely
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
 
-  function     BusinessFunction @relation(fields: [functionId], references: [id], onDelete: Cascade)
-  assignee     User?            @relation("ProcessAssignee", fields: [assigneeId], references: [id])
-  delegate     User?            @relation("ProcessDelegate", fields: [delegateId], references: [id])
-  steps        ProcessStep[]
-  executions   ProcessExecution[]
-  ideas        Idea[]
-  tasks        Task[]           @relation("TaskProcess")
-  kpis         ProcessKpi[]
+  function   BusinessFunction   @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  assignee   User?              @relation("ProcessAssignee", fields: [assigneeId], references: [id])
+  delegate   User?              @relation("ProcessDelegate", fields: [delegateId], references: [id])
+  steps      ProcessStep[]
+  executions ProcessExecution[]
+  ideas      Idea[]
+  tasks      Task[]             @relation("TaskProcess")
+  kpis       ProcessKpi[]
 
   @@index([functionId])
   @@index([assigneeId])
@@ -643,26 +643,26 @@ model ProcessStep {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  process     Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  process Process @relation(fields: [processId], references: [id], onDelete: Cascade)
 
   @@index([processId])
 }
 
 model ProcessExecution {
-  id            String    @id @default(cuid())
-  processId     String
-  executedById  String?
-  scheduledDate DateTime
-  completedAt   DateTime?
-  unscheduledAt DateTime?
-  taskId        String?   @unique
+  id             String    @id @default(cuid())
+  processId      String
+  executedById   String?
+  scheduledDate  DateTime
+  completedAt    DateTime?
+  unscheduledAt  DateTime?
+  taskId         String?   @unique
   timeBlockStart DateTime?
   timeBlockEnd   DateTime?
-  createdAt     DateTime  @default(now())
+  createdAt      DateTime  @default(now())
 
-  process       Process   @relation(fields: [processId], references: [id], onDelete: Cascade)
-  executedBy    User?     @relation(fields: [executedById], references: [id])
-  task          Task?     @relation(fields: [taskId], references: [id])
+  process    Process @relation(fields: [processId], references: [id], onDelete: Cascade)
+  executedBy User?   @relation(fields: [executedById], references: [id])
+  task       Task?   @relation(fields: [taskId], references: [id])
 
   @@index([processId, scheduledDate])
   @@index([scheduledDate])
@@ -671,27 +671,27 @@ model ProcessExecution {
 // === MEETINGS ===
 
 model Meeting {
-  id          String          @id @default(cuid())
-  title       String
-  description String?         @db.Text
-  cadence     ProcessCadence
-  dayOfWeek   Int?            // 0=Sun, 1=Mon, ... 6=Sat
-  occurDate   DateTime?       // specific date for ONE_TIME meetings
-  timeStart   String          // "09:00" format
-  timeEnd     String          // "10:00" format
-  attendeeIds     Json            // String[] of user IDs
-  calendarEventId String?         // Google Calendar event ID for sync
-  calendarIdUsed  String?         // which Google calendarId the event was written to
-  htmlLink        String?         // Google Calendar web URL for the event
-  meetLink            String?         // Google Meet link (hangoutLink)
-  lastReminderSentAt  DateTime?       // prevents duplicate reminder notifications
-  syncedAt        DateTime?       // last successful push to Google Calendar
-  syncError       String?         // last Google Calendar error message; null on success
-  createdById     String
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id                 String         @id @default(cuid())
+  title              String
+  description        String?        @db.Text
+  cadence            ProcessCadence
+  dayOfWeek          Int? // 0=Sun, 1=Mon, ... 6=Sat
+  occurDate          DateTime? // specific date for ONE_TIME meetings
+  timeStart          String // "09:00" format
+  timeEnd            String // "10:00" format
+  attendeeIds        Json // String[] of user IDs
+  calendarEventId    String? // Google Calendar event ID for sync
+  calendarIdUsed     String? // which Google calendarId the event was written to
+  htmlLink           String? // Google Calendar web URL for the event
+  meetLink           String? // Google Meet link (hangoutLink)
+  lastReminderSentAt DateTime? // prevents duplicate reminder notifications
+  syncedAt           DateTime? // last successful push to Google Calendar
+  syncError          String? // last Google Calendar error message; null on success
+  createdById        String
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
-  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
 }
 
 // === VERSIONING ===
@@ -764,9 +764,9 @@ model Idea {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  author      User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  process     Process?          @relation(fields: [processId], references: [id])
-  task        Task?             @relation(fields: [taskId], references: [id])
+  author      User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  process     Process?         @relation(fields: [processId], references: [id])
+  task        Task?            @relation(fields: [taskId], references: [id])
   attachments IdeaAttachment[]
 
   @@index([authorId])
@@ -784,6 +784,7 @@ model IdeaAttachment {
   createdAt DateTime @default(now())
 
   idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
   @@index([ideaId])
 }
 
@@ -797,25 +798,26 @@ model TaskAttachment {
   createdAt DateTime @default(now())
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
   @@index([taskId])
 }
 
 // === AIMS ===
 
 model AimCategory {
-  id                String   @id @default(cuid())
-  name              String
-  description       String?  @db.Text
-  defaultFrequency  Int
+  id                 String   @id @default(cuid())
+  name               String
+  description        String?  @db.Text
+  defaultFrequency   Int
   defaultDurationMin Int
-  isGroupable       Boolean  @default(false)
-  isDefault         Boolean  @default(true)
-  isDaily           Boolean  @default(false)
-  activities        Json?
-  schedulePeriod    String   @default("both") // "working" | "casual" | "both"
-  createdByUserId   String?
-  isUserHabit       Boolean  @default(false)
-  createdAt         DateTime @default(now())
+  isGroupable        Boolean  @default(false)
+  isDefault          Boolean  @default(true)
+  isDaily            Boolean  @default(false)
+  activities         Json?
+  schedulePeriod     String   @default("both") // "working" | "casual" | "both"
+  createdByUserId    String?
+  isUserHabit        Boolean  @default(false)
+  createdAt          DateTime @default(now())
 
   createdBy    User?         @relation("CreatedAimCategories", fields: [createdByUserId], references: [id], onDelete: SetNull)
   userAims     UserAim[]
@@ -825,26 +827,26 @@ model AimCategory {
 }
 
 model UserAim {
-  id              String   @id @default(cuid())
-  userId          String
-  aimCategoryId   String
-  isActive        Boolean  @default(true)
-  customDuration  Int?
-  customFrequency Int?
-  customActivities     Json?
-  customSchedulePeriod String?   // user override: "working" | "casual" | "both"
-  currentPhase         String    @default("SEED")    // SEED | SPROUT | GROW | FLOW
-  phaseStartedAt       DateTime  @default(now())
-  completionCount      Int       @default(0)
-  currentStreak        Int       @default(0)
-  bestStreak           Int       @default(0)
-  lastCompletedAt      DateTime?
-  derailSensitivityDays Int      @default(1)   // missed days before "derailing"
-  reminderTimeMinutes  Int?                     // minutes before end of day to remind
-  safetyBufferDays      Float     @default(7)   // Beeminder-style slack days remaining
-  safetyBufferUpdatedAt DateTime?                // last recompute timestamp for buffer
-  derailedAt            DateTime?                // set when buffer hits 0; cleared by "back on track"
-  createdAt            DateTime  @default(now())
+  id                    String    @id @default(cuid())
+  userId                String
+  aimCategoryId         String
+  isActive              Boolean   @default(true)
+  customDuration        Int?
+  customFrequency       Int?
+  customActivities      Json?
+  customSchedulePeriod  String? // user override: "working" | "casual" | "both"
+  currentPhase          String    @default("SEED") // SEED | SPROUT | GROW | FLOW
+  phaseStartedAt        DateTime  @default(now())
+  completionCount       Int       @default(0)
+  currentStreak         Int       @default(0)
+  bestStreak            Int       @default(0)
+  lastCompletedAt       DateTime?
+  derailSensitivityDays Int       @default(1) // missed days before "derailing"
+  reminderTimeMinutes   Int? // minutes before end of day to remind
+  safetyBufferDays      Float     @default(7) // Beeminder-style slack days remaining
+  safetyBufferUpdatedAt DateTime? // last recompute timestamp for buffer
+  derailedAt            DateTime? // set when buffer hits 0; cleared by "back on track"
+  createdAt             DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
@@ -853,25 +855,25 @@ model UserAim {
 }
 
 model AimInstance {
-  id             String    @id @default(cuid())
-  userId         String
-  aimCategoryId  String
-  scheduledDate  DateTime
-  timeBlockStart DateTime?
-  timeBlockEnd   DateTime?
-  isGroupOpen    Boolean   @default(false)
-  status         String    @default("SCHEDULED")
-  completedAt      DateTime?
-  activityNote     String?
-  selectedActivity   String?   // e.g., "strength", "sauna", "painting"
-  phaseAtCompletion  String?   // snapshot of phase when completed
-  pointsEarned       Int       @default(0)
-  calendarEventId    String?   // Google Calendar event ID for sync
-  createdAt          DateTime  @default(now())
+  id                String    @id @default(cuid())
+  userId            String
+  aimCategoryId     String
+  scheduledDate     DateTime
+  timeBlockStart    DateTime?
+  timeBlockEnd      DateTime?
+  isGroupOpen       Boolean   @default(false)
+  status            String    @default("SCHEDULED")
+  completedAt       DateTime?
+  activityNote      String?
+  selectedActivity  String? // e.g., "strength", "sauna", "painting"
+  phaseAtCompletion String? // snapshot of phase when completed
+  pointsEarned      Int       @default(0)
+  calendarEventId   String? // Google Calendar event ID for sync
+  createdAt         DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
-  tasks       Task[]      // Deep Work container: nested tasks
+  tasks       Task[] // Deep Work container: nested tasks
 
   @@index([userId, scheduledDate])
 }
@@ -898,8 +900,8 @@ model TrainingItem {
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
 
-  owner         User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  goal          Goal?           @relation(fields: [goalId], references: [id])
+  owner         User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  goal          Goal?          @relation(fields: [goalId], references: [id])
   trainingTasks TrainingTask[]
   quizAttempts  QuizAttempt[]
 
@@ -942,9 +944,9 @@ model QuizAttempt {
 model ReviewAnswer {
   id         String   @id @default(cuid())
   reviewId   String
-  stepKey    String   // identifies which step this answer belongs to
-  answerType String   // "text" | "text_list" | "task_list" | "goal_list" | "priority_ranking" | "kpi_progress"
-  answerData Json     // flexible storage for the answer content
+  stepKey    String // identifies which step this answer belongs to
+  answerType String // "text" | "text_list" | "task_list" | "goal_list" | "priority_ranking" | "kpi_progress"
+  answerData Json // flexible storage for the answer content
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -973,15 +975,15 @@ model DistractionLog {
 // === CLEAR GOALS ===
 
 model ClearGoal {
-  id                  String    @id @default(cuid())
-  taskId              String
-  workBlockId         String?   // when set, this goal is scoped to a specific work block (sub-goal for that session)
-  text                String
-  isComplete          Boolean   @default(false)
-  sortOrder           Int       @default(0)
+  id                   String   @id @default(cuid())
+  taskId               String
+  workBlockId          String? // when set, this goal is scoped to a specific work block (sub-goal for that session)
+  text                 String
+  isComplete           Boolean  @default(false)
+  sortOrder            Int      @default(0)
   createdInPowerdownId String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
   workBlock WorkBlock? @relation(fields: [workBlockId], references: [id], onDelete: Cascade)
@@ -1021,10 +1023,10 @@ model Feedback {
 // === COMPANY AUTH SETTINGS ===
 
 model CompanyAuthSettings {
-  id                String   @id @default(cuid())
-  enforce2FA        Boolean  @default(false)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id         String   @id @default(cuid())
+  enforce2FA Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // === LOGIN ATTEMPT TRACKING ===
@@ -1036,6 +1038,29 @@ model LoginAttempt {
   createdAt DateTime @default(now())
 
   @@index([email, createdAt])
+}
+
+// === AUDIT LOG ===
+// Append-only trail for high-blast-radius actions (admin deletes, bulk ops,
+// streak resets, destructive cron runs). Writes are fire-and-forget safe — a
+// failed insert never blocks the originating request. See src/lib/audit-log.ts.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String? // null for system/cron actions
+  action     String // e.g. "task.bulk_delete", "user.delete", "streak.reset"
+  targetType String // "Task", "User", "Streak", ...
+  targetId   String? // primary target id; bulk ops list full set in metadata.ids
+  metadata   Json? // flexible payload: ids[], before/after, reason
+  ip         String?
+  userAgent  String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+  @@index([action, createdAt])
+  @@index([createdAt])
 }
 
 // === PROCESS KPI SYSTEM ===
@@ -1051,10 +1076,10 @@ model ProcessKpi {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  process    Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
-  goal       Goal?    @relation(fields: [goalId], references: [id])
-  entries    ProcessKpiEntry[]
-  goals      ProcessKpiGoal[]
+  process Process           @relation(fields: [processId], references: [id], onDelete: Cascade)
+  goal    Goal?             @relation(fields: [goalId], references: [id])
+  entries ProcessKpiEntry[]
+  goals   ProcessKpiGoal[]
 
   @@index([processId])
   @@index([goalId])
@@ -1104,25 +1129,25 @@ model ProcessKpiGoal {
 // main objective (required) and optional sub-goals (stored as ClearGoal records linked via workBlockId).
 
 enum WorkBlockStatus {
-  PENDING   // not yet reviewed in a powerdown
+  PENDING // not yet reviewed in a powerdown
   COMPLETED
   PARTIAL
   MISSED
 }
 
 model WorkBlock {
-  id                String          @id @default(cuid())
-  taskId            String
-  userId            String
-  start             DateTime
-  end               DateTime
-  mainObjective     String
-  completionStatus  WorkBlockStatus @default(PENDING)
-  actualMinutes     Int?            // overrideable; when null, treat as (end - start)
-  reviewedAt        DateTime?
-  notes             String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id               String          @id @default(cuid())
+  taskId           String
+  userId           String
+  start            DateTime
+  end              DateTime
+  mainObjective    String
+  completionStatus WorkBlockStatus @default(PENDING)
+  actualMinutes    Int? // overrideable; when null, treat as (end - start)
+  reviewedAt       DateTime?
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   task       Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1137,20 +1162,20 @@ model WorkBlock {
 // stats at the moment of completion so historical reports are stable even if
 // blocks are later edited.
 model TaskCompletionSnapshot {
-  id                String   @id @default(cuid())
-  taskId            String   @unique
-  userId            String
-  completedAt       DateTime
-  estimatedMinutes  Int
-  completedMinutes  Int
-  scheduledMinutes  Int
-  goalsHit          Int
-  goalsDefined      Int
-  overrunMinutes    Int      // positive if over estimate, negative if under
-  blocksCompleted   Int
-  blocksMissed      Int
-  blocksPartial     Int
-  createdAt         DateTime @default(now())
+  id               String   @id @default(cuid())
+  taskId           String   @unique
+  userId           String
+  completedAt      DateTime
+  estimatedMinutes Int
+  completedMinutes Int
+  scheduledMinutes Int
+  goalsHit         Int
+  goalsDefined     Int
+  overrunMinutes   Int // positive if over estimate, negative if under
+  blocksCompleted  Int
+  blocksMissed     Int
+  blocksPartial    Int
+  createdAt        DateTime @default(now())
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1160,17 +1185,17 @@ model TaskCompletionSnapshot {
 
 // Aggregated per-day result of the "Review Work Blocks" step in Power Down.
 model PowerdownWorkBlockReview {
-  id                      String   @id @default(cuid())
-  powerdownSessionId      String
-  userId                  String
-  reviewDate              DateTime
-  blocksTotal             Int
-  blocksCompleted         Int
-  blocksPartial           Int
-  blocksMissed            Int
-  totalScheduledMinutes   Int
-  totalCompletedMinutes   Int
-  createdAt               DateTime @default(now())
+  id                    String   @id @default(cuid())
+  powerdownSessionId    String
+  userId                String
+  reviewDate            DateTime
+  blocksTotal           Int
+  blocksCompleted       Int
+  blocksPartial         Int
+  blocksMissed          Int
+  totalScheduledMinutes Int
+  totalCompletedMinutes Int
+  createdAt             DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
