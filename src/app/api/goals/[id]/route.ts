@@ -108,12 +108,13 @@ export async function PATCH(
     }
   }
 
-  const data: Record<string, any> = pickDefined(body, ['title', 'description', 'status', 'level']);
+  const data: Record<string, any> = pickDefined(body, ['title', 'description', 'status', 'level', 'progressPct']);
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
   if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;
   if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
 
-  // If marking as COMPLETED, set progress to 100
+  // If marking as COMPLETED, set progress to 100 (overrides any progressPct).
+  // If ABANDONED, force progress to 0. Otherwise use progressPct if provided.
   if (status === 'COMPLETED') {
     data.progressPct = 100;
   } else if (status === 'ABANDONED') {

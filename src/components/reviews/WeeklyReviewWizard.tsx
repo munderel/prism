@@ -6,6 +6,7 @@ import { m, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import useSWR, { useSWRConfig } from 'swr';
+import { useSession } from 'next-auth/react';
 import { useToast } from '@/components/ui/ToastProvider';
 import {
   ChevronRight, ChevronLeft, PartyPopper,
@@ -23,6 +24,7 @@ import { StepMaintenanceReview } from './weekly-steps/StepMaintenanceReview';
 import { StepKpiProgress } from './weekly-steps/StepKpiProgress';
 import { StepNotesCompletion } from './weekly-steps/StepNotesCompletion';
 import { StepWeeklyGoals } from './weekly-steps/StepWeeklyGoals';
+import { StepCompanyGoalReport } from './weekly-steps/StepCompanyGoalReport';
 import { InlineTaskCreator } from './weekly-steps/InlineTaskCreator';
 
 const CalendarSplitView = dynamic(
@@ -108,20 +110,64 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   // URL step param is 1-based for user-friendliness; internal state is 0-based
   // Processes with KPIs due this week (WEEKLY + BIWEEKLY cadences)
   const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
+  // Hidden once computed: whether to surface the company goal report step.
+  // Admin sees it if any company goal exists; non-admin sees it if they have
+  // at least one assigned company goal.
+  const [hasCompanyReportContent, setHasCompanyReportContent] = useState(false);
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.isAdmin ?? false;
 
-  // Dynamic STEPS — inserts process_kpi_log after kpi_progress when eligible processes exist
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/goals?isCompany=true');
+        if (!res.ok) return;
+        const raw = await res.json();
+        if (cancelled || !Array.isArray(raw)) return;
+        const reportable = isAdmin
+          ? raw.length > 0
+          : raw.some((g: { isAssignedToMe?: boolean }) => g.isAssignedToMe);
+        setHasCompanyReportContent(reportable);
+      } catch {
+        // ignore — step just stays hidden
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAdmin]);
+
+  // Dynamic STEPS — inserts process_kpi_log after kpi_progress when eligible
+  // processes exist, and inserts company_goal_report between current_goals and
+  // review_tasks when the user has company goals to report on.
   const STEPS = useMemo(() => {
-    const kpiStepIdx = STEPS_BASE.findIndex((s) => s.key === 'kpi_progress');
-    if (dueKpiProcesses.length === 0 || kpiStepIdx === -1) return STEPS_BASE;
-    const result = [...STEPS_BASE];
-    result.splice(kpiStepIdx + 1, 0, {
-      key: 'process_kpi_log',
-      title: 'Process KPI Log',
-      icon: BarChart3,
-      description: 'Log KPI progress for weekly and biweekly processes due this week.',
-    });
+    let result = [...STEPS_BASE];
+
+    if (hasCompanyReportContent) {
+      const currentGoalsIdx = result.findIndex((s) => s.key === 'current_goals');
+      if (currentGoalsIdx !== -1) {
+        result.splice(currentGoalsIdx + 1, 0, {
+          key: 'company_goal_report',
+          title: 'Company Goal Report',
+          icon: Target,
+          description: 'Report progress on company goals assigned to you.',
+        });
+      }
+    }
+
+    if (dueKpiProcesses.length > 0) {
+      const kpiStepIdx = result.findIndex((s) => s.key === 'kpi_progress');
+      if (kpiStepIdx !== -1) {
+        result.splice(kpiStepIdx + 1, 0, {
+          key: 'process_kpi_log',
+          title: 'Process KPI Log',
+          icon: BarChart3,
+          description: 'Log KPI progress for weekly and biweekly processes due this week.',
+        });
+      }
+    }
+
     return result;
-  }, [dueKpiProcesses]);
+  }, [dueKpiProcesses, hasCompanyReportContent]);
 
   const TOTAL_STEPS = STEPS.length;
   const urlStep = searchParams.get('step');
@@ -710,6 +756,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
           <div className="glass-panel p-6">
             {step.key === 'current_goals' && (
               <StepCurrentGoals reviewId={reviewId} isTeamReview={isTeamReview} />
+            )}
+            {step.key === 'company_goal_report' && (
+              <StepCompanyGoalReport reviewId={reviewId} isAdmin={isAdmin} />
             )}
             {step.key === 'review_tasks' && (
               <StepReviewTasks reviewId={reviewId} isTeamReview={isTeamReview} />

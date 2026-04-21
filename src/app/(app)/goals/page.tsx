@@ -5,7 +5,8 @@ import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { m } from 'framer-motion';
-import { Building2, User, Users, Target, Filter, CalendarClock, Trash2, Calendar, HelpCircle, Zap } from 'lucide-react';
+import { Building2, User, Users, Target, Filter, CalendarClock, Trash2, Calendar, HelpCircle, Zap, UserCog } from 'lucide-react';
+import { CompanyStackAssignmentsModal } from '@/components/goals/CompanyStackAssignmentsModal';
 import { getLocalDateString } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
 import { GoalStackGuide } from '@/components/goals/GoalStackGuide';
@@ -30,6 +31,7 @@ export default function GoalsPage() {
   const [showDueToday, setShowDueToday] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [viewTab, setViewTab] = useState<'stack' | 'daily'>('stack');
+  const [assignmentsStack, setAssignmentsStack] = useState<{ id: string; name: string } | null>(null);
 
   // Fetch today's tasks for Daily Actions view
   const today = getLocalDateString();
@@ -228,6 +230,19 @@ export default function GoalsPage() {
               )}
               <span className="text-xs text-[var(--text-muted)]">({stack._count?.goals ?? 0})</span>
             </button>
+            {isAdmin && isCompany && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAssignmentsStack({ id: stack.id, name: stack.name });
+                }}
+                aria-label={`Manage assignments for '${stack.name}'`}
+                title={`Manage assignments for '${stack.name}'`}
+                className="ml-1 rounded p-1 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:text-indigo-400 hover:bg-indigo-400/10 transition-all"
+              >
+                <UserCog className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -374,6 +389,14 @@ export default function GoalsPage() {
       )}
 
       {showGuide && <GoalStackGuide isOpen={showGuide} onClose={() => setShowGuide(false)} />}
+
+      {assignmentsStack && (
+        <CompanyStackAssignmentsModal
+          goalStackId={assignmentsStack.id}
+          stackName={assignmentsStack.name}
+          onClose={() => setAssignmentsStack(null)}
+        />
+      )}
     </div>
   );
 }

@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, Split } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { WorkBlocksSection } from './WorkBlocksSection';
+import { SplitTaskModal } from './SplitTaskModal';
 
 interface TaskEditorProps {
   task?: any; // If editing
@@ -17,6 +18,7 @@ interface TaskEditorProps {
 export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEditorProps) {
   const isEditing = !!task;
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [splitOpen, setSplitOpen] = useState(false);
   useEffect(() => { dialogRef.current?.focus(); }, []);
 
   const [taskType, setTaskType] = useState(task?.taskType ?? (prefilledGoalId ? 'IMPROVE' : 'IMPROVE'));
@@ -408,25 +410,51 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               </div>
             )}
 
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving || !title || estimatedMinutes <= 0}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-              >
-                {saving ? 'Saving...' : isEditing ? 'Update' : 'Create'}
-              </button>
+            <div className="flex justify-between gap-3 pt-2">
+              {isEditing ? (
+                <button
+                  type="button"
+                  onClick={() => setSplitOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-indigo-500/40 transition-colors"
+                  title="Break this task into shorter named sessions"
+                >
+                  <Split className="h-3.5 w-3.5" />
+                  Split into sessions
+                </button>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || !title || estimatedMinutes <= 0}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+                </button>
+              </div>
             </div>
           </form>
         </m.div>
       </m.div>
+      {splitOpen && task && (
+        <SplitTaskModal
+          taskId={task.id}
+          taskTitle={task.title}
+          defaultDurationMinutes={estimatedMinutes}
+          onClose={() => setSplitOpen(false)}
+          onSplit={() => {
+            onSave();
+          }}
+        />
+      )}
     </AnimatePresence>
   );
 }

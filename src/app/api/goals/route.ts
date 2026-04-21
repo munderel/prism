@@ -54,12 +54,35 @@ export async function GET(request: NextRequest) {
         },
         _count: { select: { kpis: true } },
         kpis: true,
-        stack: { select: { id: true, name: true, isCompany: true } },
+        stack: { select: { id: true, name: true, isCompany: true, ownerId: true } },
         assignees: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
       },
     });
 
-    return Response.json(goals, NO_STORE);
+    // Derive isAssignedToMe. For individual-goal assignees, the caller is
+    // "assigned" if their userId appears in assignees. For company stacks, we
+    // also look at the stack-level CompanyGoalAssignment table so users see
+    // "Assigned to you" on company goals where an admin assigned them at the
+    // stack level.
+    const companyStackIds = goals
+      .filter((g) => g.stack.isCompany)
+      .map((g) => g.stack.id);
+    const companyAssignments = companyStackIds.length
+      ? await prisma.companyGoalAssignment.findMany({
+          where: { userId: auth.userId, goalStackId: { in: companyStackIds } },
+          select: { goalStackId: true },
+        })
+      : [];
+    const assignedStackSet = new Set(companyAssignments.map((a) => a.goalStackId));
+
+    const enriched = goals.map((g) => ({
+      ...g,
+      isAssignedToMe:
+        g.assignees.some((a) => a.user.id === auth.userId) ||
+        (g.stack.isCompany && assignedStackSet.has(g.stack.id)),
+    }));
+
+    return Response.json(enriched, NO_STORE);
   }
 
   if (!stackId) {
