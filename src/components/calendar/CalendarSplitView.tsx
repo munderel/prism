@@ -262,22 +262,28 @@ function hexToColorTriplet(hex: string, isDark: boolean): { bg: string; border: 
 }
 
 function getEventColor(
-  event: { extendedProps?: Record<string, unknown> },
+  event: { extendedProps?: Record<string, unknown>; backgroundColor?: string },
   isDark: boolean,
   colors: Record<ItemType, ColorDef>,
 ): { bg: string; border: string; text: string } {
   const props = event.extendedProps ?? {};
 
+  // Google events: use the API-provided color directly so the event renders
+  // the same solid hex the main /calendar page does (FullCalendar consumes
+  // the server's `color` field into event.backgroundColor). No dark-mode
+  // darkening — the cal page doesn't do it either.
+  if (props.source === 'google') {
+    const fcColor = event.backgroundColor;
+    if (typeof fcColor === 'string' && fcColor.startsWith('#') && fcColor.length === 7) {
+      return { bg: fcColor, border: fcColor, text: '#ffffff' };
+    }
+    return colorFromDef(colors.GOOGLE_CAL, isDark);
+  }
+
   // Use the API-provided color as the single source of truth (matches main CalendarView)
   const apiColor = props.color as string | undefined;
   if (apiColor && typeof apiColor === 'string' && apiColor.startsWith('#') && apiColor.length === 7) {
     return hexToColorTriplet(apiColor, isDark);
-  }
-
-  // Fallback: derive from the viewer's merged color map (user overrides on
-  // top of PRISM_COLORS defaults) for events without a valid hex color.
-  if (props.source === 'google') {
-    return colorFromDef(colors.GOOGLE_CAL, isDark);
   }
 
   const taskType = props.taskType as ItemType | undefined;
@@ -1338,6 +1344,24 @@ export function CalendarSplitView({
             datesSet={handleDatesSet}
             eventDidMount={(info) => {
               const props = info.event.extendedProps || {};
+              // Dim and strike-through DONE/DROPPED task events
+              if (props.status === 'DONE' || props.status === 'DROPPED') {
+                info.el.style.opacity = '0.45';
+                info.el.style.textDecoration = 'line-through';
+              }
+              // Distinguish work-block completion outcomes visually.
+              if (props.itemType === 'workblock') {
+                if (props.completionStatus === 'COMPLETED') {
+                  info.el.style.opacity = '0.55';
+                  info.el.style.textDecoration = 'line-through';
+                } else if (props.completionStatus === 'MISSED') {
+                  info.el.style.opacity = '0.4';
+                  info.el.style.border = '1px dashed rgba(244, 63, 94, 0.8)'; // rose-500
+                } else if (props.completionStatus === 'PARTIAL') {
+                  info.el.style.opacity = '0.7';
+                  info.el.style.border = '1px dashed rgba(245, 158, 11, 0.8)'; // amber-500
+                }
+              }
               if (props.isPinned) {
                 const pinEl = document.createElement('span');
                 pinEl.textContent = '\u{1F4CC}';
