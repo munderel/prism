@@ -144,7 +144,13 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
+      // Critical #3: keep this OFF. When true, NextAuth silently links a
+      // fresh Google sign-in to ANY existing Prism user whose email matches
+      // the Google profile email. That let an attacker sign in with Google
+      // as a victim's email and receive a valid session for the victim's
+      // password account. The events.signIn remediation below fires AFTER
+      // the JWT is minted, so the attacker's session is already live.
+      allowDangerousEmailAccountLinking: false,
 
       authorization: {
         params: {
@@ -231,11 +237,9 @@ export const authOptions: NextAuthOptions = {
 
         if (invitation) return true;
 
-        // Allow the very first user (bootstrap admin)
-        const adminCount = await prisma.user.count({ where: { isAdmin: true } });
-        if (adminCount === 0) return true;
-
-        // No existing account, no valid invitation — block sign-in
+        // First-admin bootstrap no longer happens through OAuth — see
+        // scripts/bootstrap-admin.ts (Critical #2). No existing account,
+        // no valid invitation -> block sign-in.
         if (isDev) console.log('[auth] signIn — blocked, no invite for:', normalizedEmail);
         return false;
       } catch (error) {
@@ -248,29 +252,15 @@ export const authOptions: NextAuthOptions = {
     // Write operations run here instead of in callbacks.signIn because
     // events.signIn fires AFTER the PrismaAdapter creates the user,
     // so user.id is always a valid DB record ID.
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account }) {
       if (account?.provider !== 'google') return;
 
       try {
-        // Defense-in-depth: detect cross-user account linking.
-        if (
-          profile?.email &&
-          user.email &&
-          profile.email.toLowerCase() !== user.email.toLowerCase()
-        ) {
-          await prisma.account.deleteMany({
-            where: {
-              userId: user.id,
-              provider: 'google',
-              providerAccountId: account.providerAccountId,
-            },
-          });
-          console.error(
-            `[auth] Security: Cross-user account linking detected and remediated. ` +
-            `DB user ${user.email} had Google account for ${profile.email} incorrectly linked.`
-          );
-          return;
-        }
+        // The cross-user account-linking remediation that used to live here
+        // only triggered AFTER the JWT was minted, so an attacker already had
+        // a valid session by the time it ran. Critical #3 fixes the root
+        // cause by setting allowDangerousEmailAccountLinking=false above;
+        // this block can no longer be reached.
 
         // Store Google refresh token (encrypted if key is available, plaintext fallback)
         if (account.refresh_token) {
@@ -291,16 +281,8 @@ export const authOptions: NextAuthOptions = {
           });
         }
 
-        // Auto-promote first user to admin
-        await prisma.$transaction(async (tx) => {
-          const userCount = await tx.user.count();
-          if (userCount <= 1) {
-            await tx.user.update({
-              where: { id: user.id },
-              data: { isAdmin: true },
-            });
-          }
-        });
+        // First-admin bootstrap moved to scripts/bootstrap-admin.ts (Critical
+        // #2). OAuth no longer auto-promotes anyone.
 
         // Check for pending invitation and apply role
         if (user.email) {
