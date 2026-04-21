@@ -224,7 +224,8 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const defaultWorkBlockMinutes =
     typeof userSettingsData?.defaultWorkBlockMinutes === 'number'
       ? (userSettingsData.defaultWorkBlockMinutes as number)
-      : 90;
+      : 30;
+  const alwaysPromptForBlockObjective = !!userSettingsData?.alwaysPromptForBlockObjective;
   const [workBlockModalInput, setWorkBlockModalInput] = useState<WorkBlockObjectiveInput | null>(null);
   const [pendingWorkBlockInfo, setPendingWorkBlockInfo] = useState<EventReceiveArg | null>(null);
 
@@ -644,6 +645,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         // Compute proposed block size: min(defaultWorkBlockMinutes, remaining estimate)
         let proposedMinutes = defaultWorkBlockMinutes;
         let taskTitle = info.event.title;
+        let remaining = defaultWorkBlockMinutes;
         try {
           const taskRes = await fetch(`/api/tasks/${taskId}`);
           if (taskRes.ok) {
@@ -653,12 +655,37 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               const dur = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
               return acc + dur;
             }, 0);
-            const remaining = Math.max(0, estimated - scheduled);
+            remaining = Math.max(0, estimated - scheduled);
             proposedMinutes = remaining === 0 ? defaultWorkBlockMinutes : Math.min(defaultWorkBlockMinutes, remaining);
             taskTitle = task.title ?? taskTitle;
           }
         } catch {
           // fall back to default
+        }
+
+        // Skip the objective modal when the task fits in a single default block
+        // and the user hasn't opted to always be prompted.
+        const fitsInOneBlock = remaining > 0 && remaining <= defaultWorkBlockMinutes;
+        if (fitsInOneBlock && !alwaysPromptForBlockObjective) {
+          const blockEnd = new Date(start.getTime() + remaining * 60000);
+          const res = await fetch('/api/work-blocks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              taskId,
+              start: start.toISOString(),
+              end: blockEnd.toISOString(),
+              mainObjective: taskTitle,
+            }),
+          });
+          if (!res.ok) {
+            info.event.remove();
+            toast.error('Failed to schedule work block');
+          } else {
+            info.event.remove();
+            refreshEvents();
+          }
+          return;
         }
 
         // Open modal; keep the temp event around for now. Modal save/cancel handles it.

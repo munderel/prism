@@ -209,13 +209,44 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     completionStatus: 'PENDING' | 'COMPLETED' | 'PARTIAL' | 'MISSED';
     actualMinutes: number | null;
     notes: string | null;
-    task: { id: string; title: string };
+    task: { id: string; title: string; status: string; estimatedMinutes: number; dueDate: string | null };
     clearGoals: Array<{ id: string; text: string; isComplete: boolean }>;
   }
   const [todayWorkBlocks, setTodayWorkBlocks] = useState<PowerdownWorkBlock[]>([]);
   const [blockReviewPicks, setBlockReviewPicks] = useState<Record<string, 'COMPLETED' | 'PARTIAL' | 'MISSED'>>({});
   const [blockReviewNotes, setBlockReviewNotes] = useState<Record<string, string>>({});
   const [blockReviewActual, setBlockReviewActual] = useState<Record<string, number>>({});
+  const [taskExtendOpen, setTaskExtendOpen] = useState<Record<string, boolean>>({});
+  const [taskExtendEstimate, setTaskExtendEstimate] = useState<Record<string, number>>({});
+  const [taskExtendDueDate, setTaskExtendDueDate] = useState<Record<string, string>>({});
+  const [taskExtendSaving, setTaskExtendSaving] = useState<Record<string, boolean>>({});
+
+  const saveTaskExtend = async (taskId: string) => {
+    const estimated = taskExtendEstimate[taskId];
+    const dueDate = taskExtendDueDate[taskId];
+    const body: Record<string, unknown> = {};
+    if (typeof estimated === 'number' && estimated > 0) body.estimatedMinutes = estimated;
+    if (dueDate) body.dueDate = dueDate;
+    if (Object.keys(body).length === 0) return;
+    setTaskExtendSaving((p) => ({ ...p, [taskId]: true }));
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setTodayWorkBlocks((prev) => prev.map((b) =>
+          b.task.id === taskId
+            ? { ...b, task: { ...b.task, estimatedMinutes: (body.estimatedMinutes as number) ?? b.task.estimatedMinutes, dueDate: (body.dueDate as string) ?? b.task.dueDate } }
+            : b,
+        ));
+        setTaskExtendOpen((p) => ({ ...p, [taskId]: false }));
+      }
+    } finally {
+      setTaskExtendSaving((p) => ({ ...p, [taskId]: false }));
+    }
+  };
 
   const fetchTodayWorkBlocks = useCallback(async () => {
     try {
@@ -1117,6 +1148,65 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                         rows={2}
                         className="w-full rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)]"
                       />
+                      {b.task.status !== 'DONE' && (pick === 'PARTIAL' || pick === 'MISSED') && (
+                        <div className="pt-1 border-t border-[var(--border-color)]">
+                          {!taskExtendOpen[b.task.id] ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTaskExtendOpen((p) => ({ ...p, [b.task.id]: true }));
+                                setTaskExtendEstimate((p) => ({ ...p, [b.task.id]: b.task.estimatedMinutes }));
+                                setTaskExtendDueDate((p) => ({ ...p, [b.task.id]: b.task.dueDate ? b.task.dueDate.split('T')[0] : '' }));
+                              }}
+                              className="text-xs text-indigo-400 hover:text-indigo-300"
+                            >
+                              Task needs more time? Bump estimate or due date →
+                            </button>
+                          ) : (
+                            <div className="space-y-2 pt-2">
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-[var(--text-muted)] w-24">New estimate</label>
+                                <input
+                                  type="number"
+                                  min={15}
+                                  max={2400}
+                                  step={15}
+                                  value={taskExtendEstimate[b.task.id] ?? b.task.estimatedMinutes}
+                                  onChange={(e) => setTaskExtendEstimate((p) => ({ ...p, [b.task.id]: Math.max(15, Math.min(2400, Number(e.target.value) || 0)) }))}
+                                  className="w-24 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                                />
+                                <span className="text-xs text-[var(--text-muted)]">min (was {b.task.estimatedMinutes})</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-[var(--text-muted)] w-24">Due date</label>
+                                <input
+                                  type="date"
+                                  value={taskExtendDueDate[b.task.id] ?? ''}
+                                  onChange={(e) => setTaskExtendDueDate((p) => ({ ...p, [b.task.id]: e.target.value }))}
+                                  className="rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => saveTaskExtend(b.task.id)}
+                                  disabled={!!taskExtendSaving[b.task.id]}
+                                  className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                                >
+                                  {taskExtendSaving[b.task.id] ? 'Saving…' : 'Save task changes'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setTaskExtendOpen((p) => ({ ...p, [b.task.id]: false }))}
+                                  className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

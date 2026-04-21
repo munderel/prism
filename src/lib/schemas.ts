@@ -103,6 +103,7 @@ export const updateSettingsSchema = z.object({
   weeklyTargetCalendarIds: z.array(z.string()).optional(),
   powerdownTime: hhmmTime,
   defaultWorkBlockMinutes: z.number().int().min(15).max(480).optional(),
+  alwaysPromptForBlockObjective: z.boolean().optional(),
   weeklyReviewDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   weeklyReviewTime: hhmmTime,
   weeklyReviewDuration: reviewDuration,
@@ -726,6 +727,7 @@ export const updateWorkBlockSchema = z.object({
   completionStatus: z.enum(['PENDING', 'COMPLETED', 'PARTIAL', 'MISSED']).optional(),
   actualMinutes: z.number().int().min(0).max(1440).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
+  subGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
 });
 
 export const reviewWorkBlocksSchema = z.object({
