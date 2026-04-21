@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError } from '@/lib/auth-guard';
+import { requireAuth, authError, requireTaskAccess } from '@/lib/auth-guard';
 import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, createWorkBlockSchema } from '@/lib/schemas';
 
@@ -46,22 +46,14 @@ export async function POST(request: NextRequest) {
   if ('error' in parsed) return parsed.error;
   const { taskId, start, end, mainObjective, subGoals } = parsed.data;
 
-  const task = await prisma.task.findFirst({
-    where: {
-      id: taskId,
-      OR: [{ ownerId: auth.userId }, { assigneeId: auth.userId }],
-    },
-    select: { id: true },
-  });
-  if (!task) {
-    return Response.json({ error: 'Task not found or not accessible' }, { status: 404 });
-  }
+  // Authorize via the shared helper (owner or assignee or admin).
+  const taskAccess = await requireTaskAccess(taskId);
+  if ('error' in taskAccess) return authError(taskAccess);
 
+  // Schema already enforces ISO datetime + end > start + duration cap. No
+  // further validation needed here.
   const startDate = new Date(start);
   const endDate = new Date(end);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
-    return Response.json({ error: 'Invalid start/end' }, { status: 400 });
-  }
 
   const block = await prisma.workBlock.create({
     data: {
