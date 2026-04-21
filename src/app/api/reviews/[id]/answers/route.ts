@@ -46,21 +46,13 @@ export async function POST(
   if ('error' in parsed) return parsed.error;
   const { stepKey, answerType, answerData } = parsed.data;
 
-  const existing = await prisma.reviewAnswer.findFirst({
-    where: { reviewId, stepKey },
+  // Atomic upsert — two concurrent POSTs for the same (reviewId, stepKey) are
+  // collapsed by the unique constraint rather than racing to insert duplicates.
+  const answer = await prisma.reviewAnswer.upsert({
+    where: { reviewId_stepKey: { reviewId, stepKey } },
+    create: { reviewId, stepKey, answerType, answerData: answerData ?? {} },
+    update: { answerType, answerData: answerData ?? {} },
   });
 
-  if (existing) {
-    const updated = await prisma.reviewAnswer.update({
-      where: { id: existing.id },
-      data: { answerType, answerData: answerData ?? {} },
-    });
-    return Response.json(updated);
-  }
-
-  const answer = await prisma.reviewAnswer.create({
-    data: { reviewId, stepKey, answerType, answerData: answerData ?? {} },
-  });
-
-  return Response.json(answer, { status: 201 });
+  return Response.json(answer);
 }
