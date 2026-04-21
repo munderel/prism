@@ -8,6 +8,7 @@ import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 import { getCompletionUrl } from '@/lib/completion-token';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
+import { completeTask } from '@/lib/task-completion';
 
 export async function GET(
   _request: NextRequest,
@@ -77,15 +78,15 @@ export async function PATCH(
     await unflagOtherWinTheDay(task.ownerId, task.dueDate, id);
   }
 
-  // Status transitions
-  if (status !== undefined) {
+  // Status transitions. DONE is handled by completeTask() below, so we don't
+  // write status/completedAt here for that transition — it would race with the
+  // helper's own status=DONE write.
+  const isNewDoneTransition = status === 'DONE' && task.status !== 'DONE';
+  if (status !== undefined && !isNewDoneTransition) {
     data.status = status;
     switch (status) {
       case 'IN_PROGRESS':
         if (!task.startedAt) data.startedAt = new Date();
-        break;
-      case 'DONE':
-        data.completedAt = new Date();
         break;
       case 'DROPPED':
         data.failedAt = new Date();
@@ -102,56 +103,12 @@ export async function PATCH(
     },
   });
 
-  // When the task is marked DONE: snapshot progress at this moment and mark remaining PENDING blocks as MISSED.
-  // Completion is always user-declared: we never auto-flip when completedMinutes crosses estimate.
-  if (status === 'DONE' && task.status !== 'DONE') {
+  // DONE transition: delegate to the shared completeTask helper which
+  // transactionally snapshots progress, flips PENDING blocks to MISSED, and
+  // sets status=DONE + completedAt idempotently.
+  if (isNewDoneTransition) {
     try {
-      const blocks = await prisma.workBlock.findMany({ where: { taskId: id } });
-      const clearGoals = await prisma.clearGoal.findMany({ where: { taskId: id } });
-
-      const scheduledMinutes = blocks.reduce((acc, b) => acc + Math.max(0, Math.round((b.end.getTime() - b.start.getTime()) / 60000)), 0);
-      const completedMinutes = blocks
-        .filter((b) => b.completionStatus === 'COMPLETED' || b.completionStatus === 'PARTIAL')
-        .reduce((acc, b) => acc + (b.actualMinutes ?? Math.max(0, Math.round((b.end.getTime() - b.start.getTime()) / 60000))), 0);
-
-      const estimated = task.estimatedMinutes ?? 0;
-      const completedAt = (data.completedAt as Date) ?? new Date();
-
-      await prisma.$transaction([
-        prisma.workBlock.updateMany({
-          where: { taskId: id, completionStatus: 'PENDING' },
-          data: { completionStatus: 'MISSED', reviewedAt: completedAt },
-        }),
-        prisma.taskCompletionSnapshot.upsert({
-          where: { taskId: id },
-          update: {
-            completedAt,
-            estimatedMinutes: estimated,
-            completedMinutes,
-            scheduledMinutes,
-            goalsHit: clearGoals.filter((g) => g.isComplete).length,
-            goalsDefined: clearGoals.length,
-            overrunMinutes: completedMinutes - estimated,
-            blocksCompleted: blocks.filter((b) => b.completionStatus === 'COMPLETED').length,
-            blocksPartial: blocks.filter((b) => b.completionStatus === 'PARTIAL').length,
-            blocksMissed: blocks.filter((b) => b.completionStatus === 'MISSED').length,
-          },
-          create: {
-            taskId: id,
-            userId: task.ownerId,
-            completedAt,
-            estimatedMinutes: estimated,
-            completedMinutes,
-            scheduledMinutes,
-            goalsHit: clearGoals.filter((g) => g.isComplete).length,
-            goalsDefined: clearGoals.length,
-            overrunMinutes: completedMinutes - estimated,
-            blocksCompleted: blocks.filter((b) => b.completionStatus === 'COMPLETED').length,
-            blocksPartial: blocks.filter((b) => b.completionStatus === 'PARTIAL').length,
-            blocksMissed: blocks.filter((b) => b.completionStatus === 'MISSED').length,
-          },
-        }),
-      ]);
+      await completeTask(id, auth.userId);
     } catch (err) {
       console.warn('[tasks] completion snapshot failed:', err);
     }
