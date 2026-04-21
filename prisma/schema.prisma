@@ -950,6 +950,7 @@ model ReviewAnswer {
 
   review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
+  @@unique([reviewId, stepKey])
   @@index([reviewId])
 }
 
