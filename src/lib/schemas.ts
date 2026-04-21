@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IdeaStatus } from '@prisma/client';
 
 // === SHARED FIELD SCHEMAS ===
 
@@ -491,7 +492,9 @@ export const updateIdeaSchema = z.object({
   impactScore: z.number().int().min(1).max(5).optional(),
   confidenceScore: z.number().int().min(1).max(5).optional(),
   easeScore: z.number().int().min(1).max(5).optional(),
-  status: z.string().optional(),
+  // Critical #19: z.string() let a non-enum value flow into Prisma and crash
+  // at the DB boundary. Bind to the Prisma enum directly.
+  status: z.nativeEnum(IdeaStatus).optional(),
 });
 
 export const convertIdeaSchema = z.object({
