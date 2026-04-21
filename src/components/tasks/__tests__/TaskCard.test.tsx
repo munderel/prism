@@ -96,17 +96,19 @@ describe('TaskCard', () => {
       dueDate: '2020-01-01T00:00:00.000Z',
     });
     renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
-    const dateEl = screen.getByText(new Date('2020-01-01T00:00:00.000Z').toLocaleDateString());
+    // TaskCard strips the timezone and parses as local date to avoid the
+    // one-day shift from UTC → local in non-UTC timezones; match that here.
+    const dateEl = screen.getByText(new Date('2020-01-01T00:00:00').toLocaleDateString());
     expect(dateEl).toHaveClass('text-red-400');
   });
 
-  it('non-overdue date has text-gray-500 class', () => {
+  it('non-overdue date has muted class', () => {
     const task = createTask({
       status: 'TODO',
       dueDate: '2099-12-31T00:00:00.000Z',
     });
     renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
-    const dateEl = screen.getByText(new Date('2099-12-31T00:00:00.000Z').toLocaleDateString());
+    const dateEl = screen.getByText(new Date('2099-12-31T00:00:00').toLocaleDateString());
     expect(dateEl).toHaveClass('text-[var(--text-muted)]');
   });
 

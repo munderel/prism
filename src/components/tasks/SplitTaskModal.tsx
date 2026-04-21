@@ -24,10 +24,12 @@ export function SplitTaskModal({
   onClose,
   onSplit,
 }: SplitTaskModalProps) {
+  // Start with two empty rows. Users named subtasks inconsistently when we
+  // pre-filled "Outline / Draft / Edit" because they forgot the placeholder
+  // was a suggestion, not their text.
   const [sessions, setSessions] = useState<SessionRow[]>([
-    { title: 'Outline', durationMinutes: defaultDurationMinutes },
-    { title: 'Draft', durationMinutes: defaultDurationMinutes },
-    { title: 'Edit', durationMinutes: defaultDurationMinutes },
+    { title: '', durationMinutes: defaultDurationMinutes },
+    { title: '', durationMinutes: defaultDurationMinutes },
   ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -36,11 +38,13 @@ export function SplitTaskModal({
     if (sessions.length >= 20) return;
     setSessions((prev) => [
       ...prev,
-      { title: `Session ${prev.length + 1}`, durationMinutes: defaultDurationMinutes },
+      { title: '', durationMinutes: defaultDurationMinutes },
     ]);
   };
 
   const removeSession = (idx: number) => {
+    // The server requires at least 2 sessions, so disallow removing below 2.
+    if (sessions.length <= 2) return;
     setSessions((prev) => prev.filter((_, i) => i !== idx));
   };
 
@@ -48,10 +52,17 @@ export function SplitTaskModal({
     setSessions((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   };
 
+  const invalidReason = (() => {
+    if (sessions.length < 2) return 'Add at least two sessions';
+    if (sessions.some((s) => !s.title.trim())) return 'Each session needs a name';
+    if (sessions.some((s) => !Number.isFinite(s.durationMinutes) || s.durationMinutes < 5))
+      return 'Each session needs a duration ≥ 5 minutes';
+    return null;
+  })();
+
   const handleSplit = async () => {
-    if (sessions.length === 0) return;
-    if (sessions.some((s) => !s.title.trim())) {
-      setError('Each session needs a name');
+    if (invalidReason) {
+      setError(invalidReason);
       return;
     }
     setBusy(true);
@@ -141,18 +152,23 @@ export function SplitTaskModal({
                   min={5}
                   max={1440}
                   step={5}
-                  value={s.durationMinutes}
-                  onChange={(e) =>
-                    updateSession(i, { durationMinutes: Math.max(5, Number(e.target.value) || 60) })
-                  }
+                  value={Number.isFinite(s.durationMinutes) ? s.durationMinutes : ''}
+                  onChange={(e) => {
+                    // Preserve NaN while the user is mid-type; the Save button's
+                    // invalid-reason check will catch it. Don't silently snap to
+                    // 60, which overrides the user's explicit clear.
+                    const raw = e.target.value;
+                    const n = raw === '' ? Number.NaN : Number(raw);
+                    updateSession(i, { durationMinutes: n });
+                  }}
                   className="w-20 flex-shrink-0 rounded border border-white/[0.08] bg-transparent px-2 py-1 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
                 />
                 <span className="text-xs text-[var(--text-muted)] flex-shrink-0">min</span>
                 <button
                   onClick={() => removeSession(i)}
-                  disabled={sessions.length === 1}
+                  disabled={sessions.length <= 2}
                   className="flex-shrink-0 rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-red-400 disabled:opacity-50"
-                  title="Remove session"
+                  title={sessions.length <= 2 ? 'At least two sessions required' : 'Remove session'}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -184,7 +200,8 @@ export function SplitTaskModal({
             </button>
             <button
               onClick={handleSplit}
-              disabled={busy || sessions.length === 0}
+              disabled={busy || invalidReason !== null}
+              title={invalidReason ?? undefined}
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
             >
               {busy ? 'Splitting…' : `Create ${sessions.length} subtask${sessions.length !== 1 ? 's' : ''}`}
