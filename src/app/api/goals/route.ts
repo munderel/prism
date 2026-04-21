@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         _count: { select: { kpis: true } },
         kpis: true,
         stack: { select: { id: true, name: true, isCompany: true } },
-        assignees: { include: { user: { select: { id: true, name: true } } } },
+        assignees: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
       },
     });
 
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      assignees: { include: { user: { select: { id: true, name: true } } } },
+      assignees: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
     },
   });
 
