@@ -24,6 +24,17 @@ export async function POST(
   const meeting = await prisma.meeting.findUnique({ where: { id } });
   if (!meeting) return notFoundResponse('Meeting');
 
+  // Only the meeting's creator (or a super-user — we already gated on admin)
+  // should be able to sign-for-them to Google. Signing as another admin's
+  // identity would land the event in the wrong calendar and surface as a
+  // permissions error on retry.
+  if (meeting.createdById !== auth.userId) {
+    return Response.json(
+      { error: 'Only the meeting creator can retry sync for this meeting' },
+      { status: 403 },
+    );
+  }
+
   const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(meeting.createdById);
   if (!hasGoogle) {
     await prisma.meeting.update({
