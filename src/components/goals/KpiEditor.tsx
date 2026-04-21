@@ -30,8 +30,11 @@ export function KpiEditor({
   const [unit, setUnit] = useState(kpi?.unit ?? '');
   const [target, setTarget] = useState(kpi?.targetValue ?? '');
   const [linkedMonthlyKpiId, setLinkedMonthlyKpiId] = useState(kpi?.linkedKpiId ?? '');
+  const [ownerId, setOwnerId] = useState<string>(kpi?.ownerId ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const { data: usersList } = useSWR<Array<{ id: string; name: string | null; email: string }>>('/api/users');
 
   const linkableLevels = ['WEEKLY', 'MONTHLY', 'STRATEGIC'];
   const showLinkDropdown = linkableLevels.includes(goalLevel) && parentGoalId;
@@ -64,6 +67,9 @@ export function KpiEditor({
       if (showLinkDropdown && linkedMonthlyKpiId) {
         body.linkedKpiId = linkedMonthlyKpiId;
       }
+      // Empty string = team-shared (send null). A concrete id = that user is
+      // the owner. The field is optional on both create and update schemas.
+      body.ownerId = ownerId ? ownerId : null;
 
       const url = isEditing ? `/api/kpis/${kpi.id}` : `/api/goals/${goalId}/kpis`;
       const method = isEditing ? 'PUT' : 'POST';
@@ -203,6 +209,24 @@ export function KpiEditor({
                 </select>
               </div>
             )}
+
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">
+                Owner <span className="text-[var(--text-muted)]">(optional — defaults to team)</span>
+              </label>
+              <select
+                value={ownerId}
+                onChange={(e) => setOwnerId(e.target.value)}
+                className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="">Team (no owner)</option>
+                {(usersList ?? []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name ?? u.email}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="flex justify-end gap-3 pt-2">
               <button

@@ -26,6 +26,9 @@ export async function GET(
   const kpis = await prisma.kpi.findMany({
     where: { goalId },
     orderBy: { sortOrder: 'asc' },
+    include: {
+      owner: { select: { id: true, name: true, email: true, image: true } },
+    },
   });
 
   // Enrich KPIs with linked child actuals (monthly<-weekly, yearly<-monthly, HHG<-yearly)
@@ -93,7 +96,17 @@ export async function POST(
   const parsed = await parseBody(request, createKpiSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { name, type, unit, targetValue, linkedKpiId } = body;
+  const { name, type, unit, targetValue, linkedKpiId, ownerId } = body;
+
+  if (ownerId) {
+    const owner = await prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { id: true },
+    });
+    if (!owner) {
+      return Response.json({ error: 'Owner user not found' }, { status: 400 });
+    }
+  }
 
   // Check unique constraint before create for friendly error
   const existing = await prisma.kpi.findUnique({
@@ -140,7 +153,11 @@ export async function POST(
       unit: type === 'NUMERIC' ? (unit ?? null) : null,
       targetValue: type === 'NUMERIC' ? (targetValue ?? null) : null,
       linkedKpiId: linkedKpiId ?? null,
+      ownerId: ownerId ?? null,
       sortOrder: (lastKpi?.sortOrder ?? -1) + 1,
+    },
+    include: {
+      owner: { select: { id: true, name: true, email: true, image: true } },
     },
   });
 

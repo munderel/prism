@@ -119,6 +119,7 @@ model User {
   taskCompletionSnapshots TaskCompletionSnapshot[]
   taskTypeColors       UserTaskTypeColor[]
   companyGoalAssignments CompanyGoalAssignment[]
+  ownedKpis            Kpi[]              @relation("KpiOwner")
 }
 
 model UserTaskTypeColor {
@@ -713,6 +714,7 @@ model ConfigVersion {
 model Kpi {
   id          String    @id @default(cuid())
   goalId      String
+  ownerId     String?
   name        String
   type        KpiType
   unit        String?
@@ -726,12 +728,14 @@ model Kpi {
   updatedAt   DateTime  @updatedAt
 
   goal       Goal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  owner      User? @relation("KpiOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   linkedKpi  Kpi?  @relation("KpiLink", fields: [linkedKpiId], references: [id])
   linkedFrom Kpi[] @relation("KpiLink")
 
   @@unique([goalId, name])
   @@index([goalId])
   @@index([linkedKpiId])
+  @@index([ownerId])
 }
 
 // === IDEAS ===

@@ -179,6 +179,8 @@ export const createKpiSchema = z.object({
   unit: z.string().max(50).optional().nullable(),
   targetValue: z.number().optional().nullable(),
   linkedKpiId: z.string().optional().nullable(),
+  // null / omitted = team-shared (no individual owner).
+  ownerId: z.string().min(1).optional().nullable(),
 });
 
 export const updateKpiSchema = z.object({
@@ -188,6 +190,8 @@ export const updateKpiSchema = z.object({
   actualValue: z.number().optional().nullable(),
   isComplete: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
+  // null explicitly clears the owner (reverts to team-shared).
+  ownerId: z.string().min(1).optional().nullable(),
 });
 
 // === STACKS ===
