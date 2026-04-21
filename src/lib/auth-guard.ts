@@ -176,6 +176,37 @@ export async function checkStackWriteAccess(
   return Response.json({ error: 'Forbidden' }, { status: 403 });
 }
 
+/**
+ * Returns true if `targetUserId` is a legitimate member of the stack:
+ * stack owner, a `CompanyGoalAssignment` holder for the stack, or a
+ * `GoalAssignee` row on the given `goalId`. Use this when deciding whether
+ * a user can be named as an owner/assignee of a goal or KPI — we don't
+ * want to assign a KPI to someone who has no visibility into the stack.
+ */
+export async function verifyStackMembership(
+  stack: { id: string; isCompany: boolean; ownerId: string },
+  targetUserId: string,
+  goalId?: string,
+): Promise<boolean> {
+  if (stack.ownerId === targetUserId) return true;
+
+  const companyAssignment = await prisma.companyGoalAssignment.findUnique({
+    where: { goalStackId_userId: { goalStackId: stack.id, userId: targetUserId } },
+    select: { id: true },
+  });
+  if (companyAssignment) return true;
+
+  if (goalId) {
+    const goalAssignee = await prisma.goalAssignee.findUnique({
+      where: { goalId_userId: { goalId, userId: targetUserId } },
+      select: { id: true },
+    });
+    if (goalAssignee) return true;
+  }
+
+  return false;
+}
+
 export function requireCronSecret(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false; // No secret configured = deny all
