@@ -717,23 +717,43 @@ export const updateCalendarEventSchema = z.object({
 
 // === WORK BLOCKS ===
 
-export const createWorkBlockSchema = z.object({
-  taskId: z.string().min(1, 'taskId is required'),
-  start: z.string().min(1, 'start is required'),
-  end: z.string().min(1, 'end is required'),
-  mainObjective: z.string().min(1, 'mainObjective is required').max(500),
-  subGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
-});
+// Work-block windows are capped at 8h (matches the modal duration picker at 480 min).
+// `.datetime()` rejects malformed strings before `new Date(...)` in the route.
+const WORK_BLOCK_MAX_MINUTES = 480;
 
-export const updateWorkBlockSchema = z.object({
-  start: z.string().optional(),
-  end: z.string().optional(),
-  mainObjective: z.string().min(1).max(500).optional(),
-  completionStatus: z.enum(['PENDING', 'COMPLETED', 'PARTIAL', 'MISSED']).optional(),
-  actualMinutes: z.number().int().min(0).max(1440).optional().nullable(),
-  notes: z.string().max(2000).optional().nullable(),
-  subGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
-});
+export const createWorkBlockSchema = z
+  .object({
+    taskId: z.string().min(1, 'taskId is required'),
+    start: z.string().datetime({ message: 'start must be an ISO datetime' }),
+    end: z.string().datetime({ message: 'end must be an ISO datetime' }),
+    mainObjective: z.string().min(1, 'mainObjective is required').max(500),
+    subGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
+  })
+  .refine((v) => new Date(v.end) > new Date(v.start), {
+    message: 'end must be after start',
+    path: ['end'],
+  })
+  .refine(
+    (v) =>
+      (new Date(v.end).getTime() - new Date(v.start).getTime()) / 60000 <= WORK_BLOCK_MAX_MINUTES,
+    { message: `duration exceeds ${WORK_BLOCK_MAX_MINUTES} minutes`, path: ['end'] },
+  );
+
+export const updateWorkBlockSchema = z
+  .object({
+    start: z.string().datetime({ message: 'start must be an ISO datetime' }).optional(),
+    end: z.string().datetime({ message: 'end must be an ISO datetime' }).optional(),
+    mainObjective: z.string().min(1).max(500).optional(),
+    completionStatus: z.enum(['PENDING', 'COMPLETED', 'PARTIAL', 'MISSED']).optional(),
+    actualMinutes: z.number().int().min(0).max(WORK_BLOCK_MAX_MINUTES).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
+    subGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
+  })
+  .refine(
+    (v) =>
+      v.start === undefined || v.end === undefined || new Date(v.end) > new Date(v.start),
+    { message: 'end must be after start', path: ['end'] },
+  );
 
 export const reviewWorkBlocksSchema = z.object({
   powerdownSessionId: z.string().min(1),

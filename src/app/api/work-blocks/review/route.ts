@@ -20,9 +20,21 @@ export async function POST(request: NextRequest) {
   });
   if (!session) return Response.json({ error: 'Powerdown session not found' }, { status: 404 });
 
+  // Constrain reviewable blocks to the session's calendar day. This prevents
+  // a client from submitting IDs of historical PENDING blocks (e.g. last
+  // week's) to inflate the day's leaderboard/report counts.
+  const dayStart = new Date(session.sessionDate);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
   const ids = reviews.map((r) => r.workBlockId);
   const blocks = await prisma.workBlock.findMany({
-    where: { id: { in: ids }, userId: auth.userId },
+    where: {
+      id: { in: ids },
+      userId: auth.userId,
+      start: { gte: dayStart, lt: dayEnd },
+    },
     select: { id: true, start: true, end: true, actualMinutes: true },
   });
   const blockMap = new Map(blocks.map((b) => [b.id, b]));

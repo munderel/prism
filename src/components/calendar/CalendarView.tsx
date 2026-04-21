@@ -1508,6 +1508,21 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               const titleEl = info.el.querySelector('.fc-event-title') as HTMLElement | null;
               if (titleEl) titleEl.style.textDecoration = 'line-through';
             }
+            // Distinguish work-block completion outcomes visually.
+            if (props.itemType === 'workblock') {
+              if (props.completionStatus === 'COMPLETED') {
+                info.el.style.opacity = '0.55';
+                const titleEl = info.el.querySelector('.fc-event-title') as HTMLElement | null;
+                if (titleEl) titleEl.style.textDecoration = 'line-through';
+              } else if (props.completionStatus === 'MISSED') {
+                info.el.style.opacity = '0.4';
+                info.el.style.border = '1px dashed rgba(244, 63, 94, 0.8)'; // rose-500
+                info.el.style.backgroundColor = 'rgba(244, 63, 94, 0.15)';
+              } else if (props.completionStatus === 'PARTIAL') {
+                info.el.style.opacity = '0.7';
+                info.el.style.border = '1px dashed rgba(245, 158, 11, 0.8)'; // amber-500
+              }
+            }
             // Show pin icon on pinned events
             if (props.isPinned) {
               const pinEl = document.createElement('span');

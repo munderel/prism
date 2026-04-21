@@ -11,13 +11,22 @@ vi.mock('@/lib/prisma', () => ({
       findMany: vi.fn(),
     },
     aimInstance: {
-      groupBy: vi.fn(),
-    },
-    publicWin: {
       findMany: vi.fn(),
     },
     processExecution: {
-      groupBy: vi.fn(),
+      findMany: vi.fn(),
+    },
+    powerdownSession: {
+      findMany: vi.fn(),
+    },
+    task: {
+      findMany: vi.fn(),
+    },
+    review: {
+      findMany: vi.fn(),
+    },
+    publicWin: {
+      findMany: vi.fn(),
     },
   },
 }));
@@ -28,12 +37,16 @@ import { prisma } from '@/lib/prisma';
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockUserFindMany = vi.mocked(prisma.user.findMany);
-const mockAimInstanceGroupBy = vi.mocked(prisma.aimInstance.groupBy);
+const mockAimInstanceFindMany = vi.mocked(prisma.aimInstance.findMany);
+const mockProcessExecutionFindMany = vi.mocked(prisma.processExecution.findMany);
+const mockPowerdownSessionFindMany = vi.mocked(prisma.powerdownSession.findMany);
+const mockTaskFindMany = vi.mocked(prisma.task.findMany);
+const mockReviewFindMany = vi.mocked(prisma.review.findMany);
 const mockPublicWinFindMany = vi.mocked(prisma.publicWin.findMany);
-const mockProcessExecutionGroupBy = vi.mocked(prisma.processExecution.groupBy);
 
 describe('GET /api/leaderboard', () => {
   it('returns only public users ranked by computed score', async () => {
+    const now = new Date();
     mockRequireAuth.mockResolvedValue({
       session: { user: { id: 'viewer-1', isAdmin: false } } as any,
       userId: 'viewer-1',
@@ -43,23 +56,34 @@ describe('GET /api/leaderboard', () => {
         id: 'user-1',
         name: 'Sarah',
         image: null,
+        leaderboardResetAt: null,
         streaks: [{ currentCount: 3, bestCount: 6 }],
-        _count: { tasks: 10, reviews: 2 },
       },
       {
         id: 'user-2',
         name: 'James',
         image: null,
+        leaderboardResetAt: null,
         streaks: [{ currentCount: 1, bestCount: 4 }],
-        _count: { tasks: 20, reviews: 1 },
       },
     ] as any);
-    mockAimInstanceGroupBy.mockResolvedValue([
-      { userId: 'user-1', _sum: { pointsEarned: 8 }, _count: 2 },
-      { userId: 'user-2', _sum: { pointsEarned: 0 }, _count: 0 },
+    // Counts are aggregated in app code from raw completion rows; the route
+    // windows by each user's leaderboardResetAt (null = no reset, include all).
+    mockAimInstanceFindMany.mockResolvedValue([
+      { userId: 'user-1', completedAt: now, pointsEarned: 5 },
+      { userId: 'user-1', completedAt: now, pointsEarned: 3 },
     ] as any);
+    mockTaskFindMany.mockResolvedValue([
+      ...Array(10).fill({ ownerId: 'user-1', completedAt: now }),
+      ...Array(20).fill({ ownerId: 'user-2', completedAt: now }),
+    ] as any);
+    mockReviewFindMany.mockResolvedValue([
+      ...Array(2).fill({ userId: 'user-1', completedAt: now }),
+      ...Array(1).fill({ userId: 'user-2', completedAt: now }),
+    ] as any);
+    mockProcessExecutionFindMany.mockResolvedValue([] as any);
+    mockPowerdownSessionFindMany.mockResolvedValue([] as any);
     mockPublicWinFindMany.mockResolvedValue([] as any);
-    mockProcessExecutionGroupBy.mockResolvedValue([] as any);
 
     const response = await GET(new Request('http://localhost/api/leaderboard') as any);
     const body = await response.json();
