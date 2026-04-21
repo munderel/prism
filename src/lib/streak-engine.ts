@@ -171,7 +171,7 @@ export async function checkAndBreakMissedStreaks(userId: string): Promise<string
   if (!user) return reasons;
 
   const today = startOfUserToday(user.timezone);
-  // When grace is enabled, look back 2 days instead of 1 before breaking
+  // When grace is enabled, look back 2 days instead of 1 before breaking.
   const lookbackDays = user.streakGraceDays ? 2 : 1;
   const cutoff = new Date(today);
   cutoff.setDate(cutoff.getDate() - lookbackDays);
@@ -185,7 +185,12 @@ export async function checkAndBreakMissedStreaks(userId: string): Promise<string
     select: { id: true },
   });
   if (!recentPowerdown) {
-    const reason = `Missed powerdown for ${cutoff.toISOString().slice(0, 10)}`;
+    // Report yesterday as the missed day — that's the day the user actually
+    // failed to power down. With grace=on the window is [day-before-yesterday,
+    // today) but the user-facing "missed day" is still yesterday.
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const reason = `Missed powerdown for ${yesterday.toISOString().slice(0, 10)}`;
     await breakStreak(userId, 'daily', reason);
     reasons.push(reason);
   }

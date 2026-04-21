@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { fromZonedTime } from 'date-fns-tz';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError, requireTaskAccess } from '@/lib/auth-guard';
 import { NO_STORE } from '@/lib/api-helpers';
@@ -13,14 +14,26 @@ export async function GET(request: NextRequest) {
   const end = searchParams.get('end');
   const taskId = searchParams.get('taskId');
   const date = searchParams.get('date'); // YYYY-MM-DD — convenience for powerdown "today"
+  const tzParam = searchParams.get('tz');
 
   const where: Record<string, unknown> = { userId: auth.userId };
   if (taskId) where.taskId = taskId;
 
   if (date) {
-    const day = new Date(`${date}T00:00:00`);
-    const next = new Date(day);
-    next.setDate(next.getDate() + 1);
+    // Compute the day window in the user's timezone — not the server's local
+    // time. Falls back to the user's stored preference, then UTC. Without this
+    // a Toronto user on a UTC server sees a window shifted by 4–5 hours.
+    let tz = tzParam ?? undefined;
+    if (!tz) {
+      const user = await prisma.user.findUnique({
+        where: { id: auth.userId },
+        select: { timezone: true },
+      });
+      tz = user?.timezone ?? 'UTC';
+    }
+    const day = fromZonedTime(`${date}T00:00:00`, tz);
+    const next = fromZonedTime(`${date}T00:00:00`, tz);
+    next.setUTCDate(next.getUTCDate() + 1);
     where.start = { gte: day, lt: next };
   } else if (start && end) {
     where.start = { gte: new Date(start), lt: new Date(end) };

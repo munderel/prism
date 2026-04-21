@@ -82,6 +82,7 @@ import { parseRRule, getNextOccurrence as _getNextOccurrence } from '@/lib/recur
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { cascadeProgressUp as _cascadeProgressUp } from '@/lib/progress';
+import { completeTask } from '@/lib/task-completion';
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockCheckStackWriteAccess = vi.mocked(checkStackWriteAccess);
@@ -98,6 +99,7 @@ const mockProcessFindUnique = vi.mocked(prisma.process.findUnique);
 const mockParseRRule = vi.mocked(parseRRule);
 const mockSyncTaskCalendar = vi.mocked(syncTaskCalendarEvent);
 const mockUnflagWinTheDay = vi.mocked(unflagOtherWinTheDay);
+const mockCompleteTask = vi.mocked(completeTask);
 
 const authedResult = { session: { user: { id: 'user1', isAdmin: false } }, userId: 'user1' };
 const adminResult = { session: { user: { id: 'admin1', isAdmin: true } }, userId: 'admin1' };
@@ -449,18 +451,18 @@ describe('PATCH /api/tasks/[id]', () => {
     );
   });
 
-  it('sets completedAt on DONE transition', async () => {
+  it('delegates DONE transition to completeTask helper', async () => {
+    // status=DONE + completedAt is now written transactionally by
+    // completeTask(), not by the PATCH handler's prisma.task.update call.
     mockParseBody.mockResolvedValue({ data: { status: 'DONE' } } as any);
     mockTaskUpdate.mockResolvedValue({ ...taskFixture, status: 'DONE' } as any);
     await PATCH(createPatchRequest({ status: 'DONE' }), { params });
-    expect(mockTaskUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: 'DONE',
-          completedAt: expect.any(Date),
-        }),
-      })
-    );
+    expect(mockCompleteTask).toHaveBeenCalledWith(taskFixture.id, 'user1');
+    // The handler's own update call must NOT set status=DONE (avoids racing
+    // with the helper's write).
+    const updateCall = mockTaskUpdate.mock.calls[0][0] as any;
+    expect(updateCall.data.status).toBeUndefined();
+    expect(updateCall.data.completedAt).toBeUndefined();
   });
 
   it('sets failedAt on DROPPED transition', async () => {
