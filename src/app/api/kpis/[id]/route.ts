@@ -37,12 +37,26 @@ export async function PUT(
   const parsed = await parseBody(request, updateKpiSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { name, isComplete, actualValue } = body;
+  const { name, isComplete, actualValue, ownerId } = body;
 
   const data: Record<string, unknown> = pickDefined(body, ['name', 'unit', 'targetValue', 'actualValue', 'sortOrder']);
   if (isComplete !== undefined) {
     data.isComplete = isComplete;
     data.completedAt = isComplete ? new Date() : null;
+  }
+  if (ownerId !== undefined) {
+    if (ownerId === null) {
+      data.ownerId = null;
+    } else {
+      const owner = await prisma.user.findUnique({
+        where: { id: ownerId },
+        select: { id: true },
+      });
+      if (!owner) {
+        return Response.json({ error: 'Owner user not found' }, { status: 400 });
+      }
+      data.ownerId = ownerId;
+    }
   }
 
   // Check unique constraint if name is changing
@@ -58,7 +72,13 @@ export async function PUT(
     }
   }
 
-  const updated = await prisma.kpi.update({ where: { id }, data });
+  const updated = await prisma.kpi.update({
+    where: { id },
+    data,
+    include: {
+      owner: { select: { id: true, name: true, email: true, image: true } },
+    },
+  });
 
   // Cascade to linked monthly KPI if applicable
   let updatedLinkedKpi = null;

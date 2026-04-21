@@ -2,14 +2,56 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, Check } from 'lucide-react';
+import { Pencil, Trash2, Check, Users } from 'lucide-react';
 import { KpiProgressBar } from './KpiProgressBar';
+
+interface KpiOwner {
+  id: string;
+  name: string | null;
+  email: string;
+  image: string | null;
+}
 
 interface KpiCardProps {
   kpi: any;
   onUpdate: (id: string, data: any) => Promise<void>;
   onEdit: (kpi: any) => void;
   onDelete: (id: string) => void;
+}
+
+function OwnerBadge({ owner }: { owner?: KpiOwner | null }) {
+  if (!owner) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-gray-500/15 px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)] border border-gray-500/20"
+        title="No individual owner — team-shared"
+      >
+        <Users className="h-3 w-3" />
+        Team
+      </span>
+    );
+  }
+  const label = owner.name ?? owner.email;
+  const initials = label
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('') || label[0]?.toUpperCase() || '?';
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-medium text-indigo-300 border border-indigo-500/20"
+      title={`Owned by ${label}`}
+    >
+      {owner.image ? (
+        <img src={owner.image} alt="" className="h-3.5 w-3.5 rounded-full object-cover" />
+      ) : (
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-indigo-500/40 text-[8px] font-semibold text-white">
+          {initials}
+        </span>
+      )}
+      <span className="max-w-[90px] truncate">{label}</span>
+    </span>
+  );
 }
 
 function ActionButtons({ kpi, onEdit, onDelete }: Pick<KpiCardProps, 'kpi' | 'onEdit' | 'onDelete'>) {
@@ -79,9 +121,12 @@ export const KpiCard = React.memo(React.forwardRef<HTMLDivElement, KpiCardProps>
     >
       {kpi.type === 'BINARY' ? (
         <>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-[var(--text-primary)] font-medium truncate">{kpi.name}</span>
-            <ActionButtons kpi={kpi} onEdit={onEdit} onDelete={onDelete} />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-[var(--text-primary)] font-medium truncate flex-1 min-w-0">{kpi.name}</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <OwnerBadge owner={kpi.owner as KpiOwner | null | undefined} />
+              <ActionButtons kpi={kpi} onEdit={onEdit} onDelete={onDelete} />
+            </div>
           </div>
 
           <div className="flex items-center justify-between mt-2">
@@ -115,9 +160,10 @@ export const KpiCard = React.memo(React.forwardRef<HTMLDivElement, KpiCardProps>
         </>
       ) : (
         <>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-[var(--text-primary)] font-medium truncate">{kpi.name}</span>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <span className="text-sm text-[var(--text-primary)] font-medium truncate flex-1 min-w-0">{kpi.name}</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <OwnerBadge owner={kpi.owner as KpiOwner | null | undefined} />
               <span className="text-xs text-[var(--text-secondary)]">{pct}%</span>
               <ActionButtons kpi={kpi} onEdit={onEdit} onDelete={onDelete} />
             </div>
