@@ -10,6 +10,22 @@ jobs:
   lint-build-test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: prism_test
+        ports:
+          - 5432:5432
+        # Health-check gates subsequent steps on a reachable DB.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/prism_test"
       NEXTAUTH_SECRET: "ci-test-secret-not-real"
@@ -34,14 +50,25 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Apply migrations to CI Postgres
+        run: npx prisma migrate deploy
+
       - name: Lint
         run: npm run lint
 
       - name: Type check
         run: npx tsc --noEmit
 
-      - name: Test
-        run: npm test
+      - name: Test (with coverage gate)
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
 
       - name: Build
         run: npx next build
