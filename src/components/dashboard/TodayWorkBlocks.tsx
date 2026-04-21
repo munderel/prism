@@ -106,6 +106,14 @@ export function TodayWorkBlocks() {
                   </span>
                 </div>
                 <p className="text-[11px] text-[var(--text-muted)] truncate">Task: {block.task.title}</p>
+                {block.clearGoals && block.clearGoals.length > 0 && (
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    <Target className="h-3 w-3 text-[var(--text-muted)] flex-shrink-0" />
+                    <span className="text-[11px] text-[var(--text-muted)]">
+                      {block.clearGoals.filter((g) => g.isComplete).length} / {block.clearGoals.length} sub-goals
+                    </span>
+                  </div>
+                )}
               </div>
             </li>
           );

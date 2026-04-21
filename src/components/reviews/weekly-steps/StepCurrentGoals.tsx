@@ -185,7 +185,9 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
 
   const fetchCompanyGoals = async () => {
     try {
-      const res = await fetch('/api/goals?isCompany=true&withAssignments=true');
+      // `withAssignments` is no-op on the server today — assignees are always
+      // included. Dropped from the query string to avoid misleading readers.
+      const res = await fetch('/api/goals?isCompany=true');
       if (!res.ok) return;
       const raw = await res.json();
       if (!Array.isArray(raw)) return;
