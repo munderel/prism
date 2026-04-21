@@ -218,19 +218,21 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
 
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-      const filteredWeekly: Goal[] = [];
-      const filteredMonthly: Goal[] = [];
 
-      for (const g of allGoals) {
-        if (g.level === 'WEEKLY' && rangesOverlap(g.startDate, g.endDate, weekStart, weekEnd)) {
-          filteredWeekly.push(await fetchGoalWithParent(g));
-        }
-        if (g.level === 'MONTHLY') {
-          if (rangesOverlap(g.startDate, g.endDate, currentMonthStart, currentMonthEnd)) {
-            filteredMonthly.push(await fetchGoalWithParent(g));
-          }
-        }
-      }
+      // Collect candidates first, then resolve their parent-chains in parallel.
+      // The prior sequential `await fetchGoalWithParent` inside a for-loop made
+      // the wizard N+1-slow for users with more than a handful of goals.
+      const weeklyCandidates = allGoals.filter(
+        (g) => g.level === 'WEEKLY' && rangesOverlap(g.startDate, g.endDate, weekStart, weekEnd),
+      );
+      const monthlyCandidates = allGoals.filter(
+        (g) => g.level === 'MONTHLY' && rangesOverlap(g.startDate, g.endDate, currentMonthStart, currentMonthEnd),
+      );
+
+      const [filteredWeekly, filteredMonthly] = await Promise.all([
+        Promise.all(weeklyCandidates.map(fetchGoalWithParent)),
+        Promise.all(monthlyCandidates.map(fetchGoalWithParent)),
+      ]);
 
       setHierarchy(buildHierarchy([...filteredMonthly, ...filteredWeekly]));
     } catch (err) {

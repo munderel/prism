@@ -112,8 +112,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
   // Hidden once computed: whether to surface the company goal report step.
   // Admin sees it if any company goal exists; non-admin sees it if they have
-  // at least one assigned company goal.
-  const [hasCompanyReportContent, setHasCompanyReportContent] = useState(false);
+  // at least one assigned company goal. `null` = not yet resolved, which we
+  // use to defer resume-step computation until STEPS is stable.
+  const [hasCompanyReportContent, setHasCompanyReportContent] = useState<boolean | null>(null);
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
 
@@ -122,15 +123,21 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     (async () => {
       try {
         const res = await fetch('/api/goals?isCompany=true');
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setHasCompanyReportContent(false);
+          return;
+        }
         const raw = await res.json();
-        if (cancelled || !Array.isArray(raw)) return;
+        if (cancelled || !Array.isArray(raw)) {
+          if (!cancelled) setHasCompanyReportContent(false);
+          return;
+        }
         const reportable = isAdmin
           ? raw.length > 0
           : raw.some((g: { isAssignedToMe?: boolean }) => g.isAssignedToMe);
         setHasCompanyReportContent(reportable);
       } catch {
-        // ignore — step just stays hidden
+        if (!cancelled) setHasCompanyReportContent(false);
       }
     })();
     return () => { cancelled = true; };
@@ -142,7 +149,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const STEPS = useMemo(() => {
     let result = [...STEPS_BASE];
 
-    if (hasCompanyReportContent) {
+    if (hasCompanyReportContent === true) {
       const currentGoalsIdx = result.findIndex((s) => s.key === 'current_goals');
       if (currentGoalsIdx !== -1) {
         result.splice(currentGoalsIdx + 1, 0, {
@@ -344,10 +351,37 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     return items;
   }, [weekTasks, weekAims, upcomingWeekGoalIds, personalGoalIds, upcomingWeekStart, nextWeekEnd]);
 
+  const [savedAnswers, setSavedAnswers] = useState<ReviewAnswerData[]>([]);
+
   useEffect(() => {
     fetchReviewAndAnswers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewId]);
+
+  // Resume step computation. Waits for:
+  //  - URL step not explicitly set (user didn't deep-link to a step),
+  //  - answers fetched (savedAnswers populated via fetchReviewAndAnswers),
+  //  - hasCompanyReportContent resolved (STEPS array now contains the
+  //    company_goal_report step if applicable). Without this gate we could
+  //    park the user one step earlier/later than intended.
+  const [hasResumed, setHasResumed] = useState(false);
+  useEffect(() => {
+    if (hasResumed || urlStep || completed) return;
+    if (hasCompanyReportContent === null) return;
+    if (!savedAnswers.length) { setHasResumed(true); return; }
+
+    const answeredKeys = new Set(savedAnswers.map((a) => a.stepKey));
+    let resumeStep = 0;
+    for (let i = 0; i < STEPS.length; i++) {
+      if (!answeredKeys.has(STEPS[i].key)) {
+        resumeStep = i;
+        break;
+      }
+      resumeStep = i + 1;
+    }
+    setCurrentStep(Math.min(resumeStep, TOTAL_STEPS - 1));
+    setHasResumed(true);
+  }, [hasResumed, urlStep, completed, hasCompanyReportContent, savedAnswers, STEPS, TOTAL_STEPS]);
 
   useEffect(() => {
     const today = getLocalDateString();
@@ -356,8 +390,6 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       .then((data) => setDueKpiProcesses(Array.isArray(data) ? data : []))
       .catch(() => {}); // non-critical
   }, []);
-
-  const [savedAnswers, setSavedAnswers] = useState<ReviewAnswerData[]>([]);
 
   const fetchReviewAndAnswers = async () => {
     try {
@@ -422,19 +454,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
           }
         }
 
-        // Resume from first unanswered step (unless URL step was specified)
-        if (!urlStep) {
-          const answeredKeys = new Set(answersData.map((a) => a.stepKey));
-          let resumeStep = 0;
-          for (let i = 0; i < STEPS.length; i++) {
-            if (!answeredKeys.has(STEPS[i].key)) {
-              resumeStep = i;
-              break;
-            }
-            resumeStep = i + 1;
-          }
-          setCurrentStep(Math.min(resumeStep, TOTAL_STEPS - 1));
-        }
+        // Resume logic moved to a separate effect below — STEPS isn't stable
+        // until the async hasCompanyReportContent fetch settles, and resuming
+        // against a not-yet-inserted step would misplace the user by one.
       }
     } catch (err) {
       console.error('Failed during review operation:', err);

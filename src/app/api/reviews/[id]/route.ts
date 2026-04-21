@@ -67,26 +67,42 @@ export async function PATCH(
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = body.timeBlockEnd ? new Date(body.timeBlockEnd) : null;
   if (body.complete) data.completedAt = new Date();
 
+  let didCompleteNow = false;
+  let updated;
+
   if (body.complete && !review.completedAt) {
-    // Per-review streak, using a distinct streak type per review cadence so
-    // weekly / monthly / yearly streaks don't collide. Cadence-specific
-    // continuation windows come from CONTINUATION_WINDOW_DAYS in streak-engine.
-    const cadence = REVIEW_TYPE_TO_CADENCE[review.reviewType];
-    const streakType = `review_${review.reviewType.toLowerCase()}`;
-    await updateSpecificStreak(auth.userId, streakType, cadence).catch((err) =>
-      console.warn(`[streak] ${streakType} streak update failed:`, err),
-    );
-    // Back-compat: keep updating the legacy 'review' streak too so leaderboards
-    // that haven't been migrated still show movement.
-    await updateSpecificStreak(auth.userId, 'review', cadence).catch((err) =>
-      console.warn('[streak] review streak update failed:', err),
-    );
+    // Optimistic-concurrency guard: only one caller wins the "complete" race.
+    // Two tabs submitting simultaneously both see review.completedAt === null
+    // in their snapshot reads; the updateMany({ completedAt: null }) collapses
+    // them via the DB's row lock so streak/calendar work fires exactly once.
+    const result = await prisma.review.updateMany({
+      where: { id, completedAt: null },
+      data,
+    });
+    didCompleteNow = result.count === 1;
+    updated = await prisma.review.findUniqueOrThrow({ where: { id } });
+
+    if (didCompleteNow) {
+      // Per-review streak, using a distinct streak type per review cadence.
+      const cadence = REVIEW_TYPE_TO_CADENCE[review.reviewType];
+      const streakType = `review_${review.reviewType.toLowerCase()}`;
+      await updateSpecificStreak(auth.userId, streakType, cadence).catch((err) =>
+        console.warn(`[streak] ${streakType} streak update failed:`, err),
+      );
+      // Back-compat: keep updating the legacy 'review' streak too.
+      await updateSpecificStreak(auth.userId, 'review', cadence).catch((err) =>
+        console.warn('[streak] review streak update failed:', err),
+      );
+    }
+  } else {
+    updated = await prisma.review.update({ where: { id }, data });
   }
 
-  const updated = await prisma.review.update({ where: { id }, data });
-
-  // Google Calendar sync — fire-and-forget
-  const calendarFieldsChanged = body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined || body.complete;
+  // Google Calendar sync — fire-and-forget. For the completion path, only the
+  // race winner (didCompleteNow) should run the delete/cancel branches; the
+  // losing tab must not re-fire a 404-producing delete.
+  const completionForThisCall = body.complete ? didCompleteNow : false;
+  const calendarFieldsChanged = body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined || completionForThisCall;
   if (calendarFieldsChanged) {
     const syncToGcal = async () => {
       const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(review.userId);
@@ -95,10 +111,10 @@ export async function PATCH(
       const newEnd = updated.timeBlockEnd;
       const title = `${review.reviewType} Review`;
 
-      if (body.complete && review.calendarEventId) {
+      if (completionForThisCall && review.calendarEventId) {
         await deleteGoogleEvent(review.userId, review.calendarEventId, targetCalendarId);
         await prisma.review.update({ where: { id }, data: { calendarEventId: null } });
-      } else if (body.complete && !review.calendarEventId && !review.isTeamReview) {
+      } else if (completionForThisCall && !review.calendarEventId && !review.isTeamReview) {
         await cancelManagedSeriesInstance({
           userId: review.userId,
           date: updated.scheduledDate,
