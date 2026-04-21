@@ -1,6 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi } from 'vitest';
-import { requireAuth, requireAdmin, requireOwnership, requireCronSecret, requireTaskAccess, checkStackAccess, authError } from '@/lib/auth-guard';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  requireAuth,
+  requireAdmin,
+  requireOwnership,
+  requireCronSecret,
+  requireTaskAccess,
+  checkStackReadAccess,
+  checkStackWriteAccess,
+  authError,
+} from '@/lib/auth-guard';
 
 // Mock next-auth
 vi.mock('next-auth', () => ({
@@ -16,6 +25,12 @@ vi.mock('@/lib/prisma', () => ({
     task: {
       findUnique: vi.fn(),
     },
+    goalAssignee: {
+      findUnique: vi.fn(),
+    },
+    companyGoalAssignment: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
@@ -24,6 +39,13 @@ const mockGetServerSession = vi.mocked(getServerSession);
 
 import { prisma } from '@/lib/prisma';
 const mockTaskFindUnique = vi.mocked(prisma.task.findUnique);
+const mockGoalAssigneeFindUnique = vi.mocked(prisma.goalAssignee.findUnique);
+const mockCompanyAssignmentFindUnique = vi.mocked(prisma.companyGoalAssignment.findUnique);
+
+beforeEach(() => {
+  mockGoalAssigneeFindUnique.mockReset();
+  mockCompanyAssignmentFindUnique.mockReset();
+});
 
 describe('requireAuth', () => {
   it('returns 401 when no session', async () => {
@@ -155,33 +177,107 @@ describe('requireTaskAccess', () => {
   });
 });
 
-describe('checkStackAccess', () => {
-  it('allows owner to access own non-company stack', () => {
-    const result = checkStackAccess({ isCompany: false, ownerId: 'user1' }, 'user1', false);
-    expect(result).toBeNull();
+describe('checkStackReadAccess', () => {
+  const personalStack = { id: 'stack1', isCompany: false, ownerId: 'owner1' };
+  const companyStack = { id: 'stack2', isCompany: true, ownerId: 'owner2' };
+
+  it('allows admin', async () => {
+    const r = await checkStackReadAccess(personalStack, 'randomUser', true);
+    expect(r).toBeNull();
   });
 
-  it('returns 403 when non-admin accesses company stack', async () => {
-    const result = checkStackAccess({ isCompany: true, ownerId: 'user1' }, 'user1', false);
-    expect(result).not.toBeNull();
-    const body = await result!.json();
-    expect(body.error).toBe('Forbidden');
+  it('allows stack owner', async () => {
+    const r = await checkStackReadAccess(personalStack, 'owner1', false);
+    expect(r).toBeNull();
   });
 
-  it('returns 403 when non-admin accesses another user\'s stack', async () => {
-    const result = checkStackAccess({ isCompany: false, ownerId: 'user2' }, 'user1', false);
-    expect(result).not.toBeNull();
-    expect(result!.status).toBe(403);
+  it('allows any authed user to read a company stack', async () => {
+    const r = await checkStackReadAccess(companyStack, 'randomUser', false);
+    expect(r).toBeNull();
   });
 
-  it('allows admin to access company stack', () => {
-    const result = checkStackAccess({ isCompany: true, ownerId: 'user1' }, 'admin1', true);
-    expect(result).toBeNull();
+  it('denies non-owner non-admin on a personal stack when no assignment', async () => {
+    mockGoalAssigneeFindUnique.mockResolvedValue(null);
+    mockCompanyAssignmentFindUnique.mockResolvedValue(null);
+    const r = await checkStackReadAccess(personalStack, 'randomUser', false, { goalId: 'g1' });
+    expect(r).not.toBeNull();
+    expect(r!.status).toBe(403);
   });
 
-  it('allows admin to access another user\'s personal stack', () => {
-    const result = checkStackAccess({ isCompany: false, ownerId: 'user2' }, 'admin1', true);
-    expect(result).toBeNull();
+  it('allows non-owner non-admin on a personal stack when they have a GoalAssignee row', async () => {
+    mockGoalAssigneeFindUnique.mockResolvedValue({ id: 'ga1' } as any);
+    const r = await checkStackReadAccess(personalStack, 'assignee1', false, { goalId: 'g1' });
+    expect(r).toBeNull();
+  });
+
+  it('allows a user with a CompanyGoalAssignment on a personal-but-assigned stack', async () => {
+    mockGoalAssigneeFindUnique.mockResolvedValue(null);
+    mockCompanyAssignmentFindUnique.mockResolvedValue({ id: 'cga1' } as any);
+    const r = await checkStackReadAccess(personalStack, 'assignee2', false);
+    expect(r).toBeNull();
+  });
+});
+
+describe('checkStackWriteAccess', () => {
+  const personalStack = { id: 'stack1', isCompany: false, ownerId: 'owner1' };
+  const companyStack = { id: 'stack2', isCompany: true, ownerId: 'owner2' };
+
+  it('allows admin', async () => {
+    const r = await checkStackWriteAccess(personalStack, 'randomUser', true);
+    expect(r).toBeNull();
+  });
+
+  it('allows stack owner', async () => {
+    const r = await checkStackWriteAccess(personalStack, 'owner1', false);
+    expect(r).toBeNull();
+  });
+
+  it('denies non-owner non-admin on a personal stack (default restricted=false)', async () => {
+    const r = await checkStackWriteAccess(personalStack, 'randomUser', false);
+    expect(r).not.toBeNull();
+    expect(r!.status).toBe(403);
+  });
+
+  it('denies non-owner non-admin on a company stack when not restricted', async () => {
+    const r = await checkStackWriteAccess(companyStack, 'randomUser', false);
+    expect(r).not.toBeNull();
+    expect(r!.status).toBe(403);
+  });
+
+  it('allows company-goal-assignee when restricted=true on a company stack', async () => {
+    mockCompanyAssignmentFindUnique.mockResolvedValue({ id: 'cga1' } as any);
+    const r = await checkStackWriteAccess(companyStack, 'assignee1', false, { restricted: true });
+    expect(r).toBeNull();
+  });
+
+  it('denies when restricted=true but user has no assignment anywhere', async () => {
+    mockCompanyAssignmentFindUnique.mockResolvedValue(null);
+    mockGoalAssigneeFindUnique.mockResolvedValue(null);
+    const r = await checkStackWriteAccess(companyStack, 'randomUser', false, {
+      goalId: 'g1',
+      restricted: true,
+    });
+    expect(r).not.toBeNull();
+    expect(r!.status).toBe(403);
+  });
+
+  it('allows GoalAssignee on personal stack when restricted=true', async () => {
+    mockGoalAssigneeFindUnique.mockResolvedValue({ id: 'ga1' } as any);
+    const r = await checkStackWriteAccess(personalStack, 'assignee1', false, {
+      goalId: 'g1',
+      restricted: true,
+    });
+    expect(r).toBeNull();
+  });
+
+  it('denies GoalAssignee when restricted=false (structural write)', async () => {
+    mockGoalAssigneeFindUnique.mockResolvedValue({ id: 'ga1' } as any);
+    const r = await checkStackWriteAccess(personalStack, 'assignee1', false, {
+      goalId: 'g1',
+      restricted: false,
+    });
+    expect(r).not.toBeNull();
+    expect(r!.status).toBe(403);
   });
 });
 

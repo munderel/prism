@@ -20,6 +20,8 @@ export async function GET(
   const task = await prisma.task.findUnique({
     where: { id },
     include: {
+      owner: { select: { id: true, name: true, email: true } },
+      assignee: { select: USER_SUMMARY_SELECT },
       goal: { select: { id: true, title: true, level: true } },
       comments: {
         orderBy: { createdAt: 'asc' },
@@ -91,7 +93,14 @@ export async function PATCH(
     }
   }
 
-  const updated = await prisma.task.update({ where: { id }, data });
+  const updated = await prisma.task.update({
+    where: { id },
+    data,
+    include: {
+      owner: { select: { id: true, name: true, email: true } },
+      assignee: { select: USER_SUMMARY_SELECT },
+    },
+  });
 
   // When the task is marked DONE: snapshot progress at this moment and mark remaining PENDING blocks as MISSED.
   // Completion is always user-declared: we never auto-flip when completedMinutes crosses estimate.

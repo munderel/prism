@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X, Split } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
@@ -145,6 +145,12 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
       setSaving(false);
     }
   };
+
+  const assigneeOptions = useMemo(() => {
+    const seed = task?.assignee;
+    if (!seed) return users;
+    return users.some((u: any) => u.id === seed.id) ? users : [seed, ...users];
+  }, [users, task?.assignee]);
 
   return (
     <AnimatePresence>
@@ -325,7 +331,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                 <option value="">
                   {usersLoading ? 'Loading users...' : users.length > 0 ? 'Unassigned' : 'No users found'}
                 </option>
-                {users.map((u: any) => (
+                {assigneeOptions.map((u: any) => (
                   <option key={u.id} value={u.id}>
                     {u.name || u.email}
                   </option>

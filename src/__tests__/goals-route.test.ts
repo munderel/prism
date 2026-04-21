@@ -11,6 +11,7 @@ vi.mock('@/lib/api-helpers', () => ({
   cacheHeaders: vi.fn(() => ({})),
   notFoundResponse: vi.fn((e: string) => Response.json({ error: `${e} not found` }, { status: 404 })),
   forbiddenResponse: vi.fn(() => Response.json({ error: 'Forbidden' }, { status: 403 })),
+  NO_STORE: { headers: { 'Cache-Control': 'no-store' } },
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -23,6 +24,9 @@ vi.mock('@/lib/prisma', () => ({
     },
     goalStack: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
+    },
+    companyGoalAssignment: {
       findMany: vi.fn(),
     },
   },
@@ -57,6 +61,7 @@ const mockGoalFindMany = vi.mocked(prisma.goal.findMany);
 const mockGoalCount = vi.mocked(prisma.goal.count);
 const mockStackFindUnique = vi.mocked(prisma.goalStack.findUnique);
 const mockStackFindMany = vi.mocked(prisma.goalStack.findMany);
+const mockCompanyAssignmentFindMany = vi.mocked(prisma.companyGoalAssignment.findMany);
 
 const authedResult = { session: { user: { id: 'user1', isAdmin: false } }, userId: 'user1' };
 const adminResult = { session: { user: { id: 'admin1', isAdmin: true } }, userId: 'admin1' };
@@ -111,7 +116,10 @@ describe('GET /api/goals', () => {
 
   it('returns goals when querying by isCompany without stackId', async () => {
     mockStackFindMany.mockResolvedValue([{ id: 'company-stack' }] as any);
-    mockGoalFindMany.mockResolvedValue([{ id: 'g1' }] as any);
+    mockGoalFindMany.mockResolvedValue([
+      { id: 'g1', stack: { id: 'company-stack', isCompany: true }, assignees: [] },
+    ] as any);
+    mockCompanyAssignmentFindMany.mockResolvedValue([] as any);
     const res = await GET(createGetRequest({ isCompany: 'true' }));
     expect(res.status).toBe(200);
   });

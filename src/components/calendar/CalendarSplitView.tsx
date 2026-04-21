@@ -261,7 +261,11 @@ function hexToColorTriplet(hex: string, isDark: boolean): { bg: string; border: 
   return { bg, border, text };
 }
 
-function getEventColor(event: { extendedProps?: Record<string, unknown> }, isDark: boolean): { bg: string; border: string; text: string } {
+function getEventColor(
+  event: { extendedProps?: Record<string, unknown> },
+  isDark: boolean,
+  colors: Record<ItemType, ColorDef>,
+): { bg: string; border: string; text: string } {
   const props = event.extendedProps ?? {};
 
   // Use the API-provided color as the single source of truth (matches main CalendarView)
@@ -270,26 +274,27 @@ function getEventColor(event: { extendedProps?: Record<string, unknown> }, isDar
     return hexToColorTriplet(apiColor, isDark);
   }
 
-  // Fallback: derive from PRISM_COLORS for events without a valid hex color
+  // Fallback: derive from the viewer's merged color map (user overrides on
+  // top of PRISM_COLORS defaults) for events without a valid hex color.
   if (props.source === 'google') {
-    return colorFromDef(PRISM_COLORS.GOOGLE_CAL, isDark);
+    return colorFromDef(colors.GOOGLE_CAL, isDark);
   }
 
-  const taskType = props.taskType as keyof typeof PRISM_COLORS | undefined;
-  if (taskType && PRISM_COLORS[taskType]) {
-    return colorFromDef(PRISM_COLORS[taskType], isDark);
+  const taskType = props.taskType as ItemType | undefined;
+  if (taskType && colors[taskType]) {
+    return colorFromDef(colors[taskType], isDark);
   }
 
-  const ITEM_TYPE_MAP: Record<string, keyof typeof PRISM_COLORS> = { aim: 'AIM', review: 'REVIEW' };
+  const ITEM_TYPE_MAP: Record<string, ItemType> = { aim: 'AIM', review: 'REVIEW' };
   const colorKey = ITEM_TYPE_MAP[props.itemType as string];
   if (colorKey) {
-    return colorFromDef(PRISM_COLORS[colorKey], isDark);
+    return colorFromDef(colors[colorKey], isDark);
   }
 
-  const SOURCE_MAP: Record<string, keyof typeof PRISM_COLORS> = { meetings: 'MEETING', powerdown: 'POWER_DOWN' };
+  const SOURCE_MAP: Record<string, ItemType> = { meetings: 'MEETING', powerdown: 'POWER_DOWN' };
   const sourceKey = SOURCE_MAP[props.source as string];
   if (sourceKey) {
-    return colorFromDef(PRISM_COLORS[sourceKey], isDark);
+    return colorFromDef(colors[sourceKey], isDark);
   }
 
   return isDark ? DEFAULT_EVENT_COLOR_DARK : DEFAULT_EVENT_COLOR_LIGHT;
@@ -301,13 +306,11 @@ function getEventColor(event: { extendedProps?: Record<string, unknown> }, isDar
 
 function UnscheduledCard({
   item,
-  colorKey,
+  color,
 }: {
   item: UnscheduledItem;
-  colorKey: keyof typeof PRISM_COLORS;
+  color: ColorDef | undefined;
 }) {
-  const color = PRISM_COLORS[colorKey];
-
   return (
     <div
       className="fc-event cursor-grab rounded-lg border px-3 py-2 mb-1.5 transition-shadow hover:shadow-md"
@@ -1094,7 +1097,7 @@ export function CalendarSplitView({
     (eventInfo: EventContentArg) => {
       const { itemId, itemType, source, taskType } =
         eventInfo.event.extendedProps ?? {};
-      let colors = getEventColor(eventInfo.event, isDark);
+      let colors = getEventColor(eventInfo.event, isDark, userColors);
       // Apply user task-type color override on top of the server/default color.
       // Keyed by taskType (IMPROVE/REACT/...) or itemType fallback (AIM/FOOD).
       let overrideKey: ItemType | null = null;
@@ -1222,7 +1225,7 @@ export function CalendarSplitView({
                     {unscheduledItems
                       .filter((i) => i.itemType === 'aim')
                       .map((item) => (
-                        <UnscheduledCard key={item.id} item={item} colorKey="AIM" />
+                        <UnscheduledCard key={item.id} item={item} color={userColors.AIM} />
                       ))}
                   </div>
                 )}
@@ -1268,14 +1271,14 @@ export function CalendarSplitView({
                     <span className="text-sm">{group.emoji}</span>
                     <span
                       className="text-xs font-semibold uppercase tracking-wide"
-                      style={{ color: PRISM_COLORS[group.colorKey]?.color ?? '#64748b' }}
+                      style={{ color: userColors[group.colorKey]?.color ?? '#64748b' }}
                     >
                       {group.label}
                     </span>
                     <span className="text-[10px] text-[var(--text-muted)] ml-auto">{group.items.length}</span>
                   </div>
                   {group.items.map((item) => (
-                    <UnscheduledCard key={item.id} item={item} colorKey={group.colorKey} />
+                    <UnscheduledCard key={item.id} item={item} color={userColors[group.colorKey]} />
                   ))}
                 </div>
               ))}

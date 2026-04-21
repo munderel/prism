@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
-import { NO_STORE } from '@/lib/api-helpers';
+import { requireAuth, authError, checkStackWriteAccess } from '@/lib/auth-guard';
+import { NO_STORE, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
 import { parseBody, createTaskSchema } from '@/lib/schemas';
 import { parseRRule } from '@/lib/recurrence';
 import { parseLocalDate } from '@/lib/date-utils';
@@ -67,6 +67,8 @@ export async function GET(request: NextRequest) {
         ],
       },
       include: {
+        owner: { select: { id: true, name: true, email: true } },
+        assignee: { select: USER_SUMMARY_SELECT },
         goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } },
         _count: { select: { comments: true, children: true } },
         children: { select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true } },
@@ -131,6 +133,7 @@ export async function GET(request: NextRequest) {
     ],
     include: {
       owner: { select: { id: true, name: true, email: true } },
+      assignee: { select: USER_SUMMARY_SELECT },
       goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } },
       processExecution: { include: { process: { select: { title: true } } } },
       _count: { select: { comments: true, children: true } },
@@ -171,7 +174,14 @@ export async function POST(request: NextRequest) {
     if (goal.level !== 'WEEKLY') {
       return Response.json({ error: 'Tasks can only be created under WEEKLY goals' }, { status: 400 });
     }
-    const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+    // Creating a task under a goal is a restricted write: assignees and
+    // company-goal-assignees may contribute tasks to goals they're on.
+    const accessDenied = await checkStackWriteAccess(
+      goal.stack,
+      auth.userId,
+      auth.session.user.isAdmin,
+      { goalId: goalId!, restricted: true },
+    );
     if (accessDenied) return accessDenied;
   }
 

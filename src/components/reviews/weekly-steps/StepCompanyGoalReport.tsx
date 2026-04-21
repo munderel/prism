@@ -47,6 +47,7 @@ export function StepCompanyGoalReport({ reviewId, isAdmin, onReportsChange }: St
   const [goals, setGoals] = useState<CompanyGoal[] | null>(null);
   const [reports, setReports] = useState<Record<string, GoalReport>>({});
   const [savingGoalId, setSavingGoalId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<{ goalId: string; message: string } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -105,33 +106,50 @@ export function StepCompanyGoalReport({ reviewId, isAdmin, onReportsChange }: St
   };
 
   const persistProgress = async (goalId: string) => {
-    const report = reports[goalId];
-    if (!report) return;
-    setSavingGoalId(goalId);
-    try {
-      await fetch(`/api/goals/${goalId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ progressPct: report.progressPct }),
-      });
-      // Persist the full report (status + notes) as a review answer for audit.
-      await fetch(`/api/reviews/${reviewId}/answers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stepKey: 'company_goal_report',
-          answerType: 'company_goal_report',
-          answerData: {
-            reports: Object.entries({ ...reports, [goalId]: report }).map(([gid, r]) => ({
-              goalId: gid,
-              ...r,
-            })),
-          },
-        }),
-      });
-    } finally {
-      setSavingGoalId(null);
-    }
+    // Snapshot the latest reports map so this save reflects whatever the user
+    // most-recently edited across any goal, not a closure-stale copy.
+    setReports((latest) => {
+      const report = latest[goalId];
+      if (!report) return latest;
+      setSavingGoalId(goalId);
+      setSaveError(null);
+      void (async () => {
+        try {
+          const goalRes = await fetch(`/api/goals/${goalId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ progressPct: report.progressPct }),
+          });
+          if (!goalRes.ok) {
+            const body = await goalRes.json().catch(() => ({}));
+            throw new Error(body.error ?? `Failed to save progress (${goalRes.status})`);
+          }
+          const answerRes = await fetch(`/api/reviews/${reviewId}/answers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stepKey: 'company_goal_report',
+              answerType: 'company_goal_report',
+              answerData: {
+                reports: Object.entries(latest).map(([gid, r]) => ({ goalId: gid, ...r })),
+              },
+            }),
+          });
+          if (!answerRes.ok) {
+            const body = await answerRes.json().catch(() => ({}));
+            throw new Error(body.error ?? `Failed to save report (${answerRes.status})`);
+          }
+        } catch (err) {
+          setSaveError({
+            goalId,
+            message: err instanceof Error ? err.message : 'Unknown error',
+          });
+        } finally {
+          setSavingGoalId(null);
+        }
+      })();
+      return latest;
+    });
   };
 
   if (goals === null) {
@@ -240,7 +258,12 @@ export function StepCompanyGoalReport({ reviewId, isAdmin, onReportsChange }: St
               className="w-full rounded-lg border border-white/[0.08] bg-[var(--hover-bg)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
             />
 
-            <div className="flex justify-end">
+            <div className="flex justify-end items-center gap-3">
+              {saveError?.goalId === g.id && (
+                <span className="text-xs text-rose-300" role="alert">
+                  {saveError.message}
+                </span>
+              )}
               <button
                 onClick={() => persistProgress(g.id)}
                 disabled={savingGoalId === g.id}
