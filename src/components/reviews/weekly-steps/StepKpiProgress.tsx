@@ -124,34 +124,36 @@ export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChan
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-      const result: GoalWithKpis[] = [];
-      for (const goal of allGoals) {
-        if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') continue;
-        if (goal._count?.kpis === 0) continue;
+      // Narrow to in-range goals with KPIs, then fetch KPIs in parallel.
+      // The previous sequential `await fetch` per goal turned this step into a
+      // noticeable stall for users with 10+ goals.
+      const candidates = allGoals.filter((goal) => {
+        if (goal.level !== 'WEEKLY' && goal.level !== 'MONTHLY') return false;
+        if (goal._count?.kpis === 0) return false;
 
-        // Date filtering: only show relevant time periods
         if (goal.startDate && goal.endDate) {
           const gs = new Date(goal.startDate);
           const ge = new Date(goal.endDate);
-
           if (goal.level === 'WEEKLY') {
-            // Show current week and previous week only
             const inCurrentWeek = gs <= upcomingWeekEnd && ge >= thisMonday;
             const inLastWeek = gs <= new Date(thisMonday.getTime() - 1) && ge >= lastMonday;
-            if (!inCurrentWeek && !inLastWeek) continue;
+            if (!inCurrentWeek && !inLastWeek) return false;
           } else if (goal.level === 'MONTHLY') {
-            // Show current month only
             const inCurrentMonth = gs <= currentMonthEnd && ge >= currentMonthStart;
-            if (!inCurrentMonth) continue;
+            if (!inCurrentMonth) return false;
           }
         }
+        return true;
+      });
 
-        const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
-        if (!kpisRes.ok) continue;
-        const kpisData = await kpisRes.json();
-        const kpis = kpisData.kpis ?? kpisData;
-        if (kpis.length > 0) {
-          result.push({
+      const kpiFetches = await Promise.all(
+        candidates.map(async (goal) => {
+          const kpisRes = await fetch(`/api/goals/${goal.id}/kpis`);
+          if (!kpisRes.ok) return null;
+          const kpisData = await kpisRes.json();
+          const kpis = kpisData.kpis ?? kpisData;
+          if (!kpis.length) return null;
+          return {
             id: goal.id,
             title: goal.title,
             level: goal.level,
@@ -160,9 +162,10 @@ export function StepKpiProgress({ reviewId: _reviewId, initialNotes, onNotesChan
             startDate: goal.startDate ?? null,
             endDate: goal.endDate ?? null,
             kpis,
-          });
-        }
-      }
+          } as GoalWithKpis;
+        }),
+      );
+      const result = kpiFetches.filter((x): x is GoalWithKpis => x !== null);
 
       setGoalsWithKpis(result);
     } catch (err) {
