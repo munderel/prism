@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackWriteAccess } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackWriteAccess, verifyStackMembership } from '@/lib/auth-guard';
 import { cascadeKpiUpdate, recalculateMonthlyNumericKpi, recalculateBinaryKpi } from '@/lib/kpi-progress';
 import { pickDefined, notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, updateKpiSchema } from '@/lib/schemas';
@@ -84,6 +84,13 @@ export async function PUT(
       });
       if (!owner) {
         return Response.json({ error: 'Owner user not found' }, { status: 400 });
+      }
+      const isMember = await verifyStackMembership(kpi.goal.stack, ownerId, kpi.goalId);
+      if (!isMember) {
+        return Response.json(
+          { error: 'Owner is not a member of this stack or goal' },
+          { status: 400 },
+        );
       }
       data.ownerId = ownerId;
     }

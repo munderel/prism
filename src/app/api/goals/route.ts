@@ -24,16 +24,34 @@ export async function GET(request: NextRequest) {
 
   // Support querying by isCompany/level without stackId (for reviews)
   if (!stackId && (isCompanyParam || levelParam)) {
-    const stackWhere: Prisma.GoalStackWhereInput = {};
+    let stackIds: string[];
     if (isCompanyParam === 'true') {
-      stackWhere.isCompany = true;
+      const stacks = await prisma.goalStack.findMany({
+        where: { isCompany: true },
+        select: { id: true },
+      });
+      stackIds = stacks.map((s) => s.id);
     } else {
-      stackWhere.ownerId = auth.userId;
-      stackWhere.isCompany = false;
+      // Personal scope: stacks the caller owns PLUS stacks where they are a
+      // GoalAssignee on at least one goal. Without the assignee path,
+      // assignees on someone else's personal stack would never see the goal
+      // they're assigned to — defeating the assignment feature.
+      const [ownedStacks, assignedGoals] = await Promise.all([
+        prisma.goalStack.findMany({
+          where: { ownerId: auth.userId, isCompany: false },
+          select: { id: true },
+        }),
+        prisma.goalAssignee.findMany({
+          where: { userId: auth.userId },
+          select: { goal: { select: { stackId: true, stack: { select: { isCompany: true } } } } },
+        }),
+      ]);
+      const ownedIds = ownedStacks.map((s) => s.id);
+      const assignedIds = assignedGoals
+        .filter((a) => !a.goal.stack.isCompany)
+        .map((a) => a.goal.stackId);
+      stackIds = Array.from(new Set([...ownedIds, ...assignedIds]));
     }
-
-    const stacks = await prisma.goalStack.findMany({ where: stackWhere, select: { id: true } });
-    const stackIds = stacks.map((s) => s.id);
 
     if (stackIds.length === 0) {
       return Response.json([], NO_STORE);

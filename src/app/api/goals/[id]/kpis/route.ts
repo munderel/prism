@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackReadAccess, checkStackWriteAccess } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackReadAccess, checkStackWriteAccess, verifyStackMembership } from '@/lib/auth-guard';
 import { notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, createKpiSchema } from '@/lib/schemas';
 import { validateKpiLevel, validateKpiLink } from '@/lib/goal-validation';
@@ -115,6 +115,15 @@ export async function POST(
     });
     if (!owner) {
       return Response.json({ error: 'Owner user not found' }, { status: 400 });
+    }
+    // The proposed owner must have legitimate visibility into the stack,
+    // otherwise they'd see a KPI attached to a goal they can't access.
+    const isMember = await verifyStackMembership(goal.stack, ownerId, goalId);
+    if (!isMember) {
+      return Response.json(
+        { error: 'Owner is not a member of this stack or goal' },
+        { status: 400 },
+      );
     }
   }
 
