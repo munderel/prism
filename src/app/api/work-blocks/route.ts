@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     where,
     orderBy: { start: 'asc' },
     include: {
-      task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true } },
+      task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true, dueDate: true } },
       clearGoals: { orderBy: { sortOrder: 'asc' } },
     },
   });
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
   const full = await prisma.workBlock.findUnique({
     where: { id: block.id },
     include: {
-      task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true } },
+      task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true, dueDate: true } },
       clearGoals: { orderBy: { sortOrder: 'asc' } },
     },
   });

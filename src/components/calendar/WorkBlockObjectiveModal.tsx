@@ -10,6 +10,10 @@ export interface WorkBlockObjectiveInput {
   end: Date;
   /** Initial proposed duration in minutes (min(defaultWorkBlockMinutes, remaining)) */
   proposedMinutes: number;
+  /** Prefill main objective (edit mode) */
+  initialMainObjective?: string;
+  /** Prefill sub-goals (edit mode) */
+  initialSubGoals?: string[];
 }
 
 export interface WorkBlockObjectivePayload {
@@ -22,6 +26,10 @@ export interface WorkBlockObjectivePayload {
 interface Props {
   open: boolean;
   input: WorkBlockObjectiveInput | null;
+  /** 'create' for new blocks, 'edit' for updating an existing block */
+  mode?: 'create' | 'edit';
+  /** When true, render date + time-of-day pickers so the start can be changed */
+  editableStart?: boolean;
   onCancel: () => void;
   onSave: (payload: WorkBlockObjectivePayload) => Promise<void> | void;
 }
@@ -30,23 +38,52 @@ function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60000);
 }
 
-export function WorkBlockObjectiveModal({ open, input, onCancel, onSave }: Props) {
+function toDateInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toTimeInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function combineDateTime(dateStr: string, timeStr: string): Date {
+  const [y, m, day] = dateStr.split('-').map(Number);
+  const [h, min] = timeStr.split(':').map(Number);
+  return new Date(y, (m ?? 1) - 1, day ?? 1, h ?? 0, min ?? 0, 0, 0);
+}
+
+export function WorkBlockObjectiveModal({
+  open,
+  input,
+  mode = 'create',
+  editableStart = false,
+  onCancel,
+  onSave,
+}: Props) {
   const [mainObjective, setMainObjective] = useState('');
   const [subGoals, setSubGoals] = useState<string[]>([]);
-  const [durationMinutes, setDurationMinutes] = useState(input?.proposedMinutes ?? 90);
+  const [durationMinutes, setDurationMinutes] = useState(input?.proposedMinutes ?? 30);
+  const [startDate, setStartDate] = useState('');
+  const [startTime, setStartTime] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && input) {
-      setMainObjective('');
-      setSubGoals([]);
+      setMainObjective(input.initialMainObjective ?? '');
+      setSubGoals(input.initialSubGoals ?? []);
       setDurationMinutes(input.proposedMinutes);
+      setStartDate(toDateInputValue(input.start));
+      setStartTime(toTimeInputValue(input.start));
       setError(null);
     }
   }, [open, input]);
 
   if (!open || !input) return null;
+
+  const isEditMode = mode === 'edit';
 
   const addSubGoal = () => setSubGoals((prev) => [...prev, '']);
   const updateSubGoal = (idx: number, value: string) => {
@@ -59,6 +96,10 @@ export function WorkBlockObjectiveModal({ open, input, onCancel, onSave }: Props
     setDurationMinutes((prev) => Math.max(15, Math.min(480, prev + delta)));
   };
 
+  const resolvedStart = editableStart && startDate && startTime
+    ? combineDateTime(startDate, startTime)
+    : input.start;
+
   const save = async () => {
     const objective = mainObjective.trim();
     if (!objective) {
@@ -68,9 +109,9 @@ export function WorkBlockObjectiveModal({ open, input, onCancel, onSave }: Props
     setSaving(true);
     setError(null);
     try {
-      const newEnd = addMinutes(input.start, durationMinutes);
+      const newEnd = addMinutes(resolvedStart, durationMinutes);
       await onSave({
-        start: input.start.toISOString(),
+        start: resolvedStart.toISOString(),
         end: newEnd.toISOString(),
         mainObjective: objective,
         subGoals: subGoals.map((g) => g.trim()).filter((g) => g.length > 0),
@@ -92,7 +133,7 @@ export function WorkBlockObjectiveModal({ open, input, onCancel, onSave }: Props
           <div className="flex items-center gap-2">
             <Target className="h-5 w-5 text-indigo-400" />
             <h3 className="text-base font-semibold text-[var(--text-primary)]">
-              Define this work block
+              {isEditMode ? 'Edit work block' : 'Define this work block'}
             </h3>
           </div>
           <button
@@ -155,6 +196,29 @@ export function WorkBlockObjectiveModal({ open, input, onCancel, onSave }: Props
             </div>
           </div>
 
+          {editableStart && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-1">Date</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-1">Start time</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
+                />
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-1">
               Duration (minutes)
@@ -182,7 +246,7 @@ export function WorkBlockObjectiveModal({ open, input, onCancel, onSave }: Props
               </div>
               <span className="text-xs text-[var(--text-muted)] ml-1">
                 Ends{' '}
-                {addMinutes(input.start, durationMinutes).toLocaleTimeString([], {
+                {addMinutes(resolvedStart, durationMinutes).toLocaleTimeString([], {
                   hour: 'numeric',
                   minute: '2-digit',
                 })}
@@ -211,7 +275,7 @@ export function WorkBlockObjectiveModal({ open, input, onCancel, onSave }: Props
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
             {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Schedule block
+            {isEditMode ? 'Update block' : 'Schedule block'}
           </button>
         </div>
       </div>

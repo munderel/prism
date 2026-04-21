@@ -221,19 +221,22 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
             </span>
             <span className="flex items-center gap-1 text-[var(--text-muted)]">
               <Clock className="h-3 w-3" />
-              {formatMinutes(time.completedMinutes)} of {formatMinutes(estimatedMinutes)}
+              {formatMinutes(scheduledMinutes)} scheduled · {formatMinutes(Math.max(0, estimatedMinutes - scheduledMinutes))} unscheduled
               {time.isOverrun && <span className="text-orange-400 font-medium">&nbsp;({time.percent}%)</span>}
             </span>
           </div>
-          <div className="h-1.5 rounded-full bg-[var(--surface-raised)] overflow-hidden">
-            <div
-              className={`h-full transition-all ${time.isOverrun ? 'bg-orange-500' : 'bg-indigo-500'}`}
-              style={{ width: `${Math.min(100, timePercentCapped)}%` }}
-            />
+          <div className="h-1.5 rounded-full bg-[var(--surface-raised)] overflow-hidden" title={`${formatMinutes(scheduledMinutes)} scheduled of ${formatMinutes(estimatedMinutes)}`}>
+            <div className="h-full bg-indigo-500 transition-all" style={{ width: `${schedulePercent}%` }} />
           </div>
-          {scheduledMinutes > 0 && scheduledMinutes !== time.completedMinutes && (
-            <div className="h-[3px] rounded-full bg-[var(--surface-raised)] overflow-hidden" title={`${formatMinutes(scheduledMinutes)} scheduled of ${formatMinutes(estimatedMinutes)}`}>
-              <div className="h-full bg-indigo-300/50" style={{ width: `${schedulePercent}%` }} />
+          {time.completedMinutes > 0 && (
+            <div className="flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]">
+              <span>{formatMinutes(time.completedMinutes)} completed</span>
+              {time.isOverrun && <span className="text-orange-400">Over estimate</span>}
+            </div>
+          )}
+          {time.completedMinutes > 0 && (
+            <div className="h-[3px] rounded-full bg-[var(--surface-raised)] overflow-hidden">
+              <div className={`h-full ${time.isOverrun ? 'bg-orange-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, timePercentCapped)}%` }} />
             </div>
           )}
           {goals.goalsDefined > 0 && (

@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
+import { useUserSettings } from '@/hooks/useUserSettings';
+import { WorkBlocksSection } from './WorkBlocksSection';
 
 interface TaskEditorProps {
   task?: any; // If editing
@@ -39,6 +41,10 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [preferredTimeEnd, setPreferredTimeEnd] = useState(task?.preferredTimeEnd ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const { data: userSettingsData } = useUserSettings();
+  const defaultBlockMinutes = typeof userSettingsData?.defaultWorkBlockMinutes === 'number'
+    ? (userSettingsData.defaultWorkBlockMinutes as number)
+    : 30;
 
   useEffect(() => {
     if (taskType === 'IMPROVE') {
@@ -373,6 +379,16 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                   />
                 </div>
               </div>
+            )}
+
+            {/* Work Blocks (edit only) */}
+            {isEditing && task?.id && (
+              <WorkBlocksSection
+                taskId={task.id}
+                taskTitle={title || task.title}
+                taskEstimatedMinutes={estimatedMinutes}
+                defaultBlockMinutes={defaultBlockMinutes}
+              />
             )}
 
             {/* Status (edit only) */}

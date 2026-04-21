@@ -15,7 +15,7 @@ export async function GET(
   const block = await prisma.workBlock.findFirst({
     where: { id, userId: auth.userId },
     include: {
-      task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true } },
+      task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true, dueDate: true } },
       clearGoals: { orderBy: { sortOrder: 'asc' } },
     },
   });
@@ -52,13 +52,28 @@ export async function PATCH(
   if (body.actualMinutes !== undefined) data.actualMinutes = body.actualMinutes;
   if (body.notes !== undefined) data.notes = body.notes;
 
-  const block = await prisma.workBlock.update({
-    where: { id },
-    data,
-    include: {
-      task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true } },
-      clearGoals: { orderBy: { sortOrder: 'asc' } },
-    },
+  const block = await prisma.$transaction(async (tx) => {
+    const updated = await tx.workBlock.update({ where: { id }, data });
+    if (body.subGoals !== undefined) {
+      await tx.clearGoal.deleteMany({ where: { workBlockId: id } });
+      if (body.subGoals.length > 0) {
+        await tx.clearGoal.createMany({
+          data: body.subGoals.map((text, idx) => ({
+            taskId: updated.taskId,
+            workBlockId: id,
+            text,
+            sortOrder: idx,
+          })),
+        });
+      }
+    }
+    return tx.workBlock.findUnique({
+      where: { id },
+      include: {
+        task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true, dueDate: true } },
+        clearGoals: { orderBy: { sortOrder: 'asc' } },
+      },
+    });
   });
 
   return Response.json(block, NO_STORE);

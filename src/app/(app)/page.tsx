@@ -21,6 +21,7 @@ const WinTheDayCelebration = dynamic(
 );
 import { FocusView } from '@/components/dashboard/FocusView';
 import { DashboardTimeline } from '@/components/dashboard/DashboardTimeline';
+import { TodayWorkBlocks } from '@/components/dashboard/TodayWorkBlocks';
 import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { setTimeOnDate } from '@/lib/scheduling-engine';
@@ -699,6 +700,9 @@ export default function DashboardPage() {
 
           {/* Timeline */}
           <DashboardTimeline blocks={timelineBlocks} className="mb-6" onBlockMove={handleBlockMove} />
+
+          {/* Today's Work Blocks */}
+          <TodayWorkBlocks />
 
           {/* Win the Day */}
           <WinTheDayCard tasks={winTheDayTasks} />
