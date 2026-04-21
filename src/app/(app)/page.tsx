@@ -771,7 +771,7 @@ export default function DashboardPage() {
             ) : (
               <div className="space-y-2">
                 {aimList.map((aim: any) => {
-                  const isDerailing = derailBatch?.[aim.aimCategoryId]?.derailInfo?.status === 'derailing';
+                  const isDerailing = derailBatch?.[aim.aimCategoryId]?.derailInfo?.status === 'derailed';
                   const completedCount = derailBatch?.[aim.aimCategoryId]?.history?.filter((h) => h.completed).length ?? 0;
                   const isCompleted = aim.status === 'COMPLETED';
                   return (
@@ -900,14 +900,14 @@ export default function DashboardPage() {
 function DerailAlertBanner({ derailBatch }: { derailBatch: DerailBatchResponse }) {
   const needsAttention = Object.values(derailBatch)
     .map((entry) => entry.derailInfo)
-    .filter((d) => d.status === 'caution' || d.status === 'derailing');
+    .filter((d) => d.status === 'caution' || d.status === 'derailed');
 
   if (needsAttention.length === 0) return null;
 
-  const derailingCount = needsAttention.filter((d) => d.status === 'derailing').length;
+  const derailedCount = needsAttention.filter((d) => d.status === 'derailed').length;
   const cautionCount = needsAttention.filter((d) => d.status === 'caution').length;
   const parts: string[] = [];
-  if (derailingCount > 0) parts.push(`${derailingCount} derailing`);
+  if (derailedCount > 0) parts.push(`${derailedCount} derailed`);
   if (cautionCount > 0) parts.push(`${cautionCount} needs caution`);
 
   return (
