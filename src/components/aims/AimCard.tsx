@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, Clock, ChevronRight } from 'lucide-react';
-import { PRISM_COLORS } from '@/lib/prism-colors';
+import { useTaskTypeColors } from '@/hooks/useTaskTypeColors';
 
 interface AimCardProps {
   aim: {
@@ -52,6 +52,7 @@ export function AimCard({
   onExpand,
   onCompleteCategory,
 }: AimCardProps) {
+  const { colors } = useTaskTypeColors();
   const phase = phaseConfig[aim.currentPhase] ?? phaseConfig.SEED;
   const isCompleted = todayInstance?.status === 'COMPLETED';
   const scheduledTime = formatTime(todayInstance?.timeBlockStart);
@@ -83,7 +84,7 @@ export function AimCard({
           ? 'border-gray-200 bg-white hover:border-teal-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-teal-600'
           : 'border-gray-100 bg-gray-50 opacity-60 dark:border-gray-800 dark:bg-gray-950'
       }`}
-      style={aim.isActive ? { borderLeftWidth: 3, borderLeftColor: PRISM_COLORS.AIM.color } : undefined}
+      style={aim.isActive ? { borderLeftWidth: 3, borderLeftColor: colors.AIM.color } : undefined}
     >
       {/* Complete checkbox */}
       {showCheckbox && (
