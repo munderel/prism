@@ -147,7 +147,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   // processes exist, and inserts company_goal_report between current_goals and
   // review_tasks when the user has company goals to report on.
   const STEPS = useMemo(() => {
-    let result = [...STEPS_BASE];
+    const result = [...STEPS_BASE];
 
     if (hasCompanyReportContent === true) {
       const currentGoalsIdx = result.findIndex((s) => s.key === 'current_goals');
