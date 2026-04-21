@@ -1134,10 +1134,9 @@ function AimCard({
 // ---- Derail Status Badge ----
 
 const DERAIL_STYLES: Record<string, { dot: string; text: string; bg: string; label: string }> = {
-  on_track:  { dot: 'bg-green-500', text: 'text-green-500', bg: 'bg-green-500/10', label: 'On Track' },
-  caution:   { dot: 'bg-yellow-500', text: 'text-yellow-500', bg: 'bg-yellow-500/10', label: 'Heads up' },
-  derailing: { dot: 'bg-red-500', text: 'text-red-500', bg: 'bg-red-500/10', label: 'Derailing!' },
-  derailed:  { dot: 'bg-red-600', text: 'text-red-400', bg: 'bg-red-600/10', label: 'Derailed' },
+  on_track: { dot: 'bg-green-500', text: 'text-green-500', bg: 'bg-green-500/10', label: 'On Track' },
+  caution:  { dot: 'bg-yellow-500', text: 'text-yellow-500', bg: 'bg-yellow-500/10', label: 'Heads up' },
+  derailed: { dot: 'bg-red-600', text: 'text-red-400', bg: 'bg-red-600/10', label: 'Derailed' },
 };
 
 function DerailStatusBadge({ derailInfo }: { derailInfo: DerailInfo }) {
@@ -1148,9 +1147,7 @@ function DerailStatusBadge({ derailInfo }: { derailInfo: DerailInfo }) {
       className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${style.text} ${style.bg} shrink-0`}
       title={derailInfo.message}
     >
-      {(derailInfo.status === 'derailing' || derailInfo.status === 'derailed') && (
-        <AlertTriangle className="h-3 w-3" />
-      )}
+      {derailInfo.status === 'derailed' && <AlertTriangle className="h-3 w-3" />}
       <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
       {style.label}
       {derailInfo.status !== 'derailed' && (
