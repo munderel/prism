@@ -153,6 +153,7 @@ export const updateGoalSchema = z.object({
   dueDate: z.string().optional().nullable(),
   startDate: z.string().optional().nullable(),
   endDate: z.string().optional().nullable(),
+  progressPct: z.number().min(0).max(100).optional(),
 });
 
 export const reorderGoalSchema = z.object({

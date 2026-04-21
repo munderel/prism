@@ -8,6 +8,7 @@ import { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { TaskTypeColorsSection } from '@/components/settings/TaskTypeColorsSection';
 
 interface TeamUser {
   id: string;
@@ -835,6 +836,8 @@ export default function SettingsPage() {
           </div>
           <SaveButton onClick={saveUserSettings} saving={saving} className="mt-4" />
         </section>
+
+        <TaskTypeColorsSection />
 
         {/* Connected Calendars */}
         <section className="glass-panel p-4 sm:p-6">

@@ -36,6 +36,10 @@ interface StepKpiProgressProps {
 /**
  * Fetch all goals from either company endpoint or personal stacks.
  * Returns null if the initial fetch fails.
+ *
+ * For non-team reviews: includes the user's personal stacks AND any company
+ * goals they're assigned to (so admin-configured company KPIs surface in their
+ * weekly KPI review alongside their own).
  */
 async function fetchAllGoalsForKpis(isTeamReview?: boolean): Promise<any[] | null> {
   if (isTeamReview) {
@@ -57,6 +61,25 @@ async function fetchAllGoalsForKpis(isTeamReview?: boolean): Promise<any[] | nul
     const goals = Array.isArray(raw) ? raw : [];
     allGoals.push(...goals);
   }
+
+  // Also pull company goals the user is assigned to so their KPIs show up in
+  // the personal weekly review. Skip silently if the company endpoint errors —
+  // personal review still works without it.
+  try {
+    const companyRes = await fetch('/api/goals?isCompany=true');
+    if (companyRes.ok) {
+      const raw = await companyRes.json();
+      const companyGoals = (Array.isArray(raw) ? raw : []).filter(
+        (g: { isAssignedToMe?: boolean }) => g.isAssignedToMe,
+      );
+      // Tag for downstream UI so we can render a "Company" badge if desired.
+      for (const g of companyGoals) g.__source = 'company';
+      allGoals.push(...companyGoals);
+    }
+  } catch {
+    // ignore
+  }
+
   return allGoals;
 }
 
