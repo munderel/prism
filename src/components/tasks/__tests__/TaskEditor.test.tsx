@@ -160,4 +160,19 @@ describe('TaskEditor', () => {
     expect(screen.getByText('Expected Deliverable')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Final report PDF/)).toBeInTheDocument();
   });
+
+  it('shows the current assignee in the dropdown even when /api/users is empty', async () => {
+    const task = createTask({
+      id: 't-1',
+      title: 'Assigned task',
+      assigneeId: 'u-42',
+      assignee: { id: 'u-42', name: 'Casey Reviewer', image: null },
+    });
+
+    renderWithProviders(<TaskEditor task={task} onSave={onSave} onClose={onClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Casey Reviewer')).toBeInTheDocument();
+    });
+  });
 });

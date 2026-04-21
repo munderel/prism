@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma';
 import {
   requireAuth,
   authError,
-  checkStackAccess,
+  checkStackReadAccess,
+  checkStackWriteAccess,
 } from '@/lib/auth-guard';
 import { pickDefined, notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, updateGoalSchema } from '@/lib/schemas';
@@ -68,7 +69,12 @@ export async function GET(
 
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  const accessDenied = await checkStackReadAccess(
+    goal.stack,
+    auth.userId,
+    auth.session.user.isAdmin,
+    { goalId: id }
+  );
   if (accessDenied) return accessDenied;
 
   return Response.json(goal);
@@ -89,13 +95,23 @@ export async function PATCH(
 
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
-  if (accessDenied) return accessDenied;
-
   const parsed = await parseBody(request, updateGoalSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
   const { status, dueDate, level, startDate, endDate } = body;
+
+  // Restricted writes (only progressPct) are allowed for assignees and company-goal-assignees.
+  // Anything else — title, description, status, level, dueDate, dates — requires admin or stack owner.
+  const bodyKeys = Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined);
+  const onlyProgressPct = bodyKeys.length > 0 && bodyKeys.every((k) => k === 'progressPct');
+
+  const accessDenied = await checkStackWriteAccess(
+    goal.stack,
+    auth.userId,
+    auth.session.user.isAdmin,
+    { goalId: id, restricted: onlyProgressPct }
+  );
+  if (accessDenied) return accessDenied;
 
   // Validate level change if provided
   if (level && level !== goal.level) {
@@ -143,7 +159,11 @@ export async function DELETE(
 
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  const accessDenied = await checkStackWriteAccess(
+    goal.stack,
+    auth.userId,
+    auth.session.user.isAdmin
+  );
   if (accessDenied) return accessDenied;
 
   // Soft-delete this goal and all descendants

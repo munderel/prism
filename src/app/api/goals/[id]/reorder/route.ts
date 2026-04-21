@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, requireAdmin, authError, checkStackAccess } from '@/lib/auth-guard';
+import { requireAuth, requireAdmin, authError, checkStackWriteAccess } from '@/lib/auth-guard';
 import { notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, reorderGoalSchema } from '@/lib/schemas';
 import { validateGoalLevel } from '@/lib/goal-validation';
@@ -24,7 +24,11 @@ export async function PATCH(
     const adminAuth = await requireAdmin();
     if ('error' in adminAuth) return authError(adminAuth);
   } else {
-    const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+    const accessDenied = await checkStackWriteAccess(
+      goal.stack,
+      auth.userId,
+      auth.session.user.isAdmin,
+    );
     if (accessDenied) return accessDenied;
   }
 

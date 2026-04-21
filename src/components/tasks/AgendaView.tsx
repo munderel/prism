@@ -216,10 +216,11 @@ export function AgendaView({ onEdit, onDelete, onClick, onStatusChange }: Agenda
         </span>
 
         {/* Assignee avatar */}
-        {task.owner?.image && (
+        {task.assignee?.image && (
           <img
-            src={task.owner.image}
-            alt={task.owner.name ?? ''}
+            src={task.assignee.image}
+            alt={task.assignee.name ?? ''}
+            title={task.assignee.name ?? ''}
             className="h-5 w-5 rounded-full flex-shrink-0"
           />
         )}

@@ -23,6 +23,7 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     user: {
       findUnique: vi.fn(),
@@ -42,6 +43,7 @@ const mockSessionFindFirst = vi.mocked(prisma.powerdownSession.findFirst);
 const mockSessionFindUnique = vi.mocked(prisma.powerdownSession.findUnique);
 const mockSessionCreate = vi.mocked(prisma.powerdownSession.create);
 const mockSessionUpdate = vi.mocked(prisma.powerdownSession.update);
+const mockSessionUpdateMany = vi.mocked(prisma.powerdownSession.updateMany);
 
 const authedResult = { session: { user: { id: 'user1', isAdmin: false } }, userId: 'user1' };
 
@@ -155,13 +157,15 @@ describe('PATCH /api/powerdown', () => {
   it('sets completedAt when complete flag is true', async () => {
     mockSafeParseJson.mockResolvedValue({ data: { sessionId: 's1', complete: true } } as any);
     mockSessionFindUnique.mockResolvedValue({ id: 's1', userId: 'user1' } as any);
+    mockSessionUpdateMany.mockResolvedValue({ count: 1 } as any);
     mockSessionUpdate.mockResolvedValue({ id: 's1' } as any);
     await PATCH(createPatchRequest({ sessionId: 's1', complete: true }));
-    expect(mockSessionUpdate).toHaveBeenCalledWith(
+    // Atomic completion transitions completedAt null -> now via updateMany,
+    // gated on completedAt: null to prevent double-firing the streak update.
+    expect(mockSessionUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          completedAt: expect.any(Date),
-        }),
+        where: expect.objectContaining({ id: 's1', completedAt: null }),
+        data: expect.objectContaining({ completedAt: expect.any(Date) }),
       })
     );
   });

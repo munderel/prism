@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackWriteAccess } from '@/lib/auth-guard';
 import { notFoundResponse } from '@/lib/api-helpers';
 
-/** DELETE — remove a user's assignment on a goal. Admin or stack owner only. */
+/** DELETE — remove a user's assignment. Admin/stack-owner or self-remove. */
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; userId: string }> },
@@ -18,8 +18,15 @@ export async function DELETE(
   });
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
-  if (accessDenied) return accessDenied;
+  const isSelfRemove = userId === auth.userId;
+  if (!isSelfRemove) {
+    const accessDenied = await checkStackWriteAccess(
+      goal.stack,
+      auth.userId,
+      auth.session.user.isAdmin,
+    );
+    if (accessDenied) return accessDenied;
+  }
 
   const existing = await prisma.goalAssignee.findUnique({
     where: { goalId_userId: { goalId, userId } },

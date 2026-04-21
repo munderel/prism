@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackAccess } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackReadAccess, checkStackWriteAccess } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
 import { notFoundResponse } from '@/lib/api-helpers';
 
@@ -9,7 +9,7 @@ const addAssigneeSchema = z.object({
   userId: z.string().min(1),
 });
 
-/** GET — list current assignees for a goal. Any viewer with stack access. */
+/** GET — list current assignees for a goal. Any viewer with stack read access. */
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -24,7 +24,12 @@ export async function GET(
   });
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
+  const accessDenied = await checkStackReadAccess(
+    goal.stack,
+    auth.userId,
+    auth.session.user.isAdmin,
+    { goalId },
+  );
   if (accessDenied) return accessDenied;
 
   const assignees = await prisma.goalAssignee.findMany({
@@ -37,7 +42,7 @@ export async function GET(
   return Response.json({ assignees });
 }
 
-/** POST — add a user as assignee. Admin or stack owner only. */
+/** POST — add a user as assignee. Admin/stack-owner may assign anyone; anyone may self-assign. */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -52,12 +57,29 @@ export async function POST(
   });
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  const accessDenied = checkStackAccess(goal.stack, auth.userId, auth.session.user.isAdmin);
-  if (accessDenied) return accessDenied;
-
   const parsed = await parseBody(request, addAssigneeSchema);
   if ('error' in parsed) return parsed.error;
   const { userId } = parsed.data;
+
+  const isSelfAssign = userId === auth.userId;
+  if (!isSelfAssign) {
+    // Assigning someone else requires admin or stack-owner.
+    const accessDenied = await checkStackWriteAccess(
+      goal.stack,
+      auth.userId,
+      auth.session.user.isAdmin,
+    );
+    if (accessDenied) return accessDenied;
+  } else {
+    // Self-assign: user must still have at least read access to the goal.
+    const accessDenied = await checkStackReadAccess(
+      goal.stack,
+      auth.userId,
+      auth.session.user.isAdmin,
+      { goalId },
+    );
+    if (accessDenied) return accessDenied;
+  }
 
   const target = await prisma.user.findUnique({
     where: { id: userId },

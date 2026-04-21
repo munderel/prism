@@ -102,19 +102,78 @@ export async function requireTaskAccess(taskId: string): Promise<AuthResult & { 
 }
 
 /**
- * Checks whether a user may read/write a goal stack based on its `isCompany` flag and ownership.
- * Returns `null` if access is allowed, or a 403 `Response` if it is not.
- * Use this in stack routes after fetching the stack, before performing mutations.
+ * Read access to a goal stack. Returns `null` if allowed, or a 403 `Response`.
+ * Allowed for:
+ * - admins,
+ * - the stack owner,
+ * - any authed user if `stack.isCompany` (company goals are readable org-wide),
+ * - a user with a `CompanyGoalAssignment` on the stack,
+ * - a user with a `GoalAssignee` row on the specific goal (when `goalId` is passed).
  */
-export function checkStackAccess(
-  stack: { isCompany: boolean; ownerId: string },
+export async function checkStackReadAccess(
+  stack: { id: string; isCompany: boolean; ownerId: string },
   userId: string,
-  isAdmin: boolean
-): Response | null {
-  if (!isAdmin && (stack.isCompany || stack.ownerId !== userId)) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  isAdmin: boolean,
+  opts?: { goalId?: string }
+): Promise<Response | null> {
+  if (isAdmin) return null;
+  if (stack.ownerId === userId) return null;
+  if (stack.isCompany) return null;
+
+  if (opts?.goalId) {
+    const assignee = await prisma.goalAssignee.findUnique({
+      where: { goalId_userId: { goalId: opts.goalId, userId } },
+      select: { id: true },
+    });
+    if (assignee) return null;
   }
-  return null;
+
+  const companyAssignment = await prisma.companyGoalAssignment.findUnique({
+    where: { goalStackId_userId: { goalStackId: stack.id, userId } },
+    select: { id: true },
+  });
+  if (companyAssignment) return null;
+
+  return Response.json({ error: 'Forbidden' }, { status: 403 });
+}
+
+/**
+ * Write access to a goal stack. Returns `null` if allowed, or a 403 `Response`.
+ * Two modes via `opts.restricted`:
+ * - `restricted: false` (default) — structural writes: admins and stack owner only.
+ *   Use for delete, reorder, level changes, creating/deleting assignees etc.
+ * - `restricted: true` — progress-like writes: admins, stack owner, and
+ *   users with a `CompanyGoalAssignment` (company stacks) or a `GoalAssignee`
+ *   row on the specific goal. Use for progress, actualValue, creating tasks
+ *   under an assigned goal.
+ */
+export async function checkStackWriteAccess(
+  stack: { id: string; isCompany: boolean; ownerId: string },
+  userId: string,
+  isAdmin: boolean,
+  opts?: { goalId?: string; restricted?: boolean }
+): Promise<Response | null> {
+  if (isAdmin) return null;
+  if (stack.ownerId === userId) return null;
+
+  if (opts?.restricted) {
+    if (stack.isCompany) {
+      const assignment = await prisma.companyGoalAssignment.findUnique({
+        where: { goalStackId_userId: { goalStackId: stack.id, userId } },
+        select: { id: true },
+      });
+      if (assignment) return null;
+    }
+    if (opts.goalId) {
+      const assignee = await prisma.goalAssignee.findUnique({
+        where: { goalId_userId: { goalId: opts.goalId, userId } },
+        select: { id: true },
+      });
+      if (assignee) return null;
+    }
+  }
+
+  return Response.json({ error: 'Forbidden' }, { status: 403 });
 }
 
 export function requireCronSecret(request: Request): boolean {

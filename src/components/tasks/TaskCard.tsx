@@ -164,6 +164,14 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
 
         {/* Icons */}
         <div className="flex items-center gap-2">
+          {task.assignee?.image && (
+            <img
+              src={task.assignee.image}
+              alt={task.assignee.name ?? ''}
+              title={task.assignee.name ?? ''}
+              className="h-5 w-5 rounded-full flex-shrink-0"
+            />
+          )}
           {task.goal && (
             <span title={task.goal.title}>
               <Target className="h-3.5 w-3.5 text-indigo-400" />

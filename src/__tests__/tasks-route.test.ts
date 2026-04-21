@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/lib/auth-guard', () => ({
   requireAuth: vi.fn(),
   authError: vi.fn((r: any) => Response.json({ error: r.error }, { status: r.status })),
-  checkStackAccess: vi.fn(),
+  checkStackWriteAccess: vi.fn(),
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -68,9 +68,10 @@ vi.mock('@/lib/api-helpers', () => ({
     return r;
   }),
   USER_SUMMARY_SELECT: { id: true, name: true, image: true },
+  NO_STORE: { 'Cache-Control': 'no-store' },
 }));
 
-import { requireAuth, checkStackAccess } from '@/lib/auth-guard';
+import { requireAuth, checkStackWriteAccess } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
 import { prisma } from '@/lib/prisma';
 import { parseRRule, getNextOccurrence as _getNextOccurrence } from '@/lib/recurrence';
@@ -79,7 +80,7 @@ import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { cascadeProgressUp as _cascadeProgressUp } from '@/lib/progress';
 
 const mockRequireAuth = vi.mocked(requireAuth);
-const mockCheckStackAccess = vi.mocked(checkStackAccess);
+const mockCheckStackWriteAccess = vi.mocked(checkStackWriteAccess);
 const mockParseBody = vi.mocked(parseBody);
 const mockTaskCreate = vi.mocked(prisma.task.create);
 const mockTaskFindMany = vi.mocked(prisma.task.findMany);
@@ -205,7 +206,7 @@ describe('POST /api/tasks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequireAuth.mockResolvedValue(authedResult as any);
-    mockCheckStackAccess.mockReturnValue(null);
+    mockCheckStackWriteAccess.mockResolvedValue(null);
     mockTaskCreate.mockResolvedValue({ id: 'task-1', title: 'Test' } as any);
   });
 
@@ -213,7 +214,7 @@ describe('POST /api/tasks', () => {
     mockParseBody.mockResolvedValue({
       data: { taskType: 'IMPROVE', title: 'Build feature', goalId: 'goal-1' },
     } as any);
-    mockGoalFindUnique.mockResolvedValue({ id: 'goal-1', deletedAt: null, stack: { ownerId: 'user1', isCompany: false } } as any);
+    mockGoalFindUnique.mockResolvedValue({ id: 'goal-1', level: 'WEEKLY', deletedAt: null, stack: { id: 'stack-1', ownerId: 'user1', isCompany: false } } as any);
 
     const req = new Request('http://localhost/api/tasks', { method: 'POST' }) as any;
     const res = await POST(req);
@@ -248,8 +249,8 @@ describe('POST /api/tasks', () => {
     mockParseBody.mockResolvedValue({
       data: { taskType: 'IMPROVE', title: 'Build feature', goalId: 'goal-1' },
     } as any);
-    mockGoalFindUnique.mockResolvedValue({ id: 'goal-1', deletedAt: null, stack: { ownerId: 'other', isCompany: true } } as any);
-    mockCheckStackAccess.mockReturnValue(Response.json({ error: 'Forbidden' }, { status: 403 }));
+    mockGoalFindUnique.mockResolvedValue({ id: 'goal-1', level: 'WEEKLY', deletedAt: null, stack: { id: 'stack-1', ownerId: 'other', isCompany: true } } as any);
+    mockCheckStackWriteAccess.mockResolvedValue(Response.json({ error: 'Forbidden' }, { status: 403 }));
 
     const req = new Request('http://localhost/api/tasks', { method: 'POST' }) as any;
     const res = await POST(req);
