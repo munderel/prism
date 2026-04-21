@@ -27,16 +27,18 @@ export async function GET(request: NextRequest) {
   const where: Prisma.ReviewWhereInput = { completedAt };
   if (type) where.reviewType = type as ReviewType;
 
+  // Non-admins only see their own rows regardless of isTeamReview, matching
+  // the reviews-list route. Team reviews contain per-user free-text notes;
+  // before this scoping, exporting them leaked every teammate's content.
+  const isAdmin = auth.session.user.isAdmin;
   if (scope === 'individual') {
     where.isTeamReview = false;
-    if (!auth.session.user.isAdmin) where.userId = auth.userId;
+    if (!isAdmin) where.userId = auth.userId;
   } else if (scope === 'team') {
     where.isTeamReview = true;
-  } else if (!auth.session.user.isAdmin) {
-    where.OR = [
-      { isTeamReview: true },
-      { isTeamReview: false, userId: auth.userId },
-    ];
+    if (!isAdmin) where.userId = auth.userId;
+  } else if (!isAdmin) {
+    where.userId = auth.userId;
   }
 
   const reviews = await prisma.review.findMany({
