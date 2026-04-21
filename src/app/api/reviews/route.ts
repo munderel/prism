@@ -17,19 +17,24 @@ export async function GET(request: NextRequest) {
   const from = searchParams.get('from');
   const to = searchParams.get('to');
 
+  // Team review rows are per-user (each participant has their own Review
+  // with isTeamReview=true and personal `notes` / `checklistState`). Before
+  // this scoping, any authed user could read every teammate's free-text
+  // "successes / difficulties" by listing team reviews. Now non-admins see
+  // only their own rows; admins retain full visibility for rollups.
   const conditions: Prisma.ReviewWhereInput[] = [];
+  const isAdmin = auth.session.user.isAdmin;
 
   if (scope !== 'individual') {
     const teamWhere: Prisma.ReviewWhereInput = { isTeamReview: true };
+    if (!isAdmin) teamWhere.userId = auth.userId;
     if (reviewType) teamWhere.reviewType = reviewType as ReviewType;
     conditions.push(teamWhere);
   }
 
   if (scope !== 'team') {
     const individualWhere: Prisma.ReviewWhereInput = { isTeamReview: false };
-    if (!auth.session.user.isAdmin) {
-      individualWhere.userId = auth.userId;
-    }
+    if (!isAdmin) individualWhere.userId = auth.userId;
     if (reviewType) individualWhere.reviewType = reviewType as ReviewType;
     conditions.push(individualWhere);
   }
