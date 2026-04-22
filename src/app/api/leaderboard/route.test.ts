@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/auth-guard', () => ({
   requireAuth: vi.fn(),
@@ -116,4 +116,80 @@ describe('GET /api/leaderboard', () => {
     expect(response.status).toBe(401);
     expect(body).toEqual({ error: 'Unauthorized' });
   });
+
+  // Critical #17 — leaderboard must bound every findMany to avoid OOM at
+  // scale. These assertions pin the bounds so a future refactor can't
+  // silently drop them.
+  describe('bounded fetch (Critical #17)', () => {
+    beforeEachBound();
+
+    it('caps public-user lookup to MAX_PUBLIC_USERS (1000)', async () => {
+      await GET(new Request('http://localhost/api/leaderboard') as any);
+      const call = mockUserFindMany.mock.calls[0][0] as any;
+      expect(call.take).toBe(1000);
+    });
+
+    it('scopes every per-table findMany to { in: publicUserIds }', async () => {
+      await GET(new Request('http://localhost/api/leaderboard') as any);
+      for (const mock of [
+        mockAimInstanceFindMany,
+        mockProcessExecutionFindMany,
+        mockPowerdownSessionFindMany,
+        mockTaskFindMany,
+        mockReviewFindMany,
+      ]) {
+        const where = (mock.mock.calls[0][0] as any).where;
+        const userIdKey = ['userId', 'ownerId', 'executedById'].find((k) => k in where);
+        expect(userIdKey).toBeDefined();
+        expect(where[userIdKey!]).toEqual({ in: expect.any(Array) });
+      }
+    });
+
+    it('caps each per-table findMany to MAX_ROWS_PER_TABLE (50 000)', async () => {
+      await GET(new Request('http://localhost/api/leaderboard') as any);
+      for (const mock of [
+        mockAimInstanceFindMany,
+        mockProcessExecutionFindMany,
+        mockPowerdownSessionFindMany,
+        mockTaskFindMany,
+        mockReviewFindMany,
+      ]) {
+        expect((mock.mock.calls[0][0] as any).take).toBe(50_000);
+      }
+    });
+
+    it('output leaderboard is sliced to top 100', async () => {
+      // 150 users — only 100 should appear in output.
+      const many = Array.from({ length: 150 }, (_, i) => ({
+        id: `u${i}`,
+        name: `User ${i}`,
+        image: null,
+        leaderboardResetAt: null,
+        streaks: [{ currentCount: 150 - i, bestCount: 150 - i }],
+      }));
+      mockUserFindMany.mockResolvedValue(many as any);
+      const res = await GET(new Request('http://localhost/api/leaderboard') as any);
+      const body = await res.json();
+      expect(body.leaderboard).toHaveLength(100);
+    });
+  });
 });
+
+function beforeEachBound() {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue({
+      session: { user: { id: 'viewer', isAdmin: false } } as any,
+      userId: 'viewer',
+    });
+    mockUserFindMany.mockResolvedValue([
+      { id: 'u1', name: 'a', image: null, leaderboardResetAt: null, streaks: [] },
+    ] as any);
+    mockAimInstanceFindMany.mockResolvedValue([] as any);
+    mockProcessExecutionFindMany.mockResolvedValue([] as any);
+    mockPowerdownSessionFindMany.mockResolvedValue([] as any);
+    mockTaskFindMany.mockResolvedValue([] as any);
+    mockReviewFindMany.mockResolvedValue([] as any);
+    mockPublicWinFindMany.mockResolvedValue([] as any);
+  });
+}

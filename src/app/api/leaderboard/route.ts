@@ -22,13 +22,26 @@ function computeScore(
   return streak * 10 + powerdownCount * 5 + tasks + reviews * 5 + aimPoints + processCompletions * 3;
 }
 
+// Leaderboard query cap. At this size, the app-side resetAt reconciliation
+// still runs in a few hundred MB of heap even for very active users; above
+// it we'd risk OOM under load. Bounded per-table so a single hot table
+// (tasks) can't starve the others.
+const MAX_PUBLIC_USERS = 1000;
+const MAX_ROWS_PER_TABLE = 50_000;
+const LEADERBOARD_TOP_N = 100;
+
 export async function GET(_request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  // Get every public user's reset marker so we can window their counts.
+  // Bound the outer user set up-front; score + reset reconciliation only
+  // runs for users who could plausibly be on the leaderboard. Ordered by
+  // best streak + name as a stable proxy for engagement — the full score
+  // can't be known before the per-table counts fire, but best streak is
+  // cheap and strongly correlated with activity.
   const users = await prisma.user.findMany({
     where: { isPublicOnLeaderboard: true },
+    take: MAX_PUBLIC_USERS,
     select: {
       id: true,
       name: true,
@@ -39,33 +52,49 @@ export async function GET(_request: NextRequest) {
         select: { currentCount: true, bestCount: true },
       },
     },
+    orderBy: [
+      { streaks: { _count: 'desc' } },
+      { createdAt: 'asc' },
+    ],
   });
 
-  // Group counts for aim points, aim completions, process completions,
-  // powerdown completions — scoped per-user but unfiltered by date here;
-  // we'll reconcile against each user's resetAt below. (groupBy with
-  // per-row resetAt conditions isn't expressible, so we fetch the raw
-  // completion timestamps and aggregate in app code.)
+  const publicUserIds = users.map((u) => u.id);
+
+  // Each per-table findMany is scoped to the capped public-user set so a
+  // huge non-public or locked-out cohort can't inflate the fetch. The
+  // take: MAX_ROWS_PER_TABLE is a defence-in-depth bound — exceeding it
+  // means a single user has 50k+ completions of one kind; score
+  // saturation is acceptable at that point and far preferable to OOM.
   const [aimInstances, processExecutions, powerdownSessions, taskCounts, reviewCounts, publicWins] = await Promise.all([
     prisma.aimInstance.findMany({
-      where: { status: 'COMPLETED', completedAt: { not: null } },
+      where: { userId: { in: publicUserIds }, status: 'COMPLETED', completedAt: { not: null } },
       select: { userId: true, completedAt: true, pointsEarned: true },
+      take: MAX_ROWS_PER_TABLE,
+      orderBy: { completedAt: 'desc' },
     }),
     prisma.processExecution.findMany({
-      where: { completedAt: { not: null }, executedById: { not: null } },
+      where: { executedById: { in: publicUserIds }, completedAt: { not: null } },
       select: { executedById: true, completedAt: true },
+      take: MAX_ROWS_PER_TABLE,
+      orderBy: { completedAt: 'desc' },
     }),
     prisma.powerdownSession.findMany({
-      where: { completedAt: { not: null } },
+      where: { userId: { in: publicUserIds }, completedAt: { not: null } },
       select: { userId: true, completedAt: true },
+      take: MAX_ROWS_PER_TABLE,
+      orderBy: { completedAt: 'desc' },
     }),
     prisma.task.findMany({
-      where: { status: 'DONE', completedAt: { not: null } },
+      where: { ownerId: { in: publicUserIds }, status: 'DONE', completedAt: { not: null } },
       select: { ownerId: true, completedAt: true },
+      take: MAX_ROWS_PER_TABLE,
+      orderBy: { completedAt: 'desc' },
     }),
     prisma.review.findMany({
-      where: { completedAt: { not: null } },
+      where: { userId: { in: publicUserIds }, completedAt: { not: null } },
       select: { userId: true, completedAt: true },
+      take: MAX_ROWS_PER_TABLE,
+      orderBy: { completedAt: 'desc' },
     }),
     prisma.publicWin.findMany({
       take: 20,
@@ -140,7 +169,8 @@ export async function GET(_request: NextRequest) {
         score: computeScore(streak, powerdownCount, tasksCompleted, reviewsCompleted, aimData.points, processCompletions),
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score)
+    .slice(0, LEADERBOARD_TOP_N);
 
   return Response.json({ leaderboard, publicWins }, {
     headers: cacheHeaders(30, 120),
