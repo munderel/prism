@@ -507,18 +507,6 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     }
   }, [toast]);
 
-  const handleScheduleItem = useCallback(async (itemId: string, itemType: string, start: Date, end: Date) => {
-    const endpoint = itemType === 'aim' ? `/api/aims/instances/${itemId}` : `/api/tasks/${itemId}`;
-    const res = await fetch(endpoint, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timeBlockStart: start.toISOString(), timeBlockEnd: end.toISOString() }),
-    });
-    if (!res.ok) throw new Error(`Failed to schedule item: ${res.status}`);
-    mutate(weekTasksSWRKey);
-    mutate(weekAimsSWRKey);
-  }, [mutate, weekTasksSWRKey, weekAimsSWRKey]);
-
   const handleUnscheduleItem = useCallback(async (itemId: string, itemType: string) => {
     // Food blocks are deleted on unschedule (no "unscheduled" state for meals).
     if (itemType === 'food') {
@@ -836,7 +824,6 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 unscheduledItems={unscheduledForCalendar}
                 aimBlockDuration={step.key === 'work_blocks' ? aimBlockDuration : undefined}
                 onCreateWorkBlock={step.key === 'work_blocks' ? handleCreateWorkBlock : undefined}
-                onSchedule={handleScheduleItem}
                 onUnschedule={handleUnscheduleItem}
                 onRefresh={() => { mutate(weekTasksSWRKey); mutate(weekAimsSWRKey); }}
                 showWorkBlockTemplates={step.key === 'work_blocks'}
@@ -900,7 +887,6 @@ interface CalendarStepContentProps {
   unscheduledItems: any[];
   aimBlockDuration?: number;
   onCreateWorkBlock?: (start: Date, end: Date, title?: string) => Promise<void>;
-  onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => Promise<void>;
   onUnschedule: (itemId: string, itemType: string) => Promise<void>;
   onRefresh?: () => void;
   showWorkBlockTemplates?: boolean;
@@ -919,7 +905,6 @@ function CalendarStepContent({
   unscheduledItems,
   aimBlockDuration,
   onCreateWorkBlock,
-  onSchedule,
   onUnschedule,
   onRefresh,
   showWorkBlockTemplates,
@@ -964,7 +949,6 @@ function CalendarStepContent({
                 unscheduledItems={unscheduledItems}
                 aimBlockDuration={aimBlockDuration}
                 onCreateWorkBlock={onCreateWorkBlock}
-                onSchedule={onSchedule}
                 onUnschedule={onUnschedule}
                 onRefresh={onRefresh}
                 showWorkBlockTemplates={showWorkBlockTemplates}
