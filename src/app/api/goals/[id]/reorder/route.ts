@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin, authError, checkStackWriteAccess } from '@/l
 import { notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, reorderGoalSchema } from '@/lib/schemas';
 import { validateGoalLevel } from '@/lib/goal-validation';
+import { detectCycle } from '@/lib/goal-cycle';
 
 export async function PATCH(
   request: NextRequest,
@@ -53,6 +54,14 @@ export async function PATCH(
         return Response.json({ error: 'Invalid parent' }, { status: 400 });
       }
       parentLevel = newParent.level;
+
+      // Critical #16 — cycle guard. The level rules in goal-validation.ts
+      // make cycles topologically impossible today, but this walks the
+      // ancestor chain explicitly so a future relaxation (e.g. multiple
+      // allowed parent levels) or a direct-DB-write path can't create a
+      // back-edge that cascadeProgressUp masks with its depth cap of 20.
+      const cycleError = await detectCycle(prisma, id, parentId);
+      if (cycleError) return cycleError;
     }
 
     if (!validateGoalLevel(goal.level, parentLevel)) {
