@@ -450,7 +450,14 @@ function normalizeYearBasedYaml(input: Record<string, any>): Record<string, any>
 // ---------------------------------------------------------------------------
 
 export function parseYamlToGoals(yamlContent: string): { goals: GoalNode[]; meta: YamlMeta } {
-  const raw = yaml.load(yamlContent) as Record<string, any>;
+  // Critical #8 — JSON_SCHEMA narrows yaml.load to the JSON-equivalent type
+  // set: strings, numbers, booleans, nulls, mappings, sequences. This blocks
+  // every custom !! type (including !!timestamp, !!omap, !!set, !!binary,
+  // and — if an older js-yaml ever reappears — !!js/function / !!js/regexp)
+  // while still preserving number/boolean typing that downstream Zod
+  // schemas depend on. FAILSAFE is stricter but silently stringifies
+  // numeric impact/confidence/ease scores, which breaks validation.
+  const raw = yaml.load(yamlContent, { schema: yaml.JSON_SCHEMA }) as Record<string, any>;
   const doc = normalizeYearBasedYaml(raw);
   const meta: YamlMeta = doc.meta ?? { name: '', owner: '', is_company: false, exported_at: '' };
 
