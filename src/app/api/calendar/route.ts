@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, createCalendarEventSchema } from '@/lib/schemas';
 import { listGoogleEvents, createGoogleEvent, getUserSyncCalendarId } from '@/lib/calendar';
 import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
@@ -9,6 +10,11 @@ import { parseGoogleSyncState, type GoogleEventOverride, pad2 } from '@/lib/goog
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
 import { getTaskTypeColor } from '@/lib/prism-colors';
+
+// Drag/resize/delete updates revalidate this endpoint. Any caching between
+// server and client (Vercel edge, browser heuristic, Next data cache) reads
+// pre-mutation data and makes the UI snap back silently — see plan notes.
+export const dynamic = 'force-dynamic';
 
 const MAX_DAYS = 366;
 
@@ -199,7 +205,7 @@ export async function GET(request: NextRequest) {
     }
 
     busySlots.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-    return Response.json(busySlots);
+    return Response.json(busySlots, NO_STORE);
   }
 
   const events: any[] = [];
@@ -912,7 +918,7 @@ export async function GET(request: NextRequest) {
     sourceCounts[s] = (sourceCounts[s] || 0) + 1;
   }
 
-  return Response.json({ events, googleStatus, googleError, _debug: { sourceCounts, total: events.length, range: `${start} – ${end}` } });
+  return Response.json({ events, googleStatus, googleError, _debug: { sourceCounts, total: events.length, range: `${start} – ${end}` } }, NO_STORE);
 
   } catch (err) {
     console.error('[calendar] Unhandled error in GET /api/calendar:', err);
@@ -943,6 +949,6 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'Failed to create event. Google Calendar may not be connected.' }, { status: 400 });
   }
 
-  return Response.json(event, { status: 201 });
+  return Response.json(event, { status: 201, ...NO_STORE });
 }
 
