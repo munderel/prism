@@ -510,7 +510,7 @@ export const updatePowerdownSchema = z.object({
   sessionDate: z.string().optional(),
   currentStep: z.number().int().min(0).optional(),
   checklistState: z.unknown().optional(),
-  tomorrowPlan: z.string().max(10000).optional().nullable(),
+  tomorrowPlan: z.array(z.string().max(200)).max(100).optional().nullable(),
   distractions: z.unknown().optional(),
   gratitudes: z.unknown().optional(),
   ideas: z.unknown().optional(),
