@@ -326,17 +326,16 @@ html:not(.dark) .hover\:bg-purple-500:hover {
   flex-direction: column;
   justify-content: flex-start;
   gap: 0;
-  padding: 2px 4px;
+  padding: 1px 3px;
   overflow: hidden;
 }
 
 /* Dynamic font size — scales with the SMALLER of height/width.
-   Floor 9px, ceiling 12px. 2.4cqh ≈ 1px per ~10px of block height. */
+   Floor 11px, ceiling 14px. Tighter padding above gives text more room. */
 .fc .fc-timegrid-event .fc-event-title,
 .fc .fc-timegrid-event .fc-event-time {
-  font-size: clamp(9px, min(2.4cqh, 2.2cqw), 12px);
-  line-height: 1.15;
-  letter-spacing: 0.1px;
+  font-size: clamp(11px, min(3cqh, 3cqw), 14px);
+  line-height: 1.1;
 }
 
 /* Title: allow up to 3 lines in tall blocks, then ellipsis */
@@ -376,14 +375,14 @@ html:not(.dark) .hover\:bg-purple-500:hover {
     align-items: baseline;
     gap: 4px;
   }
-  .fc-event-time { order: 2; margin-left: auto; font-size: clamp(8px, 2cqh, 10px); }
+  .fc-event-time { order: 2; margin-left: auto; font-size: clamp(10px, 2.4cqh, 12px); }
   .fc-event-title { -webkit-line-clamp: 1; white-space: nowrap; text-overflow: ellipsis; }
 }
 
-/* Narrow columns (≤ ~90px wide): force smaller text + allow 2 lines max */
+/* Narrow columns (≤ ~90px wide): slightly smaller text + allow 2 lines max */
 @container fc-evt (max-width: 90px) {
   .fc-event-title, .fc-event-time {
-    font-size: clamp(8px, 2cqw, 10px);
+    font-size: clamp(10px, 2.6cqw, 12px);
   }
   .fc-event-title { -webkit-line-clamp: 2; }
 }
