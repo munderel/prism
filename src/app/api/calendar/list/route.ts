@@ -1,5 +1,8 @@
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { NO_STORE } from '@/lib/api-helpers';
 import { getCalendarClient, getGoogleSyncInfo } from '@/lib/calendar';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -11,7 +14,7 @@ export async function GET() {
       calendars: [],
       connected: false,
       error: 'Google Calendar is not connected for this account.',
-    });
+    }, NO_STORE);
   }
 
   const calendar = await getCalendarClient(auth.userId);
@@ -20,7 +23,7 @@ export async function GET() {
       calendars: [],
       connected: false,
       error: 'Google Calendar credentials are unavailable. Please reconnect your Google account.',
-    });
+    }, NO_STORE);
   }
 
   try {
@@ -32,13 +35,13 @@ export async function GET() {
       backgroundColor: cal.backgroundColor,
     }));
 
-    return Response.json({ calendars, connected: true });
+    return Response.json({ calendars, connected: true }, NO_STORE);
   } catch (err) {
     console.warn('[calendar] Failed to list calendars:', err);
     return Response.json({
       calendars: [],
       connected: true,
       error: 'Failed to fetch calendars from Google Calendar. Please try reconnecting your account if this keeps happening.',
-    });
+    }, NO_STORE);
   }
 }
