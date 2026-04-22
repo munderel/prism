@@ -70,7 +70,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return new Response(csvRows.join('\n'), {
+  // UTF-8 BOM so Excel recognizes the encoding; CRLF line endings to match
+  // RFC 4180 and keep Excel / Numbers happy.
+  const BOM = '\uFEFF';
+  return new Response(BOM + csvRows.join('\r\n'), {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="reviews-export-${new Date().toISOString().split('T')[0]}.csv"`,
@@ -78,9 +81,19 @@ export async function GET(request: NextRequest) {
   });
 }
 
+// Critical #11 — CSV formula-injection defense. A field starting with
+// =, +, -, @, tab, or CR is interpreted as a formula by Excel / Google
+// Sheets / LibreOffice; attacker-controlled cells (notes, user.name,
+// user.email, checklistState JSON) could exfil data via WEBSERVICE() or
+// hijack cells via DDE. Prefix any such field with a single quote which
+// Excel treats as a literal-text sentinel, then apply the quote/comma
+// /newline escaping required by RFC 4180.
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
 function escapeCSV(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
+  let v = value;
+  if (FORMULA_TRIGGER.test(v)) v = `'${v}`;
+  if (v.includes(',') || v.includes('"') || v.includes('\n') || v.includes('\r')) {
+    return `"${v.replace(/"/g, '""')}"`;
   }
-  return value;
+  return v;
 }
