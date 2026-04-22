@@ -35,6 +35,7 @@ import { requireAuth } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 import { prisma } from '@/lib/prisma';
 import { GET, POST, PATCH } from '@/app/api/powerdown/route';
+import { updatePowerdownSchema } from '@/lib/schemas';
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockSafeParseJson = vi.mocked(safeParseJson);
@@ -217,5 +218,72 @@ describe('PATCH /api/powerdown', () => {
     }));
     expect(res.status).toBe(200);
     expect(mockSessionCreate).not.toHaveBeenCalled();
+  });
+
+  // Regression: tomorrowPlan was typed as z.string() but the client always sends
+  // string[]. That silently 400'd every completion PATCH, so completedAt never
+  // transitioned and the powerdown streak never incremented. Exercise the real
+  // Zod schema with the full client payload so a future type regression is caught.
+  it('accepts full client payload with tomorrowPlan array and fires completion', async () => {
+    mockSessionFindUnique.mockResolvedValue({ id: 's1', userId: 'user1' } as any);
+    mockSessionUpdateMany.mockResolvedValue({ count: 1 } as any);
+    mockSessionUpdate.mockResolvedValue({ id: 's1' } as any);
+
+    const res = await PATCH(createPatchRequest({
+      sessionId: 's1',
+      currentStep: 12,
+      tomorrowPlan: ['task-id-1', 'task-id-2'],
+      distractions: [],
+      gratitudes: [],
+      ideas: [],
+      clearGoals: [],
+      complete: true,
+    }));
+
+    expect(res.status).toBe(200);
+    expect(mockSessionUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 's1', completedAt: null }),
+        data: expect.objectContaining({ completedAt: expect.any(Date) }),
+      })
+    );
+  });
+});
+
+describe('updatePowerdownSchema', () => {
+  it('accepts tomorrowPlan as empty array', () => {
+    const result = updatePowerdownSchema.safeParse({ sessionId: 's1', tomorrowPlan: [] });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts tomorrowPlan as array of task id strings', () => {
+    const result = updatePowerdownSchema.safeParse({
+      sessionId: 's1',
+      tomorrowPlan: ['task-a', 'task-b', 'task-c'],
+      complete: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects tomorrowPlan as a plain string (legacy shape)', () => {
+    const result = updatePowerdownSchema.safeParse({
+      sessionId: 's1',
+      tomorrowPlan: 'plain-string',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts the full payload the PowerDownRitual client sends', () => {
+    const result = updatePowerdownSchema.safeParse({
+      sessionId: 's1',
+      currentStep: 12,
+      tomorrowPlan: ['task-id-1', 'task-id-2'],
+      distractions: [],
+      gratitudes: [],
+      ideas: [],
+      clearGoals: [],
+      complete: true,
+    });
+    expect(result.success).toBe(true);
   });
 });
