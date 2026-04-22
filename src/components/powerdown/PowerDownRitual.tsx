@@ -156,7 +156,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [distractionNotes, setDistractionNotes] = useState('');
   const [gratitudes, setGratitudes] = useState<string[]>([]);
   const [ideas, setIdeas] = useState<string[]>([]);
-  const [clearGoals, setClearGoals] = useState<any[]>([]);
+  // Clear Goals — mirrors the ClearGoal DB rows for each visible task, keyed
+  // by taskId. This IS the source of truth during the ritual: add → POST,
+  // remove → DELETE, initial load → GET per visible task.
+  const [goalChecklistsByTask, setGoalChecklistsByTask] = useState<Record<string, Array<{ id: string; text: string; isComplete: boolean; sortOrder: number }>>>({});
   const [calendarReviewed, setCalendarReviewed] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -187,10 +190,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
 
-  // Clear Goals step state — text checklists per task
-  const [goalChecklists, setGoalChecklists] = useState<Record<string, string[]>>({});
+  // Clear Goals step state — goalChecklistsByTask (above) holds the DB rows;
+  // goalInput is just the per-task draft text.
   const [goalInput, setGoalInput] = useState<Record<string, string>>({});
   const [clearGoalGuideOpen, setClearGoalGuideOpen] = useState(false);
+  // Tracks which task ids have already been fetched so we don't refetch on
+  // every parent rerender. Reset on unmount via the component lifecycle.
+  const fetchedClearGoalTaskIdsRef = useRef<Set<string>>(new Set());
 
   // AIM block duration for Deep Work template (mirrors WeeklyReviewWizard logic)
   const [aimBlockDuration, setAimBlockDuration] = useState(60);
@@ -325,6 +331,43 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Hydrate goalChecklistsByTask from the ClearGoal table for every task that
+  // can appear in the Clear Goals / Goal Summary steps. Runs whenever the
+  // visible task pool grows; the ref guard prevents redundant refetches.
+  useEffect(() => {
+    const idSet = new Set<string>();
+    for (const id of tomorrowPlan) idSet.add(id);
+    for (const t of tomorrowTasks) idSet.add(t.id);
+    const idsToFetch = Array.from(idSet).filter((id) => !fetchedClearGoalTaskIdsRef.current.has(id));
+    if (idsToFetch.length === 0) return;
+    idsToFetch.forEach((id) => fetchedClearGoalTaskIdsRef.current.add(id));
+    let cancelled = false;
+    void Promise.all(
+      idsToFetch.map(async (id) => {
+        try {
+          const res = await fetch(`/api/tasks/${id}/clear-goals`);
+          if (!res.ok) return null;
+          const goals = await res.json();
+          return [id, goals] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setGoalChecklistsByTask((prev) => {
+        const next = { ...prev };
+        for (const entry of results) {
+          if (!entry) continue;
+          const [id, goals] = entry;
+          next[id] = Array.isArray(goals) ? goals : [];
+        }
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [tomorrowPlan, tomorrowTasks]);
+
   useEffect(() => {
     initSession();
     fetchTodayTasks();
@@ -384,7 +427,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     }
     setGratitudes(data.gratitudes ?? []);
     setIdeas(data.ideas ?? []);
-    setClearGoals(data.clearGoals ?? []);
     setLoading(false);
   };
 
@@ -579,39 +621,12 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     }
   };
 
-  const handleItemScheduled = useCallback(async (itemId: string, itemType: string, start: Date, end: Date) => {
-    try {
-      if (itemType === 'task') {
-        const res = await fetch(`/api/tasks/${itemId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            timeBlockStart: start.toISOString(),
-            timeBlockEnd: end.toISOString(),
-          }),
-        });
-        if (!res.ok) throw new Error(`Failed to schedule task: ${res.status}`);
-      } else if (itemType === 'aim') {
-        const instanceId = itemId.startsWith('aim-instance-')
-          ? itemId.replace('aim-instance-', '') : null;
-        if (instanceId) {
-          const res = await fetch(`/api/aims/instances/${instanceId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              timeBlockStart: start.toISOString(),
-              timeBlockEnd: end.toISOString(),
-            }),
-          });
-          if (!res.ok) throw new Error(`Failed to schedule aim: ${res.status}`);
-        }
-      }
-      setUnscheduledTomorrowItems((prev) => prev.filter((item) => item.id !== itemId));
-      fetchTomorrowTasks();
-    } catch {
-      toast.error('Failed to schedule item. Please try again.');
-    }
-  }, [fetchTomorrowTasks]);
+  // Refresh both sidebar and tomorrow-tasks lists after any schedule/unschedule.
+  // CalendarSplitView calls this as onRefresh after the backend PATCH succeeds.
+  const refreshTomorrowLists = useCallback(() => {
+    fetchUnscheduledTomorrow();
+    fetchTomorrowTasks();
+  }, [fetchUnscheduledTomorrow, fetchTomorrowTasks]);
 
   const handleItemUnscheduled = useCallback(async (itemId: string, itemType: string) => {
     if (itemType === 'task') {
@@ -665,7 +680,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         distractions,
         gratitudes,
         ideas,
-        clearGoals,
         ...extra,
       }),
     });
@@ -822,39 +836,43 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     }
   };
 
-  const addGoalChecklistItem = (taskId: string) => {
+  const addGoalChecklistItem = async (taskId: string) => {
     const text = (goalInput[taskId] ?? '').trim();
     if (!text) return;
-    setGoalChecklists((prev) => ({
-      ...prev,
-      [taskId]: [...(prev[taskId] ?? []), text],
-    }));
     setGoalInput((prev) => ({ ...prev, [taskId]: '' }));
-    // Sync to clearGoals state for persistence
-    setClearGoals((prev) => {
-      const existing = prev.find((cg) => cg.taskId === taskId);
-      if (existing) {
-        return prev.map((cg) =>
-          cg.taskId === taskId ? { ...cg, steps: [...(cg.steps ?? []), text] } : cg,
-        );
-      }
-      const task = [...tomorrowTasks, ...todayTasks, ...weeklyGoals.flatMap((g: any) => g.tasks ?? [])].find((t: any) => t.id === taskId);
-      return [...prev, { taskId, taskTitle: task?.title ?? '', steps: [text] }];
-    });
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/clear-goals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, powerdownId: session?.id ?? null }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const created = await res.json();
+      setGoalChecklistsByTask((prev) => ({
+        ...prev,
+        [taskId]: [...(prev[taskId] ?? []), created],
+      }));
+    } catch {
+      toast.error('Failed to save goal');
+      setGoalInput((prev) => ({ ...prev, [taskId]: text }));
+    }
   };
 
-  const removeGoalChecklistItem = (taskId: string, index: number) => {
-    setGoalChecklists((prev) => ({
-      ...prev,
-      [taskId]: (prev[taskId] ?? []).filter((_, i) => i !== index),
+  const removeGoalChecklistItem = async (taskId: string, goalId: string) => {
+    const prev = goalChecklistsByTask[taskId] ?? [];
+    setGoalChecklistsByTask((curr) => ({
+      ...curr,
+      [taskId]: (curr[taskId] ?? []).filter((g) => g.id !== goalId),
     }));
-    setClearGoals((prev) =>
-      prev.map((cg) =>
-        cg.taskId === taskId
-          ? { ...cg, steps: (cg.steps ?? []).filter((_: any, i: number) => i !== index) }
-          : cg,
-      ),
-    );
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/clear-goals?goalId=${goalId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      toast.error('Failed to remove goal');
+      setGoalChecklistsByTask((curr) => ({ ...curr, [taskId]: prev }));
+    }
   };
 
   if (loading) return <div className="text-[var(--text-muted)] py-12 text-center">Loading...</div>;
@@ -1529,9 +1547,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                           viewMode="day"
                           dateRange={tomorrowDateRange}
                           unscheduledItems={unscheduledTomorrowItems}
-                          onSchedule={handleItemScheduled}
                           onUnschedule={handleItemUnscheduled}
-                          onRefresh={fetchUnscheduledTomorrow}
+                          onRefresh={refreshTomorrowLists}
                           onCreateWorkBlock={handleCreateWorkBlock}
                           aimBlockDuration={aimBlockDuration}
                           showWorkBlockTemplates
@@ -1572,7 +1589,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                       {typeLabels[type] ?? type}
                     </h3>
                     {tasks.map((t) => {
-                      const checklist = goalChecklists[t.id] ?? clearGoals.find((cg) => cg.taskId === t.id)?.steps ?? [];
+                      const checklist = goalChecklistsByTask[t.id] ?? [];
                       const subtasks = (t as any).children as Array<{ id: string; title: string; status: string }> | undefined;
                       return (
                         <div key={t.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-2 space-y-2">
@@ -1590,12 +1607,12 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                           )}
                           {checklist.length > 0 && (
                             <div className="ml-4 space-y-1">
-                              {checklist.map((step: string, i: number) => (
-                                <div key={i} className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+                              {checklist.map((goal, i) => (
+                                <div key={goal.id} className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
                                   <span className="text-indigo-400">{i + 1}.</span>
-                                  <span className="flex-1">{typeof step === 'string' ? step : (step as any).title || (step as any).step}</span>
+                                  <span className="flex-1">{goal.text}</span>
                                   <button
-                                    onClick={() => removeGoalChecklistItem(t.id, i)}
+                                    onClick={() => removeGoalChecklistItem(t.id, goal.id)}
                                     className="text-[var(--text-muted)] hover:text-red-400"
                                   >
                                     <X className="h-3 w-3" />
@@ -1680,7 +1697,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 )}
                 {scheduledPlanTasks.map((t) => {
                   const isTop3 = tomorrowPlan.includes(t.id);
-                  const checklist = goalChecklists[t.id] ?? clearGoals.find((cg) => cg.taskId === t.id)?.steps ?? [];
+                  const checklist = goalChecklistsByTask[t.id] ?? [];
                   return (
                     <div key={t.id} className={`rounded-lg px-4 py-3 space-y-1 ${isTop3 ? 'bg-indigo-600/10 border border-indigo-500/30' : 'bg-[var(--surface-raised)]/50'}`}>
                       <div className="flex items-center gap-2">
@@ -1698,10 +1715,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                       )}
                       {checklist.length > 0 ? (
                         <div className="ml-5 space-y-0.5">
-                          {checklist.map((step: string, i: number) => (
-                            <div key={i} className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+                          {checklist.map((goal, i) => (
+                            <div key={goal.id} className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
                               <span className="text-green-400">{i + 1}.</span>
-                              <span>{typeof step === 'string' ? step : (step as any).title || (step as any).step}</span>
+                              <span>{goal.text}</span>
                             </div>
                           ))}
                         </div>

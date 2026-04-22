@@ -7,6 +7,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction';
 import { GripVertical, Clock, Loader2 } from 'lucide-react';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
+import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
 
 export interface UnscheduledItem {
   id: string;
@@ -114,37 +115,27 @@ export function InlineCalendar({
     const taskId = props.taskId || info.event.id?.replace('task-', '');
 
     try {
-      // PATCH the item with time block
       if (taskId) {
-        const endpoints: Record<string, string> = {
-          aim: `/api/aims/instances/${taskId}`,
-          review: `/api/reviews/${taskId}`,
-          task: `/api/tasks/${taskId}`,
-        };
-        const endpoint = endpoints[itemType] || endpoints.task;
-        const res = await fetch(endpoint, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            timeBlockStart: start.toISOString(),
-            timeBlockEnd: end.toISOString(),
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to schedule item');
+        if (itemType === 'review') {
+          // Reviews aren't covered by scheduleItemById (not a sidebar-drop type
+          // for the other surfaces) — PATCH directly.
+          const res = await fetch(`/api/reviews/${taskId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              timeBlockStart: start.toISOString(),
+              timeBlockEnd: end.toISOString(),
+            }),
+          });
+          if (!res.ok) throw new Error('Failed to schedule review');
+        } else {
+          await scheduleItemById(itemType, taskId, start, end);
+        }
       }
 
-      // Notify parent
-      onItemScheduled?.(
-        taskId || info.event.id,
-        start,
-        end,
-        itemType,
-      );
-
-      // Refresh calendar events
+      onItemScheduled?.(taskId || info.event.id, start, end, itemType);
       refreshEvents();
     } catch {
-      // Remove the ghost event on failure
       info.event.remove();
     }
   };
@@ -155,36 +146,22 @@ export function InlineCalendar({
       info.revert();
       return;
     }
-
-    const eventId = info.event.id;
-    const timeBlock = {
-      timeBlockStart: info.event.start?.toISOString(),
-      timeBlockEnd: info.event.end?.toISOString(),
-    };
-
-    let endpoint: string | null = null;
-    let body: Record<string, any> = timeBlock;
-
-    if (eventId.startsWith('task-')) {
-      endpoint = `/api/tasks/${eventId.replace('task-', '')}`;
-      body = { ...timeBlock, isPinned: true };
-    } else if (eventId.startsWith('aim-instance-')) {
-      const aimInstanceId = info.event.extendedProps?.aimInstanceId;
-      if (aimInstanceId) endpoint = `/api/aims/instances/${aimInstanceId}`;
-    } else if (eventId.startsWith('review-')) {
-      const reviewId = info.event.extendedProps?.reviewId || eventId.replace('review-', '');
-      endpoint = `/api/reviews/${reviewId}`;
+    const start = info.event.start as Date | null;
+    const end = info.event.end as Date | null;
+    if (!start || !end) {
+      info.revert();
+      return;
     }
-
-    if (endpoint) {
-      await fetch(endpoint, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+    try {
+      const taskExtras = info.event.id.startsWith('task-')
+        ? { isPinned: true }
+        : undefined;
+      await scheduleCalendarEvent(info.event, start, end, taskExtras);
+      refreshEvents();
+    } catch {
+      info.revert();
+      refreshEvents();
     }
-
-    refreshEvents();
   };
 
   // Build the event data for unscheduled items as draggable elements

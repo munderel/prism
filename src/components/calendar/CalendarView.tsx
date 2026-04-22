@@ -20,6 +20,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { PRISM_COLORS } from '@/lib/prism-colors';
+import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
 
 interface SelectedEventPopover {
   eventId: string;
@@ -141,24 +142,6 @@ const TASK_STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
 };
 
 const DEFAULT_TASK_STATUS = { dot: 'bg-gray-400', label: 'To Do' };
-
-function scheduleItem(
-  itemType: string,
-  itemId: string,
-  startISO: string,
-  endISO: string,
-  extraData?: Record<string, unknown>
-): Promise<Response> {
-  const endpoints: Record<string, string> = {
-    aim: `/api/aims/instances/${itemId}`,
-    task: `/api/tasks/${itemId}`,
-  };
-  return fetch(endpoints[itemType] || endpoints.task, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ timeBlockStart: startISO, timeBlockEnd: endISO, ...extraData }),
-  });
-}
 
 export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unscheduledTasks, onBatchScheduleConfirm, scheduleSettings: _scheduleSettings, navigateTo }: CalendarViewProps) {
   const router = useRouter();
@@ -601,8 +584,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         }
 
         if (aimInstanceId) {
-          const res = await scheduleItem('aim', aimInstanceId, startISO, endISO);
-          if (!res.ok) throw new Error('Failed to schedule aim');
+          await scheduleItemById('aim', aimInstanceId, start, end);
         } else if (aimCategoryId) {
           // Create new instance with time block
           const res = await fetch('/api/aims/instances', {
@@ -750,8 +732,14 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
   const handleEventDrop = async (info: EventDropArg | EventResizeDoneArg) => {
     const eventId = info.event.id;
-    const newStart = info.event.start!.toISOString();
-    const newEnd = info.event.end!.toISOString();
+    const startDate = info.event.start;
+    const endDate = info.event.end;
+    if (!startDate || !endDate) {
+      info.revert();
+      return;
+    }
+    const newStart = startDate.toISOString();
+    const newEnd = endDate.toISOString();
 
     // Optimistically update the SWR cache so any re-render during the API call
     // shows the new times instead of snapping back to old positions.
@@ -768,100 +756,11 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     );
 
     try {
-      let res: Response | undefined;
-
-      if (eventId.startsWith('aim-instance-') || eventId.startsWith('aim-new-') || eventId.startsWith('aim-')) {
-        // One-time adjustment: PATCH the specific aim instance
-        const aimInstanceId = info.event.extendedProps?.aimInstanceId as string | undefined;
-        if (aimInstanceId) {
-          res = await scheduleItem('aim', aimInstanceId, newStart, newEnd);
-        }
-      } else if (eventId.startsWith('powerdown-')) {
-        // One-time adjustment for this specific day only (not the recurring default)
-        // Extract the date from the event ID (format: powerdown-YYYY-MM-DD)
-        const dateStr = eventId.replace('powerdown-', '');
-        res = await fetch('/api/powerdown', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionDate: dateStr,
-            timeBlockStart: newStart,
-            timeBlockEnd: newEnd,
-          }),
-        });
-      } else if (eventId.startsWith('review-')) {
-        // Reschedule a review's time block
-        const reviewId = eventId.replace('review-', '');
-        res = await fetch(`/api/reviews/${reviewId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            timeBlockStart: newStart,
-            timeBlockEnd: newEnd,
-          }),
-        });
-      } else if (eventId.startsWith('process-')) {
-        // Per-execution override: extract processId and date from "process-{cuid}-YYYY-MM-DD"
-        const match = eventId.match(/^process-(.+)-(\d{4}-\d{2}-\d{2})$/);
-        const dateStr = match ? match[2] : '';
-        const processId = match ? match[1] : '';
-        res = await fetch(`/api/processes/${processId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            scheduledDate: dateStr,
-            timeBlockStart: newStart,
-            timeBlockEnd: newEnd,
-          }),
-        });
-      } else if (eventId.startsWith('workblock-')) {
-        const workBlockId = eventId.replace('workblock-', '');
-        res = await fetch(`/api/work-blocks/${workBlockId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ start: newStart, end: newEnd }),
-        });
-      } else if (eventId.startsWith('task-')) {
-        const taskId = eventId.replace('task-', '');
-        res = await scheduleItem('task', taskId, newStart, newEnd, { dueDate: newStart, isPinned: true });
-      } else if (eventId.startsWith('google-')) {
-        const gcalEventId = eventId.replace('google-', '');
-        const calendarId = (info.event.extendedProps?.calendarId as string) || 'primary';
-        res = await fetch(`/api/calendar/events/${gcalEventId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ start: newStart, end: newEnd, calendarId }),
-        });
-      } else if (eventId.startsWith('meeting-')) {
-        const meetingId = info.event.extendedProps?.meetingId as string | undefined;
-        if (meetingId) {
-          const startDate = info.event.start!;
-          const endDate = info.event.end!;
-          const timeStart = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
-          const timeEnd = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
-          const cadence = info.event.extendedProps?.cadence as string;
-
-          const payload: Record<string, unknown> = { timeStart, timeEnd };
-          if (cadence === 'ONE_TIME') {
-            payload.occurDate = newStart;
-          } else {
-            payload.dayOfWeek = startDate.getDay();
-          }
-
-          res = await fetch(`/api/meetings/${meetingId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-        }
-      } else {
-        return;
-      }
-
-      if (res && !res.ok) {
-        throw new Error(`API returned ${res.status}`);
-      }
-
+      // Task drags on this calendar default to pinned + dueDate-aligned.
+      const taskExtras = eventId.startsWith('task-')
+        ? { dueDate: newStart, isPinned: true }
+        : undefined;
+      await scheduleCalendarEvent(info.event, startDate, endDate, taskExtras);
       // Revalidate to get authoritative data from the server
       await refreshEvents();
     } catch {
@@ -884,7 +783,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       if (itemType === 'aim') {
         const aimInstanceId = item?.aimInstanceId;
         if (aimInstanceId) {
-          return scheduleItem('aim', aimInstanceId, startISO, endISO);
+          return scheduleItemById('aim', aimInstanceId, ghost.start, ghost.end);
         } else if (item?.aimCategoryId) {
           return fetch('/api/aims/instances', {
             method: 'POST',
@@ -899,7 +798,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         }
       } else {
         const taskId = item?.taskId || ghost.taskId.replace('task-', '');
-        return scheduleItem('task', taskId, startISO, endISO, {
+        return scheduleItemById('task', taskId, ghost.start, ghost.end, {
           dueDate: startISO,
           isAutoScheduled: true,
           isPinned: false,

@@ -19,6 +19,7 @@ import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING, taskTypeToColorK
 import type { ColorDef, ItemType } from '@/lib/prism-colors';
 import { useTaskTypeColors } from '@/hooks/useTaskTypeColors';
 import { getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
+import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,9 +40,14 @@ export interface CalendarSplitViewProps {
   viewMode: 'day' | 'week';
   dateRange: { start: string; end: string }; // ISO date strings
   unscheduledItems: UnscheduledItem[];
-  onSchedule: (itemId: string, itemType: string, start: Date, end: Date) => void | Promise<void>;
   onUnschedule: (itemId: string, itemType: string) => void | Promise<void>;
   onRefresh?: () => void;
+  /**
+   * Optional post-schedule hook for consumer-specific side effects (e.g.
+   * removing the item from a sidebar list). Fires after the backend PATCH
+   * succeeds. Called for both internal drags and external drops.
+   */
+  onAfterSchedule?: (itemId: string, itemType: string, start: Date, end: Date) => void | Promise<void>;
   showAimGrouping?: boolean;
   mode?: 'work_blocks' | 'schedule_tasks';
   onCreateWorkBlock?: (start: Date, end: Date, title?: string) => void | Promise<void>;
@@ -386,9 +392,9 @@ export function CalendarSplitView({
   viewMode,
   dateRange,
   unscheduledItems,
-  onSchedule,
   onUnschedule,
   onRefresh,
+  onAfterSchedule,
   showAimGrouping: _showAimGrouping = false,
   mode,
   onCreateWorkBlock,
@@ -931,13 +937,14 @@ export function CalendarSplitView({
       mutateEvents((currentData: unknown) => currentData, { revalidate: false });
 
       // Fire-and-forget: schedule in background, keep pending placeholder for instant UI
-      Promise.resolve(onSchedule(itemId, itemType, snapStart, snapEnd))
-        .then(() => {
+      scheduleItemById(itemType, itemId, snapStart, snapEnd)
+        .then(async () => {
           // Clear the specific pending item before revalidating to prevent duplication
           pendingScheduledItems.current = pendingScheduledItems.current.filter(
             (evt) => !(evt.itemId === itemId && evt.itemType === itemType),
           );
-          mutateEvents();
+          await mutateEvents();
+          await onAfterSchedule?.(itemId, itemType, snapStart, snapEnd);
           onRefresh?.();
         })
         .catch(() => {
@@ -950,89 +957,35 @@ export function CalendarSplitView({
           toast.error('Failed to schedule item. Please try again.');
         });
     },
-    [onSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast, snapToNow],
+    [onAfterSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast, snapToNow],
   );
 
-  // Shared handler for event resize and internal drag-move
+  // Shared handler for event resize and internal drag-move. All event types
+  // (task / aim / food / google / meeting) dispatch through the shared
+  // scheduleCalendarEvent helper so endpoint routing lives in one place.
   const handleEventUpdate = useCallback(
     async (info: EventDropArg | EventResizeDoneArg) => {
-      const { itemId, itemType, meetingId, cadence, source, calendarId } =
-        info.event.extendedProps ?? {};
-
-      // Google Calendar events (work blocks and other GCal entries) — PATCH the
-      // Google event directly. Without this path, the event would snap back:
-      // FullCalendar moves the event optimistically, but no server update fires,
-      // and the next SWR revalidation reads the stale Google time.
-      if (source === 'google' && typeof info.event.id === 'string' && info.event.id.startsWith('google-')) {
-        const gcalEventId = info.event.id.slice('google-'.length);
-        const startDate = info.event.start;
-        const endDate = info.event.end;
-        if (!startDate || !endDate) {
-          info.revert();
-          return;
-        }
-        try {
-          const res = await fetch(`/api/calendar/events/${gcalEventId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              start: startDate.toISOString(),
-              end: endDate.toISOString(),
-              calendarId: typeof calendarId === 'string' ? calendarId : 'primary',
-            }),
-          });
-          if (!res.ok) throw new Error(`API returned ${res.status}`);
-          await mutateEvents();
-          onRefresh?.();
-        } catch {
-          info.revert();
-          await mutateEvents();
-          toast.error('Failed to move calendar event. Please try again.');
-        }
+      const startDate = info.event.start;
+      const endDate = info.event.end;
+      if (!startDate || !endDate) {
+        info.revert();
         return;
       }
 
-      // Meeting events don't have itemId/itemType — handle separately
-      if (meetingId) {
-        const startDate = info.event.start!;
-        const endDate = info.event.end!;
-        const timeStart = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
-        const timeEnd = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
-        const payload: Record<string, unknown> = { timeStart, timeEnd };
-        if (cadence === 'ONE_TIME') {
-          payload.occurDate = startDate.toISOString();
-        } else {
-          payload.dayOfWeek = startDate.getDay();
-        }
-        try {
-          const res = await fetch(`/api/meetings/${meetingId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          if (!res.ok) throw new Error(`API returned ${res.status}`);
-          await mutateEvents();
-          onRefresh?.();
-        } catch {
-          info.revert();
-          toast.error('Failed to update meeting. Please try again.');
-        }
-        return;
+      const props = info.event.extendedProps ?? {};
+      const itemId = typeof props.itemId === 'string' ? props.itemId : undefined;
+      const itemType = typeof props.itemType === 'string' ? props.itemType : undefined;
+
+      // Snap to the "now" red line on internal task/aim drags near current time.
+      let start = startDate;
+      let end = endDate;
+      if (itemType === 'task' || itemType === 'aim') {
+        ({ start, end } = snapToNow(startDate, endDate));
       }
 
-      if (!itemId || !itemType) return;
-      let start = info.event.start as Date;
-      let end = info.event.end as Date;
-      // Snap to now red line on internal drag when landing close to it.
-      ({ start, end } = snapToNow(start, end));
-
-      // Food blocks have their own data plane — PATCH /api/food-blocks/[id]
-      // directly instead of going through the task/aim onSchedule path.
-      if (itemType === 'food') {
-        // Optimistically patch the event in the SWR cache so the block stays
-        // on screen during the round-trip. Without this, a refetch race could
-        // briefly render the calendar without the block and the user would
-        // see it flicker away.
+      // Food blocks: optimistically patch the SWR cache so the block doesn't
+      // flicker away during the round-trip.
+      if (itemType === 'food' && itemId) {
         const optimisticStart = start.toISOString();
         const optimisticEnd = end.toISOString();
         mutateEvents(
@@ -1055,46 +1008,29 @@ export function CalendarSplitView({
           },
           { revalidate: false },
         );
-        try {
-          const res = await fetch(`/api/food-blocks/${itemId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ startAt: optimisticStart, endAt: optimisticEnd }),
-          });
-          if (!res.ok) throw new Error(`API returned ${res.status}`);
-          await mutateEvents();
-          onRefresh?.();
-        } catch {
-          info.revert();
-          await mutateEvents();
-          toast.error('Failed to move food block. Please try again.');
-        }
-        return;
       }
 
       try {
-        await onSchedule(itemId, itemType, start, end);
-        // Do NOT push a pending placeholder here: FullCalendar has already
-        // moved the existing event optimistically to its new time, so adding
-        // a second "pending" copy at the same time causes a visual duplicate
-        // that lingers until the pending entry is reconciled with the server
-        // response. Pending placeholders are only needed for external sidebar
-        // drops (see the drop handler above) where the item isn't yet on the
-        // canvas.
-        // Also drop any stale pending entry for this item that may exist from
-        // a prior external drop so it doesn't coexist with the refreshed
-        // server event.
-        pendingScheduledItems.current = pendingScheduledItems.current.filter(
-          (evt) => !(evt.itemId === itemId && evt.itemType === itemType)
-        );
+        await scheduleCalendarEvent(info.event, start, end);
+        // Drop any stale pending entry for this item (e.g. from a prior
+        // external drop) so it doesn't coexist with the refreshed server event.
+        if (itemId && itemType) {
+          pendingScheduledItems.current = pendingScheduledItems.current.filter(
+            (evt) => !(evt.itemId === itemId && evt.itemType === itemType),
+          );
+        }
         await mutateEvents();
+        if (itemId && itemType) {
+          await onAfterSchedule?.(itemId, itemType, start, end);
+        }
         onRefresh?.();
       } catch {
         info.revert();
-        toast.error('Failed to update scheduled item. Please try again.');
+        await mutateEvents();
+        toast.error('Failed to update event. Please try again.');
       }
     },
-    [onSchedule, mutateEvents, onRefresh, toast, snapToNow],
+    [mutateEvents, onRefresh, onAfterSchedule, toast, snapToNow],
   );
 
   // Custom event content renderer: Google-Calendar-style single-line layout
