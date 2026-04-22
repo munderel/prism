@@ -310,10 +310,82 @@ html:not(.dark) .hover\:bg-purple-500:hover {
   border-color: #e5e7eb;
 }
 
-/* Ensure short events (5-10 min) remain readable */
+/* Event harness becomes a size container so children can query its box */
 .fc .fc-timegrid-event {
-  min-height: 22px !important;
-  overflow: visible !important;
+  min-height: 18px !important;
+  overflow: hidden !important;
+  container-type: size;
+  container-name: fc-evt;
+}
+
+/* Main text wrapper: let flex decide layout based on container size */
+.fc .fc-timegrid-event .fc-event-main,
+.fc .fc-timegrid-event .fc-event-main-frame {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 2px 4px;
+  overflow: hidden;
+}
+
+/* Dynamic font size — scales with the SMALLER of height/width.
+   Floor 9px, ceiling 12px. 2.4cqh ≈ 1px per ~10px of block height. */
+.fc .fc-timegrid-event .fc-event-title,
+.fc .fc-timegrid-event .fc-event-time {
+  font-size: clamp(9px, min(2.4cqh, 2.2cqw), 12px);
+  line-height: 1.15;
+  letter-spacing: 0.1px;
+}
+
+/* Title: allow up to 3 lines in tall blocks, then ellipsis */
+.fc .fc-timegrid-event .fc-event-title {
+  font-weight: 500;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+/* Time: subdued, single line */
+.fc .fc-timegrid-event .fc-event-time {
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 1px;
+}
+
+/* Very short blocks (< ~28px tall): hide the time, keep the title only,
+   and clamp title to a single line — prevents mid-word truncation */
+@container fc-evt (max-height: 28px) {
+  .fc-event-time { display: none; }
+  .fc-event-title {
+    -webkit-line-clamp: 1;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Short blocks (28–44px): single-line title + inline time */
+@container fc-evt (min-height: 28px) and (max-height: 44px) {
+  .fc-event-main, .fc-event-main-frame {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .fc-event-time { order: 2; margin-left: auto; font-size: clamp(8px, 2cqh, 10px); }
+  .fc-event-title { -webkit-line-clamp: 1; white-space: nowrap; text-overflow: ellipsis; }
+}
+
+/* Narrow columns (≤ ~90px wide): force smaller text + allow 2 lines max */
+@container fc-evt (max-width: 90px) {
+  .fc-event-title, .fc-event-time {
+    font-size: clamp(8px, 2cqw, 10px);
+  }
+  .fc-event-title { -webkit-line-clamp: 2; }
 }
 
 /* Mobile responsive sidebar */
