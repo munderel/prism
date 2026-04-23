@@ -3,6 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError, requireTaskAccess } from '@/lib/auth-guard';
 import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateWorkBlockSchema } from '@/lib/schemas';
+import {
+  createGoogleEvent,
+  updateGoogleEvent,
+  deleteGoogleEvent,
+  getGoogleSyncInfo,
+} from '@/lib/calendar';
 
 const blockInclude = {
   task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true, dueDate: true } },
@@ -39,7 +45,7 @@ export async function PATCH(
 
   const existing = await prisma.workBlock.findFirst({
     where: { id, userId: auth.userId },
-    select: { id: true, taskId: true, start: true, end: true },
+    select: { id: true, taskId: true, start: true, end: true, mainObjective: true, calendarEventId: true },
   });
   if (!existing) return Response.json({ error: 'Not found' }, { status: 404 });
 
@@ -89,6 +95,72 @@ export async function PATCH(
     });
   });
 
+  // Google Calendar sync — fire-and-forget. Update the linked event when
+  // calendar-relevant fields (start/end/mainObjective) changed; create one if
+  // the block was made before sync was wired up so older blocks self-heal.
+  const calendarFieldsChanged =
+    body.start !== undefined || body.end !== undefined || body.mainObjective !== undefined;
+  if (calendarFieldsChanged) {
+    const taskTitle = block?.task?.title ?? 'Work block';
+    const effectiveObjective = block?.mainObjective ?? existing.mainObjective;
+    const effectiveStart = resolvedStart;
+    const effectiveEnd = resolvedEnd;
+    const summary = `${taskTitle}: ${effectiveObjective}`;
+    const syncToGcal = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+      if (!hasGoogle) {
+        return { ok: false, error: 'Google Calendar is not connected. Reconnect in Settings.' };
+      }
+      try {
+        if (existing.calendarEventId) {
+          await updateGoogleEvent(auth.userId, existing.calendarEventId, {
+            summary,
+            description: effectiveObjective,
+            start: effectiveStart.toISOString(),
+            end: effectiveEnd.toISOString(),
+          }, targetCalendarId);
+          await prisma.workBlock.update({
+            where: { id },
+            data: { syncedAt: new Date(), syncError: null },
+          });
+          return { ok: true };
+        }
+        const user = await prisma.user.findUnique({
+          where: { id: auth.userId },
+          select: { timezone: true },
+        });
+        const tz = user?.timezone ?? 'America/New_York';
+        const gcalEvent = await createGoogleEvent(auth.userId, {
+          summary,
+          description: effectiveObjective,
+          start: effectiveStart.toISOString(),
+          end: effectiveEnd.toISOString(),
+          timeZone: tz,
+        }, targetCalendarId);
+        if (!gcalEvent?.id) {
+          return { ok: false, error: 'Google did not return an event id. Check calendar permissions.' };
+        }
+        await prisma.workBlock.update({
+          where: { id },
+          data: { calendarEventId: gcalEvent.id, syncedAt: new Date(), syncError: null },
+        });
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown Google Calendar error';
+        return { ok: false, error: message };
+      }
+    };
+    syncToGcal().then(async (result) => {
+      if (!result.ok) {
+        console.warn('[work-blocks] Google Calendar sync failed:', result.error);
+        await prisma.workBlock.update({
+          where: { id },
+          data: { syncError: result.error, syncedAt: null },
+        }).catch((err) => console.error('[work-blocks] failed to persist syncError', err));
+      }
+    }).catch((err) => console.warn('[work-blocks] Google Calendar sync threw:', err));
+  }
+
   return Response.json(block, NO_STORE);
 }
 
@@ -102,13 +174,22 @@ export async function DELETE(
 
   const existing = await prisma.workBlock.findFirst({
     where: { id, userId: auth.userId },
-    select: { id: true, taskId: true },
+    select: { id: true, taskId: true, calendarEventId: true },
   });
   if (!existing) return Response.json({ error: 'Not found' }, { status: 404 });
 
   // Re-verify task access before removing.
   const taskAccess = await requireTaskAccess(existing.taskId);
   if ('error' in taskAccess) return authError(taskAccess);
+
+  if (existing.calendarEventId) {
+    const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+    if (hasGoogle) {
+      await deleteGoogleEvent(auth.userId, existing.calendarEventId, targetCalendarId).catch((err) => {
+        console.warn('[work-blocks] Failed to delete GCal event on work-block delete:', err);
+      });
+    }
+  }
 
   await prisma.workBlock.delete({ where: { id } });
 

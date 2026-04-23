@@ -742,11 +742,39 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         ? { dueDate: newStart, isPinned: true }
         : undefined;
       await scheduleCalendarEvent(info.event, startDate, endDate, taskExtras);
-      // Revalidate to get authoritative data from the server
-      await refreshEvents();
-    } catch {
+      console.info('[calendar] drop success', { eventId, newStart, newEnd });
+      // Defer the authoritative refetch. Google takes ~1s to replicate PATCHes
+      // across read replicas, so an immediate revalidate can return pre-move
+      // data and clobber our optimistic cache. The background revalidation
+      // below reconciles once Google has caught up.
+      setTimeout(() => {
+        refreshEvents()
+          .then((data) => {
+            // Diagnostic: help confirm work-block snap-back hypothesis. Dump
+            // the refetched event's times so we can see if the aggregator is
+            // returning the moved block at its new position, the old one, or
+            // not at all. Remove once the work-block cause is locked down.
+            const list = Array.isArray(data) ? data : data?.events ?? [];
+            const found = list.find((e: CalendarEventData) => e.id === eventId);
+            console.info('[calendar] post-refetch state', {
+              eventId,
+              expectedStart: newStart,
+              expectedEnd: newEnd,
+              foundInList: !!found,
+              actualStart: found?.start,
+              actualEnd: found?.end,
+            });
+          })
+          .catch(() => {});
+      }, 2000);
+    } catch (err) {
+      console.error('[calendar] drop failed', { eventId, newStart, newEnd, err });
       info.revert();
-      toast.error('Failed to update event. Please try again.');
+      const message =
+        err && typeof err === 'object' && 'userMessage' in err && typeof (err as { userMessage: unknown }).userMessage === 'string'
+          ? (err as { userMessage: string }).userMessage
+          : 'Failed to update event. Please try again.';
+      toast.error(message);
       await refreshEvents();
     }
   };
@@ -1236,15 +1264,18 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                     Unschedule
                   </button>
                 )}
-                {!selectedEventPopover.eventId?.startsWith('workblock-') && (
-                  <button
-                    onClick={() => selectedEventPopover.taskId && handleDeleteTask(selectedEventPopover.taskId)}
-                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    const taskId = selectedEventPopover.taskId;
+                    if (!taskId) return;
+                    if (!window.confirm('Delete this task? This cannot be undone.')) return;
+                    handleDeleteTask(taskId);
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete task
+                </button>
               </>
             )}
 
