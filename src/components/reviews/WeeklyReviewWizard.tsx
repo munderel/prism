@@ -31,6 +31,9 @@ const CalendarSplitView = dynamic(
   () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
   { ssr: false, loading: () => <div className="text-[var(--text-muted)] py-8 text-center">Loading calendar...</div> }
 );
+import type { RequestNameWorkBlockFn } from '@/components/calendar/CalendarSplitView';
+import { WorkBlockObjectiveModal } from '@/components/calendar/WorkBlockObjectiveModal';
+import { useWorkBlockNameModal } from '@/hooks/useWorkBlockNameModal';
 
 // Step definitions — reordered per Prism overhaul spec (2026-03-28)
 // 1. Current Goals → 2. Review Tasks → 3. KPI Progress →
@@ -525,6 +528,11 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     mutate(weekAimsSWRKey);
   }, [mutate, weekTasksSWRKey, weekAimsSWRKey]);
 
+  // Naming modal wired into the schedule_tasks step so dragged tasks become
+  // real WorkBlock rows (named + with clear goals) rather than patches on
+  // Task.timeBlockStart.
+  const { openAndAwait: openAndAwaitNameModal, modalProps: nameModalProps } = useWorkBlockNameModal();
+
   const persistAnswer = useCallback(async (stepKey: string, answerType: string, answerData: any) => {
     try {
       await fetch(`/api/reviews/${reviewId}/answers`, {
@@ -623,6 +631,10 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
           body: JSON.stringify({ notes: finalNotes, complete: true }),
         });
         const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(data?.error ?? 'Failed to complete review. Please try again.');
+          return;
+        }
         if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
         setCompleted(true);
       } catch {
@@ -824,6 +836,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 unscheduledItems={unscheduledForCalendar}
                 aimBlockDuration={step.key === 'work_blocks' ? aimBlockDuration : undefined}
                 onCreateWorkBlock={step.key === 'work_blocks' ? handleCreateWorkBlock : undefined}
+                onRequestNameWorkBlock={step.key === 'schedule_tasks' ? openAndAwaitNameModal : undefined}
                 onUnschedule={handleUnscheduleItem}
                 onRefresh={() => { mutate(weekTasksSWRKey); mutate(weekAimsSWRKey); }}
                 showWorkBlockTemplates={step.key === 'work_blocks'}
@@ -869,6 +882,8 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
           </div>
         </m.div>
       </AnimatePresence>
+
+      <WorkBlockObjectiveModal {...nameModalProps} />
     </div>
   );
 }
@@ -887,6 +902,7 @@ interface CalendarStepContentProps {
   unscheduledItems: any[];
   aimBlockDuration?: number;
   onCreateWorkBlock?: (start: Date, end: Date, title?: string) => Promise<void>;
+  onRequestNameWorkBlock?: RequestNameWorkBlockFn;
   onUnschedule: (itemId: string, itemType: string) => Promise<void>;
   onRefresh?: () => void;
   showWorkBlockTemplates?: boolean;
@@ -905,6 +921,7 @@ function CalendarStepContent({
   unscheduledItems,
   aimBlockDuration,
   onCreateWorkBlock,
+  onRequestNameWorkBlock,
   onUnschedule,
   onRefresh,
   showWorkBlockTemplates,
@@ -949,6 +966,7 @@ function CalendarStepContent({
                 unscheduledItems={unscheduledItems}
                 aimBlockDuration={aimBlockDuration}
                 onCreateWorkBlock={onCreateWorkBlock}
+                onRequestNameWorkBlock={onRequestNameWorkBlock}
                 onUnschedule={onUnschedule}
                 onRefresh={onRefresh}
                 showWorkBlockTemplates={showWorkBlockTemplates}

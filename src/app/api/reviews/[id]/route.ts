@@ -71,10 +71,9 @@ export async function PATCH(
   let updated;
 
   if (body.complete && !review.completedAt) {
-    // Optimistic-concurrency guard: only one caller wins the "complete" race.
-    // Two tabs submitting simultaneously both see review.completedAt === null
-    // in their snapshot reads; the updateMany({ completedAt: null }) collapses
-    // them via the DB's row lock so streak/calendar work fires exactly once.
+    // updateMany guards the completedAt null→now transition so concurrent tabs
+    // don't mis-stamp the completion time and so the GCal delete/cancel
+    // branches below run for the race winner only.
     const result = await prisma.review.updateMany({
       where: { id, completedAt: null },
       data,
@@ -82,18 +81,21 @@ export async function PATCH(
     didCompleteNow = result.count === 1;
     updated = await prisma.review.findUniqueOrThrow({ where: { id } });
 
-    if (didCompleteNow) {
-      // Per-review streak, using a distinct streak type per review cadence.
-      const cadence = REVIEW_TYPE_TO_CADENCE[review.reviewType];
-      const streakType = `review_${review.reviewType.toLowerCase()}`;
-      await updateSpecificStreak(auth.userId, streakType, cadence).catch((err) =>
+    // Streak firing is NOT gated on didCompleteNow: upsertOrUpdateStreak is
+    // per-day idempotent, so firing on every pre-completion snapshot is safe
+    // and self-heals reviews that got completedAt set without a streak update.
+    // Back-compat: keep updating the legacy 'review' streak alongside the
+    // cadence-specific one.
+    const cadence = REVIEW_TYPE_TO_CADENCE[review.reviewType];
+    const streakType = `review_${review.reviewType.toLowerCase()}`;
+    await Promise.all([
+      updateSpecificStreak(auth.userId, streakType, cadence).catch((err) =>
         console.warn(`[streak] ${streakType} streak update failed:`, err),
-      );
-      // Back-compat: keep updating the legacy 'review' streak too.
-      await updateSpecificStreak(auth.userId, 'review', cadence).catch((err) =>
+      ),
+      updateSpecificStreak(auth.userId, 'review', cadence).catch((err) =>
         console.warn('[streak] review streak update failed:', err),
-      );
-    }
+      ),
+    ]);
   } else {
     updated = await prisma.review.update({ where: { id }, data });
   }
