@@ -31,9 +31,17 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+// Mock the streak engine so we can assert it was called without touching the
+// real upsert logic (which would need its own prisma.streak mocks).
+vi.mock('@/lib/streak-engine', () => ({
+  updateSpecificStreak: vi.fn().mockResolvedValue(undefined),
+  updateDailyStreak: vi.fn().mockResolvedValue({}),
+}));
+
 import { requireAuth } from '@/lib/auth-guard';
 import { safeParseJson } from '@/lib/api-helpers';
 import { prisma } from '@/lib/prisma';
+import { updateSpecificStreak, updateDailyStreak } from '@/lib/streak-engine';
 import { GET, POST, PATCH } from '@/app/api/powerdown/route';
 import { updatePowerdownSchema } from '@/lib/schemas';
 
@@ -247,6 +255,33 @@ describe('PATCH /api/powerdown', () => {
         data: expect.objectContaining({ completedAt: expect.any(Date) }),
       })
     );
+  });
+
+  // Regression: self-heal contract. Streak firing must NOT be gated on
+  // updateMany's count returning 1 (the completedAt null->now transition).
+  // A user whose session already has completedAt set from a prior broken
+  // state (e.g. manual DB write, pre-fix partial request) must still get
+  // their streak credited on the next complete:true submission. The
+  // streak engine is per-day idempotent so re-firing is safe.
+  it('fires streak updates on complete:true even when updateMany count is 0 (self-heal)', async () => {
+    mockSessionFindUnique.mockResolvedValue({ id: 's1', userId: 'user1' } as any);
+    // Session already completed -> updateMany affects zero rows, but streak
+    // firing must still happen.
+    mockSessionUpdateMany.mockResolvedValue({ count: 0 } as any);
+    mockSessionUpdate.mockResolvedValue({ id: 's1' } as any);
+
+    const res = await PATCH(createPatchRequest({
+      sessionId: 's1',
+      complete: true,
+      tomorrowPlan: [],
+      distractions: [],
+      gratitudes: [],
+      ideas: [],
+    }));
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(updateSpecificStreak)).toHaveBeenCalledWith('user1', 'powerdown');
+    expect(vi.mocked(updateDailyStreak)).toHaveBeenCalledWith('user1', 'powerdown');
   });
 });
 
