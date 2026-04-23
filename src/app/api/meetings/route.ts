@@ -158,7 +158,12 @@ export async function POST(request: NextRequest) {
       await prisma.meeting.update({
         where: { id: meeting.id },
         data: { syncError: result.error, syncedAt: null },
-      }).catch(() => {});
+      }).catch((err) => {
+        // Don't swallow silently — if we can't persist the error the meeting
+        // row is stuck in a middle state (no calendarEventId, no syncError)
+        // and the UI has no way to know sync failed.
+        console.error('[meetings] failed to persist syncError', err);
+      });
     }
   }).catch((err) => console.warn('[meetings] Google Calendar sync threw:', err));
 

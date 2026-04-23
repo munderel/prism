@@ -365,9 +365,14 @@ export async function GET(request: NextRequest) {
       ? prisma.workBlock.findMany({
           where: {
             userId: auth.userId,
-            // `lt` on the end side mirrors the half-open [start, end) pattern
-            // used by forEachDayInRange and the rest of the day-iteration code.
-            start: { gte: rangeStart, lt: rangeEnd },
+            // Overlap predicate: include any block that intersects the visible
+            // window, not just ones whose start is inside it. A start-only
+            // filter silently dropped blocks dragged across the week boundary
+            // or whose start was clipped before the view (causing snap-back
+            // when FullCalendar reconciled the optimistic update against an
+            // authoritative list that omitted the moved block).
+            start: { lt: rangeEnd },
+            end: { gt: rangeStart },
           },
           include: {
             task: { select: { id: true, title: true, description: true, taskType: true, priority: true, status: true, goal: { select: { title: true } } } },

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError, requireTaskAccess } from '@/lib/auth-guard';
 import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, createWorkBlockSchema } from '@/lib/schemas';
+import { createGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -103,6 +104,52 @@ export async function POST(request: NextRequest) {
       clearGoals: { orderBy: { sortOrder: 'asc' } },
     },
   });
+
+  // Sync to Google Calendar — fire-and-forget. Follows the Meeting pattern:
+  // persist syncedAt on success and syncError on failure so the UI can show
+  // a red chip with Retry (see meetings/route.ts).
+  const taskTitle = full?.task?.title ?? 'Work block';
+  const syncToGcal = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+    if (!hasGoogle) {
+      return { ok: false, error: 'Google Calendar is not connected. Reconnect in Settings.' };
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: { timezone: true },
+    });
+    const tz = user?.timezone ?? 'America/New_York';
+    const summary = `${taskTitle}: ${block.mainObjective}`;
+    try {
+      const gcalEvent = await createGoogleEvent(auth.userId, {
+        summary,
+        description: block.mainObjective,
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+        timeZone: tz,
+      }, targetCalendarId);
+      if (!gcalEvent?.id) {
+        return { ok: false, error: 'Google did not return an event id. Check calendar permissions.' };
+      }
+      await prisma.workBlock.update({
+        where: { id: block.id },
+        data: { calendarEventId: gcalEvent.id, syncedAt: new Date(), syncError: null },
+      });
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown Google Calendar error';
+      return { ok: false, error: message };
+    }
+  };
+  syncToGcal().then(async (result) => {
+    if (!result.ok) {
+      console.warn('[work-blocks] Google Calendar sync failed:', result.error);
+      await prisma.workBlock.update({
+        where: { id: block.id },
+        data: { syncError: result.error, syncedAt: null },
+      }).catch((err) => console.error('[work-blocks] failed to persist syncError', err));
+    }
+  }).catch((err) => console.warn('[work-blocks] Google Calendar sync threw:', err));
 
   return Response.json(full, { status: 201, ...NO_STORE });
 }

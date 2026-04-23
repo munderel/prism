@@ -28,6 +28,16 @@ function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+export class ScheduleEventError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly userMessage: string,
+    public readonly code?: string,
+  ) {
+    super(`${status}: ${userMessage}`);
+  }
+}
+
 async function patch(url: string, body: Record<string, unknown>): Promise<void> {
   const res = await fetch(url, {
     method: 'PATCH',
@@ -35,7 +45,17 @@ async function patch(url: string, body: Record<string, unknown>): Promise<void> 
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`PATCH ${url} failed: ${res.status}`);
+    let payload: { error?: string; code?: string } = {};
+    try {
+      payload = (await res.json()) as typeof payload;
+    } catch {
+      // body wasn't JSON — keep the defaults
+    }
+    throw new ScheduleEventError(
+      res.status,
+      payload.error || `Failed to update (${res.status})`,
+      payload.code,
+    );
   }
 }
 
