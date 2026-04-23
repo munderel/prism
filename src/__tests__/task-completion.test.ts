@@ -98,8 +98,6 @@ describe('completeTask', () => {
   });
 
   it('cascades into child tasks before completing the parent', async () => {
-    const start = new Date('2026-04-20T09:00:00Z');
-    const end = new Date('2026-04-20T10:00:00Z');
     // First call: the parent task.
     // Second call: the child task (recursion).
     mockTaskFindUnique
