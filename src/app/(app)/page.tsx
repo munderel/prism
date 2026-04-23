@@ -218,7 +218,23 @@ export default function DashboardPage() {
 
   // Fetch streak data for dashboard display
   const { data: allStreaks } = useSWR<{ id: string; streakType: string; currentCount: number; bestCount: number; lastActiveDate: string | null; isActive: boolean }[]>('/api/streaks');
-  const dailyStreak = useMemo(() => (allStreaks ?? []).find((s) => s.streakType === 'daily'), [allStreaks]);
+  // Fall back to powerdown when no 'daily' row exists yet — mirrors
+  // StreaksDashboard and StreakCounter so the badge is resilient to the
+  // daily row being absent (fresh user, post-reset, or pre-increment).
+  const dailyStreak = useMemo(() => {
+    const list = allStreaks ?? [];
+    return list.find((s) => s.streakType === 'daily')
+        ?? list.find((s) => s.streakType === 'powerdown');
+  }, [allStreaks]);
+  const streakByAimCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of allStreaks ?? []) {
+      if (s.streakType.startsWith('aim_') && s.currentCount > 0) {
+        map.set(s.streakType.slice(4), s.currentCount);
+      }
+    }
+    return map;
+  }, [allStreaks]);
 
   // Fetch user settings and today's PowerDown session
   const { data: userSettings } = useUserSettings();
@@ -774,6 +790,7 @@ export default function DashboardPage() {
                   const isDerailing = derailBatch?.[aim.aimCategoryId]?.derailInfo?.status === 'derailed';
                   const completedCount = derailBatch?.[aim.aimCategoryId]?.history?.filter((h) => h.completed).length ?? 0;
                   const isCompleted = aim.status === 'COMPLETED';
+                  const aimStreak = streakByAimCategory.get(aim.aimCategoryId);
                   return (
                     <div
                       key={aim.id}
@@ -812,6 +829,15 @@ export default function DashboardPage() {
                           ) : null}
                         </div>
                       </div>
+                      {aimStreak ? (
+                        <span
+                          className="flex items-center gap-0.5 text-xs text-yellow-400"
+                          aria-label={`${aimStreak}-day streak`}
+                        >
+                          <Flame className="h-3 w-3" aria-hidden="true" />
+                          {aimStreak}
+                        </span>
+                      ) : null}
                       {aim.timeBlockStart && aim.timeBlockEnd && (
                         <span className={`text-xs rounded px-2 py-0.5 ${PRISM_COLORS.AIM.bgClass} ${PRISM_COLORS.AIM.textClass}`}>
                           {new Date(aim.timeBlockStart).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–

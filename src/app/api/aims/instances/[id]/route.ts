@@ -84,8 +84,10 @@ export async function PATCH(
   if (activityNote !== undefined) updateData.activityNote = activityNote;
   if (selectedActivity !== undefined) updateData.selectedActivity = selectedActivity;
 
+  const isNowCompleting = status === 'COMPLETED' && existing.status !== 'COMPLETED';
+
   // Handle phase progression and scoring when completing an aim
-  if (status === 'COMPLETED' && existing.status !== 'COMPLETED') {
+  if (isNowCompleting) {
     const userAim = await prisma.userAim.findUnique({
       where: {
         userId_aimCategoryId: {
@@ -125,12 +127,6 @@ export async function PATCH(
         });
       }
     }
-
-    // Per-aim streak, daily streak (if all daily aims done), and Beeminder-
-    // style safety buffer increment. All best-effort — log and continue.
-    await updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch((err) => console.warn('[streak] aim streak update failed:', err));
-    await maybeIncrementDailyStreakIfDayComplete(existing.userId).catch((err) => console.warn('[streak] daily streak update failed:', err));
-    await applyBufferOnCompletion(existing.userId, existing.aimCategoryId).catch((err) => console.warn('[buffer] completion update failed:', err));
   }
 
   const updated = await prisma.aimInstance.update({
@@ -138,6 +134,17 @@ export async function PATCH(
     data: updateData,
     include: INSTANCE_INCLUDE,
   });
+
+  // Must run AFTER the update above: maybeIncrementDailyStreakIfDayComplete
+  // queries AimInstance.status='COMPLETED' rows for today, and needs this
+  // instance's new status to be visible in the DB.
+  if (isNowCompleting) {
+    await Promise.allSettled([
+      updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch((err) => console.warn('[streak] aim streak update failed:', err)),
+      maybeIncrementDailyStreakIfDayComplete(existing.userId).catch((err) => console.warn('[streak] daily streak update failed:', err)),
+      applyBufferOnCompletion(existing.userId, existing.aimCategoryId).catch((err) => console.warn('[buffer] completion update failed:', err)),
+    ]);
+  }
 
   if (status !== undefined && status !== existing.status) {
     await recalculateUserAimProgress(existing.userId, existing.aimCategoryId);
