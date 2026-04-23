@@ -8,6 +8,7 @@ import {
   requireTaskAccess,
   checkStackReadAccess,
   checkStackWriteAccess,
+  verifyStackMembership,
   authError,
 } from '@/lib/auth-guard';
 
@@ -278,6 +279,59 @@ describe('checkStackWriteAccess', () => {
     });
     expect(r).not.toBeNull();
     expect(r!.status).toBe(403);
+  });
+});
+
+describe('verifyStackMembership', () => {
+  const personalStack = { id: 'stack1', isCompany: false, ownerId: 'owner1' };
+  const companyStack = { id: 'stack2', isCompany: true, ownerId: 'owner2' };
+
+  it('returns true when target is the stack owner (personal stack)', async () => {
+    const r = await verifyStackMembership(personalStack, 'owner1');
+    expect(r).toBe(true);
+    expect(mockCompanyAssignmentFindUnique).not.toHaveBeenCalled();
+    expect(mockGoalAssigneeFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('returns true when target is the stack owner (company stack)', async () => {
+    const r = await verifyStackMembership(companyStack, 'owner2');
+    expect(r).toBe(true);
+    expect(mockCompanyAssignmentFindUnique).not.toHaveBeenCalled();
+    expect(mockGoalAssigneeFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('returns true for any user on a company stack without hitting the assignment tables', async () => {
+    const r = await verifyStackMembership(companyStack, 'randomUser', 'g1');
+    expect(r).toBe(true);
+    expect(mockCompanyAssignmentFindUnique).not.toHaveBeenCalled();
+    expect(mockGoalAssigneeFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('returns true on a personal stack when a CompanyGoalAssignment row exists', async () => {
+    mockCompanyAssignmentFindUnique.mockResolvedValue({ id: 'cga1' } as any);
+    const r = await verifyStackMembership(personalStack, 'assignee1');
+    expect(r).toBe(true);
+  });
+
+  it('returns true on a personal stack when a GoalAssignee row exists for the goalId', async () => {
+    mockCompanyAssignmentFindUnique.mockResolvedValue(null);
+    mockGoalAssigneeFindUnique.mockResolvedValue({ id: 'ga1' } as any);
+    const r = await verifyStackMembership(personalStack, 'assignee1', 'g1');
+    expect(r).toBe(true);
+  });
+
+  it('returns false on a personal stack for a stranger with no rows', async () => {
+    mockCompanyAssignmentFindUnique.mockResolvedValue(null);
+    mockGoalAssigneeFindUnique.mockResolvedValue(null);
+    const r = await verifyStackMembership(personalStack, 'stranger', 'g1');
+    expect(r).toBe(false);
+  });
+
+  it('returns false on a personal stack without a goalId when no CompanyGoalAssignment', async () => {
+    mockCompanyAssignmentFindUnique.mockResolvedValue(null);
+    const r = await verifyStackMembership(personalStack, 'stranger');
+    expect(r).toBe(false);
+    expect(mockGoalAssigneeFindUnique).not.toHaveBeenCalled();
   });
 });
 
