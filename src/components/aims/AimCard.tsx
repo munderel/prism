@@ -129,7 +129,7 @@ export function AimCard({
         <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
           {aim.currentStreak}
         </span>
-        <span className="text-[10px] text-gray-400">{'\uD83D\uDD25'} streak</span>
+        <span className="text-[10px] text-gray-400">{'\uD83D\uDD25'} week streak</span>
       </div>
 
       {/* Expand indicator */}
