@@ -11,7 +11,7 @@ import type { EventReceiveArg, EventResizeDoneArg } from '@fullcalendar/interact
 import { type ProposedSlot } from '@/lib/scheduling-engine';
 import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
-import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload } from './WorkBlockObjectiveModal';
+import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload, type TaskLevelClearGoal } from './WorkBlockObjectiveModal';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
 import { useUserSettings } from '@/hooks/useUserSettings';
@@ -208,7 +208,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     typeof userSettingsData?.defaultWorkBlockMinutes === 'number'
       ? (userSettingsData.defaultWorkBlockMinutes as number)
       : 30;
-  const alwaysPromptForBlockObjective = !!userSettingsData?.alwaysPromptForBlockObjective;
   const [workBlockModalInput, setWorkBlockModalInput] = useState<WorkBlockObjectiveInput | null>(null);
   const [pendingWorkBlockInfo, setPendingWorkBlockInfo] = useState<EventReceiveArg | null>(null);
 
@@ -627,7 +626,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         // Compute proposed block size: min(defaultWorkBlockMinutes, remaining estimate)
         let proposedMinutes = defaultWorkBlockMinutes;
         let taskTitle = info.event.title;
-        let remaining = defaultWorkBlockMinutes;
+        let taskLevelClearGoals: TaskLevelClearGoal[] = [];
         try {
           const taskRes = await fetch(`/api/tasks/${taskId}`);
           if (taskRes.ok) {
@@ -637,46 +636,28 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               const dur = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
               return acc + dur;
             }, 0);
-            remaining = Math.max(0, estimated - scheduled);
+            const remaining = Math.max(0, estimated - scheduled);
             proposedMinutes = remaining === 0 ? defaultWorkBlockMinutes : Math.min(defaultWorkBlockMinutes, remaining);
             taskTitle = task.title ?? taskTitle;
+            taskLevelClearGoals = Array.isArray(task.clearGoals)
+              ? task.clearGoals
+                  .filter((g: { workBlockId?: string | null }) => !g.workBlockId)
+                  .map((g: { id: string; text: string }): TaskLevelClearGoal => ({ id: g.id, text: g.text }))
+              : [];
           }
         } catch {
-          // fall back to default
+          // swallow fetch errors — modal opens with defaults
         }
 
-        // Skip the objective modal when the task fits in a single default block
-        // and the user hasn't opted to always be prompted.
-        const fitsInOneBlock = remaining > 0 && remaining <= defaultWorkBlockMinutes;
-        if (fitsInOneBlock && !alwaysPromptForBlockObjective) {
-          const blockEnd = new Date(start.getTime() + remaining * 60000);
-          const res = await fetch('/api/work-blocks', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              taskId,
-              start: start.toISOString(),
-              end: blockEnd.toISOString(),
-              mainObjective: taskTitle,
-            }),
-          });
-          if (!res.ok) {
-            info.event.remove();
-            toast.error('Failed to schedule work block');
-          } else {
-            info.event.remove();
-            refreshEvents();
-          }
-          return;
-        }
-
-        // Open modal; keep the temp event around for now. Modal save/cancel handles it.
+        // Always open the naming modal on drag-create so every workblock gets a
+        // deliberate name and a chance to carry over task-level clear goals.
         setWorkBlockModalInput({
           taskId,
           taskTitle,
           start,
           end: new Date(start.getTime() + proposedMinutes * 60000),
           proposedMinutes,
+          taskLevelClearGoals,
         });
         setPendingWorkBlockInfo(info);
       }
