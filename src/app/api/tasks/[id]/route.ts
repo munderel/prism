@@ -35,6 +35,18 @@ export async function GET(
         select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true },
         orderBy: { createdAt: 'asc' },
       },
+      clearGoals: {
+        where: { workBlockId: null },
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true, text: true, isComplete: true, sortOrder: true, workBlockId: true },
+      },
+      workBlocks: {
+        orderBy: { start: 'asc' },
+        select: {
+          id: true, start: true, end: true, mainObjective: true,
+          completionStatus: true, actualMinutes: true, notes: true, reviewedAt: true,
+        },
+      },
       _count: { select: { children: true } },
     },
   });

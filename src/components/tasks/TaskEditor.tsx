@@ -7,6 +7,43 @@ import { LEVEL_LABELS } from '@/lib/goal-constants';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { WorkBlocksSection } from './WorkBlocksSection';
 import { SplitTaskModal } from './SplitTaskModal';
+import { parseDurationToMinutes, formatMinutesCompact } from '@/lib/task-utils';
+
+const DURATION_PRESET_GROUPS: Array<{ label: string; presets: Array<{ label: string; minutes: number }> }> = [
+  {
+    label: 'Minutes',
+    presets: [
+      { label: '15m', minutes: 15 },
+      { label: '30m', minutes: 30 },
+      { label: '45m', minutes: 45 },
+    ],
+  },
+  {
+    label: 'Hours',
+    presets: [
+      { label: '1h', minutes: 60 },
+      { label: '2h', minutes: 120 },
+      { label: '4h', minutes: 240 },
+      { label: '8h', minutes: 480 },
+    ],
+  },
+  {
+    label: 'Days',
+    presets: [
+      { label: '1d', minutes: 480 },
+      { label: '2d', minutes: 960 },
+      { label: '3d', minutes: 1440 },
+      { label: '5d', minutes: 2400 },
+    ],
+  },
+  {
+    label: 'Weeks',
+    presets: [
+      { label: '1w', minutes: 2400 },
+      { label: '2w', minutes: 4800 },
+    ],
+  },
+];
 
 interface TaskEditorProps {
   task?: any; // If editing
@@ -246,30 +283,47 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             {/* Estimated Duration */}
             <div>
               <label className="block text-sm text-[var(--text-secondary)] mb-1">Estimated Duration <span className="text-red-400">*</span></label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {[15, 30, 45, 60, 90, 120, 180, 240].map((mins) => (
-                  <button
-                    key={mins}
-                    type="button"
-                    onClick={() => setEstimatedMinutes(mins)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                      estimatedMinutes === mins
-                        ? 'bg-indigo-600 text-white border border-indigo-600'
-                        : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
-                    }`}
-                  >
-                    {mins < 60 ? `${mins}m` : `${mins / 60}h`}
-                  </button>
+              <div className="space-y-1.5 mb-2">
+                {DURATION_PRESET_GROUPS.map((group) => (
+                  <div key={group.label} className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)] w-12 flex-shrink-0">
+                      {group.label}
+                    </span>
+                    {group.presets.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setEstimatedMinutes(preset.minutes)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                          estimatedMinutes === preset.minutes
+                            ? 'bg-indigo-600 text-white border border-indigo-600'
+                            : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--glass-border)]'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
               <input
-                type="number"
-                min="1"
-                value={estimatedMinutes}
-                onChange={(e) => setEstimatedMinutes(parseInt(e.target.value) || 0)}
+                type="text"
+                defaultValue={estimatedMinutes > 0 ? formatMinutesCompact(estimatedMinutes) : ''}
+                key={`est:${estimatedMinutes}`}
+                onBlur={(e) => {
+                  const parsed = parseDurationToMinutes(e.target.value);
+                  if (parsed !== null) setEstimatedMinutes(parsed);
+                  else if (!e.target.value.trim()) setEstimatedMinutes(0);
+                }}
                 className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                placeholder="Custom minutes"
+                placeholder="90m, 1.5h, 2d, 1w"
               />
+              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                Accepts minutes, hours, days, or weeks. Days = 8h, weeks = 5 × 8h.
+                {estimatedMinutes > 0 && (
+                  <> · Current: <span className="text-[var(--text-secondary)]">{estimatedMinutes} minutes ({formatMinutesCompact(estimatedMinutes)})</span></>
+                )}
+              </p>
             </div>
 
             {/* Preferred Time Window */}
