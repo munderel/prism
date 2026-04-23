@@ -141,7 +141,6 @@ export default function SettingsPage() {
   // Powerdown Time
   const [powerdownTime, setPowerdownTime] = useState('17:30');
   const [defaultWorkBlockMinutes, setDefaultWorkBlockMinutes] = useState(30);
-  const [alwaysPromptForBlockObjective, setAlwaysPromptForBlockObjective] = useState(false);
 
   // Streak preferences — daily streak now fires solely on powerdown completion;
   // the per-category opt-in flags were removed.
@@ -227,7 +226,6 @@ export default function SettingsPage() {
       }
       if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
       if (typeof data.defaultWorkBlockMinutes === 'number') setDefaultWorkBlockMinutes(data.defaultWorkBlockMinutes);
-      if (typeof data.alwaysPromptForBlockObjective === 'boolean') setAlwaysPromptForBlockObjective(data.alwaysPromptForBlockObjective);
       if (data.streakGraceDays !== undefined) setStreakGraceDays(data.streakGraceDays);
       if (data.beeminderAuthToken) setBeeminderAuthToken(data.beeminderAuthToken);
       if (data.beeminderGoalSlug) setBeeminderGoalSlug(data.beeminderGoalSlug);
@@ -286,7 +284,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, defaultWorkBlockMinutes, alwaysPromptForBlockObjective, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
+        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, defaultWorkBlockMinutes, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
       });
 
       if (!res.ok) {
@@ -802,23 +800,6 @@ export default function SettingsPage() {
                 />
                 <span className="text-sm text-[var(--text-muted)]">minutes</span>
               </div>
-            </div>
-
-            <div>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={alwaysPromptForBlockObjective}
-                  onChange={(e) => setAlwaysPromptForBlockObjective(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-[var(--border-color)]"
-                />
-                <span>
-                  <span className="block text-sm text-[var(--text-secondary)]">Always ask me to define objective when scheduling</span>
-                  <span className="block text-xs text-[var(--text-muted)] mt-0.5">
-                    When off, dragging a task whose remaining estimate fits in one default block schedules it immediately without opening the objective modal.
-                  </span>
-                </span>
-              </label>
             </div>
 
             <div>

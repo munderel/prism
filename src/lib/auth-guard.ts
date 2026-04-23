@@ -178,10 +178,14 @@ export async function checkStackWriteAccess(
 
 /**
  * Returns true if `targetUserId` is a legitimate member of the stack:
- * stack owner, a `CompanyGoalAssignment` holder for the stack, or a
- * `GoalAssignee` row on the given `goalId`. Use this when deciding whether
- * a user can be named as an owner/assignee of a goal or KPI — we don't
- * want to assign a KPI to someone who has no visibility into the stack.
+ * stack owner, any authed user on a company stack, a `CompanyGoalAssignment`
+ * holder for the stack, or a `GoalAssignee` row on the given `goalId`. Use
+ * this when deciding whether a user can be named as an owner/assignee of a
+ * goal or KPI — we don't want to assign a KPI to someone who has no
+ * visibility into the stack. Company stacks are team-wide (they short-circuit
+ * in `checkStackReadAccess` too), so any authenticated user is a valid
+ * member; the caller is still gated by `checkStackWriteAccess` for who can
+ * perform the assignment.
  */
 export async function verifyStackMembership(
   stack: { id: string; isCompany: boolean; ownerId: string },
@@ -189,6 +193,7 @@ export async function verifyStackMembership(
   goalId?: string,
 ): Promise<boolean> {
   if (stack.ownerId === targetUserId) return true;
+  if (stack.isCompany) return true;
 
   const companyAssignment = await prisma.companyGoalAssignment.findUnique({
     where: { goalStackId_userId: { goalStackId: stack.id, userId: targetUserId } },

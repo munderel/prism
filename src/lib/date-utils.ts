@@ -9,6 +9,16 @@
  */
 
 /**
+ * Duration in whole minutes between two points in time, clamped to zero.
+ * Replaces ad-hoc `Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000))`.
+ */
+export function minutesBetween(start: Date | string, end: Date | string): number {
+  const s = start instanceof Date ? start : new Date(start);
+  const e = end instanceof Date ? end : new Date(end);
+  return Math.max(0, Math.round((e.getTime() - s.getTime()) / 60000));
+}
+
+/**
  * Returns a 'YYYY-MM-DD' string in the user's local timezone.
  * With no argument, returns today's date.
  * Use this instead of `new Date().toISOString().split('T')[0]`.
