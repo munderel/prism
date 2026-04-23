@@ -7,6 +7,7 @@ import {
   CheckCircle2, Circle, ChevronRight, ChevronLeft, PartyPopper,
   Plus, Trash2, ListTodo, Target, BookOpen,
 } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
 
 type ChecklistItemType = 'checkbox' | 'text' | 'text_list' | 'auto_tasks' | 'auto_goals';
 
@@ -29,6 +30,7 @@ interface ReviewWizardProps {
 
 export function ReviewWizard({ reviewId }: ReviewWizardProps) {
   const router = useRouter();
+  const toast = useToast();
   const [review, setReview] = useState<any>(null);
   const [checklist, setChecklist] = useState<ChecklistState>({});
   const [notes, setNotes] = useState('');
@@ -104,11 +106,17 @@ export function ReviewWizard({ reviewId }: ReviewWizardProps) {
 
     if (currentStep === totalSteps) {
       // Complete the review
-      await fetch(`/api/reviews/${reviewId}`, {
+      const res = await fetch(`/api/reviews/${reviewId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes, complete: true }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error ?? 'Failed to complete review. Please try again.');
+        return;
+      }
+      if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
       setCompleted(true);
       return;
     }

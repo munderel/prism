@@ -111,7 +111,12 @@ describe('PATCH /api/reviews/[id] — double-complete race (Critical #14)', () =
     expect(mockStreak).toHaveBeenCalledWith('u1', 'review', expect.anything());
   });
 
-  it('the losing call (count=0) does NOT fire streaks', async () => {
+  it('the losing call (count=0) ALSO fires streaks (self-heal)', async () => {
+    // Streak firing is no longer gated on didCompleteNow. upsertOrUpdateStreak
+    // is per-day idempotent so re-firing is safe, and this self-heals reviews
+    // whose completedAt got set without a streak update (e.g. from a prior
+    // schema regression). The GCal delete/cancel branches remain gated on
+    // didCompleteNow downstream so double-deletes never fire.
     mockUpdateMany.mockResolvedValue({ count: 0 } as any);
     const res = await PATCH(
       new Request('http://x/api/reviews/r1', {
@@ -122,7 +127,10 @@ describe('PATCH /api/reviews/[id] — double-complete race (Critical #14)', () =
     );
     expect(res.status).toBe(200);
     expect(mockUpdateMany).toHaveBeenCalledOnce();
-    expect(mockStreak).not.toHaveBeenCalled();
+    expect(mockStreak).toHaveBeenCalledTimes(2);
+    // But GCal delete stays gated on the transition — losing call must NOT
+    // try to delete a calendar event the winner already removed.
+    expect(mockDeleteEvent).not.toHaveBeenCalled();
   });
 
   it('under 5-way concurrent complete, exactly one winner fires streaks', async () => {
@@ -149,11 +157,12 @@ describe('PATCH /api/reviews/[id] — double-complete race (Critical #14)', () =
     );
     const results = await Promise.all(runs);
     expect(results).toHaveLength(5);
-    // All 5 calls that arrived with completedAt === null go into updateMany
-    // (the subsequent ones see the pre-race snapshot). Only the first returns
-    // count=1; the rest return count=0. Net effect: exactly 2 streak calls
-    // (specific + legacy) across the whole batch.
-    expect(mockStreak).toHaveBeenCalledTimes(2);
+    // All 5 calls that arrived with completedAt === null enter the complete
+    // branch. Each fires 2 streak calls (specific + legacy). Per-day
+    // idempotency inside upsertOrUpdateStreak means the engine deduplicates
+    // these anyway, so firing on every losing call is cheap and self-heals
+    // any prior broken state.
+    expect(mockStreak).toHaveBeenCalledTimes(10);
   });
 
   it('passing complete:true on an already-completed review does NOT fire streaks again', async () => {

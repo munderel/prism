@@ -853,11 +853,17 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
     } else if (step.key === 'notes-completion') {
       void persistAnswer('notes-completion', 'text', { text: notes });
       try {
-        await fetch(`/api/reviews/${reviewId}`, {
+        const res = await fetch(`/api/reviews/${reviewId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ notes, complete: true }),
         });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(data?.error ?? 'Failed to complete review. Please try again.');
+          return;
+        }
+        if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
         setCompleted(true);
       } catch {
         toast.error('Failed to complete review. Please try again.');

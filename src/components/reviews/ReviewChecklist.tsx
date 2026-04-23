@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { m } from 'framer-motion';
 import { CheckCircle2, Circle, BookOpen, Plus, Trash2, ListTodo, Target } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
 
 type ChecklistItemType = 'checkbox' | 'text' | 'text_list' | 'auto_tasks' | 'auto_goals';
 
@@ -26,6 +27,7 @@ interface ReviewChecklistProps {
 type ChecklistState = Record<string, boolean | string | string[]>;
 
 export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) {
+  const toast = useToast();
   const [review, setReview] = useState<any>(null);
   const [checklist, setChecklist] = useState<ChecklistState>({});
   const [notes, setNotes] = useState('');
@@ -76,11 +78,17 @@ export function ReviewChecklist({ reviewId, onComplete }: ReviewChecklistProps) 
   };
 
   const handleComplete = async () => {
-    await fetch(`/api/reviews/${reviewId}`, {
+    const res = await fetch(`/api/reviews/${reviewId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notes, complete: true }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data?.error ?? 'Failed to complete review. Please try again.');
+      return;
+    }
+    if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
     onComplete();
   };
 
