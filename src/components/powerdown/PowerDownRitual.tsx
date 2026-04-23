@@ -14,11 +14,20 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { subtaskDoneCount } from '@/lib/task-utils';
 import { ClearGoalGuide } from './ClearGoalGuide';
 import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
+import { SplitTaskModal } from '@/components/tasks/SplitTaskModal';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 const CalendarSplitView = dynamic(
   () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
   { ssr: false, loading: () => <div className="text-[var(--text-muted)] py-4 text-center">Loading calendar...</div> }
 );
+import {
+  WorkBlockObjectiveModal,
+  type WorkBlockObjectiveInput,
+  type WorkBlockObjectivePayload,
+  type WorkBlockNameRequest,
+  type WorkBlockNameResolved,
+} from '@/components/calendar/WorkBlockObjectiveModal';
+import { fetchTaskLevelClearGoals, patchWorkBlock, deleteWorkBlock } from '@/lib/work-blocks-client';
 
 // Power Down steps — reordered per Prism overhaul spec (2026-03-28)
 // 1. Review Today → 2. [Log Process KPIs (conditional)] → 2/3. Weekly Goals & Tasks → ...
@@ -219,6 +228,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     clearGoals: Array<{ id: string; text: string; isComplete: boolean }>;
   }
   const [todayWorkBlocks, setTodayWorkBlocks] = useState<PowerdownWorkBlock[]>([]);
+  const [tomorrowWorkBlocks, setTomorrowWorkBlocks] = useState<PowerdownWorkBlock[]>([]);
   const [blockReviewPicks, setBlockReviewPicks] = useState<Record<string, 'COMPLETED' | 'PARTIAL' | 'MISSED'>>({});
   const [blockReviewNotes, setBlockReviewNotes] = useState<Record<string, string>>({});
   const [blockReviewActual, setBlockReviewActual] = useState<Record<string, number>>({});
@@ -253,6 +263,18 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       setTaskExtendSaving((p) => ({ ...p, [taskId]: false }));
     }
   };
+
+  const fetchTomorrowWorkBlocks = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/work-blocks?date=${sessionTomorrow}`);
+      if (res.ok) {
+        const blocks: PowerdownWorkBlock[] = await res.json();
+        setTomorrowWorkBlocks(blocks);
+      }
+    } catch {
+      // non-critical
+    }
+  }, [sessionTomorrow]);
 
   const fetchTodayWorkBlocks = useCallback(async () => {
     try {
@@ -378,6 +400,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchWeeklyGoals();
     fetchDueKpiProcesses();
     fetchTodayWorkBlocks();
+    fetchTomorrowWorkBlocks();
     // Fetch user aims to compute Deep Work block duration
     fetch('/api/aims/user').then(r => r.ok ? r.json() : []).then((userAims: any[]) => {
       if (!Array.isArray(userAims)) return;
@@ -493,13 +516,17 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   }, []);
 
   const fetchAimInstances = useCallback(async () => {
+    // Route requires start+end (see src/app/api/aims/instances/route.ts:17).
+    // Pass today's full-day window so all of today's instances come back.
     try {
-      const res = await fetch(`/api/aims/instances?date=${sessionToday}`);
+      const startISO = parseLocalDate(sessionToday).toISOString();
+      const endISO = new Date(parseLocalDate(sessionToday).getTime() + 86400000 - 1).toISOString();
+      const res = await fetch(`/api/aims/instances?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`);
       if (res.ok) setAimInstances(await res.json());
     } catch {
       // Non-critical
     }
-  }, []);
+  }, [sessionToday]);
 
   const fetchWeeklyGoals = useCallback(async () => {
     setWeeklyGoalsLoading(true);
@@ -580,16 +607,24 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const currentStepKey = STEPS[currentStep - 1]?.key || 'review_today';
 
   const toggleAimInstance = async (instance: any) => {
-    const newCompleted = !instance.completed;
+    // The AimInstance row exposes `status`, not `completed`; the Zod schema at
+    // updateAimInstanceSchema only accepts { status }, so sending { completed }
+    // was silently stripped and the server never updated the row or fired the
+    // aim/daily streaks.
+    const newStatus = instance.status === 'COMPLETED' ? 'SCHEDULED' : 'COMPLETED';
     try {
-      await fetch(`/api/aims/instances/${instance.id}`, {
+      const res = await fetch(`/api/aims/instances/${instance.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completed: newCompleted }),
+        body: JSON.stringify({ status: newStatus }),
       });
+      if (!res.ok) {
+        toast.error('Failed to update aim.');
+        return;
+      }
       fetchAimInstances();
     } catch {
-      // Non-critical
+      toast.error('Failed to update aim.');
     }
   };
 
@@ -626,7 +661,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const refreshTomorrowLists = useCallback(() => {
     fetchUnscheduledTomorrow();
     fetchTomorrowTasks();
-  }, [fetchUnscheduledTomorrow, fetchTomorrowTasks]);
+    fetchTomorrowWorkBlocks();
+  }, [fetchUnscheduledTomorrow, fetchTomorrowTasks, fetchTomorrowWorkBlocks]);
 
   const handleItemUnscheduled = useCallback(async (itemId: string, itemType: string) => {
     if (itemType === 'task') {
@@ -668,8 +704,120 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     }
   }, [toast]);
 
-  const persistStep = async (nextStep: number, extra: Record<string, any> = {}) => {
-    if (!session) return;
+  // Naming modal wired into step 6. Operates in two modes:
+  // - 'drop':  drag created a new workblock → resolve the Promise so CalendarSplitView can POST.
+  // - 'edit':  user clicked "reschedule" on an existing workblock → PATCH directly on save.
+  const [nameModalInput, setNameModalInput] = useState<WorkBlockObjectiveInput | null>(null);
+  const [nameModalMode, setNameModalMode] = useState<'create' | 'edit'>('create');
+  const nameModalResolveRef = useRef<((payload: WorkBlockNameResolved | null) => void) | null>(null);
+  const editingWorkBlockIdRef = useRef<string | null>(null);
+
+  const clearStaleAwaiter = useCallback(() => {
+    if (nameModalResolveRef.current) {
+      nameModalResolveRef.current(null);
+      nameModalResolveRef.current = null;
+    }
+    editingWorkBlockIdRef.current = null;
+  }, []);
+
+  const openAndAwaitNameModal = useCallback(async (input: WorkBlockNameRequest) => {
+    clearStaleAwaiter();
+    const taskLevelClearGoals = await fetchTaskLevelClearGoals(input.taskId);
+    return new Promise<WorkBlockNameResolved | null>((resolve) => {
+      nameModalResolveRef.current = resolve;
+      setNameModalMode('create');
+      setNameModalInput({ ...input, taskLevelClearGoals });
+    });
+  }, [clearStaleAwaiter]);
+
+  // Inline per-workblock actions rendered in step 6. Each mutation ends with
+  // fetchTomorrowWorkBlocks so the card list reflects the new state immediately.
+  const patchTomorrowWorkBlock = useCallback(
+    async (id: string, body: Record<string, unknown>) => {
+      try {
+        const res = await patchWorkBlock(id, body);
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        await fetchTomorrowWorkBlocks();
+      } catch {
+        toast.error('Failed to update work block.');
+      }
+    },
+    [fetchTomorrowWorkBlocks, toast],
+  );
+
+  const deleteTomorrowWorkBlock = useCallback(
+    async (id: string) => {
+      try {
+        const res = await deleteWorkBlock(id);
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        await fetchTomorrowWorkBlocks();
+      } catch {
+        toast.error('Failed to remove work block.');
+      }
+    },
+    [fetchTomorrowWorkBlocks, toast],
+  );
+
+  const rescheduleTomorrowWorkBlock = useCallback(
+    (block: PowerdownWorkBlock) => {
+      clearStaleAwaiter();
+      editingWorkBlockIdRef.current = block.id;
+      setNameModalMode('edit');
+      setNameModalInput({
+        taskId: block.task.id,
+        taskTitle: block.task.title,
+        start: new Date(block.start),
+        end: new Date(block.end),
+        proposedMinutes: Math.max(
+          15,
+          Math.round((new Date(block.end).getTime() - new Date(block.start).getTime()) / 60000),
+        ),
+        initialMainObjective: block.mainObjective,
+        initialSubGoals: block.clearGoals.map((g) => g.text),
+      });
+    },
+    [clearStaleAwaiter],
+  );
+
+  const handleNameModalSave = useCallback(
+    async (payload: WorkBlockObjectivePayload) => {
+      const resolved: WorkBlockNameResolved = {
+        start: new Date(payload.start),
+        end: new Date(payload.end),
+        mainObjective: payload.mainObjective,
+        subGoals: payload.subGoals,
+      };
+      if (nameModalMode === 'edit' && editingWorkBlockIdRef.current) {
+        const blockId = editingWorkBlockIdRef.current;
+        editingWorkBlockIdRef.current = null;
+        setNameModalInput(null);
+        await patchTomorrowWorkBlock(blockId, {
+          start: resolved.start.toISOString(),
+          end: resolved.end.toISOString(),
+          mainObjective: resolved.mainObjective,
+          subGoals: resolved.subGoals,
+        });
+        return;
+      }
+      nameModalResolveRef.current?.(resolved);
+      nameModalResolveRef.current = null;
+      setNameModalInput(null);
+    },
+    [nameModalMode, patchTomorrowWorkBlock],
+  );
+
+  const handleNameModalCancel = useCallback(() => {
+    nameModalResolveRef.current?.(null);
+    nameModalResolveRef.current = null;
+    editingWorkBlockIdRef.current = null;
+    setNameModalInput(null);
+  }, []);
+
+  // State for the "Break into sessions" modal (reuses SplitTaskModal).
+  const [splitTaskTarget, setSplitTaskTarget] = useState<{ id: string; title: string } | null>(null);
+
+  const persistStep = async (nextStep: number, extra: Record<string, any> = {}): Promise<Response | null> => {
+    if (!session) return null;
     const res = await fetch('/api/powerdown', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -685,6 +833,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     });
     const data = await res.json().catch(() => ({}));
     if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
+    if (!res.ok) {
+      console.error('[powerdown] persistStep failed', { status: res.status, body: data });
+    }
+    return res;
   };
 
   const advanceStep = async () => {
@@ -738,10 +890,16 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
     if (next > STEPS.length) {
       // Completing the session is the only path we keep awaited so the user
-      // sees the celebration only on a confirmed success.
+      // sees the celebration only on a confirmed success. res.ok is checked
+      // here because prior regressions (tomorrowPlan schema) 400'd silently
+      // and the user saw false celebration while the streak never updated.
       setSaving(true);
       try {
-        await persistStep(currentStep, { complete: true });
+        const completeRes = await persistStep(currentStep, { complete: true });
+        if (!completeRes || !completeRes.ok) {
+          toast.error('Failed to complete powerdown — please try again.');
+          return;
+        }
         if (tomorrowPlan.length > 0) {
           void fetch('/api/tasks/batch-win-the-day', {
             method: 'POST',
@@ -772,14 +930,14 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
     // Optimistic navigation — persist in the background so Next feels
     // instant. Same pattern used by the weekly review wizard.
-    void persistStep(next);
+    void persistStep(next).catch((err) => console.warn('[powerdown] step persist failed:', err));
     setCurrentStep(next);
   };
 
   const goBack = () => {
     if (currentStep <= 1) return;
     const prev = currentStep - 1;
-    void persistStep(prev);
+    void persistStep(prev).catch((err) => console.warn('[powerdown] step persist failed:', err));
     setCurrentStep(prev);
   };
 
@@ -918,6 +1076,12 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   }
   const candidateTasks = Array.from(allTasksById.values())
     .filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED');
+
+  // Plain Map (not useMemo) because this code runs after the early returns
+  // for loading/completed states — hooks may not appear in every render.
+  const top3TaskLookup = new Map<string, any>();
+  for (const t of tomorrowTasks) top3TaskLookup.set(t.id, t);
+  for (const t of candidateTasks) top3TaskLookup.set(t.id, t);
 
   // Tasks for Steps 5+6: tomorrowPlan selections + tomorrowTasks (deduped)
   const planTasksById = new Map<string, any>();
@@ -1073,14 +1237,14 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                         onClick={() => toggleAimInstance(aim)}
                         className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
                       >
-                        {aim.completed ? (
+                        {aim.status === 'COMPLETED' ? (
                           <CheckCircle2 className="h-4 w-4 text-purple-400 flex-shrink-0" />
                         ) : (
                           <Circle className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
                         )}
                         <span
                           className={
-                            aim.completed
+                            aim.status === 'COMPLETED'
                               ? 'text-[var(--text-muted)] line-through'
                               : 'text-[var(--text-primary)]'
                           }
@@ -1550,6 +1714,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                           onUnschedule={handleItemUnscheduled}
                           onRefresh={refreshTomorrowLists}
                           onCreateWorkBlock={handleCreateWorkBlock}
+                          onRequestNameWorkBlock={openAndAwaitNameModal}
                           aimBlockDuration={aimBlockDuration}
                           showWorkBlockTemplates
                           weeklyTargetCalendarIds={weeklyTargetCalendarIds}
@@ -1569,6 +1734,131 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                   />
                   <span className="text-sm text-[var(--text-secondary)]">I&apos;ve reviewed tomorrow&apos;s calendar</span>
                 </label>
+
+                {/* Scheduled subtasks (workblocks) for tomorrow */}
+                <div className="mt-6 space-y-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                    Tomorrow&apos;s Scheduled Subtasks
+                  </h3>
+                  {tomorrowWorkBlocks.length === 0 ? (
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      Drag a task onto the calendar to create a scheduled subtask.
+                    </p>
+                  ) : (
+                    tomorrowWorkBlocks.map((block) => {
+                      const isDone = block.completionStatus === 'COMPLETED';
+                      const scheduledMin = Math.max(
+                        0,
+                        Math.round((new Date(block.end).getTime() - new Date(block.start).getTime()) / 60000),
+                      );
+                      return (
+                        <div
+                          key={block.id}
+                          className={`rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)]/50 px-3 py-2 ${
+                            isDone ? 'opacity-60' : ''
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isDone}
+                              onChange={() =>
+                                patchTomorrowWorkBlock(block.id, {
+                                  completionStatus: isDone ? 'PENDING' : 'COMPLETED',
+                                  actualMinutes: isDone ? null : scheduledMin,
+                                })
+                              }
+                              className="mt-1 h-4 w-4 rounded border-[var(--border-color)] text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <input
+                                key={`name:${block.mainObjective}`}
+                                type="text"
+                                defaultValue={block.mainObjective}
+                                onBlur={(e) => {
+                                  const next = e.target.value.trim();
+                                  if (next && next !== block.mainObjective) {
+                                    patchTomorrowWorkBlock(block.id, { mainObjective: next });
+                                  }
+                                }}
+                                className={`w-full bg-transparent text-sm font-medium focus:outline-none ${
+                                  isDone ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-primary)]'
+                                }`}
+                              />
+                              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                                <Clock className="h-3 w-3" />
+                                <span>
+                                  {new Date(block.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                  {'–'}
+                                  {new Date(block.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                  <span className="ml-1">({scheduledMin}m)</span>
+                                </span>
+                                <span className="truncate">· {block.task.title}</span>
+                              </div>
+                              <textarea
+                                key={`notes:${block.notes ?? ''}`}
+                                defaultValue={block.notes ?? ''}
+                                placeholder="Notes / description (optional)"
+                                rows={1}
+                                onBlur={(e) => {
+                                  const next = e.target.value;
+                                  if (next !== (block.notes ?? '')) {
+                                    patchTomorrowWorkBlock(block.id, { notes: next || null });
+                                  }
+                                }}
+                                className="w-full resize-y rounded border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1 text-xs text-[var(--text-secondary)] placeholder-[var(--text-muted)] focus:border-indigo-400 focus:outline-none"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={() => rescheduleTomorrowWorkBlock(block)}
+                                title="Reschedule"
+                                className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text-primary)]"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => deleteTomorrowWorkBlock(block.id)}
+                                title="Unschedule"
+                                className="rounded p-1 text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-400"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Break into sessions — per top-3 task */}
+                {tomorrowPlan.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                      Break a top task into sessions
+                    </h3>
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      Split a big task into smaller subtasks you can then schedule individually.
+                    </p>
+                    <div className="flex flex-col gap-1">
+                      {tomorrowPlan.map((taskId) => {
+                        const task = top3TaskLookup.get(taskId);
+                        if (!task) return null;
+                        return (
+                          <button
+                            key={taskId}
+                            onClick={() => setSplitTaskTarget({ id: task.id, title: task.title })}
+                            className="inline-flex items-center justify-between gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)]/50 px-3 py-1.5 text-xs text-[var(--text-primary)] hover:border-indigo-500/30"
+                          >
+                            <span className="truncate">{task.title}</span>
+                            <span className="text-[var(--text-muted)]">Split →</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1648,25 +1938,38 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </>
             )}
 
-            {/* Lubricate Tomorrow — explanatory prompt; pre-stage the top 3 artifacts */}
+            {/* Lubricate Tomorrow — pre-stage the scheduled subtasks (workblocks). */}
             {currentStepKey === 'lubricate' && (
               <div className="space-y-4">
                 <p className="text-sm text-[var(--text-secondary)]">
-                  For each of tomorrow&apos;s top tasks, go do the smallest physical
+                  For each scheduled subtask, go do the smallest physical
                   setup now — open the doc, type the title, save the file with
                   tomorrow&apos;s name, pin the tab. The goal is zero activation
                   energy when you sit down tomorrow. Starting is almost always
                   the hardest part; lubricate it tonight.
                 </p>
-                {tomorrowPlan.length === 0 ? (
-                  <p className="text-sm text-[var(--text-muted)]">
-                    No top 3 selected yet. Go back to Step 4 to pick them.
-                  </p>
-                ) : (
+                {tomorrowWorkBlocks.length > 0 ? (
+                  <ul className="space-y-2">
+                    {tomorrowWorkBlocks.map((block, i) => (
+                      <li key={block.id} className="flex items-start gap-3 rounded-lg bg-[var(--surface-raised)]/50 px-4 py-3">
+                        <span className="text-xs font-bold text-indigo-400 bg-indigo-400/20 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0">
+                          {i + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <span className="block text-sm text-[var(--text-primary)]">{block.mainObjective}</span>
+                          <span className="block text-xs text-[var(--text-muted)] mt-0.5">
+                            {block.task.title} · {new Date(block.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            {'–'}
+                            {new Date(block.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : tomorrowPlan.length > 0 ? (
                   <ul className="space-y-2">
                     {tomorrowPlan.map((taskId, i) => {
-                      const t = tomorrowTasks.find((x: any) => x.id === taskId)
-                        ?? scheduledPlanTasks.find((x: any) => x.id === taskId);
+                      const t = top3TaskLookup.get(taskId);
                       const title = t?.title ?? 'Task';
                       return (
                         <li key={taskId} className="flex items-center gap-3 rounded-lg bg-[var(--surface-raised)]/50 px-4 py-3">
@@ -1678,6 +1981,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                       );
                     })}
                   </ul>
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)]">
+                    Nothing scheduled for tomorrow yet. Go back to step 6 to schedule some subtasks.
+                  </p>
                 )}
                 <p className="text-xs text-[var(--text-muted)] italic">
                   This step is intentional friction — when you&apos;re done staging,
@@ -1690,32 +1997,46 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
             {currentStepKey === 'goal_summary' && (
               <div className="space-y-4">
                 <p className="text-sm text-[var(--text-secondary)] mb-3">
-                  Here&apos;s your plan for tomorrow. Review that each task has a clear goal.
+                  Here&apos;s your plan for tomorrow. Review that each scheduled subtask has a clear goal.
                 </p>
-                {scheduledPlanTasks.length === 0 && (
+                {tomorrowWorkBlocks.length === 0 && (
                   <p className="text-sm text-[var(--text-secondary)]">Nothing is scheduled for tomorrow.</p>
                 )}
-                {scheduledPlanTasks.map((t) => {
-                  const isTop3 = tomorrowPlan.includes(t.id);
-                  const checklist = goalChecklistsByTask[t.id] ?? [];
+                {tomorrowWorkBlocks.map((block) => {
+                  const isTop3 = tomorrowPlan.includes(block.task.id);
+                  const blockGoals = block.clearGoals;
+                  // Fallback: task-level goals when the workblock doesn't have its own.
+                  const taskLevelChecklist = blockGoals.length === 0 ? (goalChecklistsByTask[block.task.id] ?? []) : [];
                   return (
-                    <div key={t.id} className={`rounded-lg px-4 py-3 space-y-1 ${isTop3 ? 'bg-indigo-600/10 border border-indigo-500/30' : 'bg-[var(--surface-raised)]/50'}`}>
+                    <div key={block.id} className={`rounded-lg px-4 py-3 space-y-1 ${isTop3 ? 'bg-indigo-600/10 border border-indigo-500/30' : 'bg-[var(--surface-raised)]/50'}`}>
                       <div className="flex items-center gap-2">
                         {isTop3 && <Star className="h-3.5 w-3.5 text-indigo-400 fill-indigo-400 flex-shrink-0" />}
-                        <span className="text-sm text-[var(--text-primary)] font-medium">{t.title}</span>
+                        <span className="text-sm text-[var(--text-primary)] font-medium">{block.mainObjective}</span>
                       </div>
-                      {t.timeBlockStart && (
-                        <div className="flex items-center gap-1 ml-5 text-xs text-[var(--text-muted)]">
-                          <Clock className="h-3 w-3" />
-                          <span>
-                            {new Date(t.timeBlockStart).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                            {t.timeBlockEnd && ` - ${new Date(t.timeBlockEnd).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
-                          </span>
-                        </div>
-                      )}
-                      {checklist.length > 0 ? (
+                      <div className="ml-5 text-xs text-[var(--text-muted)]">
+                        {block.task.title}
+                      </div>
+                      <div className="flex items-center gap-1 ml-5 text-xs text-[var(--text-muted)]">
+                        <Clock className="h-3 w-3" />
+                        <span>
+                          {new Date(block.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                          {' - '}
+                          {new Date(block.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {blockGoals.length > 0 ? (
                         <div className="ml-5 space-y-0.5">
-                          {checklist.map((goal, i) => (
+                          {blockGoals.map((goal, i) => (
+                            <div key={goal.id} className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+                              <span className="text-green-400">{i + 1}.</span>
+                              <span>{goal.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : taskLevelChecklist.length > 0 ? (
+                        <div className="ml-5 space-y-0.5">
+                          <span className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Task-level goals</span>
+                          {taskLevelChecklist.map((goal, i) => (
                             <div key={goal.id} className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
                               <span className="text-green-400">{i + 1}.</span>
                               <span>{goal.text}</span>
@@ -1723,7 +2044,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-xs text-orange-400/80 ml-5">No clear goals set for this task.</p>
+                        <p className="text-xs text-orange-400/80 ml-5">No clear goals set for this subtask.</p>
                       )}
                     </div>
                   );
@@ -1861,6 +2182,28 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
           </div>
         </m.div>
       </AnimatePresence>
+
+      <WorkBlockObjectiveModal
+        open={!!nameModalInput}
+        input={nameModalInput}
+        mode={nameModalMode}
+        editableStart={nameModalMode === 'edit'}
+        onCancel={handleNameModalCancel}
+        onSave={handleNameModalSave}
+      />
+
+      {splitTaskTarget && (
+        <SplitTaskModal
+          taskId={splitTaskTarget.id}
+          taskTitle={splitTaskTarget.title}
+          onClose={() => setSplitTaskTarget(null)}
+          onSplit={() => {
+            setSplitTaskTarget(null);
+            fetchTomorrowTasks();
+            fetchUnscheduledTomorrow();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -122,7 +122,7 @@ export async function POST() {
 
 const SESSION_UPDATABLE_FIELDS = [
   'currentStep', 'checklistState', 'tomorrowPlan',
-  'distractions', 'gratitudes', 'ideas', 'clearGoals',
+  'distractions', 'gratitudes', 'ideas',
 ];
 
 export async function PATCH(request: NextRequest) {
@@ -177,21 +177,19 @@ export async function PATCH(request: NextRequest) {
   if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
 
-  // Atomic completion: only one concurrent request can transition completedAt
-  // null -> now(). The winner fires the streak update exactly once. Previous
-  // logic used a read-then-write guard that could double-fire under a race
-  // (two PATCHes seeing session.completedAt=null) and could show a streak of
-  // "2 on day 1".
-  let didCompleteNow = false;
+  // Atomic completedAt transition so re-completes don't mis-stamp the completion
+  // time. Streak firing is NOT gated on the transition: upsertOrUpdateStreak is
+  // per-day idempotent (lastActiveDate >= today early-returns) and Beeminder
+  // uses a daystamp requestid for idempotency. Firing on every complete:true
+  // self-heals sessions that got completedAt set without a streak update
+  // (e.g. from a prior schema regression) — a subsequent tap of "Complete"
+  // will still produce the expected streak row.
   if (body.complete) {
-    const completionResult = await prisma.powerdownSession.updateMany({
+    await prisma.powerdownSession.updateMany({
       where: { id: body.sessionId, completedAt: null },
       data: { completedAt: new Date() },
     });
-    didCompleteNow = completionResult.count === 1;
-  }
 
-  if (didCompleteNow) {
     await updateSpecificStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] powerdown streak update failed:', err));
     const streakResult = await updateDailyStreak(auth.userId, 'powerdown').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
     if (streakResult?.beeminder?.ok === false) {
