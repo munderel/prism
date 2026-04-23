@@ -20,6 +20,10 @@ import type { ColorDef, ItemType } from '@/lib/prism-colors';
 import { useTaskTypeColors } from '@/hooks/useTaskTypeColors';
 import { getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
 import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
+import type { WorkBlockNameRequest, WorkBlockNameResolved } from './WorkBlockObjectiveModal';
+import { createWorkBlock } from '@/lib/work-blocks-client';
+
+export type RequestNameWorkBlockFn = (input: WorkBlockNameRequest) => Promise<WorkBlockNameResolved | null>;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,6 +55,13 @@ export interface CalendarSplitViewProps {
   showAimGrouping?: boolean;
   mode?: 'work_blocks' | 'schedule_tasks';
   onCreateWorkBlock?: (start: Date, end: Date, title?: string) => void | Promise<void>;
+  /**
+   * Called when a task is dropped in `schedule_tasks` mode so the caller can
+   * prompt for the workblock name + clear goals. Returning `null` cancels the
+   * drop (placeholder is removed). Returning the payload causes the drop flow
+   * to POST `/api/work-blocks` instead of patching Task.timeBlockStart/End.
+   */
+  onRequestNameWorkBlock?: RequestNameWorkBlockFn;
   /** Duration in minutes for the Deep Work (AIM Block) template. Defaults to 60. */
   aimBlockDuration?: number;
   /** Show work block template cards at the bottom of the left panel (default mode only). */
@@ -398,6 +409,7 @@ export function CalendarSplitView({
   showAimGrouping: _showAimGrouping = false,
   mode,
   onCreateWorkBlock,
+  onRequestNameWorkBlock,
   aimBlockDuration = 60,
   showWorkBlockTemplates = false,
   weeklyTargetCalendarIds,
@@ -917,6 +929,46 @@ export function CalendarSplitView({
         }
       }
 
+      // Task drops in schedule_tasks mode create a real WorkBlock so the
+      // session has its own name, clear goals, and completion state. We only
+      // take this branch when the caller has wired up a naming-modal callback;
+      // otherwise fall through to the legacy timeBlockStart PATCH path.
+      if (mode === 'schedule_tasks' && itemType === 'task' && onRequestNameWorkBlock) {
+        info.event.remove();
+        try {
+          const proposedMinutes = Math.max(
+            15,
+            Math.round((snapEnd.getTime() - snapStart.getTime()) / 60000),
+          );
+          const payload = await onRequestNameWorkBlock({
+            taskId: itemId,
+            taskTitle: title,
+            start: snapStart,
+            end: snapEnd,
+            proposedMinutes,
+          });
+          if (!payload) {
+            await mutateEvents();
+            return;
+          }
+          const res = await createWorkBlock({
+            taskId: itemId,
+            start: payload.start,
+            end: payload.end,
+            mainObjective: payload.mainObjective,
+            subGoals: payload.subGoals,
+          });
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+          await mutateEvents();
+          await onAfterSchedule?.(itemId, itemType, payload.start, payload.end);
+          onRefresh?.();
+        } catch {
+          await mutateEvents();
+          toast.error('Failed to create work block. Please try again.');
+        }
+        return;
+      }
+
       // Remove the FullCalendar ghost immediately and add a placeholder
       // so there's no visual gap while the API call is in flight.
       info.event.remove();
@@ -957,7 +1009,7 @@ export function CalendarSplitView({
           toast.error('Failed to schedule item. Please try again.');
         });
     },
-    [onAfterSchedule, onCreateWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast, snapToNow],
+    [onAfterSchedule, onCreateWorkBlock, onRequestNameWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast, snapToNow],
   );
 
   // Shared handler for event resize and internal drag-move. All event types
