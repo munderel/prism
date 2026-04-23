@@ -16,6 +16,7 @@ import { KpiDashboardHeader } from '@/components/kpis/KpiDashboardHeader';
 import { KpiDashboardSummary } from '@/components/kpis/KpiDashboardSummary';
 import { ProcessKpiRow } from '@/components/kpis/ProcessKpiRow';
 import { KpiProjection } from '@/components/kpis/KpiProjection';
+import { GoalScopedKpiSection } from '@/components/kpis/GoalScopedKpiSection';
 
 // Load chart with SSR disabled
 const KpiSubPeriodChart = dynamic(
@@ -61,6 +62,35 @@ interface AggregationResponse {
     userId: string | null;
     assigneeId: string | null;
   };
+}
+
+interface GoalScopeKpi {
+  id: string;
+  name: string;
+  type: string;
+  unit: string | null;
+  targetValue: number | null;
+  actualValue: number | null;
+  isComplete: boolean;
+  completedAt: string | null;
+  owner: { id: string; name: string | null; email: string; image: string | null } | null;
+}
+
+interface GoalScopeResponse {
+  goal:
+    | null
+    | {
+        id: string;
+        title: string;
+        level: string;
+        status: 'IN_PROGRESS';
+        startDate: string;
+        endDate: string;
+        progressPct: number;
+        stack: { id: string; name: string };
+      };
+  kpis: GoalScopeKpi[];
+  meta: { timeLevel: string; mappedLevel: string | null };
 }
 
 function formatDateRangeLabel(timeLevel: string, start: string, end: string): string {
@@ -121,6 +151,10 @@ export default function KpiDashboardPage() {
 
   const { data, isLoading } = useSWR<AggregationResponse>(
     `/api/kpis/aggregation?${queryParams}`,
+  );
+
+  const { data: goalScopeData } = useSWR<GoalScopeResponse>(
+    `/api/kpis/goal-scope?timeLevel=${timeLevel}`,
   );
 
   const processes = data?.processes ?? [];
@@ -201,6 +235,15 @@ export default function KpiDashboardPage() {
         <>
           {/* Summary stat cards */}
           <KpiDashboardSummary processes={processes} daysElapsed={daysElapsed} totalDays={totalDays} />
+
+          {/* Current in-progress goal's KPIs (from the goal stack) */}
+          {goalScopeData?.meta.mappedLevel && (
+            <GoalScopedKpiSection
+              goal={goalScopeData.goal}
+              kpis={goalScopeData.kpis}
+              mappedLevel={goalScopeData.meta.mappedLevel}
+            />
+          )}
 
           {/* Process KPI rows */}
           {processes.length === 0 ? (
