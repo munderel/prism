@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyAimToken, getBaseUrl } from '@/lib/completion-token';
 import { htmlResponse as html } from '@/lib/html-response';
+import { updateSpecificStreak, maybeIncrementDailyStreakIfDayComplete } from '@/lib/streak-engine';
+import { applyBufferOnCompletion } from '@/lib/derailing-buffer';
+import { recalculateUserAimProgress } from '@/lib/aim-progress';
 
 const htmlResponse = (body: string, status = 200) => html(body, 'Aim Completion', status);
 
@@ -73,6 +76,28 @@ export async function GET(
     where: { id: aimInstanceId },
     data: { status: 'COMPLETED', completedAt: new Date() },
   });
+
+  // Mirror the side-effects the in-app PATCH route fires on a SCHEDULED→COMPLETED
+  // transition (src/app/api/aims/instances/[id]/route.ts:238-240 + progress
+  // recalc). Without these, completing an aim via the calendar email link would
+  // leave the per-aim streak, daily streak, derailing buffer, and userAim
+  // aggregate progress out of sync. Phase progression (points/phaseAtCompletion)
+  // is intentionally skipped here; it can be extracted into a shared helper
+  // later if we want external completions to be fully equivalent.
+  await Promise.allSettled([
+    updateSpecificStreak(userId, `aim_${aim.aimCategoryId}`).catch((err) =>
+      console.warn('[streak] aim streak update failed (external):', err),
+    ),
+    maybeIncrementDailyStreakIfDayComplete(userId).catch((err) =>
+      console.warn('[streak] daily streak update failed (external):', err),
+    ),
+    applyBufferOnCompletion(userId, aim.aimCategoryId).catch((err) =>
+      console.warn('[buffer] completion update failed (external):', err),
+    ),
+    recalculateUserAimProgress(userId, aim.aimCategoryId).catch((err) =>
+      console.warn('[aims] progress recalc failed (external):', err),
+    ),
+  ]);
 
   return htmlResponse(
     `<div class="icon">&#127881;</div>
