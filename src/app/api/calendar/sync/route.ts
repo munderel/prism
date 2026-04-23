@@ -64,11 +64,22 @@ function getOriginalDateKey(event: GoogleEventLike, timezone: string) {
   return getDateKey(new Date(raw), timezone);
 }
 
-function hasTimeDrifted(startA: string, endA: string, startB: string, endB: string) {
-  return (
-    Math.abs(new Date(startA).getTime() - new Date(startB).getTime()) > 60000 ||
-    Math.abs(new Date(endA).getTime() - new Date(endB).getTime()) > 60000
-  );
+// 5-second threshold absorbs Google's millisecond rounding and tiny TZ
+// normalization differences without silently discarding real user moves.
+// The previous 60-second threshold dropped any drag under a minute, which
+// looked like a snap-back to the user.
+const DRIFT_THRESHOLD_MS = 5_000;
+
+function hasTimeDrifted(startA: string, endA: string, startB: string, endB: string, label?: string) {
+  const dStart = Math.abs(new Date(startA).getTime() - new Date(startB).getTime());
+  const dEnd = Math.abs(new Date(endA).getTime() - new Date(endB).getTime());
+  const drifted = dStart > DRIFT_THRESHOLD_MS || dEnd > DRIFT_THRESHOLD_MS;
+  if (!drifted && (dStart > 0 || dEnd > 0)) {
+    console.info(
+      `[calendar] ignoring sub-threshold drift${label ? ` (${label})` : ''}: Δstart=${dStart}ms Δend=${dEnd}ms`,
+    );
+  }
+  return drifted;
 }
 
 function forEachDayInRange(rangeStart: Date, rangeEnd: Date, timezone: string, onDay: (dateKey: string, zonedDate: Date) => void) {
@@ -852,7 +863,7 @@ export async function POST(request: NextRequest) {
     const eventEnd = event ? getEventEndString(event) : null;
     if (!eventStart || !eventEnd || !task.timeBlockStart || !task.timeBlockEnd) continue;
 
-    if (hasTimeDrifted(eventStart, eventEnd, task.timeBlockStart.toISOString(), task.timeBlockEnd.toISOString())) {
+    if (hasTimeDrifted(eventStart, eventEnd, task.timeBlockStart.toISOString(), task.timeBlockEnd.toISOString(), `task ${task.title}`)) {
       await prisma.task.update({
         where: { id: task.id },
         data: { timeBlockStart: new Date(eventStart), timeBlockEnd: new Date(eventEnd), dueDate: new Date(eventStart) },
@@ -879,7 +890,7 @@ export async function POST(request: NextRequest) {
     const eventEnd = event ? getEventEndString(event) : null;
     if (!eventStart || !eventEnd || !aim.timeBlockStart || !aim.timeBlockEnd) continue;
 
-    if (hasTimeDrifted(eventStart, eventEnd, aim.timeBlockStart.toISOString(), aim.timeBlockEnd.toISOString())) {
+    if (hasTimeDrifted(eventStart, eventEnd, aim.timeBlockStart.toISOString(), aim.timeBlockEnd.toISOString(), `aim ${aimTitle}`)) {
       await prisma.aimInstance.update({
         where: { id: aim.id },
         data: { timeBlockStart: new Date(eventStart), timeBlockEnd: new Date(eventEnd) },

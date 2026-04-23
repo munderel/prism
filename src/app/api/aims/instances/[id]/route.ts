@@ -7,7 +7,7 @@ import {
   evaluatePhaseGraduation,
   type AimPhase,
 } from '@/lib/aim-phases';
-import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
+import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo, buildEventTimes } from '@/lib/calendar';
 import { getAimCompletionUrl } from '@/lib/completion-token';
 import { updateSpecificStreak, maybeIncrementDailyStreakIfDayComplete } from '@/lib/streak-engine';
 import { applyBufferOnCompletion } from '@/lib/derailing-buffer';
@@ -150,14 +150,18 @@ export async function PATCH(
     await recalculateUserAimProgress(existing.userId, existing.aimCategoryId);
   }
 
-  // Google Calendar sync — fire-and-forget
-  const calendarFieldsChanged = status !== undefined || timeBlockStart !== undefined || timeBlockEnd !== undefined;
+  // Google Calendar sync — fire-and-forget.
+  // Keeps Google in sync with the current AimInstance state: all-day when no
+  // time block is set, timed otherwise. Handles transitions between the two
+  // formats via a single updateGoogleEvent call (Google patch replaces start/end).
+  const calendarFieldsChanged = status !== undefined
+    || timeBlockStart !== undefined
+    || timeBlockEnd !== undefined
+    || selectedActivity !== undefined;
   if (calendarFieldsChanged) {
     const syncToGcal = async () => {
       const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(existing.userId);
       if (!hasGoogle) return;
-      const newStart = updated.timeBlockStart;
-      const newEnd = updated.timeBlockEnd;
       const title = updated.selectedActivity
         ? `${updated.aimCategory.name}: ${updated.selectedActivity}`
         : updated.aimCategory.name;
@@ -165,19 +169,29 @@ export async function PATCH(
       if ((status === 'COMPLETED' || status === 'SKIPPED') && existing.calendarEventId) {
         await deleteGoogleEvent(existing.userId, existing.calendarEventId, targetCalendarId);
         await prisma.aimInstance.update({ where: { id }, data: { calendarEventId: null } });
-      } else if (existing.calendarEventId && (timeBlockStart !== undefined || timeBlockEnd !== undefined)) {
+        return;
+      }
+      if (status === 'COMPLETED' || status === 'SKIPPED') return;
+
+      const { start, end } = buildEventTimes({
+        scheduledDate: updated.scheduledDate,
+        timeBlockStart: updated.timeBlockStart,
+        timeBlockEnd: updated.timeBlockEnd,
+      });
+
+      if (existing.calendarEventId) {
         await updateGoogleEvent(existing.userId, existing.calendarEventId, {
           summary: title,
-          start: newStart ? newStart.toISOString() : undefined,
-          end: newEnd ? newEnd.toISOString() : undefined,
+          start,
+          end,
         }, targetCalendarId);
-      } else if (!existing.calendarEventId && newStart && newEnd && status !== 'COMPLETED' && status !== 'SKIPPED') {
+      } else {
         const completionUrl = getAimCompletionUrl(id, existing.userId);
         const gcalEvent = await createGoogleEvent(existing.userId, {
           summary: title,
           description: `Mark complete in Prism: ${completionUrl}`,
-          start: newStart.toISOString(),
-          end: newEnd.toISOString(),
+          start,
+          end,
         }, targetCalendarId);
         if (gcalEvent?.id) {
           await prisma.aimInstance.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });

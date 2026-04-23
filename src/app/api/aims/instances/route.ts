@@ -3,7 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, createAimInstanceSchema } from '@/lib/schemas';
-import { createGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
+import { createGoogleEvent, getGoogleSyncInfo, buildEventTimes } from '@/lib/calendar';
+import { getAimCompletionUrl } from '@/lib/completion-token';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -71,25 +72,33 @@ export async function POST(request: NextRequest) {
     include: { aimCategory: true },
   });
 
-  // Sync to Google Calendar — fire-and-forget
-  if (timeBlockStart && timeBlockEnd) {
-    const syncToGcal = async () => {
-      const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
-      if (!hasGoogle) return;
-      const title = selectedActivity
-        ? `${instance.aimCategory.name}: ${selectedActivity}`
-        : instance.aimCategory.name;
-      const gcalEvent = await createGoogleEvent(auth.userId, {
-        summary: title,
-        start: new Date(timeBlockStart).toISOString(),
-        end: new Date(timeBlockEnd).toISOString(),
-      }, targetCalendarId);
-      if (gcalEvent?.id) {
-        await prisma.aimInstance.update({ where: { id: instance.id }, data: { calendarEventId: gcalEvent.id } });
-      }
-    };
-    syncToGcal().catch((err) => console.warn('[aims] Google Calendar sync failed:', err));
-  }
+  // Sync to Google Calendar — fire-and-forget.
+  // Syncs both timed events (when timeBlockStart/End are set) and all-day
+  // events (scheduledDate-only), so AimInstances without a time block still
+  // appear on the user's Google calendar as all-day banners.
+  const syncToGcal = async () => {
+    const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
+    if (!hasGoogle) return;
+    const title = selectedActivity
+      ? `${instance.aimCategory.name}: ${selectedActivity}`
+      : instance.aimCategory.name;
+    const { start, end } = buildEventTimes({
+      scheduledDate: instance.scheduledDate,
+      timeBlockStart,
+      timeBlockEnd,
+    });
+    const completionUrl = getAimCompletionUrl(instance.id, auth.userId);
+    const gcalEvent = await createGoogleEvent(auth.userId, {
+      summary: title,
+      description: `Mark complete in Prism: ${completionUrl}`,
+      start,
+      end,
+    }, targetCalendarId);
+    if (gcalEvent?.id) {
+      await prisma.aimInstance.update({ where: { id: instance.id }, data: { calendarEventId: gcalEvent.id } });
+    }
+  };
+  syncToGcal().catch((err) => console.warn('[aims] Google Calendar sync failed:', err));
 
   return Response.json(instance, { status: 201 });
 }
