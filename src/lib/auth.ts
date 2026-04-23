@@ -290,12 +290,18 @@ export const authOptions: NextAuthOptions = {
 
         // Store Google refresh token (encrypted if key is available, plaintext fallback)
         if (account.refresh_token) {
+          if (!process.env.TOKEN_ENCRYPTION_KEY) {
+            if (process.env.NODE_ENV === 'production') {
+              console.error(
+                '[auth] TOKEN_ENCRYPTION_KEY missing in production — refusing to persist refresh token as plaintext. User will be forced to re-authenticate.',
+              );
+              return;
+            }
+            console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — storing refresh token as plaintext (dev only).');
+          }
           const tokenToStore = process.env.TOKEN_ENCRYPTION_KEY
             ? encryptToken(account.refresh_token)
             : account.refresh_token;
-          if (!process.env.TOKEN_ENCRYPTION_KEY) {
-            console.warn('[auth] TOKEN_ENCRYPTION_KEY not set — storing refresh token as plaintext. Set this key in production.');
-          }
           await prisma.user.update({
             where: { id: user.id },
             data: {

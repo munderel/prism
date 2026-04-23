@@ -1147,6 +1147,9 @@ model WorkBlock {
   actualMinutes    Int? // overrideable; when null, treat as (end - start)
   reviewedAt       DateTime?
   notes            String?
+  calendarEventId  String?
+  syncedAt         DateTime?
+  syncError        String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
