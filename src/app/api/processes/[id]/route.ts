@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
-import { notFoundResponse, forbiddenResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse, pickDefined, canAccessProcess, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateProcessSchema } from '@/lib/schemas';
 import { cleanupCurrentPeriodTasks } from '@/lib/process-task-generator';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
 import { parseLocalDateKey } from '@/lib/google-sync-state';
+import { deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
 
 export async function GET(
   _request: NextRequest,
@@ -34,6 +35,10 @@ export async function GET(
   });
 
   if (!process) return notFoundResponse('Process');
+
+  if (!canAccessProcess(process, auth.userId, auth.session.user.isAdmin)) {
+    return forbiddenResponse();
+  }
 
   return Response.json(process);
 }
@@ -173,6 +178,29 @@ export async function DELETE(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
+
+  const activeTasks = await prisma.task.findMany({
+    where: { processId: id, status: { in: ['TODO', 'IN_PROGRESS'] } },
+    select: { id: true, calendarEventId: true, ownerId: true },
+  });
+
+  const eventsToClear = activeTasks.filter((t) => t.calendarEventId);
+  if (eventsToClear.length > 0) {
+    await Promise.allSettled(
+      eventsToClear.map(async (t) => {
+        try {
+          const { calendarId } = await getGoogleSyncInfo(t.ownerId);
+          await deleteGoogleEvent(t.ownerId, t.calendarEventId!, calendarId);
+        } catch (err) {
+          console.warn('[processes] Google Calendar cleanup failed on delete:', err);
+        }
+      })
+    );
+  }
+
+  await prisma.task.deleteMany({
+    where: { processId: id, status: { in: ['TODO', 'IN_PROGRESS'] } },
+  });
 
   await prisma.process.delete({ where: { id } });
 

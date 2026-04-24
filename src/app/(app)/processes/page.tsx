@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import { m, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import {
@@ -282,6 +282,7 @@ export default function ProcessesPage() {
             setExpandedProcessData(null);
           }
           mutateFunctions();
+          mutate((key: string) => typeof key === 'string' && key.startsWith('/api/tasks'));
         }
         setConfirmState(CONFIRM_INITIAL);
       }

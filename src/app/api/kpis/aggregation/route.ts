@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { KpiTimeLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { processAccessWhere, forbiddenResponse } from '@/lib/api-helpers';
 import {
   getDateRangeForTimeLevel,
   getSubPeriodBoundaries,
@@ -96,11 +97,20 @@ export async function GET(request: NextRequest) {
   const filterProcessId = searchParams.get('processId');
   const filterAssigneeId = searchParams.get('assigneeId');
 
+  // Non-admins cannot peek at other users' KPI entry submissions.
+  const isAdmin = auth.session.user.isAdmin;
+  if (filterUserId && !isAdmin && filterUserId !== auth.userId) {
+    return forbiddenResponse();
+  }
+
   // ── Query ProcessKpis ─────────────────────────────────────────────────────
   const kpis = await prisma.processKpi.findMany({
     where: {
       ...(filterProcessId && { processId: filterProcessId }),
-      ...(filterAssigneeId && { process: { assigneeId: filterAssigneeId } }),
+      process: {
+        ...processAccessWhere(auth.userId, isAdmin),
+        ...(filterAssigneeId && { assigneeId: filterAssigneeId }),
+      },
     },
     include: {
       goals: true,

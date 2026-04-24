@@ -1,16 +1,22 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuthFromRequest, requireAdmin, authError } from '@/lib/auth-guard';
+import { processAccessWhere } from '@/lib/api-helpers';
 import { parseBody, createBusinessFunctionSchema } from '@/lib/schemas';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuthFromRequest(request);
   if ('error' in auth) return authError(auth);
 
+  const isAdmin = auth.session.user.isAdmin;
+  const accessFilter = processAccessWhere(auth.userId, isAdmin);
+
   const functions = await prisma.businessFunction.findMany({
+    where: isAdmin ? undefined : { processes: { some: accessFilter } },
     orderBy: { sortOrder: 'asc' },
     include: {
       processes: {
+        where: accessFilter,
         orderBy: { sortOrder: 'asc' },
         include: {
           assignee: { select: { id: true, name: true, email: true } },

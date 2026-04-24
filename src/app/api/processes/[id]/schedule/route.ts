@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse, canAccessProcess } from '@/lib/api-helpers';
 import { parseBody, scheduleProcessSchema } from '@/lib/schemas';
 import { computeNextDueDate } from '@/lib/process-scheduler';
 import {
@@ -37,6 +37,10 @@ export async function POST(
   const process = await prisma.process.findUnique({ where: { id } });
 
   if (!process) return notFoundResponse('Process');
+
+  if (!canAccessProcess(process, auth.userId, auth.session.user.isAdmin)) {
+    return forbiddenResponse();
+  }
 
   const now = new Date();
   const today = startOfDay(now);
