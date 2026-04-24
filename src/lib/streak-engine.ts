@@ -1,22 +1,7 @@
 import { ProcessCadence } from '@prisma/client';
-import { toZonedTime } from 'date-fns-tz';
 import { prisma } from '@/lib/prisma';
 import { maybePostBeeminder, BeeminderResult } from '@/lib/beeminder';
-
-/**
- * Returns midnight today in the given IANA timezone.
- *
- * INVARIANT: The returned Date has a UTC epoch shifted to represent the
- * user's local time. This means it should ONLY be compared against other
- * dates produced by this function or stored via the same path (lastActiveDate).
- * Comparing against raw `new Date()` or `completedAt` timestamps will give
- * incorrect day-boundary results.
- */
-function startOfUserToday(timezone: string): Date {
-  const zoned = toZonedTime(new Date(), timezone);
-  zoned.setHours(0, 0, 0, 0);
-  return zoned;
-}
+import { dayBoundariesForUser } from '@/lib/user-timezone';
 
 interface StreakUserSettings {
   timezone: string;
@@ -67,7 +52,7 @@ export async function upsertOrUpdateStreak(
   settings?: StreakUserSettings,
 ): Promise<StreakUpdateResult> {
   const { timezone, graceDays } = settings ?? await getStreakUserSettings(userId);
-  const today = startOfUserToday(timezone);
+  const { start: today } = dayBoundariesForUser(new Date(), timezone);
   const effectiveWindow = windowDays + (graceDays ? 1 : 0);
 
   let existing = await prisma.streak.findUnique({
@@ -170,7 +155,7 @@ export async function checkAndBreakMissedStreaks(userId: string): Promise<string
   });
   if (!user) return reasons;
 
-  const today = startOfUserToday(user.timezone);
+  const { start: today } = dayBoundariesForUser(new Date(), user.timezone);
   // When grace is enabled, look back 2 days instead of 1 before breaking.
   const lookbackDays = user.streakGraceDays ? 2 : 1;
   const cutoff = new Date(today);
@@ -250,9 +235,7 @@ export async function maybeIncrementDailyStreakIfDayComplete(
     select: { timezone: true },
   });
   const timezone = user?.timezone ?? 'America/New_York';
-  const dayStart = startOfUserToday(timezone);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
+  const { start: dayStart, end: dayEnd } = dayBoundariesForUser(new Date(), timezone);
 
   const activeDailyAims = await prisma.userAim.findMany({
     where: { userId, isActive: true, aimCategory: { isDaily: true } },

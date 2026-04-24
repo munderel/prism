@@ -28,6 +28,7 @@ import {
   type WorkBlockNameResolved,
 } from '@/components/calendar/WorkBlockObjectiveModal';
 import { fetchTaskLevelClearGoals, patchWorkBlock, deleteWorkBlock } from '@/lib/work-blocks-client';
+import { PRISM_COLORS } from '@/lib/prism-colors';
 
 // Power Down steps — reordered per Prism overhaul spec (2026-03-28)
 // 1. Review Today → 2. [Log Process KPIs (conditional)] → 2/3. Weekly Goals & Tasks → ...
@@ -531,35 +532,49 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const fetchWeeklyGoals = useCallback(async () => {
     setWeeklyGoalsLoading(true);
     try {
-      // Fetch all weekly goals (not just IN_PROGRESS) so NOT_STARTED goals also appear
-      const res = await fetch('/api/goals?level=WEEKLY');
-      if (res.ok) {
-        const goalsRaw = await res.json();
-        const allGoals = Array.isArray(goalsRaw) ? goalsRaw : [];
-        // Exclude completed/abandoned goals
-        const goals = allGoals.filter((g: any) => g.status !== 'COMPLETED' && g.status !== 'ABANDONED');
-        // Filter to goals overlapping the current week (Mon-Sun)
-        const { start: weekStart, end: weekEnd } = getWeekBoundaries();
-        const currentWeekGoals = goals.filter((g: any) => {
-          if (!g.startDate && !g.endDate) return true;
-          const gStart = g.startDate ? g.startDate.slice(0, 10) : '0000-01-01';
-          const gEnd = g.endDate ? g.endDate.slice(0, 10) : '9999-12-31';
-          return gStart <= weekEnd && gEnd >= weekStart;
-        });
-        // Fetch child tasks for each goal
-        const goalsWithTasks = await Promise.all(
-          currentWeekGoals.map(async (g: any) => {
-            try {
-              const taskRes = await fetch(`/api/tasks?goalId=${g.id}`);
-              const tasks = taskRes.ok ? await taskRes.json() : [];
-              return { ...g, tasks };
-            } catch {
-              return { ...g, tasks: [] };
-            }
-          }),
-        );
-        setWeeklyGoals(goalsWithTasks);
-      }
+      // Fetch personal AND company weekly goals in parallel. The /api/goals
+      // endpoint scopes to personal by default; company goals belong to a
+      // separate set of stacks (isCompany=true) that every user in the org
+      // should see during Power Down.
+      const [personalRes, companyRes] = await Promise.all([
+        fetch('/api/goals?level=WEEKLY'),
+        fetch('/api/goals?level=WEEKLY&isCompany=true'),
+      ]);
+      const personal = personalRes.ok ? await personalRes.json() : [];
+      const company = companyRes.ok ? await companyRes.json() : [];
+      const merged = [
+        ...(Array.isArray(personal) ? personal : []),
+        ...(Array.isArray(company) ? company : []),
+      ];
+      const seen = new Set<string>();
+      const dedup = merged.filter((g: any) => {
+        if (seen.has(g.id)) return false;
+        seen.add(g.id);
+        return true;
+      });
+      // Exclude completed/abandoned goals
+      const goals = dedup.filter((g: any) => g.status !== 'COMPLETED' && g.status !== 'ABANDONED');
+      // Filter to goals overlapping the current week (Mon-Sun)
+      const { start: weekStart, end: weekEnd } = getWeekBoundaries();
+      const currentWeekGoals = goals.filter((g: any) => {
+        if (!g.startDate && !g.endDate) return true;
+        const gStart = g.startDate ? g.startDate.slice(0, 10) : '0000-01-01';
+        const gEnd = g.endDate ? g.endDate.slice(0, 10) : '9999-12-31';
+        return gStart <= weekEnd && gEnd >= weekStart;
+      });
+      // Fetch child tasks for each goal
+      const goalsWithTasks = await Promise.all(
+        currentWeekGoals.map(async (g: any) => {
+          try {
+            const taskRes = await fetch(`/api/tasks?goalId=${g.id}`);
+            const tasks = taskRes.ok ? await taskRes.json() : [];
+            return { ...g, tasks };
+          } catch {
+            return { ...g, tasks: [] };
+          }
+        }),
+      );
+      setWeeklyGoals(goalsWithTasks);
     } catch {
       // Non-critical
     } finally {
@@ -1148,115 +1163,154 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
           {/* Step content */}
           <div className="glass-panel p-6">
-            {/* Step 1: Review Today — task completion + AIM instances */}
-            {currentStepKey === 'review_today' && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <p className="text-sm text-[var(--text-secondary)] mb-3">
-                    {completedTasks.length} of {todayTasks.length} tasks completed today.
-                  </p>
-                  {todayTasks.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => toggleTaskStatus(t, fetchTodayTasks)}
-                      className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
-                    >
-                      {t.status === 'DONE' ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-400 flex-shrink-0" />
-                      ) : (
-                        <Circle className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
-                      )}
-                      <span
-                        className={
-                          t.status === 'DONE'
-                            ? 'text-[var(--text-muted)] line-through'
-                            : 'text-[var(--text-primary)] font-medium'
-                        }
-                      >
-                        {t.title}
-                      </span>
-                    </button>
-                  ))}
-                  {todayTasks.length === 0 && (
-                    <p className="text-sm text-[var(--text-secondary)]">No tasks scheduled for today.</p>
+            {/* Step 1: Review Today — task completion (with nested work blocks + clear goals) + AIM instances */}
+            {currentStepKey === 'review_today' && (() => {
+              const todayTaskIds = new Set(todayTasks.map((t) => t.id));
+              const orphanWorkBlocks = todayWorkBlocks.filter((b) => !todayTaskIds.has(b.task.id));
+              return (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-sm text-[var(--text-secondary)] mb-3">
+                      {completedTasks.length} of {todayTasks.length} tasks completed today.
+                    </p>
+                    {todayTasks.map((t) => {
+                      const blocksForTask = todayWorkBlocks.filter((b) => b.task.id === t.id);
+                      return (
+                        <div key={t.id} className="space-y-2">
+                          <button
+                            onClick={() => toggleTaskStatus(t, fetchTodayTasks)}
+                            className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
+                          >
+                            {t.status === 'DONE' ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-400 flex-shrink-0" />
+                            ) : (
+                              <Circle className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
+                            )}
+                            <span
+                              className={
+                                t.status === 'DONE'
+                                  ? 'text-[var(--text-muted)] line-through'
+                                  : 'text-[var(--text-primary)] font-medium'
+                              }
+                            >
+                              {t.title}
+                            </span>
+                          </button>
+                          {blocksForTask.length > 0 && (
+                            <div className="ml-6 space-y-2">
+                              {blocksForTask.map((b) => (
+                                <div key={`cg-${b.id}`} className="rounded-lg bg-[var(--surface-raised)]/40 px-3 py-2">
+                                  <div className="text-xs text-[var(--text-muted)]">
+                                    {new Date(b.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
+                                    {new Date(b.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                  </div>
+                                  <div className="text-xs text-indigo-300 mt-1">Objective: {b.mainObjective}</div>
+                                  {b.clearGoals.length > 0 && (
+                                    <div className="mt-2 space-y-1">
+                                      {b.clearGoals.map((g) => (
+                                        <label key={g.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={g.isComplete}
+                                            onChange={() => toggleBlockClearGoal(g.id, g.isComplete)}
+                                            className="rounded border-[var(--border-color)] text-indigo-500 focus:ring-indigo-500/30 h-3.5 w-3.5"
+                                          />
+                                          <span className={g.isComplete ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}>
+                                            {g.text}
+                                          </span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {todayTasks.length === 0 && (
+                      <p className="text-sm text-[var(--text-secondary)]">No tasks scheduled for today.</p>
+                    )}
+                  </div>
+
+                  {orphanWorkBlocks.length > 0 && (
+                    <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Target className="h-4 w-4 text-indigo-400" />
+                        <p className="text-sm text-[var(--text-secondary)] font-medium">Other work blocks</p>
+                      </div>
+                      {orphanWorkBlocks.map((b) => (
+                        <div key={`orphan-${b.id}`} className="rounded-lg bg-[var(--surface-raised)]/40 px-3 py-2">
+                          <div className="text-xs font-medium text-[var(--text-primary)]">
+                            {b.task.title}
+                            <span className="text-[var(--text-muted)] font-normal ml-2">
+                              {new Date(b.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
+                              {new Date(b.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <div className="text-xs text-indigo-300 mt-1">Objective: {b.mainObjective}</div>
+                          {b.clearGoals.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              {b.clearGoals.map((g) => (
+                                <label key={g.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={g.isComplete}
+                                    onChange={() => toggleBlockClearGoal(g.id, g.isComplete)}
+                                    className="rounded border-[var(--border-color)] text-indigo-500 focus:ring-indigo-500/30 h-3.5 w-3.5"
+                                  />
+                                  <span className={g.isComplete ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}>
+                                    {g.text}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* AIM Instances */}
+                  {aimInstances.length > 0 && (
+                    <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span aria-hidden className="text-base leading-none">{PRISM_COLORS.AIM.emoji}</span>
+                        <p className="text-sm text-[var(--text-secondary)] font-medium">Today&apos;s AIMs</p>
+                      </div>
+                      {aimInstances.map((aim) => (
+                        <button
+                          key={aim.id}
+                          onClick={() => toggleAimInstance(aim)}
+                          className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
+                        >
+                          <span
+                            aria-hidden
+                            className="h-2 w-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: PRISM_COLORS.AIM.color }}
+                          />
+                          {aim.status === 'COMPLETED' ? (
+                            <CheckCircle2 className="h-4 w-4 text-teal-400 flex-shrink-0" />
+                          ) : (
+                            <Circle className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
+                          )}
+                          <span
+                            className={
+                              aim.status === 'COMPLETED'
+                                ? 'text-[var(--text-muted)] line-through'
+                                : 'text-[var(--text-primary)]'
+                            }
+                          >
+                            {aim.title ?? aim.aim?.title ?? 'AIM'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
-
-                {/* Today's Clear Goals — sub-area listing goals from each of today's work blocks */}
-                {todayWorkBlocks.some((b) => b.clearGoals.length > 0 || b.mainObjective) && (
-                  <div className="space-y-3 border-t border-[var(--border-color)] pt-4">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Target className="h-4 w-4 text-indigo-400" />
-                      <p className="text-sm text-[var(--text-secondary)] font-medium">Today&apos;s Clear Goals</p>
-                    </div>
-                    <p className="text-xs text-[var(--text-muted)] -mt-1 mb-2">
-                      Tick the goals you actually hit in each work block today.
-                    </p>
-                    {todayWorkBlocks.map((b) => (
-                      <div key={`cg-${b.id}`} className="rounded-lg bg-[var(--surface-raised)]/40 px-3 py-2">
-                        <div className="text-xs font-medium text-[var(--text-primary)]">
-                          {b.task.title}
-                          <span className="text-[var(--text-muted)] font-normal ml-2">
-                            {new Date(b.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–
-                            {new Date(b.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <div className="text-xs text-indigo-300 mt-1">Objective: {b.mainObjective}</div>
-                        {b.clearGoals.length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            {b.clearGoals.map((g) => (
-                              <label key={g.id} className="flex items-center gap-2 text-xs cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={g.isComplete}
-                                  onChange={() => toggleBlockClearGoal(g.id, g.isComplete)}
-                                  className="rounded border-[var(--border-color)] text-indigo-500 focus:ring-indigo-500/30 h-3.5 w-3.5"
-                                />
-                                <span className={g.isComplete ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}>
-                                  {g.text}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* AIM Instances */}
-                {aimInstances.length > 0 && (
-                  <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Target className="h-4 w-4 text-purple-400" />
-                      <p className="text-sm text-[var(--text-secondary)] font-medium">Today&apos;s AIMs</p>
-                    </div>
-                    {aimInstances.map((aim) => (
-                      <button
-                        key={aim.id}
-                        onClick={() => toggleAimInstance(aim)}
-                        className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
-                      >
-                        {aim.status === 'COMPLETED' ? (
-                          <CheckCircle2 className="h-4 w-4 text-purple-400 flex-shrink-0" />
-                        ) : (
-                          <Circle className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
-                        )}
-                        <span
-                          className={
-                            aim.status === 'COMPLETED'
-                              ? 'text-[var(--text-muted)] line-through'
-                              : 'text-[var(--text-primary)]'
-                          }
-                        >
-                          {aim.title ?? aim.aim?.title ?? 'AIM'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+              );
+            })()}
 
             {/* Review Work Blocks (conditional): per-block completion confirmation */}
             {currentStepKey === 'review_blocks' && (
@@ -1414,6 +1468,11 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     <div className="flex items-center gap-2">
                       <Target className="h-4 w-4 text-indigo-400 flex-shrink-0" />
                       <span className="text-sm text-[var(--text-primary)] font-medium">{goal.title}</span>
+                      {goal.stack?.isCompany && (
+                        <span className="ml-1 rounded-md bg-indigo-500/15 border border-indigo-500/40 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300">
+                          Company
+                        </span>
+                      )}
                     </div>
                     {goal.description && (
                       <p className="text-xs text-[var(--text-muted)] ml-6">{goal.description}</p>

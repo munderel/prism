@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
+import { authorizeProcessAccess } from '@/lib/api-helpers';
 import { parseBody, createProcessStepSchema } from '@/lib/schemas';
 import { cleanupCurrentPeriodTasks } from '@/lib/process-task-generator';
 
@@ -12,6 +13,9 @@ export async function GET(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
+
+  const access = await authorizeProcessAccess(id, auth.userId, auth.session.user.isAdmin);
+  if ('error' in access) return access.error;
 
   const steps = await prisma.processStep.findMany({
     where: { processId: id },

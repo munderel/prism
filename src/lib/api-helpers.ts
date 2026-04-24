@@ -162,7 +162,8 @@ export function hasAccess(resourceOwnerId: string, userId: string, isAdmin: bool
 }
 
 /**
- * Verify the user has access to a process (admin, assignee, or delegate).
+ * Verify the user has access to a process (admin, assignee, or active delegate).
+ * Delegation only counts when `delegateUntil` is in the future.
  * Returns the process on success, or a ready-made error Response.
  */
 export async function authorizeProcessAccess(
@@ -170,19 +171,80 @@ export async function authorizeProcessAccess(
   userId: string,
   isAdmin: boolean
 ): Promise<
-  | { process: { id: string; assigneeId: string | null; delegateId: string | null }; error?: never }
+  | {
+      process: {
+        id: string;
+        assigneeId: string | null;
+        delegateId: string | null;
+        delegateUntil: Date | null;
+      };
+      error?: never;
+    }
   | { process?: never; error: Response }
 > {
   const { prisma } = await import('./prisma');
   const process = await prisma.process.findUnique({
     where: { id: processId },
-    select: { id: true, assigneeId: true, delegateId: true },
+    select: { id: true, assigneeId: true, delegateId: true, delegateUntil: true },
   });
   if (!process) return { error: notFoundResponse('Process') };
-  if (isAdmin || process.assigneeId === userId || process.delegateId === userId) {
+  const hasActiveDelegation =
+    process.delegateId === userId &&
+    process.delegateUntil !== null &&
+    process.delegateUntil >= new Date();
+  if (isAdmin || process.assigneeId === userId || hasActiveDelegation) {
     return { process };
   }
   return { error: forbiddenResponse() };
+}
+
+/**
+ * Pure predicate: can this user access this already-loaded process?
+ * Use after a findUnique when you already have the necessary fields, to
+ * avoid the extra DB round-trip that `authorizeProcessAccess` makes.
+ */
+export function canAccessProcess(
+  process: {
+    assigneeId: string | null;
+    delegateId: string | null;
+    delegateUntil: Date | null;
+  },
+  userId: string,
+  isAdmin: boolean
+): boolean {
+  if (isAdmin) return true;
+  if (process.assigneeId === userId) return true;
+  if (
+    process.delegateId === userId &&
+    process.delegateUntil !== null &&
+    process.delegateUntil >= new Date()
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Prisma `WhereInput` filter for processes the user can access.
+ * Admins receive an empty filter (no restriction). Non-admins are scoped
+ * to processes they're the assignee of, or are an active delegate of
+ * (i.e. `delegateUntil` is in the future).
+ *
+ * Use in list/aggregation queries to scope `Process` rows. For nested
+ * queries (e.g. filtering ProcessKpi by its parent process), nest under
+ * the relation name: `where: { process: processAccessWhere(uid, isAdmin) }`.
+ */
+export function processAccessWhere(
+  userId: string,
+  isAdmin: boolean
+): Prisma.ProcessWhereInput {
+  if (isAdmin) return {};
+  return {
+    OR: [
+      { assigneeId: userId },
+      { delegateId: userId, delegateUntil: { gte: new Date() } },
+    ],
+  };
 }
 
 /**

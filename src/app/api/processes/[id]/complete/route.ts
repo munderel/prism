@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
-import { notFoundResponse, NO_STORE } from '@/lib/api-helpers';
+import { notFoundResponse, forbiddenResponse, canAccessProcess, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, completeProcessSchema } from '@/lib/schemas';
 import { updateSpecificStreak } from '@/lib/streak-engine';
 
@@ -31,20 +31,8 @@ export async function POST(
 
   if (!process) return notFoundResponse('Process');
 
-  // Verify user is assignee or delegate
-  const isAdmin = auth.session.user.isAdmin;
-  const today = new Date();
-  const hasDelegation =
-    process.delegateId &&
-    process.delegateUntil &&
-    process.delegateUntil >= today;
-  const isAuthorized =
-    isAdmin ||
-    process.assigneeId === auth.userId ||
-    (hasDelegation && process.delegateId === auth.userId);
-
-  if (!isAuthorized) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  if (!canAccessProcess(process, auth.userId, auth.session.user.isAdmin)) {
+    return forbiddenResponse();
   }
 
   // Normalize to start of day for idempotency check
