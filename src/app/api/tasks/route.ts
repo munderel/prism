@@ -25,6 +25,13 @@ export async function GET(request: NextRequest) {
 
   const scope = searchParams.get('scope');
   const includeUnscheduled = searchParams.get('includeUnscheduled') === 'true';
+  // Hide tasks whose startTime is still in the future. Auto-disabled when fetching
+  // a parent's children (parentId set) — those should always be visible inside the parent view.
+  const parentId = searchParams.get('parentId');
+  const includeUpcoming = searchParams.get('includeUpcoming') === 'true' || !!parentId;
+  const upcomingFilter: Record<string, unknown> = includeUpcoming
+    ? {}
+    : { OR: [{ startTime: null }, { startTime: { lte: new Date() } }] };
 
   // Build access filter (who can see what)
   const accessFilter: Record<string, unknown> = {};
@@ -64,6 +71,7 @@ export async function GET(request: NextRequest) {
           { parentId: null },
           ...(status ? [{ status }] : []),
           ...(taskType ? [{ taskType }] : []),
+          ...(Object.keys(upcomingFilter).length > 0 ? [upcomingFilter] : []),
         ],
       },
       include: {
@@ -110,7 +118,6 @@ export async function GET(request: NextRequest) {
   if (processIdParam) extraFilter.processId = processIdParam;
 
   // Subtask filtering: by default exclude subtasks from top-level lists
-  const parentId = searchParams.get('parentId');
   if (parentId) {
     // Fetch children of a specific task
     extraFilter.parentId = parentId;
@@ -120,7 +127,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Combine all filters with AND so OR clauses don't overwrite each other
-  const conditions = [accessFilter, dateFilter, extraFilter].filter(
+  const conditions = [accessFilter, dateFilter, extraFilter, upcomingFilter].filter(
     (f) => Object.keys(f).length > 0
   );
   const where = conditions.length > 1 ? { AND: conditions } : conditions[0] || {};
@@ -156,7 +163,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, createTaskSchema);
   if ('error' in parsed) return parsed.error;
-  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay, parentId, assigneeId } = parsed.data;
+  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, startTime, deliverable, estimatedMinutes, preferredTimeStart, preferredTimeEnd, isWinTheDay, parentId, assigneeId } = parsed.data;
 
   // IMPROVE tasks require a goalId
   if (taskType === 'IMPROVE' && !goalId) {
@@ -224,6 +231,7 @@ export async function POST(request: NextRequest) {
       recurrenceRule: recurrenceRule ?? null,
       timeBlockStart: timeBlockStart ? new Date(timeBlockStart) : null,
       timeBlockEnd: timeBlockEnd ? new Date(timeBlockEnd) : null,
+      startTime: startTime ? new Date(startTime) : null,
       deliverable: deliverable ?? null,
       estimatedMinutes: estimatedMinutes ?? undefined,
       preferredTimeStart: preferredTimeStart ?? null,

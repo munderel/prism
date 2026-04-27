@@ -1,18 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Target, TrendingUp, ChevronRight, Building2, Lock } from 'lucide-react';
+import { Target, TrendingUp, ChevronRight, Lock } from 'lucide-react';
 import { formatGoalDateRange } from '@/lib/goal-constants';
 import { getStatusBadgeClass } from '../shared/review-types';
-
-interface CompanyGoalItem {
-  id: string;
-  title: string;
-  level: string;
-  status: string;
-  progressPct: number;
-  isAssignedToMe: boolean;
-}
 
 interface GoalParent {
   id: string;
@@ -30,6 +21,8 @@ interface Goal {
   startDate: string | null;
   endDate: string | null;
   parent?: GoalParent | null;
+  isCompany?: boolean;
+  isAssignedToMe?: boolean;
 }
 
 interface HierarchyNode {
@@ -44,6 +37,8 @@ interface StepCurrentGoalsProps {
   isTeamReview?: boolean;
 }
 
+type AccentColor = 'indigo' | 'emerald';
+
 /**
  * Get Monday (start of week) for a given date.
  */
@@ -57,17 +52,9 @@ function getMonday(date: Date): Date {
 }
 
 /**
- * Fetch all goals from either company endpoint or personal stacks.
- * Returns null if the initial fetch fails.
+ * Fetch all personal goals across the user's owned + assigned stacks.
  */
-async function fetchAllGoals(isTeamReview?: boolean): Promise<Goal[] | null> {
-  if (isTeamReview) {
-    const res = await fetch('/api/goals?isCompany=true');
-    if (!res.ok) return null;
-    const raw = await res.json();
-    return Array.isArray(raw) ? raw : [];
-  }
-
+async function fetchPersonalGoals(): Promise<Goal[] | null> {
   const stacksRes = await fetch('/api/stacks');
   if (!stacksRes.ok) return null;
   const stacks = await stacksRes.json();
@@ -81,6 +68,21 @@ async function fetchAllGoals(isTeamReview?: boolean): Promise<Goal[] | null> {
     allGoals.push(...goals);
   }
   return allGoals;
+}
+
+/**
+ * Fetch all company goals (read-only context for the user).
+ */
+async function fetchCompanyGoals(): Promise<Goal[] | null> {
+  const res = await fetch('/api/goals?isCompany=true');
+  if (!res.ok) return null;
+  const raw = await res.json();
+  if (!Array.isArray(raw)) return null;
+  return raw.map((g) => ({
+    ...g,
+    isCompany: true,
+    isAssignedToMe: Boolean(g.isAssignedToMe),
+  }));
 }
 
 /**
@@ -171,182 +173,88 @@ function getHierarchyPath(goal: Goal): { hhg: string; yearly: string } {
   };
 }
 
+/**
+ * Filter goals to this week (WEEKLY) ∪ this month (MONTHLY), then enrich
+ * each with its parent chain in parallel and bucket into hierarchy nodes.
+ */
+async function filterAndBuildHierarchy(
+  goals: Goal[],
+  weekStart: Date,
+  weekEnd: Date,
+  monthStart: Date,
+  monthEnd: Date,
+): Promise<HierarchyNode[]> {
+  const weeklyCandidates = goals.filter(
+    (g) => g.level === 'WEEKLY' && rangesOverlap(g.startDate, g.endDate, weekStart, weekEnd),
+  );
+  const monthlyCandidates = goals.filter(
+    (g) => g.level === 'MONTHLY' && rangesOverlap(g.startDate, g.endDate, monthStart, monthEnd),
+  );
+
+  const [filteredWeekly, filteredMonthly] = await Promise.all([
+    Promise.all(weeklyCandidates.map(fetchGoalWithParent)),
+    Promise.all(monthlyCandidates.map(fetchGoalWithParent)),
+  ]);
+
+  return buildHierarchy([...filteredMonthly, ...filteredWeekly]);
+}
+
 export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurrentGoalsProps) {
-  const [hierarchy, setHierarchy] = useState<HierarchyNode[]>([]);
-  const [companyGoals, setCompanyGoals] = useState<CompanyGoalItem[]>([]);
+  const [personalHierarchy, setPersonalHierarchy] = useState<HierarchyNode[]>([]);
+  const [companyHierarchy, setCompanyHierarchy] = useState<HierarchyNode[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchFilteredGoals();
-    // Pull company goals independently — they're read-only context for the user
-    // and don't depend on the personal goal filtering logic above.
-    void fetchCompanyGoals();
-  }, []);
+    let cancelled = false;
+    (async () => {
+      try {
+        const now = new Date();
+        const weekStart = getMonday(now);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
 
-  const fetchCompanyGoals = async () => {
-    try {
-      // `withAssignments` is no-op on the server today — assignees are always
-      // included. Dropped from the query string to avoid misleading readers.
-      const res = await fetch('/api/goals?isCompany=true');
-      if (!res.ok) return;
-      const raw = await res.json();
-      if (!Array.isArray(raw)) return;
-      setCompanyGoals(
-        raw.map((g) => ({
-          id: g.id,
-          title: g.title,
-          level: g.level,
-          status: g.status,
-          progressPct: g.progressPct ?? 0,
-          isAssignedToMe: Boolean(g.isAssignedToMe),
-        })),
-      );
-    } catch (err) {
-      console.warn('[current goals] company goal fetch failed:', err);
-    }
-  };
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-  const fetchFilteredGoals = async () => {
-    try {
-      // Gather all goals from either company or personal stacks
-      const allGoals = await fetchAllGoals(isTeamReview);
-      if (!allGoals) { setLoading(false); return; }
+        const [personal, company] = await Promise.all([
+          fetchPersonalGoals(),
+          isTeamReview ? Promise.resolve(null) : fetchCompanyGoals(),
+        ]);
+        if (cancelled) return;
 
-      const now = new Date();
-      const weekStart = getMonday(now);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekEnd.getDate() + 6);
-      weekEnd.setHours(23, 59, 59, 999);
-
-      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-      // Collect candidates first, then resolve their parent-chains in parallel.
-      // The prior sequential `await fetchGoalWithParent` inside a for-loop made
-      // the wizard N+1-slow for users with more than a handful of goals.
-      const weeklyCandidates = allGoals.filter(
-        (g) => g.level === 'WEEKLY' && rangesOverlap(g.startDate, g.endDate, weekStart, weekEnd),
-      );
-      const monthlyCandidates = allGoals.filter(
-        (g) => g.level === 'MONTHLY' && rangesOverlap(g.startDate, g.endDate, currentMonthStart, currentMonthEnd),
-      );
-
-      const [filteredWeekly, filteredMonthly] = await Promise.all([
-        Promise.all(weeklyCandidates.map(fetchGoalWithParent)),
-        Promise.all(monthlyCandidates.map(fetchGoalWithParent)),
-      ]);
-
-      setHierarchy(buildHierarchy([...filteredMonthly, ...filteredWeekly]));
-    } catch (err) {
-      console.error('Failed to fetch current goals:', err);
-    }
-    setLoading(false);
-  };
+        if (personal) {
+          setPersonalHierarchy(
+            await filterAndBuildHierarchy(personal, weekStart, weekEnd, monthStart, monthEnd),
+          );
+        }
+        if (company) {
+          setCompanyHierarchy(
+            await filterAndBuildHierarchy(company, weekStart, weekEnd, monthStart, monthEnd),
+          );
+        }
+      } catch (err) {
+        console.error('Failed to fetch current goals:', err);
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [isTeamReview]);
 
   if (loading) {
     return <div className="text-[var(--text-muted)] text-sm py-4">Loading goals...</div>;
   }
 
-  const renderGoalCard = (goal: Goal, indent: number) => (
-    <div
-      key={goal.id}
-      className="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3"
-      style={{ marginLeft: `${indent * 16}px` }}
-    >
-      <Target className="h-5 w-5 text-blue-400 flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-[var(--text-primary)] truncate">{goal.title}</p>
-        <div className="flex items-center gap-2 mt-1">
-          <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusBadgeClass(goal.status)}`}>
-            {goal.status.replace('_', ' ')}
-          </span>
-          <span className="text-xs text-[var(--text-muted)]">{goal.level}</span>
-          {goal.level === 'MONTHLY' && goal.startDate && (
-            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400">
-              {new Date(goal.startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}
-            </span>
-          )}
-          {goal.level === 'WEEKLY' && goal.startDate && goal.endDate && (
-            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400">
-              {formatGoalDateRange('WEEKLY', goal.startDate, goal.endDate)}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <div className="w-20 h-2 bg-[var(--surface-raised)] rounded-full overflow-hidden">
-          <div
-            className="h-full bg-indigo-500 rounded-full transition-all"
-            style={{ width: `${Math.min(100, goal.progressPct)}%` }}
-          />
-        </div>
-        <span className="text-xs text-[var(--text-muted)] w-8 text-right">
-          {Math.round(goal.progressPct)}%
-        </span>
-      </div>
-    </div>
-  );
-
-  const hasGoals = hierarchy.length > 0;
+  const hasAny = personalHierarchy.length > 0 || companyHierarchy.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center gap-2 text-[var(--text-secondary)]">
         <TrendingUp className="h-4 w-4" />
         <p className="text-sm">Here are your current goals. Review them before continuing.</p>
       </div>
 
-      {companyGoals.length > 0 && !isTeamReview && (
-        <div className="space-y-2 rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3">
-          <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-indigo-400" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400">
-              Company Goals
-            </h3>
-          </div>
-          <p className="text-xs text-[var(--text-muted)]">
-            Read-only context. Goals assigned to you are highlighted.
-          </p>
-          <div className="space-y-2">
-            {companyGoals.map((g) => (
-              <div
-                key={g.id}
-                className="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-2"
-              >
-                <Lock className="h-4 w-4 flex-shrink-0 text-[var(--text-muted)]" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                      {g.title}
-                    </p>
-                    <span className="flex-none rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-400">
-                      Company
-                    </span>
-                    {g.isAssignedToMe && (
-                      <span className="flex-none rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
-                        Assigned to you
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-shrink-0 items-center gap-2">
-                  <div className="h-2 w-20 overflow-hidden rounded-full bg-[var(--surface-raised)]">
-                    <div
-                      className="h-full rounded-full bg-indigo-500 transition-all"
-                      style={{ width: `${Math.min(100, g.progressPct)}%` }}
-                    />
-                  </div>
-                  <span className="w-8 text-right text-xs text-[var(--text-muted)]">
-                    {Math.round(g.progressPct)}%
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!hasGoals && (
+      {!hasAny && (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
           <Target className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-2" />
           <p className="text-sm text-[var(--text-muted)]">No active goals found for the current period.</p>
@@ -356,15 +264,50 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
         </div>
       )}
 
+      {companyHierarchy.length > 0 && (
+        <HierarchySection label="COMPANY" accent="indigo" hierarchy={companyHierarchy} />
+      )}
+
+      {personalHierarchy.length > 0 && (
+        <HierarchySection label="PERSONAL" accent="emerald" hierarchy={personalHierarchy} />
+      )}
+    </div>
+  );
+}
+
+interface HierarchySectionProps {
+  label: 'COMPANY' | 'PERSONAL';
+  accent: AccentColor;
+  hierarchy: HierarchyNode[];
+}
+
+function HierarchySection({ label, accent, hierarchy }: HierarchySectionProps) {
+  // Static class strings so Tailwind's JIT can detect them.
+  const accentText = accent === 'indigo' ? 'text-indigo-400' : 'text-emerald-400';
+  const gradientFrom =
+    accent === 'indigo' ? 'from-indigo-500/40' : 'from-emerald-500/40';
+  const gradientTo =
+    accent === 'indigo' ? 'to-indigo-500/40' : 'to-emerald-500/40';
+
+  return (
+    <section className="space-y-5">
+      <div className="flex items-center gap-3">
+        <div className={`h-px flex-1 bg-gradient-to-r ${gradientFrom} to-transparent`} />
+        <h2 className={`text-sm font-bold uppercase tracking-[0.2em] ${accentText} whitespace-nowrap`}>
+          {label}
+        </h2>
+        <div className={`h-px flex-1 bg-gradient-to-l ${gradientTo} to-transparent`} />
+      </div>
+
       {hierarchy.map((node, idx) => (
-        <div key={idx} className="space-y-3">
+        <div key={`${label}-${idx}`} className="space-y-3">
           {/* HHG Header */}
           <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-gradient-to-r from-indigo-500/40 to-transparent" />
-            <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider whitespace-nowrap">
+            <div className="h-px flex-1 bg-gradient-to-r from-[var(--border-color)] to-transparent" />
+            <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider whitespace-nowrap">
               {node.hhgTitle}
             </h3>
-            <div className="h-px flex-1 bg-gradient-to-l from-indigo-500/40 to-transparent" />
+            <div className="h-px flex-1 bg-gradient-to-l from-[var(--border-color)] to-transparent" />
           </div>
 
           {/* Yearly Goal subheader */}
@@ -379,11 +322,11 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
           {node.monthlyGoals.length > 0 && (
             <div className="space-y-2 ml-4">
               <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide font-medium">
-                Monthly Goals{node.monthlyGoals.length > 0 && node.monthlyGoals[0].startDate && (
+                Monthly Goals{node.monthlyGoals[0].startDate && (
                   <> — {new Date(node.monthlyGoals[0].startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}</>
                 )}
               </span>
-              {node.monthlyGoals.map((g) => renderGoalCard(g, 0))}
+              {node.monthlyGoals.map((g) => <GoalRow key={g.id} goal={g} />)}
             </div>
           )}
 
@@ -393,11 +336,61 @@ export function StepCurrentGoals({ reviewId: _reviewId, isTeamReview }: StepCurr
               <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide font-medium">
                 Current Weekly Goals
               </span>
-              {node.weeklyGoals.map((g) => renderGoalCard(g, 0))}
+              {node.weeklyGoals.map((g) => <GoalRow key={g.id} goal={g} />)}
             </div>
           )}
         </div>
       ))}
+    </section>
+  );
+}
+
+function GoalRow({ goal }: { goal: Goal }) {
+  const Icon = goal.isCompany ? Lock : Target;
+  const iconClass = goal.isCompany
+    ? 'h-4 w-4 flex-shrink-0 text-[var(--text-muted)]'
+    : 'h-5 w-5 flex-shrink-0 text-blue-400';
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3">
+      <Icon className={`${iconClass} mt-0.5`} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-[var(--text-primary)] line-clamp-2 break-words">
+          {goal.title}
+        </p>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusBadgeClass(goal.status)}`}>
+            {goal.status.replace('_', ' ')}
+          </span>
+          <span className="text-xs text-[var(--text-muted)]">{goal.level}</span>
+          {goal.level === 'MONTHLY' && goal.startDate && (
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400">
+              {new Date(goal.startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}
+            </span>
+          )}
+          {goal.level === 'WEEKLY' && goal.startDate && goal.endDate && (
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400">
+              {formatGoalDateRange('WEEKLY', goal.startDate, goal.endDate)}
+            </span>
+          )}
+          {goal.isCompany && goal.isAssignedToMe && (
+            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+              Assigned to you
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+        <div className="w-20 h-2 bg-[var(--surface-raised)] rounded-full overflow-hidden">
+          <div
+            className="h-full bg-indigo-500 rounded-full transition-all"
+            style={{ width: `${Math.min(100, goal.progressPct)}%` }}
+          />
+        </div>
+        <span className="text-xs text-[var(--text-muted)] w-8 text-right">
+          {Math.round(goal.progressPct)}%
+        </span>
+      </div>
     </div>
   );
 }

@@ -8,8 +8,9 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import type { EventClickArg, DateSelectArg, DatesSetArg, EventDropArg } from '@fullcalendar/core';
 import type { EventReceiveArg, EventResizeDoneArg } from '@fullcalendar/interaction';
+import type { WorkBlockStatus } from '@prisma/client';
 import { type ProposedSlot } from '@/lib/scheduling-engine';
-import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
+import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2, RotateCcw } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
 import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload, type TaskLevelClearGoal } from './WorkBlockObjectiveModal';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
@@ -37,6 +38,9 @@ interface SelectedEventPopover {
   taskType?: string;
   priority?: string;
   goalTitle?: string;
+  // Work-block-specific (set when eventId starts with 'workblock-')
+  workBlockId?: string;
+  workBlockCompletionStatus?: WorkBlockStatus;
   // Review/powerdown/meeting/process/google
   link?: string;
   description?: string;
@@ -172,7 +176,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     refreshEvents();
   }, [navigateTo, refreshEvents]);
 
-  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown', 'processes']));
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['tasks', 'reviews', 'meetings', 'aims', 'google', 'powerdown', 'processes', 'food']));
   const [ghostEvents, setGhostEvents] = useState<ProposedSlot[]>([]);
   const [showGhosts, setShowGhosts] = useState(false);
 
@@ -267,6 +271,32 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const handleCompleteTask = useCallback(
     (taskId: string) => handleComplete(`/api/tasks/${taskId}`, 'DONE', 'Task'),
     [handleComplete],
+  );
+
+  const handleToggleWorkBlockComplete = useCallback(
+    async (workBlockId: string, currentStatus: string | undefined) => {
+      const next = currentStatus === 'COMPLETED' ? 'PENDING' : 'COMPLETED';
+      setCompletingEvent(true);
+      try {
+        const res = await fetch(`/api/work-blocks/${workBlockId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completionStatus: next }),
+        });
+        if (res.ok) {
+          toast.success(next === 'COMPLETED' ? 'Block completed' : 'Block reopened');
+          setSelectedEventPopover(null);
+          refreshEvents();
+        } else {
+          toast.error('Failed to update block');
+        }
+      } catch {
+        toast.error('Failed to update block');
+      } finally {
+        setCompletingEvent(false);
+      }
+    },
+    [toast, refreshEvents],
   );
 
   // --- Unschedule handler (clear timeBlockStart/End) ---
@@ -460,6 +490,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
 
     // If this is a task or workblock event, show popover with Complete action
     if (props.taskId || info.event.id?.startsWith('task-') || info.event.id?.startsWith('workblock-')) {
+      const isWorkBlock = info.event.id?.startsWith('workblock-') ?? false;
       setSelectedEventPopover({
         eventId: info.event.id,
         title: info.event.title,
@@ -471,6 +502,14 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         priority: props.priority,
         goalTitle: props.goalTitle,
         description: props.description,
+        workBlockId: isWorkBlock
+          ? (typeof props.workBlockId === 'string'
+              ? props.workBlockId
+              : info.event.id.replace('workblock-', ''))
+          : undefined,
+        workBlockCompletionStatus: isWorkBlock && typeof props.completionStatus === 'string'
+          ? (props.completionStatus as WorkBlockStatus)
+          : undefined,
       });
       return;
     }
@@ -1222,21 +1261,51 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                   <Pencil className="h-3.5 w-3.5" />
                   Edit
                 </button>
-                {selectedEventPopover.status !== 'DONE' && (
-                  <button
-                    onClick={() => selectedEventPopover.taskId && handleCompleteTask(selectedEventPopover.taskId)}
-                    disabled={completingEvent}
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                  >
-                    {completingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                    Complete
-                  </button>
-                )}
-                {selectedEventPopover.status === 'DONE' && (
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Done
-                  </div>
+                {selectedEventPopover.workBlockId ? (
+                  selectedEventPopover.workBlockCompletionStatus === 'COMPLETED' ? (
+                    <button
+                      onClick={() => selectedEventPopover.workBlockId && handleToggleWorkBlockComplete(
+                        selectedEventPopover.workBlockId,
+                        selectedEventPopover.workBlockCompletionStatus,
+                      )}
+                      disabled={completingEvent}
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] disabled:opacity-50 transition-colors"
+                    >
+                      {completingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                      Mark incomplete
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => selectedEventPopover.workBlockId && handleToggleWorkBlockComplete(
+                        selectedEventPopover.workBlockId,
+                        selectedEventPopover.workBlockCompletionStatus,
+                      )}
+                      disabled={completingEvent}
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                    >
+                      {completingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                      Complete block
+                    </button>
+                  )
+                ) : (
+                  <>
+                    {selectedEventPopover.status !== 'DONE' && (
+                      <button
+                        onClick={() => selectedEventPopover.taskId && handleCompleteTask(selectedEventPopover.taskId)}
+                        disabled={completingEvent}
+                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                      >
+                        {completingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        Complete
+                      </button>
+                    )}
+                    {selectedEventPopover.status === 'DONE' && (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Done
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

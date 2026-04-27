@@ -290,6 +290,11 @@ export function StreaksDashboard() {
     mutate('/api/streaks');
   };
 
+  const restoreFromHistory = async () => {
+    await fetch('/api/streaks/restore', { method: 'POST' });
+    mutate('/api/streaks');
+  };
+
   const resetLeaderboard = async () => {
     setResetConfirm(null);
     await fetch('/api/leaderboard/reset', { method: 'POST' });
@@ -309,24 +314,47 @@ export function StreaksDashboard() {
         animate={{ opacity: 1, y: 0 }}
       >
         <m.div
-          animate={daily && daily.currentCount > 0 ? { rotate: [-5, 5, -5] } : {}}
+          animate={daily && daily.currentCount > 0 && daily.isActive ? {
+            rotate: [-5, 5, -5],
+            boxShadow: daily.currentCount >= 100
+              ? ['0 0 12px rgba(251,191,36,0.45)', '0 0 28px rgba(251,191,36,0.75)', '0 0 12px rgba(251,191,36,0.45)']
+              : daily.currentCount >= 30
+              ? ['0 0 8px rgba(251,191,36,0.35)', '0 0 22px rgba(251,191,36,0.6)', '0 0 8px rgba(251,191,36,0.35)']
+              : daily.currentCount >= 7
+              ? ['0 0 6px rgba(250,204,21,0.3)', '0 0 16px rgba(250,204,21,0.5)', '0 0 6px rgba(250,204,21,0.3)']
+              : ['0 0 4px rgba(250,204,21,0.2)', '0 0 10px rgba(250,204,21,0.35)', '0 0 4px rgba(250,204,21,0.2)'],
+          } : {}}
           transition={{ repeat: Infinity, duration: 2.5, repeatType: 'mirror' }}
           className="flex h-16 w-16 items-center justify-center rounded-2xl bg-yellow-400/15"
         >
-          <Flame className={`h-9 w-9 ${daily && daily.currentCount > 0 ? 'text-yellow-400' : 'text-[var(--text-muted)]'}`} />
+          <Flame className={`h-9 w-9 ${daily && daily.currentCount > 0 && daily.isActive ? 'text-yellow-400' : 'text-[var(--text-muted)]'}`} />
         </m.div>
-        <div>
+        <div className="flex-1">
           <div className="flex items-baseline gap-2">
             <span className="text-4xl font-bold text-[var(--text-primary)]">
               {daily?.currentCount ?? 0}
             </span>
             <span className="text-sm text-[var(--text-muted)]">day streak</span>
+            {daily && !daily.isActive && (
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-xs font-medium">
+                Paused
+              </span>
+            )}
           </div>
           <div className="mt-1 text-xs text-[var(--text-muted)]">
             Best: {daily?.bestCount ?? 0} days
             {daily?.lastActiveDate && <> &middot; Last active: {formatDate(daily.lastActiveDate)}</>}
           </div>
         </div>
+        {(!daily || daily.currentCount === 0 || !daily.isActive) && (
+          <button
+            onClick={restoreFromHistory}
+            className="rounded-lg border border-yellow-600/30 bg-yellow-600/10 px-3 py-2 text-xs font-medium text-yellow-400 hover:bg-yellow-600/20 transition-colors"
+            title="Recompute your streak from completed Power Down sessions"
+          >
+            Restore from PowerDown history
+          </button>
+        )}
       </m.div>
 
       {/* Category Overview Cards */}

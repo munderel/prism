@@ -85,6 +85,7 @@ export async function PATCH(
   if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
   if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
   if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
+  if (body.startTime !== undefined) data.startTime = body.startTime ? new Date(body.startTime) : null;
 
   if (isWinTheDay === true && task.dueDate) {
     await unflagOtherWinTheDay(task.ownerId, task.dueDate, id);

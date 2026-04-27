@@ -202,6 +202,14 @@ describe('updateDailyStreak', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  it('returns { paused: true } when the daily row is paused', async () => {
+    mockFindUnique.mockResolvedValue(makeStreak({
+      streakType: 'daily', isActive: false, lastActiveDate: dayStart(-1),
+    }));
+    await expect(updateDailyStreak('u1', 'powerdown')).resolves.toEqual({ paused: true });
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   // Regression: late-evening NY powerdown (real UTC 00:30 Apr 24 = NY 20:30 Apr 23)
   // must tick the daily streak to 1 and store lastActiveDate as the REAL UTC
   // instant of NY midnight — not the fake-UTC value the old code produced.

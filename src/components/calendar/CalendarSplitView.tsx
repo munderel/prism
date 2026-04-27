@@ -418,6 +418,7 @@ export function CalendarSplitView({
   const calendarRef = useRef<FullCalendar>(null);
   const pendingWorkBlocks = useRef<any[]>([]);
   const pendingScheduledItems = useRef<any[]>([]);
+  const pendingFoodBlocks = useRef<any[]>([]);
   const popoverRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme !== 'light';
@@ -487,9 +488,18 @@ export function CalendarSplitView({
       );
     });
 
+    const stillPendingFood = pendingFoodBlocks.current.filter((fb) => {
+      return !serverEvents.some((evt: CalendarEventData) =>
+        evt.source === 'food' &&
+        Math.abs(new Date(evt.start).getTime() - new Date(fb.start).getTime()) < 60000 &&
+        Math.abs(new Date(evt.end).getTime() - new Date(fb.end).getTime()) < 60000
+      );
+    });
+
     pendingScheduledItems.current = stillPendingScheduled;
     pendingWorkBlocks.current = stillPending;
-    return [...serverEvents, ...stillPendingScheduled, ...stillPending];
+    pendingFoodBlocks.current = stillPendingFood;
+    return [...serverEvents, ...stillPendingScheduled, ...stillPending, ...stillPendingFood];
   }, [calendarEvents]);
 
   // Initialize FullCalendar Draggable on the left panel
@@ -861,9 +871,25 @@ export function CalendarSplitView({
       ({ start, end } = snapToNow(start, end));
       const title = info.event.title;
 
-      // Food block template: create a FoodBlock row (separate data plane)
+      // Food block template: create a FoodBlock row (separate data plane).
+      // Optimistic placeholder mirrors the pendingWorkBlocks pattern so the
+      // meal block stays visible across the POST round-trip instead of
+      // flickering away between info.event.remove() and the SWR refetch.
       if (itemType === 'food_block_template') {
+        const placeholder = {
+          id: `food-pending-${Date.now()}`,
+          title: `🍽️ ${title || 'Meal'}`,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          allDay: false,
+          source: 'food',
+          itemType: 'food',
+        };
+        pendingFoodBlocks.current = [...pendingFoodBlocks.current, placeholder];
         info.event.remove();
+        // Force a re-render so displayEvents includes the placeholder.
+        mutateEvents((c: unknown) => c, { revalidate: false });
+
         try {
           const res = await fetch('/api/food-blocks', {
             method: 'POST',
@@ -878,6 +904,10 @@ export function CalendarSplitView({
           await mutateEvents();
           onRefresh?.();
         } catch {
+          pendingFoodBlocks.current = pendingFoodBlocks.current.filter(
+            (p) => p.id !== placeholder.id,
+          );
+          mutateEvents();
           toast.error('Failed to create food block.');
         }
         return;
