@@ -25,6 +25,30 @@ export type GoogleErrorCode =
   | 'auth'
   | 'unknown';
 
+/**
+ * Prism tags every Google Calendar event it creates with
+ * `extendedProperties.private.prismManaged = '1'` plus a `prismType` describing
+ * which Prism record the event represents. The tag lets us reliably enumerate
+ * "events Prism owns" for orphan cleanup during force resync without relying
+ * on fragile title matching.
+ */
+export type PrismEventType =
+  | 'task'
+  | 'aim'
+  | 'review'
+  | 'powerdown'
+  | 'process'
+  | 'meeting'
+  | 'workblock'
+  | 'unknown';
+
+/**
+ * Filter value passed to `events.list({ privateExtendedProperty: ... })` to
+ * fetch only Prism-managed events. Exported so tests and the orphan sweep
+ * stay in lockstep with `createGoogleEvent`'s tag.
+ */
+export const PRISM_MANAGED_EXT_KEY = 'prismManaged=1' as const;
+
 export interface GoogleErrorInfo {
   code: GoogleErrorCode;
   retryable: boolean;
@@ -288,6 +312,49 @@ export async function deleteGoogleEvent(userId: string, eventId: string, calenda
   }
 }
 
+export type SafeDeleteResult =
+  | { ok: true }
+  | { ok: false; eventId: string; reason: string };
+
+/**
+ * Delete a Google Calendar event with a single retry on transient failure.
+ * Returns a structured result so callers (force resync) can collect failed
+ * deletions and surface them, instead of silently swallowing errors and
+ * leaking orphan events.
+ *
+ * - 404/410 (already gone) is reported as success — delete is idempotent.
+ * - Transient errors (network, 5xx, 429) trigger one retry.
+ * - All other failures resolve with `ok: false` and the reason string.
+ */
+export async function safeDeleteGoogleEvent(
+  userId: string,
+  eventId: string,
+  calendarId: string = 'primary',
+): Promise<SafeDeleteResult> {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return { ok: false, eventId, reason: 'no_calendar_client' };
+
+  // Two raw attempts only (no withBackoff) — the orphan sweep iterates over
+  // many events and we want fast-fail rather than the multi-second exponential
+  // backoff. Failures are reported so the sweep can be re-run.
+  let lastReason = 'unknown';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await calendar.events.delete({ calendarId, eventId });
+      return { ok: true };
+    } catch (err) {
+      const info = classifyGoogleError(err);
+      if (info.code === 'not_found') return { ok: true };
+      lastReason = info.message || (err instanceof Error ? err.message : String(err));
+      if (attempt === 1) {
+        console.warn('[calendar] safeDeleteGoogleEvent failed', { eventId, calendarId, reason: lastReason });
+        return { ok: false, eventId, reason: lastReason };
+      }
+    }
+  }
+  return { ok: false, eventId, reason: lastReason };
+}
+
 /**
  * Get an authenticated Google Calendar API client for a user.
  * Returns null if the user hasn't connected Google Calendar.
@@ -432,6 +499,65 @@ export async function listGoogleEvents(
 }
 
 /**
+ * List Google Calendar events that Prism created (i.e. tagged with
+ * `extendedProperties.private.prismManaged = '1'`) within a date range.
+ *
+ * Used by the force-resync orphan sweep: by listing only Prism-tagged events
+ * we can safely delete those that aren't part of the freshly-written sync
+ * state without risking the user's hand-made events.
+ */
+export async function listTaggedPrismEvents(
+  userId: string,
+  timeMin: string,
+  timeMax: string,
+  calendarIds: string[],
+) {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return [];
+  if (calendarIds.length === 0) return [];
+
+  const results = await Promise.all(
+    calendarIds.map(async (calendarId) => {
+      try {
+        const allEvents: (Record<string, unknown> & { _sourceCalendarId: string })[] = [];
+        let pageToken: string | undefined;
+
+        do {
+          const response = await withBackoff(
+            () =>
+              calendar.events.list({
+                calendarId,
+                timeMin,
+                timeMax,
+                singleEvents: true,
+                orderBy: 'startTime',
+                maxResults: 250,
+                pageToken,
+                privateExtendedProperty: [PRISM_MANAGED_EXT_KEY],
+                showDeleted: false,
+              }),
+            `events.list(tagged) ${calendarId}`,
+          );
+          const items = (response.data.items ?? []).map((ev) => ({
+            ...ev,
+            _sourceCalendarId: calendarId,
+          }));
+          allEvents.push(...items);
+          pageToken = response.data.nextPageToken ?? undefined;
+        } while (pageToken);
+
+        return allEvents;
+      } catch (err) {
+        console.error(`[calendar] Failed to list tagged events from ${calendarId}:`, err);
+        return [];
+      }
+    })
+  );
+
+  return results.flat();
+}
+
+/**
  * Safely sync a task to Google Calendar: create, update, or delete event.
  * Swallows errors so callers don't need try/catch.
  * Uses the user's configured sync target calendar.
@@ -471,6 +597,7 @@ export async function syncTaskCalendarEvent(
         start: new Date(task.timeBlockStart).toISOString(),
         end: new Date(task.timeBlockEnd).toISOString(),
         timeZone: timezone,
+        prismType: 'task',
       }, targetCalendarId);
       return gcalEvent?.id ?? null;
     }
@@ -497,6 +624,7 @@ export async function createGoogleEvent(
     addMeetLink?: boolean;
     recurrence?: string[];
     attendees?: Array<{ email: string }>;
+    prismType?: PrismEventType;
   },
   calendarId: string = 'primary'
 ) {
@@ -510,6 +638,16 @@ export async function createGoogleEvent(
       start: buildTimePoint(event.start, event.timeZone),
       end: buildTimePoint(event.end, event.timeZone),
     };
+
+    // Tag Prism-owned events so the force-resync sweep can find them without
+    // fragile title matching. Opt-in: callers that create ad-hoc events not
+    // linked to a Prism record (e.g. POST /api/calendar) should omit prismType
+    // so the sweep leaves those events alone.
+    if (event.prismType) {
+      eventBody.extendedProperties = {
+        private: { prismManaged: '1', prismType: event.prismType },
+      };
+    }
 
     if (event.addMeetLink) {
       eventBody.conferenceData = {

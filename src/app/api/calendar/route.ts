@@ -942,6 +942,9 @@ export async function POST(request: NextRequest) {
   const { summary, description, start, end, addMeetLink } = parsed.data;
 
   const targetCalendarId = await getUserSyncCalendarId(auth.userId);
+  // Ad-hoc UI create: omit prismType so the event is NOT tagged. No Prism
+  // record stores its calendarEventId, and tagging would invite the orphan
+  // sweep to delete it.
   const event = await createGoogleEvent(auth.userId, {
     summary,
     description: description ?? undefined,

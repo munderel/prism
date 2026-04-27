@@ -192,6 +192,7 @@ export async function PATCH(
           description: `Mark complete in Prism: ${completionUrl}`,
           start,
           end,
+          prismType: 'aim',
         }, targetCalendarId);
         if (gcalEvent?.id) {
           await prisma.aimInstance.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });

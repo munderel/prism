@@ -157,6 +157,7 @@ export async function PATCH(
           summary: title,
           start: newStart.toISOString(),
           end: newEnd.toISOString(),
+          prismType: 'review',
         }, targetCalendarId);
         if (gcalEvent?.id) {
           await prisma.review.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });
