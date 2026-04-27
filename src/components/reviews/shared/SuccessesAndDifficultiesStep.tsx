@@ -13,19 +13,19 @@ const COLOR_CLASSES = {
     container: 'border-green-200 bg-green-50/50',
     icon: 'text-green-600',
     heading: 'text-green-800',
-    input: 'border-green-300 placeholder:text-green-400 focus:border-green-500 focus:ring-green-500',
+    input: 'border-green-300 placeholder:text-green-700 focus:border-green-500 focus:ring-green-500',
     button: 'bg-green-600 hover:bg-green-700',
     listItem: 'border-green-200',
-    empty: 'text-green-600/70',
+    empty: 'text-green-700',
   },
   red: {
     container: 'border-red-200 bg-red-50/50',
     icon: 'text-red-600',
     heading: 'text-red-800',
-    input: 'border-red-300 placeholder:text-red-400 focus:border-red-500 focus:ring-red-500',
+    input: 'border-red-300 placeholder:text-red-700 focus:border-red-500 focus:ring-red-500',
     button: 'bg-red-600 hover:bg-red-700',
     listItem: 'border-red-200',
-    empty: 'text-red-600/70',
+    empty: 'text-red-700',
   },
 } as const;
 

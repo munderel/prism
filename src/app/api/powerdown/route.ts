@@ -174,6 +174,7 @@ export async function PATCH(request: NextRequest) {
 
   const data: Record<string, unknown> = pickDefined(body, SESSION_UPDATABLE_FIELDS);
   let beeminderError: string | undefined;
+  let streakPaused = false;
   if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
 
@@ -195,11 +196,14 @@ export async function PATCH(request: NextRequest) {
     if (streakResult?.beeminder?.ok === false) {
       beeminderError = streakResult.beeminder.error;
     }
+    if (streakResult?.paused) {
+      streakPaused = true;
+    }
   }
 
   const updated = await prisma.powerdownSession.update({ where: { id: body.sessionId }, data });
 
   await syncPowerdownToGcal(auth.userId, updated, `sessionId=${body.sessionId}`);
 
-  return Response.json({ ...updated, beeminderError });
+  return Response.json({ ...updated, beeminderError, streakPaused });
 }

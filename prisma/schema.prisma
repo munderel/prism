@@ -297,6 +297,7 @@ model Task {
   isAutoScheduled    Boolean      @default(false)
   isWinTheDay        Boolean      @default(false)
   winTheDayRank      Int?
+  startTime          DateTime?
   startedAt          DateTime?
   completedAt        DateTime?
   failedAt           DateTime?
@@ -336,6 +337,7 @@ model Task {
   @@index([goalId, status])
   @@index([parentId])
   @@index([ownerId, isWinTheDay, winTheDayRank])
+  @@index([ownerId, startTime])
 }
 
 model Streak {

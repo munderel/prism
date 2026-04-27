@@ -9,7 +9,7 @@ interface TimeBlock {
   title: string;
   start: string;
   end: string;
-  type: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'AIM' | 'REVIEW' | 'GOOGLE_CAL' | 'POWER_DOWN' | 'MEETING';
+  type: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'AIM' | 'REVIEW' | 'GOOGLE_CAL' | 'POWER_DOWN' | 'MEETING' | 'FOOD';
 }
 
 interface DashboardTimelineProps {

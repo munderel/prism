@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { CheckCircle2, Circle, CalendarClock, ListTodo, MessageSquare } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRightCircle, CheckCircle2, ListTodo, Loader2, XCircle } from 'lucide-react';
 import { getLocalDateString } from '@/lib/date-utils';
 import { getPriorityBadgeClass } from '../shared/review-types';
+import { useToast } from '@/components/ui/ToastProvider';
 
 interface Task {
   id: string;
@@ -15,8 +16,22 @@ interface Task {
   goal?: { id: string; title: string } | null;
 }
 
-interface CategorizedTask extends Task {
-  category: 'last_week' | 'overdue' | 'unscheduled';
+export interface ReviewTasksSummary {
+  doneIds: string[];
+  abandonedIds: string[];
+  carriedForwardIds: string[];
+  totalCount: number;
+}
+
+interface StepReviewTasksProps {
+  isTeamReview?: boolean;
+  onSummaryChange?: (summary: ReviewTasksSummary) => void;
+}
+
+interface GoalGroup {
+  goalId: string | null;
+  goalTitle: string;
+  tasks: Task[];
 }
 
 async function getWeekStartDay(): Promise<number> {
@@ -24,297 +39,273 @@ async function getWeekStartDay(): Promise<number> {
     const res = await fetch('/api/stacks');
     if (res.ok) {
       const stacks = await res.json();
-      const personal = stacks.find((s: any) => !s.isCompany);
+      const personal = Array.isArray(stacks) ? stacks.find((s: { isCompany?: boolean }) => !s.isCompany) : null;
       if (personal?.weekStartDay !== undefined) return personal.weekStartDay;
     }
-  } catch { /* use default */ }
-  return 1; // Default: Monday
+  } catch { /* fall through */ }
+  return 1;
 }
 
-interface StepReviewTasksProps {
-  reviewId: string;
-  isTeamReview?: boolean;
+function lastWeekRange(weekStartDay: number, now = new Date()): { start: string; end: string } {
+  const dow = now.getDay();
+  const diff = (dow - weekStartDay + 7) % 7;
+  const thisWeekStart = new Date(now);
+  thisWeekStart.setDate(now.getDate() - diff);
+  thisWeekStart.setHours(0, 0, 0, 0);
+  const lastWeekStart = new Date(thisWeekStart);
+  lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+  const lastWeekEnd = new Date(thisWeekStart);
+  lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
+  lastWeekEnd.setHours(23, 59, 59, 999);
+  return { start: getLocalDateString(lastWeekStart), end: getLocalDateString(lastWeekEnd) };
 }
 
-export function StepReviewTasks({ reviewId: _reviewId, isTeamReview }: StepReviewTasksProps) {
-  const [tasks, setTasks] = useState<CategorizedTask[]>([]);
+function groupByGoal(tasks: Task[]): GoalGroup[] {
+  const map = new Map<string, GoalGroup>();
+  for (const t of tasks) {
+    const key = t.goal?.id ?? '__none__';
+    const title = t.goal?.title ?? 'Unlinked Tasks';
+    let group = map.get(key);
+    if (!group) {
+      group = { goalId: t.goal?.id ?? null, goalTitle: title, tasks: [] };
+      map.set(key, group);
+    }
+    group.tasks.push(t);
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.goalId === null) return 1;
+    if (b.goalId === null) return -1;
+    return a.goalTitle.localeCompare(b.goalTitle);
+  });
+}
+
+function summarize(tasks: Task[]): ReviewTasksSummary {
+  const doneIds: string[] = [];
+  const abandonedIds: string[] = [];
+  const carriedForwardIds: string[] = [];
+  for (const t of tasks) {
+    if (t.status === 'DONE') doneIds.push(t.id);
+    else if (t.status === 'DROPPED') abandonedIds.push(t.id);
+    else carriedForwardIds.push(t.id);
+  }
+  return { doneIds, abandonedIds, carriedForwardIds, totalCount: tasks.length };
+}
+
+export function StepReviewTasks({ isTeamReview, onSummaryChange }: StepReviewTasksProps) {
+  const toast = useToast();
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rescheduleTaskId, setRescheduleTaskId] = useState<string | null>(null);
-  const [rescheduleDate, setRescheduleDate] = useState('');
-  const [rescheduleReason, setRescheduleReason] = useState('');
-  const [saving, setSaving] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set());
+
+  // Stable ref so the publish-to-parent effect doesn't re-fire on every parent render
+  const onSummaryChangeRef = useRef(onSummaryChange);
+  useEffect(() => { onSummaryChangeRef.current = onSummaryChange; }, [onSummaryChange]);
 
   useEffect(() => {
-    fetchAllReviewTasks();
-  }, [isTeamReview]);
-
-  const fetchAllReviewTasks = async () => {
-    try {
-      const weekStartDay = await getWeekStartDay();
-
-      const now = new Date();
-      const dayOfWeek = now.getDay();
-      const diff = (dayOfWeek - weekStartDay + 7) % 7;
-      const thisWeekStart = new Date(now);
-      thisWeekStart.setDate(now.getDate() - diff);
-      thisWeekStart.setHours(0, 0, 0, 0);
-
-      const lastWeekStart = new Date(thisWeekStart);
-      lastWeekStart.setDate(thisWeekStart.getDate() - 7);
-
-      const lastWeekEnd = new Date(thisWeekStart);
-      lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
-      lastWeekEnd.setHours(23, 59, 59, 999);
-
-      // Fetch both in parallel, then merge with deduplication
-      const scopeParam = isTeamReview ? '&scope=company' : '&scope=individual';
-      const [lastWeekRes, allRes] = await Promise.all([
-        fetch(`/api/tasks?startDate=${getLocalDateString(lastWeekStart)}&endDate=${getLocalDateString(lastWeekEnd)}${scopeParam}`),
-        fetch(`/api/tasks?includeUnscheduled=true${scopeParam}`),
-      ]);
-
-      const seen = new Set<string>();
-      const allTasks: CategorizedTask[] = [];
-
-      if (lastWeekRes.ok) {
-        const data: Task[] = await lastWeekRes.json();
-        for (const t of data) {
-          if (!seen.has(t.id)) {
-            seen.add(t.id);
-            allTasks.push({ ...t, category: 'last_week' });
+    let cancelled = false;
+    (async () => {
+      try {
+        const weekStartDay = await getWeekStartDay();
+        const { start, end } = lastWeekRange(weekStartDay);
+        const scopeParam = isTeamReview ? '&scope=company' : '&scope=individual';
+        const res = await fetch(`/api/tasks?startDate=${start}&endDate=${end}${scopeParam}`);
+        if (!res.ok) {
+          if (!cancelled) {
+            toast.error("Couldn't load last week's tasks.");
+            setLoading(false);
           }
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          setTasks(Array.isArray(data) ? data : []);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('[StepReviewTasks] fetch failed:', err);
+        if (!cancelled) {
+          toast.error("Couldn't load last week's tasks.");
+          setLoading(false);
         }
       }
+    })();
+    return () => { cancelled = true; };
+  }, [isTeamReview, toast]);
 
-      if (allRes.ok) {
-        const data: Task[] = await allRes.json();
-        const todayStr = getLocalDateString(new Date());
-        for (const t of data) {
-          if (seen.has(t.id)) continue;
-          if (t.status === 'DONE' || t.status === 'DROPPED') continue;
+  const summary = useMemo(() => summarize(tasks), [tasks]);
 
-          if (t.dueDate && t.dueDate < todayStr) {
-            seen.add(t.id);
-            allTasks.push({ ...t, category: 'overdue' });
-            continue;
-          }
+  useEffect(() => {
+    onSummaryChangeRef.current?.(summary);
+  }, [summary]);
 
-          if (!t.dueDate && (t.status === 'TODO' || t.status === 'IN_PROGRESS')) {
-            seen.add(t.id);
-            allTasks.push({ ...t, category: 'unscheduled' });
-          }
-        }
-      }
+  const groups = useMemo(() => groupByGoal(tasks), [tasks]);
 
-      setTasks(allTasks);
-    } catch (err) {
-      console.error('Failed during task review operation:', err);
-    }
-    setLoading(false);
-  };
-
-  const toggleTaskComplete = (task: CategorizedTask) => {
-    const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
-
-    // Optimistic update: show the checkmark immediately
-    setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t))
-    );
-
-    // Fire PATCH in background — no await
-    fetch(`/api/tasks/${task.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    }).catch(() => {
-      // Revert on failure
-      setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t))
-      );
+  const updateStatus = async (task: Task, newStatus: 'DONE' | 'DROPPED' | 'TODO') => {
+    const prevStatus = task.status;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)));
+    setSavingIds((s) => {
+      const next = new Set(s);
+      next.add(task.id);
+      return next;
     });
-  };
-
-  const handleReschedule = async (taskId: string) => {
-    if (!rescheduleDate) return;
-    setSaving(taskId);
-
     try {
-      // Update due date
-      await fetch(`/api/tasks/${taskId}`, {
+      const res = await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dueDate: rescheduleDate }),
+        body: JSON.stringify({ status: newStatus }),
       });
-
-      // Add reschedule reason as comment
-      if (rescheduleReason.trim()) {
-        await fetch(`/api/tasks/${taskId}/comments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: `Rescheduled during weekly review: ${rescheduleReason}`,
-          }),
-        });
-      }
-
-      setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, dueDate: rescheduleDate } : t))
-      );
-      setRescheduleTaskId(null);
-      setRescheduleDate('');
-      setRescheduleReason('');
+      if (!res.ok) throw new Error(`PATCH /api/tasks/${task.id} → ${res.status}`);
     } catch (err) {
-      console.error('Failed during task review operation:', err);
+      console.error('[StepReviewTasks] update failed:', err);
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: prevStatus } : t)));
+      toast.error("Couldn't update task — try again.");
+    } finally {
+      setSavingIds((s) => {
+        const next = new Set(s);
+        next.delete(task.id);
+        return next;
+      });
     }
-    setSaving(null);
   };
 
   if (loading) {
-    return <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>;
+    return <div className="text-[var(--text-muted)] text-sm py-4">Loading last week&apos;s tasks...</div>;
   }
 
   if (tasks.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-8 text-center">
         <ListTodo className="h-8 w-8 text-[var(--text-muted)] mx-auto mb-2" />
-        <p className="text-sm text-[var(--text-muted)]">No tasks found from last week, no overdue tasks, and no unscheduled tasks.</p>
+        <p className="text-sm text-[var(--text-muted)]">No tasks were due last week.</p>
+        <p className="text-xs text-[var(--text-muted)] mt-1">Nothing to review — you can move on.</p>
       </div>
     );
   }
-
-  const completedCount = tasks.filter((t) => t.status === 'DONE').length;
-  const overdueTasks = tasks.filter((t) => t.category === 'overdue');
-  const lastWeekTasks = tasks.filter((t) => t.category === 'last_week');
-  const unscheduledTasks = tasks.filter((t) => t.category === 'unscheduled');
-
-  const renderTaskSection = (sectionTasks: CategorizedTask[], title: string, titleColor: string) => {
-    if (sectionTasks.length === 0) return null;
-    return (
-      <div className="space-y-2">
-        <h4 className={`text-xs font-bold ${titleColor} uppercase tracking-wider`}>
-          {title} ({sectionTasks.length})
-        </h4>
-        {sectionTasks.map((task) => renderTaskCard(task))}
-      </div>
-    );
-  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-[var(--text-secondary)]">
-          Review your tasks. Mark complete or reschedule incomplete items.
-        </p>
-        <span className="text-xs text-[var(--text-muted)]">
-          {completedCount}/{tasks.length} done
-        </span>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+          <ListTodo className="h-4 w-4" />
+          <p className="text-sm">
+            Your tasks from last week. Mark each done or abandoned. Anything you skip carries forward.
+          </p>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2 text-xs">
+          <span className="text-green-400">{summary.doneIds.length} done</span>
+          <span className="text-[var(--text-muted)]">·</span>
+          <span className="text-red-400">{summary.abandonedIds.length} abandoned</span>
+          <span className="text-[var(--text-muted)]">·</span>
+          <span className="text-amber-400">{summary.carriedForwardIds.length} carrying forward</span>
+        </div>
       </div>
 
-      <div className="space-y-4">
-        {renderTaskSection(overdueTasks, 'Overdue Tasks', 'text-red-400')}
-        {renderTaskSection(lastWeekTasks, "Last Week's Tasks", 'text-[var(--text-muted)]')}
-        {renderTaskSection(unscheduledTasks, 'Unscheduled Tasks', 'text-amber-400')}
-      </div>
-
-    </div>
-  );
-
-  function renderTaskCard(task: CategorizedTask) {
-    return (
-      <div key={task.id} className="space-y-0">
-        <div className="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3">
-          <button
-            onClick={() => toggleTaskComplete(task)}
-            className="flex-shrink-0"
-          >
-            {task.status === 'DONE' ? (
-              <CheckCircle2 className="h-5 w-5 text-green-400" />
-            ) : (
-              <Circle className="h-5 w-5 text-[var(--text-muted)] hover:text-green-400 transition-colors" />
-            )}
-          </button>
-
-          <div className="flex-1 min-w-0">
-            <p className={`text-sm ${
-              task.status === 'DONE'
-                ? 'text-[var(--text-muted)] line-through'
-                : 'text-[var(--text-primary)]'
-            }`}>
-              {task.title}
-            </p>
-            {task.goal && (
-              <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
-                {task.goal.title}
-              </p>
-            )}
+      {groups.map((group) => (
+        <div key={group.goalId ?? '__none__'} className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="h-px flex-1 bg-gradient-to-r from-indigo-500/40 to-transparent" />
+            <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider whitespace-nowrap">
+              {group.goalTitle}
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-l from-indigo-500/40 to-transparent" />
           </div>
-
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className={`text-xs px-1.5 py-0.5 rounded ${getPriorityBadgeClass(task.priority)}`}>
-              {task.priority}
-            </span>
-
-            {task.status !== 'DONE' && (
-              <button
-                onClick={() => setRescheduleTaskId(
-                  rescheduleTaskId === task.id ? null : task.id
-                )}
-                className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 transition-colors px-2 py-1 rounded hover:bg-amber-500/10"
-              >
-                <CalendarClock className="h-3.5 w-3.5" />
-                Reschedule
-              </button>
-            )}
+          <div className="space-y-2">
+            {group.tasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                saving={savingIds.has(task.id)}
+                onMarkDone={() => updateStatus(task, task.status === 'DONE' ? 'TODO' : 'DONE')}
+                onAbandon={() => updateStatus(task, task.status === 'DROPPED' ? 'TODO' : 'DROPPED')}
+              />
+            ))}
           </div>
         </div>
+      ))}
+    </div>
+  );
+}
 
-        {/* Reschedule panel */}
-        {rescheduleTaskId === task.id && (
-          <div className="ml-8 mt-1 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 space-y-3">
-            <div className="flex items-center gap-3">
-              <label className="text-xs text-[var(--text-secondary)] flex-shrink-0">New date:</label>
-              <input
-                type="date"
-                value={rescheduleDate}
-                onChange={(e) => setRescheduleDate(e.target.value)}
-                className="rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-[var(--text-secondary)] block mb-1">
-                <MessageSquare className="h-3 w-3 inline mr-1" />
-                Reason (optional):
-              </label>
-              <input
-                type="text"
-                value={rescheduleReason}
-                onChange={(e) => setRescheduleReason(e.target.value)}
-                placeholder="Why is this being rescheduled?"
-                className="w-full rounded border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleReschedule(task.id)}
-                disabled={!rescheduleDate || saving === task.id}
-                className="text-xs bg-amber-600 text-white px-3 py-1 rounded hover:bg-amber-500 transition-colors disabled:opacity-50"
-              >
-                {saving === task.id ? 'Saving...' : 'Reschedule'}
-              </button>
-              <button
-                onClick={() => {
-                  setRescheduleTaskId(null);
-                  setRescheduleDate('');
-                  setRescheduleReason('');
-                }}
-                className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] px-2 py-1 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+interface TaskRowProps {
+  task: Task;
+  saving: boolean;
+  onMarkDone: () => void;
+  onAbandon: () => void;
+}
+
+function TaskRow({ task, saving, onMarkDone, onAbandon }: TaskRowProps) {
+  const isDone = task.status === 'DONE';
+  const isAbandoned = task.status === 'DROPPED';
+  const isCarrying = !isDone && !isAbandoned;
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3">
+      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
+        {saving ? (
+          <Loader2 className="h-4 w-4 animate-spin text-[var(--text-muted)]" />
+        ) : isDone ? (
+          <CheckCircle2 className="h-5 w-5 text-green-400" />
+        ) : isAbandoned ? (
+          <XCircle className="h-5 w-5 text-red-400" />
+        ) : (
+          <ArrowRightCircle className="h-5 w-5 text-amber-400" />
         )}
       </div>
-    );
-  }
+
+      <div className="min-w-0 flex-1">
+        <p
+          className={`truncate text-sm ${
+            isDone
+              ? 'text-[var(--text-muted)] line-through'
+              : isAbandoned
+                ? 'text-[var(--text-muted)] line-through opacity-70'
+                : 'text-[var(--text-primary)]'
+          }`}
+        >
+          {task.title}
+        </p>
+        <div className="mt-1 flex items-center gap-2">
+          <span className={`rounded px-1.5 py-0.5 text-xs ${getPriorityBadgeClass(task.priority)}`}>
+            {task.priority}
+          </span>
+          {isCarrying && (
+            <span className="text-xs text-amber-400/80">Will carry forward</span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={onMarkDone}
+          disabled={saving}
+          aria-pressed={isDone}
+          aria-label={isDone ? `Unmark ${task.title} done` : `Mark ${task.title} done`}
+          className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors disabled:opacity-50 ${
+            isDone
+              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+              : 'text-[var(--text-muted)] hover:bg-green-500/10 hover:text-green-400'
+          }`}
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          Done
+        </button>
+        <button
+          type="button"
+          onClick={onAbandon}
+          disabled={saving}
+          aria-pressed={isAbandoned}
+          aria-label={isAbandoned ? `Unmark ${task.title} abandoned` : `Mark ${task.title} abandoned`}
+          className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors disabled:opacity-50 ${
+            isAbandoned
+              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+              : 'text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-400'
+          }`}
+        >
+          <XCircle className="h-3.5 w-3.5" />
+          Abandon
+        </button>
+      </div>
+    </div>
+  );
 }

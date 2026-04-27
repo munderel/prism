@@ -66,6 +66,9 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [dueDate, setDueDate] = useState(
     task?.dueDate ? task.dueDate.split('T')[0] : ''
   );
+  const [startTime, setStartTime] = useState(
+    task?.startTime ? task.startTime.slice(0, 16) : ''
+  );
   const [goalId, setGoalId] = useState(task?.goalId ?? prefilledGoalId ?? '');
   const [recurrenceFreq, setRecurrenceFreq] = useState('DAILY');
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);
@@ -144,6 +147,8 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
       if (dueDate) body.dueDate = dueDate;
       if (preferredTimeStart) body.preferredTimeStart = preferredTimeStart;
       if (preferredTimeEnd) body.preferredTimeEnd = preferredTimeEnd;
+      if (startTime) body.startTime = new Date(startTime).toISOString();
+      else if (isEditing) body.startTime = null;
       body.assigneeId = assigneeId || null;
 
 
@@ -372,6 +377,17 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                   className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Hide until</label>
+              <input
+                type="datetime-local"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">Hidden from your dashboard and task list until this time. Leave empty to show immediately.</p>
             </div>
 
             {/* Assignee selector */}

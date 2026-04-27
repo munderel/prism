@@ -43,6 +43,7 @@ export type StreakCategory = 'powerdown' | 'daily_aims_complete';
 
 export interface StreakUpdateResult {
   beeminder?: BeeminderResult;
+  paused?: boolean;
 }
 
 export async function upsertOrUpdateStreak(
@@ -83,7 +84,7 @@ export async function upsertOrUpdateStreak(
     }
   }
 
-  if (!existing.isActive) return {};
+  if (!existing.isActive) return { paused: true };
 
   const lastActive = existing.lastActiveDate;
   if (lastActive && lastActive >= today) return {}; // idempotent same-day

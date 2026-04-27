@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Plus, Trash2, Loader2, Target } from 'lucide-react';
 
 export interface TaskLevelClearGoal {
@@ -189,7 +190,9 @@ export function WorkBlockObjectiveModal({
     }
   };
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4">
       <div
         className="glass-panel w-full max-w-lg rounded-xl border border-[var(--border-color)] shadow-2xl"
@@ -377,6 +380,7 @@ export function WorkBlockObjectiveModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

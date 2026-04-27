@@ -102,12 +102,13 @@ const FOCUS_MODE_KEY = 'prism-focus-mode';
 const CALENDAR_SKIP_SOURCES = new Set(['tasks', 'aims', 'powerdown']);
 
 /** Maps calendar API `source` values to DashboardTimeline block types. */
-const CALENDAR_SOURCE_TYPE_MAP: Record<string, 'GOOGLE_CAL' | 'MEETING' | 'REVIEW' | 'MAINTENANCE'> = {
+const CALENDAR_SOURCE_TYPE_MAP: Record<string, 'GOOGLE_CAL' | 'MEETING' | 'REVIEW' | 'MAINTENANCE' | 'FOOD'> = {
   google: 'GOOGLE_CAL',
   meeting: 'MEETING',
   reviews: 'REVIEW',
   review: 'REVIEW',
   processes: 'MAINTENANCE',
+  food: 'FOOD',
 };
 
 export default function DashboardPage() {
@@ -226,6 +227,31 @@ export default function DashboardPage() {
     return list.find((s) => s.streakType === 'daily')
         ?? list.find((s) => s.streakType === 'powerdown');
   }, [allStreaks]);
+  const streakBadge = useMemo(() => {
+    const paused = dailyStreak ? !dailyStreak.isActive : false;
+    if (paused) {
+      return (
+        <Link href="/streaks" className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-sm font-medium hover:bg-amber-500/25 transition-colors" title="Streak paused — tap to resume">
+          <Flame className="h-3.5 w-3.5" />
+          Resume streak
+        </Link>
+      );
+    }
+    if (dailyStreak && dailyStreak.currentCount > 0) {
+      return (
+        <Link href="/streaks" className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-400/15 text-yellow-400 text-sm font-medium hover:bg-yellow-400/25 transition-colors">
+          <Flame className="h-3.5 w-3.5" />
+          {dailyStreak.currentCount}
+        </Link>
+      );
+    }
+    return (
+      <Link href="/powerdown" className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--surface)] text-[var(--text-muted)] text-sm font-medium hover:text-[var(--text-secondary)] hover:bg-white/5 transition-colors" title="Complete a Power Down to start your streak">
+        <Flame className="h-3.5 w-3.5" />
+        Start your streak
+      </Link>
+    );
+  }, [dailyStreak]);
   const streakByAimCategory = useMemo(() => {
     const map = new Map<string, number>();
     for (const s of allStreaks ?? []) {
@@ -243,11 +269,11 @@ export default function DashboardPage() {
   // Fetch external calendar events (Google, meetings, reviews, processes) for the timeline
   // Uses 'external' source to avoid re-fetching tasks/aims/powerdown already handled above
   const calendarSWRKey = `/api/calendar?start=${today}T00:00:00&end=${today}T23:59:59&source=external`;
-  const { data: calendarEvents } = useSWR<any[]>(calendarSWRKey);
+  const { data: calendarEvents, mutate: mutateCalendar } = useSWR<any[]>(calendarSWRKey);
 
   // Build timeline blocks from tasks + AIMs
   const timelineBlocks = useMemo(() => {
-    const blocks: Array<{ id: string; title: string; start: string; end: string; type: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'AIM' | 'REVIEW' | 'GOOGLE_CAL' | 'POWER_DOWN' | 'MEETING' }> = [];
+    const blocks: Array<{ id: string; title: string; start: string; end: string; type: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'AIM' | 'REVIEW' | 'GOOGLE_CAL' | 'POWER_DOWN' | 'MEETING' | 'FOOD' }> = [];
 
     for (const t of list) {
       if (t.timeBlockStart && t.timeBlockEnd) {
@@ -479,6 +505,25 @@ export default function DashboardPage() {
     const endISO = newEnd.toISOString();
     const payload = { timeBlockStart: startISO, timeBlockEnd: endISO };
 
+    if (type === 'FOOD') {
+      // Block id arrives prefixed (`food-{uuid}`) from the calendar aggregator.
+      const foodId = blockId.startsWith('food-') ? blockId.slice(5) : blockId;
+      fetch(`/api/food-blocks/${foodId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startAt: startISO, endAt: endISO }),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to move food block');
+          return mutateCalendar();
+        })
+        .catch(() => {
+          toast.error('Failed to move food block');
+          mutateCalendar();
+        });
+      return;
+    }
+
     if (type === 'POWER_DOWN') {
       const dateStr = getLocalDateString(newStart);
       fetch('/api/powerdown', {
@@ -530,7 +575,7 @@ export default function DashboardPage() {
         }
       );
     }
-  }, [mutate, mutateAims, mutatePowerdown]);
+  }, [mutate, mutateAims, mutatePowerdown, mutateCalendar, toast]);
 
   const handleTaskClick = useCallback((t: DashboardTask) => {
     if (t.taskType === 'REVIEW') {
@@ -612,12 +657,7 @@ export default function DashboardPage() {
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
-                {dailyStreak && dailyStreak.currentCount > 0 && (
-                  <Link href="/streaks" className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-400/15 text-yellow-400 text-sm font-medium hover:bg-yellow-400/25 transition-colors">
-                    <Flame className="h-3.5 w-3.5" />
-                    {dailyStreak.currentCount}
-                  </Link>
-                )}
+                {streakBadge}
               </div>
               <p className="text-sm text-[var(--text-secondary)]">{formatDisplayDate(today, { weekday: true })}</p>
               <p className="text-sm text-[var(--text-muted)]">
@@ -690,12 +730,7 @@ export default function DashboardPage() {
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold text-[var(--text-primary)]">{greeting}, {userName}</h1>
-                {dailyStreak && dailyStreak.currentCount > 0 && (
-                  <Link href="/streaks" className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-400/15 text-yellow-400 text-sm font-medium hover:bg-yellow-400/25 transition-colors">
-                    <Flame className="h-3.5 w-3.5" />
-                    {dailyStreak.currentCount}
-                  </Link>
-                )}
+                {streakBadge}
               </div>
               <p className="text-sm text-[var(--text-secondary)]">{formatDisplayDate(today, { weekday: true })}</p>
               <p className="text-sm text-[var(--text-muted)]">

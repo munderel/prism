@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { freshFetcher } from '@/lib/fetcher';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
+import { TaskEditor } from '@/components/tasks/TaskEditor';
 
 
 // FullCalendar needs dynamic import (no SSR)
@@ -102,8 +103,71 @@ const ITEM_TYPE_CONFIG: Record<string, ItemTypeConfig> = {
   },
 };
 
-function UnscheduledItemCard({ item, onTap, isSelected }: { item: UnscheduledItem; onTap?: (item: UnscheduledItem) => void; isSelected?: boolean }) {
+function UnscheduledItemCard({
+  item,
+  onTap,
+  onEdit,
+  isSelected,
+}: {
+  item: UnscheduledItem;
+  onTap?: (item: UnscheduledItem) => void;
+  onEdit?: (item: UnscheduledItem) => void;
+  isSelected?: boolean;
+}) {
   const cfg = ITEM_TYPE_CONFIG[item.itemType];
+  const canEdit = item.itemType === 'task' && !!onEdit;
+
+  // Long-press detection for mobile (tap = schedule, hold = edit).
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFired = useRef(false);
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+
+  const clearLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!canEdit) return;
+    const t = e.touches[0];
+    touchStartPos.current = { x: t.clientX, y: t.clientY };
+    longPressFired.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressFired.current = true;
+      onEdit?.(item);
+    }, 500);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartPos.current) return;
+    const t = e.touches[0];
+    const dx = t.clientX - touchStartPos.current.x;
+    const dy = t.clientY - touchStartPos.current.y;
+    if (Math.hypot(dx, dy) > 10) clearLongPress();
+  };
+
+  const handleTouchCleanup = () => {
+    clearLongPress();
+    touchStartPos.current = null;
+  };
+
+  const handleClick = () => {
+    // If a long-press just fired, the editor is already opening; suppress the
+    // synthesized click so we don't also open the schedule modal.
+    if (longPressFired.current) {
+      longPressFired.current = false;
+      return;
+    }
+    if (onTap) {
+      onTap(item);
+    } else if (canEdit) {
+      onEdit?.(item);
+    }
+  };
+
+  const hasClickHandler = !!onTap || canEdit;
 
   // -- border colour --
   const borderClass =
@@ -170,7 +234,11 @@ function UnscheduledItemCard({ item, onTap, isSelected }: { item: UnscheduledIte
       className={`fc-unscheduled-task rounded-lg border border-[var(--surface-raised)] border-l-4 ${borderClass} bg-[var(--surface)] p-3 hover:bg-[var(--surface-raised)] transition-colors min-h-[44px] ${
         onTap ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
       } ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''}`}
-      onClick={onTap ? () => onTap(item) : undefined}
+      onClick={hasClickHandler ? handleClick : undefined}
+      onTouchStart={canEdit ? handleTouchStart : undefined}
+      onTouchMove={canEdit ? handleTouchMove : undefined}
+      onTouchEnd={canEdit ? handleTouchCleanup : undefined}
+      onTouchCancel={canEdit ? handleTouchCleanup : undefined}
       {...dataAttrs}
     >
       <div className="flex items-start gap-2">
@@ -261,10 +329,19 @@ export default function CalendarPage() {
   const isMobile = useMediaQuery('(max-width: 1023px)');
   const [showMobileSheet, setShowMobileSheet] = useState(false);
   const [scheduleModalItem, setScheduleModalItem] = useState<UnscheduledItem | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const { data: editingTask } = useSWR<any>(editingTaskId ? `/api/tasks/${editingTaskId}` : null);
   const [calendarNavigateTo, setCalendarNavigateTo] = useState<string | undefined>();
   const [showMeetings, setShowMeetings] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const draggableRef = useRef<Draggable | null>(null);
+
+  const handleEditTask = (item: UnscheduledItem) => {
+    if (item.itemType === 'task' && item.taskId) {
+      setEditingTaskId(item.taskId);
+      setShowMobileSheet(false);
+    }
+  };
 
   // Initialize FullCalendar Draggable on the sidebar container (desktop only)
   useEffect(() => {
@@ -538,7 +615,7 @@ export default function CalendarPage() {
                 </div>
               ) : (
                 allUnscheduledItems.map((item) => (
-                  <UnscheduledItemCard key={item.id} item={item} />
+                  <UnscheduledItemCard key={item.id} item={item} onEdit={handleEditTask} />
                 ))
               )}
             </div>
@@ -734,6 +811,7 @@ export default function CalendarPage() {
                         key={item.id}
                         item={item}
                         onTap={handleMobileItemTap}
+                        onEdit={handleEditTask}
                         isSelected={scheduleModalItem?.id === item.id}
                       />
                     ))
@@ -795,6 +873,24 @@ export default function CalendarPage() {
             setCalendarNavigateTo(start.toISOString());
           }}
           onCancel={() => setScheduleModalItem(null)}
+        />
+      )}
+
+      {/* Task Editor — opened from desktop click / mobile long-press on an unscheduled task */}
+      {editingTaskId && editingTask && (
+        <TaskEditor
+          task={editingTask}
+          onSave={() => {
+            setEditingTaskId(null);
+            mutateTasks();
+            mutateAims();
+            globalMutate(
+              (key: unknown) => typeof key === 'string' && key.startsWith('/api/calendar'),
+              undefined,
+              { revalidate: true },
+            );
+          }}
+          onClose={() => setEditingTaskId(null)}
         />
       )}
     </div>

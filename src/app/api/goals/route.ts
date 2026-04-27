@@ -124,6 +124,7 @@ export async function GET(request: NextRequest) {
         select: {
           id: true, title: true, status: true, priority: true,
           dueDate: true, deliverable: true, taskType: true, description: true,
+          assigneeId: true,
         },
         orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
       },

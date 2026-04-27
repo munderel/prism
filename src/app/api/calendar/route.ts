@@ -488,6 +488,9 @@ export async function GET(request: NextRequest) {
   for (const s of pdSessions) {
     if (s.calendarEventId) syncedCalendarEventIds.add(s.calendarEventId);
   }
+  for (const block of workBlocks) {
+    if (block.calendarEventId) syncedCalendarEventIds.add(block.calendarEventId);
+  }
   for (const reviewSeries of Object.values(googleSyncState.recurringReviews ?? {})) {
     if (reviewSeries?.eventId) syncedCalendarEventIds.add(reviewSeries.eventId);
     for (const override of Object.values(reviewSeries?.overrides ?? {})) {
@@ -892,8 +895,9 @@ export async function GET(request: NextRequest) {
     console.warn(`[calendar] 0 events returned for user ${auth.userId}, range ${start} – ${end}, source=${source}`);
   }
 
-  // Food / eating blocks — user-created meal windows.
-  if (fetchAll || source === 'food') {
+  // Food blocks render on the dashboard timeline alongside meetings/reviews/google,
+  // so they ride the same `source=external` fetch.
+  if (fetchAll || source === 'food' || fetchExternal) {
     const foodBlocks = await prisma.foodBlock.findMany({
       where: {
         userId: auth.userId,

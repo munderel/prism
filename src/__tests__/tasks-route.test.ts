@@ -182,6 +182,57 @@ describe('GET /api/tasks', () => {
     );
   });
 
+  it('hides tasks with future startTime by default', async () => {
+    const req = new Request('http://localhost/api/tasks') as any;
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    expect(findManyArg.where.AND).toEqual(
+      expect.arrayContaining([
+        { OR: [{ startTime: null }, { startTime: { lte: expect.any(Date) } }] },
+      ]),
+    );
+  });
+
+  it('returns future startTime tasks when includeUpcoming=true', async () => {
+    const req = new Request('http://localhost/api/tasks?includeUpcoming=true') as any;
+    await GET(req);
+
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    const where = findManyArg.where;
+    const conditions = where.AND ?? [where];
+    const hasStartTimeFilter = conditions.some(
+      (c: any) => Array.isArray(c.OR) && c.OR.some((o: any) => 'startTime' in o),
+    );
+    expect(hasStartTimeFilter).toBe(false);
+  });
+
+  it('auto-includes upcoming when fetching a parent\'s children (parentId set)', async () => {
+    const req = new Request('http://localhost/api/tasks?parentId=parent-1') as any;
+    await GET(req);
+
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    const where = findManyArg.where;
+    const conditions = where.AND ?? [where];
+    const hasStartTimeFilter = conditions.some(
+      (c: any) => Array.isArray(c.OR) && c.OR.some((o: any) => 'startTime' in o),
+    );
+    expect(hasStartTimeFilter).toBe(false);
+  });
+
+  it('applies the startTime filter on the unscheduledOnly path', async () => {
+    const req = new Request('http://localhost/api/tasks?unscheduledOnly=true') as any;
+    await GET(req);
+
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    expect(findManyArg.where.AND).toEqual(
+      expect.arrayContaining([
+        { OR: [{ startTime: null }, { startTime: { lte: expect.any(Date) } }] },
+      ]),
+    );
+  });
+
   it('uses company scope only when explicitly requested', async () => {
     mockGoalStackFindMany.mockResolvedValue([{ id: 'stack-1' }] as any);
     mockTaskFindMany.mockResolvedValue([] as any);
@@ -327,6 +378,36 @@ describe('POST /api/tasks', () => {
     const req = new Request('http://localhost/api/tasks', { method: 'POST' }) as any;
     await POST(req);
     expect(mockUnflagWinTheDay).toHaveBeenCalledWith('user1', '2026-04-04');
+  });
+
+  it('persists startTime as a Date when provided', async () => {
+    mockParseBody.mockResolvedValue({
+      data: { taskType: 'REACT', title: 'Deferred task', startTime: '2030-01-01T10:00:00Z' },
+    } as any);
+
+    const req = new Request('http://localhost/api/tasks', { method: 'POST' }) as any;
+    await POST(req);
+    expect(mockTaskCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          startTime: new Date('2030-01-01T10:00:00Z'),
+        }),
+      }),
+    );
+  });
+
+  it('persists null startTime when omitted', async () => {
+    mockParseBody.mockResolvedValue({
+      data: { taskType: 'REACT', title: 'No-defer task' },
+    } as any);
+
+    const req = new Request('http://localhost/api/tasks', { method: 'POST' }) as any;
+    await POST(req);
+    expect(mockTaskCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ startTime: null }),
+      }),
+    );
   });
 
   it('syncs to Google Calendar when time blocks provided', async () => {
@@ -477,6 +558,29 @@ describe('PATCH /api/tasks/[id]', () => {
         }),
       })
     );
+  });
+
+  it('sets startTime when provided', async () => {
+    mockParseBody.mockResolvedValue({
+      data: { startTime: '2030-01-01T10:00:00Z' },
+    } as any);
+    await PATCH(createPatchRequest({ startTime: '2030-01-01T10:00:00Z' }), { params });
+    const updateCall = mockTaskUpdate.mock.calls[0][0] as any;
+    expect(updateCall.data.startTime).toEqual(new Date('2030-01-01T10:00:00Z'));
+  });
+
+  it('clears startTime when explicitly set to null', async () => {
+    mockParseBody.mockResolvedValue({ data: { startTime: null } } as any);
+    await PATCH(createPatchRequest({ startTime: null }), { params });
+    const updateCall = mockTaskUpdate.mock.calls[0][0] as any;
+    expect(updateCall.data.startTime).toBeNull();
+  });
+
+  it('leaves startTime untouched when omitted from PATCH body', async () => {
+    mockParseBody.mockResolvedValue({ data: { title: 'Renamed' } } as any);
+    await PATCH(createPatchRequest({ title: 'Renamed' }), { params });
+    const updateCall = mockTaskUpdate.mock.calls[0][0] as any;
+    expect(updateCall.data.startTime).toBeUndefined();
   });
 
   it('does not overwrite existing startedAt on IN_PROGRESS', async () => {

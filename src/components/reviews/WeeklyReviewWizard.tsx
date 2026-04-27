@@ -17,7 +17,7 @@ import {
 import { getLocalDateString, getUpcomingWeekBoundaries } from '@/lib/date-utils';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 import { StepCurrentGoals } from './weekly-steps/StepCurrentGoals';
-import { StepReviewTasks } from './weekly-steps/StepReviewTasks';
+import { StepReviewTasks, type ReviewTasksSummary } from './weekly-steps/StepReviewTasks';
 import { StepTop3Tasks } from './weekly-steps/StepTop3Tasks';
 import { SuccessesAndDifficultiesStep } from './shared/SuccessesAndDifficultiesStep';
 import { StepMaintenanceReview } from './weekly-steps/StepMaintenanceReview';
@@ -93,6 +93,12 @@ function formatAnswerForDisplay(data: unknown): string {
   }
   if (typeof d.notes === 'string' && d.notes) return d.notes;
   if (typeof d.text === 'string' && d.text) return d.text;
+  if (Array.isArray(d.doneIds) && Array.isArray(d.abandonedIds) && Array.isArray(d.carriedForwardIds)) {
+    const done = (d.doneIds as string[]).length;
+    const abandoned = (d.abandonedIds as string[]).length;
+    const carried = (d.carriedForwardIds as string[]).length;
+    return `${done} done · ${abandoned} abandoned · ${carried} carrying forward`;
+  }
   if (Array.isArray(d.taskIds)) return `${d.taskIds.length} tasks selected`;
   if (Array.isArray(d.blocks)) return `${d.blocks.length} work block(s) planned`;
   if (d.assignments && typeof d.assignments === 'object') {
@@ -199,6 +205,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const [taskBlockAssignments, setTaskBlockAssignments] = useState<Record<string, string>>({});
   const [finalNotes, setFinalNotes] = useState('');
   const [_mitTaskPoolSize, setMitTaskPoolSize] = useState<number | null>(null);
+  const [reviewTasksSummary, setReviewTasksSummary] = useState<ReviewTasksSummary>({
+    doneIds: [], abandonedIds: [], carriedForwardIds: [], totalCount: 0,
+  });
 
 
   // Upcoming week boundaries (Mon-Sun)
@@ -454,6 +463,20 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
             case 'notes_completion':
               setFinalNotes(ans.answerData?.notes ?? '');
               break;
+            case 'review_tasks': {
+              const a = ans.answerData ?? {};
+              if (Array.isArray(a.doneIds) && Array.isArray(a.abandonedIds) && Array.isArray(a.carriedForwardIds)) {
+                setReviewTasksSummary({
+                  doneIds: a.doneIds,
+                  abandonedIds: a.abandonedIds,
+                  carriedForwardIds: a.carriedForwardIds,
+                  totalCount: typeof a.totalCount === 'number'
+                    ? a.totalCount
+                    : a.doneIds.length + a.abandonedIds.length + a.carriedForwardIds.length,
+                });
+              }
+              break;
+            }
           }
         }
 
@@ -552,7 +575,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         await persistAnswer('current_goals', 'viewed', { viewed: true });
         break;
       case 'review_tasks':
-        await persistAnswer('review_tasks', 'task_list', { reviewed: true });
+        await persistAnswer('review_tasks', 'task_list', reviewTasksSummary);
         break;
       case 'successes_difficulties':
         await persistAnswer('successes_difficulties', 'text_list', { successes, difficulties });
@@ -590,7 +613,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         await persistAnswer('notes_completion', 'text', { notes: finalNotes });
         break;
     }
-  }, [currentStep, successes, difficulties, mitTaskIds, workBlocks, maintenanceDecisions, kpiNotes, taskBlockAssignments, finalNotes, persistAnswer]);
+  }, [currentStep, successes, difficulties, mitTaskIds, workBlocks, maintenanceDecisions, kpiNotes, taskBlockAssignments, finalNotes, reviewTasksSummary, persistAnswer]);
 
   // Validate current step before advancing
   const validateCurrentStep = (): string | null => {
@@ -783,7 +806,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
               <StepCompanyGoalReport reviewId={reviewId} isAdmin={isAdmin} />
             )}
             {step.key === 'review_tasks' && (
-              <StepReviewTasks reviewId={reviewId} isTeamReview={isTeamReview} />
+              <StepReviewTasks isTeamReview={isTeamReview} onSummaryChange={setReviewTasksSummary} />
             )}
             {step.key === 'kpi_progress' && (
               <StepKpiProgress
