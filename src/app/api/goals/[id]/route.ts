@@ -10,6 +10,7 @@ import { pickDefined, notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, updateGoalSchema } from '@/lib/schemas';
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
+import { parseLocalDate } from '@/lib/date-utils';
 
 export async function GET(
   request: NextRequest,
@@ -125,9 +126,11 @@ export async function PATCH(
   }
 
   const data: Record<string, any> = pickDefined(body, ['title', 'description', 'status', 'level', 'progressPct']);
-  if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
-  if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;
-  if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
+  // Bare YYYY-MM-DD strings parsed with `new Date(...)` resolve to UTC midnight,
+  // which displays as the previous calendar day in negative-UTC timezones.
+  if (dueDate !== undefined) data.dueDate = dueDate ? parseLocalDate(dueDate) : null;
+  if (startDate !== undefined) data.startDate = startDate ? parseLocalDate(startDate) : null;
+  if (endDate !== undefined) data.endDate = endDate ? parseLocalDate(endDate) : null;
 
   // If marking as COMPLETED, set progress to 100 (overrides any progressPct).
   // If ABANDONED, force progress to 0. Otherwise use progressPct if provided.

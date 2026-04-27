@@ -3,6 +3,7 @@
 interface TimeUrgencyBadgeProps {
   startDate?: string | Date | null;
   endDate?: string | Date | null;
+  status?: string | null;
 }
 
 function getTimeInfo(startDate?: string | Date | null, endDate?: string | Date | null) {
@@ -56,7 +57,8 @@ function getTimeInfo(startDate?: string | Date | null, endDate?: string | Date |
   return { label, colorClass };
 }
 
-export function TimeUrgencyBadge({ startDate, endDate }: TimeUrgencyBadgeProps) {
+export function TimeUrgencyBadge({ startDate, endDate, status }: TimeUrgencyBadgeProps) {
+  if (status === 'COMPLETED' || status === 'ABANDONED') return null;
   const info = getTimeInfo(startDate, endDate);
   if (!info) return null;
 

@@ -11,6 +11,7 @@ import {
 
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
+import { parseLocalDate } from '@/lib/date-utils';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -186,8 +187,8 @@ export async function POST(request: NextRequest) {
 
   // --- Auto-generate sub-goals based on duration ---
   if (autoGenerate && startDate && endDate) {
-    const goalStart = new Date(startDate);
-    const goalEnd = new Date(endDate);
+    const goalStart = parseLocalDate(startDate);
+    const goalEnd = parseLocalDate(endDate);
     const weekStartDay = stack.weekStartDay ?? 0;
 
     const monthNames = [
@@ -337,8 +338,8 @@ export async function POST(request: NextRequest) {
       level,
       title,
       description: description ?? null,
-      startDate: startDate ? new Date(startDate) : null,
-      endDate: endDate ? new Date(endDate) : null,
+      startDate: startDate ? parseLocalDate(startDate) : null,
+      endDate: endDate ? parseLocalDate(endDate) : null,
       sortOrder: siblingCount,
     },
   });
