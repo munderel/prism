@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
         start: startDate.toISOString(),
         end: endDate.toISOString(),
         timeZone: tz,
+        prismType: 'workblock',
       }, targetCalendarId);
       if (!gcalEvent?.id) {
         return { ok: false, error: 'Google did not return an event id. Check calendar permissions.' };

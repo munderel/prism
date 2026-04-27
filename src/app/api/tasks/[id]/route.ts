@@ -194,6 +194,7 @@ export async function PATCH(
           description: descWithLink,
           start: new Date(newStart as string | Date).toISOString(),
           end: new Date(newEnd as string | Date).toISOString(),
+          prismType: 'task',
         }, targetCalendarId);
         if (gcalEvent?.id) {
           await prisma.task.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });

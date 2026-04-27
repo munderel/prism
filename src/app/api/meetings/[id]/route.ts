@@ -102,6 +102,7 @@ export async function PATCH(
         addMeetLink: !!meeting.meetLink,
         recurrence,
         attendees: attendeeEmails,
+        prismType: 'meeting',
       }, targetCalendarId);
 
       if (gcalEvent?.id) {

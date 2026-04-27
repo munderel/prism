@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
         addMeetLink: addMeetLink !== false,
         recurrence,
         attendees: attendeeEmails,
+        prismType: 'meeting',
       }, targetCalendarId);
 
       if (!gcalEvent?.id) {

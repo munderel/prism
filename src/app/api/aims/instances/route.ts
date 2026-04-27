@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
       description: `Mark complete in Prism: ${completionUrl}`,
       start,
       end,
+      prismType: 'aim',
     }, targetCalendarId);
     if (gcalEvent?.id) {
       await prisma.aimInstance.update({ where: { id: instance.id }, data: { calendarEventId: gcalEvent.id } });

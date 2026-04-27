@@ -5,14 +5,17 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, syncCalendarSchema } from '@/lib/schemas';
 import {
   listGoogleEvents,
+  listTaggedPrismEvents,
   createGoogleEvent,
   deleteGoogleEvent,
+  safeDeleteGoogleEvent,
   updateGoogleEvent,
   buildWeeklyReviewRecurrence,
   buildMonthlyReviewRecurrence,
   buildYearlyReviewRecurrence,
   buildPowerdownRecurrence,
   buildProcessRecurrence,
+  type PrismEventType,
 } from '@/lib/calendar';
 import { getCompletionUrl, getAimCompletionUrl, getBaseUrl } from '@/lib/completion-token';
 import {
@@ -48,6 +51,7 @@ type SeriesConfig = {
   timeZone: string;
   recurrence: string[];
   defaultsByDate: Map<string, { start: string; end: string }>;
+  prismType: PrismEventType;
 };
 
 function getEventStartString(event: GoogleEventLike) {
@@ -469,6 +473,7 @@ async function upsertRecurringSeries(
     end: config.end,
     timeZone: config.timeZone,
     recurrence: config.recurrence,
+    prismType: config.prismType,
   }, calendarId);
 
   if (!created?.id) return undefined;
@@ -531,6 +536,7 @@ function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date,
         timeZone: timezone,
         recurrence,
         defaultsByDate,
+        prismType: 'review',
       };
     }
   }
@@ -561,6 +567,7 @@ function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date,
         timeZone: timezone,
         recurrence,
         defaultsByDate,
+        prismType: 'review',
       };
     }
   }
@@ -591,6 +598,7 @@ function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date,
         timeZone: timezone,
         recurrence,
         defaultsByDate,
+        prismType: 'review',
       };
     }
   }
@@ -617,6 +625,7 @@ function buildPowerdownSeriesConfig(user: any, timezone: string, rangeStart: Dat
     timeZone: timezone,
     recurrence: buildPowerdownRecurrence(),
     defaultsByDate,
+    prismType: 'powerdown',
   };
 }
 
@@ -675,6 +684,7 @@ function buildProcessSeriesConfig(process: any, timezone: string, rangeStart: Da
     timeZone: timezone,
     recurrence,
     defaultsByDate,
+    prismType: 'process',
   };
 }
 
@@ -724,29 +734,41 @@ export async function POST(request: NextRequest) {
   const timezone = user.timezone ?? 'America/New_York';
   const baseUrl = getBaseUrl();
 
+  // Track delete failures across the force block so the response can warn the
+  // user. Empty for non-force runs.
+  const failedDeletions: string[] = [];
+
   // Force resync: delete all managed recurring series from Google and clear all sync state.
   // This ensures a clean slate — all recurring series will be recreated fresh below.
+  // The post-sync sweep at the end of this handler catches any orphans whose
+  // delete failed here (silently or otherwise).
   if (force) {
     const oldState = parseGoogleSyncState(user.googleSyncState);
 
     // Delete old recurring review series from Google
     for (const series of Object.values(oldState.recurringReviews ?? {})) {
       if (series?.eventId) {
-        await deleteGoogleEvent(auth.userId, series.eventId, targetCalendarId).catch(() => {});
+        const r = await safeDeleteGoogleEvent(auth.userId, series.eventId, targetCalendarId);
+        if (!r.ok) failedDeletions.push(r.eventId);
       }
     }
     // Delete old powerdown series from Google
     if (oldState.powerdown?.eventId) {
-      await deleteGoogleEvent(auth.userId, oldState.powerdown.eventId, targetCalendarId).catch(() => {});
+      const r = await safeDeleteGoogleEvent(auth.userId, oldState.powerdown.eventId, targetCalendarId);
+      if (!r.ok) failedDeletions.push(r.eventId);
     }
     // Delete old process series from Google
     for (const series of Object.values(oldState.processes ?? {})) {
       if (series?.eventId) {
-        await deleteGoogleEvent(auth.userId, series.eventId, targetCalendarId).catch(() => {});
+        const r = await safeDeleteGoogleEvent(auth.userId, series.eventId, targetCalendarId);
+        if (!r.ok) failedDeletions.push(r.eventId);
       }
     }
 
-    // Clear all sync state and legacy calendarEventIds in parallel
+    // Clear all sync state and legacy calendarEventIds in parallel.
+    // Tasks and AimInstances are now cleared too (scoped to the sync window) so
+    // their orphan Google events get deleted by the sweep at the end and a fresh
+    // tagged event is created in the push phase below.
     await Promise.all([
       prisma.user.update({
         where: { id: auth.userId },
@@ -758,6 +780,22 @@ export async function POST(request: NextRequest) {
       }),
       prisma.powerdownSession.updateMany({
         where: { userId: auth.userId, calendarEventId: { not: null } },
+        data: { calendarEventId: null },
+      }),
+      prisma.task.updateMany({
+        where: {
+          OR: [{ assigneeId: auth.userId }, { ownerId: auth.userId, assigneeId: null }],
+          calendarEventId: { not: null },
+          timeBlockStart: { gte: rangeStart, lte: rangeEnd },
+        },
+        data: { calendarEventId: null },
+      }),
+      prisma.aimInstance.updateMany({
+        where: {
+          userId: auth.userId,
+          calendarEventId: { not: null },
+          timeBlockStart: { gte: rangeStart, lte: rangeEnd },
+        },
         data: { calendarEventId: null },
       }),
     ]);
@@ -910,6 +948,7 @@ export async function POST(request: NextRequest) {
       description,
       start: task.timeBlockStart!.toISOString(),
       end: task.timeBlockEnd!.toISOString(),
+      prismType: 'task',
     }, targetCalendarId);
 
     if (event?.id) {
@@ -927,6 +966,7 @@ export async function POST(request: NextRequest) {
       description: `Mark complete in Prism: ${completionUrl}`,
       start: aim.timeBlockStart!.toISOString(),
       end: aim.timeBlockEnd!.toISOString(),
+      prismType: 'aim',
     }, targetCalendarId);
 
     if (event?.id) {
@@ -944,7 +984,8 @@ export async function POST(request: NextRequest) {
   for (const review of reviews) {
     if (!review.calendarEventId) continue;
     if (!activeRecurringReviewTypes.has(review.reviewType)) continue;
-    await deleteGoogleEvent(auth.userId, review.calendarEventId, targetCalendarId).catch(() => {});
+    const r = await safeDeleteGoogleEvent(auth.userId, review.calendarEventId, targetCalendarId);
+    if (!r.ok) failedDeletions.push(r.eventId);
     await prisma.review.update({
       where: { id: review.id },
       data: { calendarEventId: null },
@@ -956,7 +997,8 @@ export async function POST(request: NextRequest) {
   if (user.powerdownTime) {
     for (const session of powerdownSessions) {
       if (!session.calendarEventId) continue;
-      await deleteGoogleEvent(auth.userId, session.calendarEventId, targetCalendarId).catch(() => {});
+      const r = await safeDeleteGoogleEvent(auth.userId, session.calendarEventId, targetCalendarId);
+      if (!r.ok) failedDeletions.push(r.eventId);
       await prisma.powerdownSession.update({
         where: { id: session.id },
         data: { calendarEventId: null },
@@ -1032,7 +1074,8 @@ export async function POST(request: NextRequest) {
     if (liveProcessIds.has(staleProcessId)) continue;
     const stale = googleSyncState.processes[staleProcessId];
     if (stale?.eventId) {
-      await deleteGoogleEvent(auth.userId, stale.eventId, targetCalendarId).catch(() => {});
+      const r = await safeDeleteGoogleEvent(auth.userId, stale.eventId, targetCalendarId);
+      if (!r.ok) failedDeletions.push(r.eventId);
     }
     delete googleSyncState.processes[staleProcessId];
   }
@@ -1042,34 +1085,97 @@ export async function POST(request: NextRequest) {
     data: { googleSyncState: googleSyncState as Prisma.InputJsonValue },
   });
 
-  // After force resync: delete any Prism-managed events in Google that are not part of the
-  // newly created sync state. This cleans up orphans left by silent delete failures above.
+  // After force resync: sweep the target calendar for any Prism-owned events
+  // not in the freshly-written known-good set, and delete them. This catches
+  // orphans from prior silent delete failures, custom-titled processes, and
+  // one-off tasks/aims whose IDs were just cleared above.
   if (force) {
-    const prismManagedTitles = new Set(['Weekly Review', 'Monthly Review', 'Yearly Review', 'Power Down Ritual']);
-    const newKnownIds = new Set<string>();
+    // Build the known-good set from freshly-written sync state + Prism record IDs.
+    const known = new Set<string>();
     for (const s of Object.values(googleSyncState.recurringReviews ?? {})) {
-      if (s?.eventId) newKnownIds.add(s.eventId);
+      if (s?.eventId) known.add(s.eventId);
     }
-    if (googleSyncState.powerdown?.eventId) newKnownIds.add(googleSyncState.powerdown.eventId);
+    if (googleSyncState.powerdown?.eventId) known.add(googleSyncState.powerdown.eventId);
     for (const s of Object.values(googleSyncState.processes ?? {})) {
-      if (s?.eventId) newKnownIds.add(s.eventId);
+      if (s?.eventId) known.add(s.eventId);
     }
 
-    for (const ge of gcalEvents as GoogleEventLike[]) {
-      if (!ge.id || ge.status === 'cancelled') continue;
-      if (newKnownIds.has(ge.id)) continue;
-      if (ge.recurringEventId && newKnownIds.has(ge.recurringEventId)) continue;
-      if (ge.summary && prismManagedTitles.has(ge.summary)) {
-        await deleteGoogleEvent(auth.userId, ge.id, targetCalendarId).catch((e) =>
-          console.warn('[calendar] Force resync cleanup: failed to delete orphaned event', ge.id, e)
-        );
-      }
+    const [taskRows, aimRows, revRows, mtgRows] = await Promise.all([
+      prisma.task.findMany({
+        where: {
+          OR: [{ assigneeId: auth.userId }, { ownerId: auth.userId, assigneeId: null }],
+          calendarEventId: { not: null },
+        },
+        select: { calendarEventId: true },
+      }),
+      prisma.aimInstance.findMany({
+        where: { userId: auth.userId, calendarEventId: { not: null } },
+        select: { calendarEventId: true },
+      }),
+      prisma.review.findMany({
+        where: { userId: auth.userId, calendarEventId: { not: null } },
+        select: { calendarEventId: true },
+      }),
+      prisma.meeting.findMany({
+        where: { createdById: auth.userId, calendarEventId: { not: null } },
+        select: { calendarEventId: true },
+      }),
+    ]);
+    for (const r of [...taskRows, ...aimRows, ...revRows, ...mtgRows]) {
+      if (r.calendarEventId) known.add(r.calendarEventId);
     }
+
+    // Pass A: tagged events on the target calendar (Prism-owned by extendedProperty).
+    const tagged = await listTaggedPrismEvents(auth.userId, start, end, [targetCalendarId]);
+
+    // Pass B (legacy fallback): events without a tag matching titles Prism is
+    // known to manage. Includes the user's actual process titles. Gated on
+    // creator.self && organizer.self on the target calendar so a user's own
+    // hand-made event with a colliding title is preserved.
+    const legacyTitles = new Set<string>([
+      'Weekly Review', 'Monthly Review', 'Yearly Review', 'Power Down Ritual',
+      ...processes.map((p) => p.title),
+    ]);
+
+    type GoogleEventWithMeta = GoogleEventLike & {
+      _sourceCalendarId?: string;
+      creator?: { self?: boolean | null } | null;
+      organizer?: { self?: boolean | null } | null;
+      extendedProperties?: { private?: Record<string, string> | null } | null;
+    };
+
+    const candidates = new Map<string, GoogleEventWithMeta>();
+    for (const e of tagged as GoogleEventWithMeta[]) {
+      if (e.id) candidates.set(e.id, e);
+    }
+    for (const e of gcalEvents as GoogleEventWithMeta[]) {
+      if (!e.id || !e.summary) continue;
+      // Skip events already tagged — Pass A handles those.
+      if (e.extendedProperties?.private?.prismManaged === '1') continue;
+      const onTarget = e._sourceCalendarId === targetCalendarId;
+      const isSelf = e.creator?.self === true && e.organizer?.self === true;
+      if (onTarget && isSelf && legacyTitles.has(e.summary)) candidates.set(e.id, e);
+    }
+
+    for (const e of Array.from(candidates.values())) {
+      if (!e.id || e.status === 'cancelled') continue;
+      if (known.has(e.id)) continue;
+      if (e.recurringEventId && known.has(e.recurringEventId)) continue;
+      const sourceCal = e._sourceCalendarId ?? targetCalendarId;
+      const r = await safeDeleteGoogleEvent(auth.userId, e.id, sourceCal);
+      if (!r.ok) failedDeletions.push(r.eventId);
+      else updates.push(`Cleaned up orphan event: ${e.summary ?? e.id}`);
+    }
+  }
+
+  if (failedDeletions.length > 0) {
+    updates.push(`Could not delete ${failedDeletions.length} event(s); retry resync to clean up.`);
   }
 
   return Response.json({
     synced: true,
     updates,
+    failedDeletions,
     googleEventCount: gcalEvents.length,
     oneOffTasksChecked: tasks.length,
     oneOffAimsChecked: aimInstances.length,
