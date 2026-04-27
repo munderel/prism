@@ -45,10 +45,15 @@ vi.mock('@/lib/progress', () => ({
   cascadeProgressUp: vi.fn(),
 }));
 
+vi.mock('@/lib/date-utils', () => ({
+  parseLocalDate: vi.fn((s: string) => ({ __sentinel: 'parseLocalDate', input: s })),
+}));
+
 import { requireAuth, requireAdmin } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { prisma } from '@/lib/prisma';
+import { parseLocalDate } from '@/lib/date-utils';
 import { GET, POST } from '@/app/api/goals/route';
 
 const mockRequireAuth = vi.mocked(requireAuth);
@@ -236,5 +241,27 @@ describe('POST /api/goals', () => {
     const res = await POST(req);
     expect(res.status).toBe(201);
     expect(mockGoalCreate).toHaveBeenCalled();
+  });
+
+  it('parses startDate/endDate via parseLocalDate (not new Date) so YYYY-MM-DD does not drift in negative-UTC timezones', async () => {
+    mockParseBody.mockResolvedValue({
+      data: {
+        stackId: 'stack-1',
+        level: 'WEEKLY',
+        title: 'Week of Apr 20',
+        startDate: '2026-04-20',
+        endDate: '2026-04-25',
+      },
+    } as any);
+    mockStackFindUnique.mockResolvedValue({ id: 'stack-1', isCompany: false, ownerId: 'user1' } as any);
+
+    const req = new Request('http://localhost/api/goals', { method: 'POST' }) as any;
+    await POST(req);
+
+    expect(parseLocalDate).toHaveBeenCalledWith('2026-04-20');
+    expect(parseLocalDate).toHaveBeenCalledWith('2026-04-25');
+    const createArgs = mockGoalCreate.mock.calls[0]![0] as any;
+    expect(createArgs.data.startDate).toEqual({ __sentinel: 'parseLocalDate', input: '2026-04-20' });
+    expect(createArgs.data.endDate).toEqual({ __sentinel: 'parseLocalDate', input: '2026-04-25' });
   });
 });
