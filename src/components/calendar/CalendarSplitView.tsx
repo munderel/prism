@@ -22,6 +22,7 @@ import { getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
 import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
 import type { WorkBlockNameRequest, WorkBlockNameResolved } from './WorkBlockObjectiveModal';
 import { createWorkBlock } from '@/lib/work-blocks-client';
+import { EventGoalsPopover } from '@/components/scheduled-item-goals/EventGoalsPopover';
 
 export type RequestNameWorkBlockFn = (input: WorkBlockNameRequest) => Promise<WorkBlockNameResolved | null>;
 
@@ -73,7 +74,7 @@ export interface CalendarSplitViewProps {
 interface SelectedEventPopover {
   eventId: string;
   title: string;
-  source: 'aims' | 'task' | 'review' | 'powerdown' | 'meeting' | 'process' | 'google';
+  source: 'aims' | 'task' | 'review' | 'powerdown' | 'meeting' | 'process' | 'google' | 'food';
   status: string;
   position: { top: number; left: number };
   aimInstanceId?: string;
@@ -83,12 +84,14 @@ interface SelectedEventPopover {
   taskType?: string;
   priority?: string;
   goalTitle?: string;
+  workBlockId?: string;
   link?: string;
   description?: string;
   cadence?: string;
   createdBy?: string;
   gcalEventId?: string;
   gcalCalendarId?: string;
+  foodBlockId?: string;
 }
 
 /** Shape of the event data objects returned by useCalendarEvents */
@@ -695,6 +698,20 @@ export function CalendarSplitView({
     }
   }, [toast, mutateEvents, onRefresh, optimisticRemoveEvent]);
 
+  const handleDeleteFoodBlock = useCallback(async (foodBlockId: string) => {
+    optimisticRemoveEvent((e) => e.itemType === 'food' && e.itemId === foodBlockId);
+    toast.success('Meal block deleted');
+    try {
+      const res = await fetch(`/api/food-blocks/${foodBlockId}`, { method: 'DELETE' });
+      if (!res.ok) toast.error('Failed to delete meal block');
+      mutateEvents();
+      onRefresh?.();
+    } catch {
+      toast.error('Failed to delete meal block');
+      mutateEvents();
+    }
+  }, [toast, mutateEvents, onRefresh, optimisticRemoveEvent]);
+
   const handleDeleteGoogleEvent = useCallback(async (gcalEventId: string, calendarId: string) => {
     optimisticRemoveEvent((e) => e.gcalEventId === gcalEventId || e.id === gcalEventId);
     toast.success('Event deleted from Google Calendar');
@@ -798,8 +815,12 @@ export function CalendarSplitView({
       return;
     }
 
-    // Task event
-    if (props.taskId || info.event.id?.startsWith('task-')) {
+    // Task event (also covers WorkBlock events — those carry `workBlockId`
+    // in extendedProps so the popover can render the per-session goal editor).
+    if (props.taskId || info.event.id?.startsWith('task-') || info.event.id?.startsWith('workblock-')) {
+      const workBlockId = typeof props.workBlockId === 'string'
+        ? props.workBlockId
+        : info.event.id?.startsWith('workblock-') ? info.event.id.replace('workblock-', '') : undefined;
       setSelectedEventPopover({
         eventId: info.event.id,
         title: info.event.title,
@@ -811,6 +832,22 @@ export function CalendarSplitView({
         priority: props.priority,
         goalTitle: props.goalTitle,
         description: props.description,
+        workBlockId,
+      });
+      return;
+    }
+
+    // Food / meal block
+    if (props.itemType === 'food' || info.event.id?.startsWith('food-')) {
+      const foodBlockId = (props.itemId as string | undefined)
+        ?? info.event.id?.replace(/^food-/, '');
+      setSelectedEventPopover({
+        eventId: info.event.id,
+        title: info.event.title,
+        source: 'food',
+        status: '',
+        position,
+        foodBlockId,
       });
       return;
     }
@@ -1122,22 +1159,24 @@ export function CalendarSplitView({
       const { itemId, itemType, source, taskType } =
         eventInfo.event.extendedProps ?? {};
       let colors = getEventColor(eventInfo.event, isDark, userColors);
-      // Apply user task-type color override on top of the server/default color.
-      // Keyed by taskType (IMPROVE/REACT/...) or itemType fallback (AIM/FOOD).
-      let overrideKey: ItemType | null = null;
-      if (itemType === 'task' && typeof taskType === 'string') {
-        overrideKey = taskTypeToColorKey(taskType);
+      let colorKey: ItemType | null = null;
+      if ((itemType === 'task' || itemType === 'workblock') && typeof taskType === 'string') {
+        colorKey = taskTypeToColorKey(taskType);
       } else if (itemType === 'aim') {
-        overrideKey = 'AIM';
+        colorKey = 'AIM';
       } else if (itemType === 'food') {
-        overrideKey = 'FOOD';
+        colorKey = 'FOOD';
       } else if (source === 'meetings') {
-        overrideKey = 'MEETING';
+        colorKey = 'MEETING';
       } else if (source === 'powerdown') {
-        overrideKey = 'POWER_DOWN';
+        colorKey = 'POWER_DOWN';
+      } else if (source === 'reviews') {
+        colorKey = 'REVIEW';
+      } else if (source === 'google') {
+        colorKey = 'GOOGLE_CAL';
       }
-      if (overrideKey && userColors[overrideKey]) {
-        const hex = userColors[overrideKey].color;
+      if (colorKey && userColors[colorKey]) {
+        const hex = userColors[colorKey].color;
         colors = { ...colors, border: hex };
       }
       const isGoogleEvent = source === 'google';
@@ -1146,24 +1185,7 @@ export function CalendarSplitView({
         (eventInfo.event.start?.getTime() ?? 0);
       const isShort = durationMs > 0 && durationMs <= 10 * 60 * 1000;
 
-      // Pick emoji from the PRISM_COLORS entry matching the source/itemType:
-      // - tasks: taskType → IMPROVE/REACT/MAINTENANCE/REVIEW
-      // - aims: AIM
-      // - meetings: MEETING
-      // - food: FOOD
-      // - google: GOOGLE_CAL
-      let emoji = '';
-      if (itemType === 'task' && typeof taskType === 'string') {
-        emoji = PRISM_COLORS[taskTypeToColorKey(taskType)]?.emoji ?? '';
-      } else if (itemType === 'aim') {
-        emoji = PRISM_COLORS.AIM.emoji;
-      } else if (itemType === 'food') {
-        emoji = PRISM_COLORS.FOOD.emoji;
-      } else if (source === 'meetings') {
-        emoji = PRISM_COLORS.MEETING.emoji;
-      } else if (source === 'powerdown') {
-        emoji = PRISM_COLORS.POWER_DOWN.emoji;
-      }
+      const emoji = colorKey ? PRISM_COLORS[colorKey].emoji : '';
       // Strip a leading emoji already baked into the title (e.g. food blocks
       // are returned as `🍽️ Lunch`) so we don't render it twice.
       const rawTitle = eventInfo.event.title ?? '';
@@ -1466,6 +1488,13 @@ export function CalendarSplitView({
                       {selectedEventPopover.status === 'COMPLETED' ? 'Completed' : 'Scheduled'}
                     </span>
                   </div>
+                  {selectedEventPopover.aimInstanceId && (
+                    <EventGoalsPopover
+                      source="aims"
+                      aimInstanceId={selectedEventPopover.aimInstanceId}
+                      onChange={mutateEvents}
+                    />
+                  )}
                 </>
               )}
 
@@ -1507,6 +1536,16 @@ export function CalendarSplitView({
                       {selectedEventPopover.description}
                     </div>
                   )}
+                  {selectedEventPopover.taskId && (
+                    <EventGoalsPopover
+                      source={selectedEventPopover.source}
+                      workBlockId={selectedEventPopover.workBlockId}
+                      taskId={selectedEventPopover.taskId}
+                      taskTitle={selectedEventPopover.title}
+                      taskType={selectedEventPopover.taskType}
+                      onChange={mutateEvents}
+                    />
+                  )}
                 </>
               )}
 
@@ -1535,6 +1574,13 @@ export function CalendarSplitView({
                   {selectedEventPopover.source === 'review' && 'Scheduled review session'}
                   {selectedEventPopover.source === 'powerdown' && 'Daily shutdown ritual'}
                   {selectedEventPopover.source === 'process' && 'Recurring process'}
+                </div>
+              )}
+
+              {/* FOOD / MEAL BLOCK popover */}
+              {selectedEventPopover.source === 'food' && (
+                <div className="text-xs text-[var(--text-muted)]">
+                  Meal block
                 </div>
               )}
 
@@ -1703,6 +1749,17 @@ export function CalendarSplitView({
                 >
                   Join Meeting
                 </a>
+              )}
+
+              {/* Food / meal block actions */}
+              {selectedEventPopover.source === 'food' && selectedEventPopover.foodBlockId && (
+                <button
+                  onClick={() => selectedEventPopover.foodBlockId && handleDeleteFoodBlock(selectedEventPopover.foodBlockId)}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
               )}
 
               {/* Google event actions */}

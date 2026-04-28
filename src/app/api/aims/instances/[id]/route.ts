@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, updateAimInstanceSchema } from '@/lib/schemas';
+import { cacheHeaders, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
 import {
   getPointsPerCompletion,
   evaluatePhaseGraduation,
@@ -17,6 +18,25 @@ const INSTANCE_INCLUDE = {
   aimCategory: true,
   tasks: { select: { id: true, title: true, status: true } },
 } as const;
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
+
+  const { id } = await params;
+  const instance = await prisma.aimInstance.findUnique({
+    where: { id },
+    include: INSTANCE_INCLUDE,
+  });
+  if (!instance) return notFoundResponse('AimInstance');
+  if (instance.userId !== auth.userId && !auth.session.user.isAdmin) {
+    return forbiddenResponse();
+  }
+  return Response.json(instance, { headers: cacheHeaders() });
+}
 
 export async function PATCH(
   request: NextRequest,

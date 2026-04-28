@@ -380,14 +380,14 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             </div>
 
             <div>
-              <label className="block text-sm text-[var(--text-secondary)] mb-1">Hide until</label>
+              <label className="block text-sm text-[var(--text-secondary)] mb-1">Start date</label>
               <input
                 type="datetime-local"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
               />
-              <p className="mt-1 text-xs text-[var(--text-secondary)]">Hidden from your dashboard and task list until this time. Leave empty to show immediately.</p>
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">Task is visible from this time through its due date. Leave empty to show only on the due date.</p>
             </div>
 
             {/* Assignee selector */}

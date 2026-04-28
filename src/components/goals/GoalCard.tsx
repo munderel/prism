@@ -172,7 +172,7 @@ export const GoalCard = React.memo(function GoalCard({
             </button>
           </div>
           <div className="mt-1 max-w-xs">
-            <GoalProgressBar progress={goal.progressPct} size="sm" />
+            <GoalProgressBar progress={goal.progressPct} size="sm" showLabel />
           </div>
         </div>
 

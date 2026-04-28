@@ -102,6 +102,30 @@ export function startOfToday(): Date {
   return d;
 }
 
+/**
+ * Returns the array of local-date keys ('YYYY-MM-DD') from `start` through
+ * `end`, inclusive on both ends. Inputs may be Date objects, ISO timestamps,
+ * or bare 'YYYY-MM-DD' strings; the calculation is performed in local time so
+ * it never falls foul of the UTC-midnight off-by-one. Returns [] if start>end
+ * or either endpoint is unparseable.
+ */
+export function eachLocalDateInRange(
+  start: Date | string,
+  end: Date | string,
+): string[] {
+  const startKey = toLocalDateKey(start);
+  const endKey = toLocalDateKey(end);
+  if (startKey > endKey) return [];
+  const keys: string[] = [];
+  const cursor = parseLocalDate(startKey);
+  const stop = parseLocalDate(endKey);
+  while (cursor <= stop) {
+    keys.push(getLocalDateString(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return keys;
+}
+
 // ─── Date boundary helpers ────────────────────────────────────────────────────
 
 export interface DateBoundary {
