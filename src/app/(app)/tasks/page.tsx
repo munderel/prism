@@ -13,7 +13,7 @@ import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
 import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { PowerDownStatusCard } from '@/components/powerdown/PowerDownStatusCard';
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, toLocalDateKey, eachLocalDateInRange } from '@/lib/date-utils';
 import { useUserSettings } from '@/hooks/useUserSettings';
 
 type ViewMode = 'day' | 'week' | 'month' | 'agenda';
@@ -200,25 +200,34 @@ export default function TasksPage() {
     }
   }, []);
 
-  // Group tasks by date for range views
+  // Group tasks by date for range views. Tasks with both startTime and
+  // dueDate appear in every bucket between them, clamped to the visible
+  // window.
   const groupedByDate = useMemo((): Record<string, any[]> => {
     const groups: Record<string, any[]> = {};
     const undated: any[] = [];
+    const range = getRange();
     for (const task of rangeTasks) {
-      if (task.dueDate) {
-        const key = getLocalDateString(new Date(task.dueDate));
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(task);
+      const dueKey = task.dueDate ? toLocalDateKey(task.dueDate) : null;
+      const startKey = task.startTime ? toLocalDateKey(task.startTime) : null;
+
+      if (startKey && dueKey && range) {
+        const clampedStart = startKey < range.start ? range.start : startKey;
+        const clampedEnd = dueKey > range.end ? range.end : dueKey;
+        for (const key of eachLocalDateInRange(clampedStart, clampedEnd)) {
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(task);
+        }
+      } else if (dueKey) {
+        if (!groups[dueKey]) groups[dueKey] = [];
+        groups[dueKey].push(task);
       } else {
         undated.push(task);
       }
     }
-    if (undated.length > 0) {
-      const range = getRange();
-      if (range) {
-        if (!groups[range.start]) groups[range.start] = [];
-        groups[range.start].push(...undated);
-      }
+    if (undated.length > 0 && range) {
+      if (!groups[range.start]) groups[range.start] = [];
+      groups[range.start].push(...undated);
     }
     return groups;
   }, [rangeTasks, getRange]);

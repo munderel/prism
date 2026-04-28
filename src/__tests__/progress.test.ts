@@ -1,9 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    goal: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
+  },
+}));
+
 import {
   computeLeafProgress,
   computeParentProgress,
   computeLinkedProgress,
+  cascadeProgressUp,
 } from '@/lib/progress';
+import { prisma } from '@/lib/prisma';
+
+const mockFindUnique = vi.mocked(prisma.goal.findUnique);
+const mockUpdate = vi.mocked(prisma.goal.update);
 
 describe('computeLeafProgress', () => {
   it('returns 0 when no tasks', () => {
@@ -82,5 +97,101 @@ describe('computeLinkedProgress', () => {
       { weight: 1.0, individualGoal: { progressPct: 100 } },
     ];
     expect(computeLinkedProgress(links as any)).toBe(75);
+  });
+});
+
+describe('cascadeProgressUp', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUpdate.mockResolvedValue({} as any);
+  });
+
+  function goalRow(overrides: Partial<{
+    id: string;
+    parentId: string | null;
+    status: string;
+    children: Array<{ progressPct: number }>;
+    tasks: Array<{ status: string }>;
+    companyGoalLinks: Array<{ weight: number; individualGoal: { progressPct: number } }>;
+  }> = {}) {
+    return {
+      id: overrides.id ?? 'g1',
+      parentId: overrides.parentId ?? null,
+      status: overrides.status ?? 'IN_PROGRESS',
+      deletedAt: null,
+      children: overrides.children ?? [],
+      tasks: overrides.tasks ?? [],
+      companyGoalLinks: overrides.companyGoalLinks ?? [],
+    };
+  }
+
+  it('forces progressPct=100 when status is COMPLETED, regardless of task state', async () => {
+    mockFindUnique.mockResolvedValueOnce(goalRow({
+      status: 'COMPLETED',
+      tasks: [{ status: 'DONE' }, { status: 'TODO' }, { status: 'TODO' }],
+    }) as any);
+
+    await cascadeProgressUp('g1');
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'g1' },
+      data: { progressPct: 100 },
+    });
+  });
+
+  it('forces progressPct=0 when status is ABANDONED, regardless of task state', async () => {
+    mockFindUnique.mockResolvedValueOnce(goalRow({
+      status: 'ABANDONED',
+      tasks: [{ status: 'DONE' }, { status: 'DONE' }, { status: 'DONE' }],
+    }) as any);
+
+    await cascadeProgressUp('g1');
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'g1' },
+      data: { progressPct: 0 },
+    });
+  });
+
+  it('auto-flips IN_PROGRESS to COMPLETED when all tasks are DONE', async () => {
+    mockFindUnique.mockResolvedValueOnce(goalRow({
+      status: 'IN_PROGRESS',
+      tasks: [{ status: 'DONE' }, { status: 'DONE' }, { status: 'DONE' }, { status: 'DONE' }, { status: 'DONE' }],
+    }) as any);
+
+    await cascadeProgressUp('g1');
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'g1' },
+      data: { progressPct: 100, status: 'COMPLETED' },
+    });
+  });
+
+  it('cascades a manually-completed child up to its parent average', async () => {
+    // First call: leaf goal with COMPLETED status — pinned to 100.
+    mockFindUnique.mockResolvedValueOnce(goalRow({
+      id: 'child',
+      parentId: 'parent',
+      status: 'COMPLETED',
+      tasks: [{ status: 'TODO' }],
+    }) as any);
+    // Second call: parent reads its child as 100; another child is at 0.
+    mockFindUnique.mockResolvedValueOnce(goalRow({
+      id: 'parent',
+      parentId: null,
+      status: 'IN_PROGRESS',
+      children: [{ progressPct: 100 }, { progressPct: 0 }],
+    }) as any);
+
+    await cascadeProgressUp('child');
+
+    expect(mockUpdate).toHaveBeenNthCalledWith(1, {
+      where: { id: 'child' },
+      data: { progressPct: 100 },
+    });
+    expect(mockUpdate).toHaveBeenNthCalledWith(2, {
+      where: { id: 'parent' },
+      data: { progressPct: 50 },
+    });
   });
 });

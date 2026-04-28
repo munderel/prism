@@ -11,7 +11,8 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "bootstrap-admin": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/bootstrap-admin.ts"
+    "bootstrap-admin": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/bootstrap-admin.ts",
+    "backfill-progress": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/backfill-progress.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

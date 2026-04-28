@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import { AlertTriangle, Check } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, toLocalDateKey, eachLocalDateInRange } from '@/lib/date-utils';
 
 // ── helpers ──────────────────────────────────────────────────────────
 const toDateStr = getLocalDateString;
@@ -88,16 +88,32 @@ export function AgendaView({ onEdit, onDelete, onClick, onStatusChange }: Agenda
     [pastTasks],
   );
 
-  // Group future/today tasks by date
+  // Group future/today tasks by date. Tasks with both startTime and dueDate
+  // appear in every bucket between them (clamped to the visible window).
   const grouped = useMemo(() => {
     const groups: Record<string, any[]> = {};
     for (const task of allTasks) {
-      const key = task.dueDate ? getLocalDateString(new Date(task.dueDate)) : todayStr;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(task);
+      const dueKey = task.dueDate ? toLocalDateKey(task.dueDate) : null;
+      const startKey = task.startTime ? toLocalDateKey(task.startTime) : null;
+
+      let keys: string[];
+      if (startKey && dueKey) {
+        const clampedStart = startKey < todayStr ? todayStr : startKey;
+        const clampedEnd = dueKey > endStr ? endStr : dueKey;
+        keys = eachLocalDateInRange(clampedStart, clampedEnd);
+      } else if (dueKey) {
+        keys = [dueKey];
+      } else {
+        keys = [todayStr];
+      }
+
+      for (const key of keys) {
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(task);
+      }
     }
     return groups;
-  }, [allTasks, todayStr]);
+  }, [allTasks, todayStr, endStr]);
 
   // Build ordered date keys for the 14 days
   const dateKeys = useMemo(() => {

@@ -14,7 +14,7 @@ import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Tr
 import { ActivitySelectModal } from './ActivitySelectModal';
 import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload, type TaskLevelClearGoal } from './WorkBlockObjectiveModal';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
-import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
+import { EventGoalsPopover } from '@/components/scheduled-item-goals/EventGoalsPopover';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -1096,6 +1096,13 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                     {selectedEventPopover.status === 'COMPLETED' ? 'Completed' : 'Scheduled'}
                   </span>
                 </div>
+                {selectedEventPopover.aimInstanceId && (
+                  <EventGoalsPopover
+                    source="aims"
+                    aimInstanceId={selectedEventPopover.aimInstanceId}
+                    onChange={refreshEvents}
+                  />
+                )}
               </>
             )}
 
@@ -1138,7 +1145,14 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                   </div>
                 )}
                 {selectedEventPopover.taskId && (
-                  <ClearGoalsDisplay taskId={selectedEventPopover.taskId} editable={false} compact />
+                  <EventGoalsPopover
+                    source={selectedEventPopover.source}
+                    workBlockId={selectedEventPopover.workBlockId}
+                    taskId={selectedEventPopover.taskId}
+                    taskTitle={selectedEventPopover.title}
+                    taskType={selectedEventPopover.taskType}
+                    onChange={refreshEvents}
+                  />
                 )}
               </>
             )}

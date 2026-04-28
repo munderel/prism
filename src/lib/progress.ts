@@ -81,8 +81,14 @@ export async function cascadeProgressUp(goalId: string): Promise<void> {
 
     let progress: number;
 
-    // Priority: children > companyGoalLinks > tasks.
-    if (goal.children.length > 0) {
+    // Manual terminal status wins over computed progress: a user who explicitly
+    // marks a goal COMPLETED or ABANDONED has overridden the children/tasks signal.
+    // Priority otherwise: children > companyGoalLinks > tasks.
+    if (goal.status === 'COMPLETED') {
+      progress = 100;
+    } else if (goal.status === 'ABANDONED') {
+      progress = 0;
+    } else if (goal.children.length > 0) {
       progress = computeParentProgress(goal.children);
     } else if (goal.companyGoalLinks.length > 0) {
       progress = computeLinkedProgress(goal.companyGoalLinks);

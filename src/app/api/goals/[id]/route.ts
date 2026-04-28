@@ -99,7 +99,7 @@ export async function PATCH(
   const parsed = await parseBody(request, updateGoalSchema);
   if ('error' in parsed) return parsed.error;
   const body = parsed.data;
-  const { status, dueDate, level, startDate, endDate } = body;
+  const { dueDate, level, startDate, endDate } = body;
 
   // Restricted writes (only progressPct) are allowed for assignees and company-goal-assignees.
   // Anything else — title, description, status, level, dueDate, dates — requires admin or stack owner.
@@ -132,16 +132,10 @@ export async function PATCH(
   if (startDate !== undefined) data.startDate = startDate ? parseLocalDate(startDate) : null;
   if (endDate !== undefined) data.endDate = endDate ? parseLocalDate(endDate) : null;
 
-  // If marking as COMPLETED, set progress to 100 (overrides any progressPct).
-  // If ABANDONED, force progress to 0. Otherwise use progressPct if provided.
-  if (status === 'COMPLETED') {
-    data.progressPct = 100;
-  } else if (status === 'ABANDONED') {
-    data.progressPct = 0;
-  }
-
   const updated = await prisma.goal.update({ where: { id }, data });
 
+  // Recompute progress after persisting status. cascadeProgressUp pins
+  // progressPct to 100/0 for COMPLETED/ABANDONED so we don't write it here.
   await cascadeProgressUp(id);
 
   return Response.json(updated, { headers: { 'Cache-Control': 'no-store' } });

@@ -29,6 +29,7 @@ import {
 } from '@/components/calendar/WorkBlockObjectiveModal';
 import { fetchTaskLevelClearGoals, patchWorkBlock, deleteWorkBlock } from '@/lib/work-blocks-client';
 import { PRISM_COLORS } from '@/lib/prism-colors';
+import { ScheduledItemGoals } from '@/components/scheduled-item-goals/ScheduledItemGoals';
 
 // Power Down steps — reordered per Prism overhaul spec (2026-03-28)
 // 1. Review Today → 2. [Log Process KPIs (conditional)] → 2/3. Weekly Goals & Tasks → ...
@@ -200,9 +201,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
 
-  // Clear Goals step state — goalChecklistsByTask (above) holds the DB rows;
-  // goalInput is just the per-task draft text.
-  const [goalInput, setGoalInput] = useState<Record<string, string>>({});
+  // Clear Goals step state — goalChecklistsByTask (above) holds the DB rows
+  // for the read-only Goal Clarity Summary fallback (when a work block has no
+  // per-block goals yet). The Clear Goals step itself is now driven by the
+  // ScheduledItemGoals component, which manages its own input state.
   const [clearGoalGuideOpen, setClearGoalGuideOpen] = useState(false);
   // Tracks which task ids have already been fetched so we don't refetch on
   // every parent rerender. Reset on unmount via the component lifecycle.
@@ -225,11 +227,22 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     completionStatus: 'PENDING' | 'COMPLETED' | 'PARTIAL' | 'MISSED';
     actualMinutes: number | null;
     notes: string | null;
-    task: { id: string; title: string; status: string; estimatedMinutes: number; dueDate: string | null };
-    clearGoals: Array<{ id: string; text: string; isComplete: boolean }>;
+    task: { id: string; title: string; status: string; taskType: string; priority?: string; estimatedMinutes: number; dueDate: string | null };
+    clearGoals: Array<{ id: string; text: string; isComplete: boolean; sortOrder: number }>;
+  }
+  interface PowerdownAimInstance {
+    id: string;
+    scheduledDate: string;
+    timeBlockStart: string | null;
+    timeBlockEnd: string | null;
+    status: string;
+    activityNote: string | null;
+    selectedActivity: string | null;
+    aimCategory: { id: string; name: string };
   }
   const [todayWorkBlocks, setTodayWorkBlocks] = useState<PowerdownWorkBlock[]>([]);
   const [tomorrowWorkBlocks, setTomorrowWorkBlocks] = useState<PowerdownWorkBlock[]>([]);
+  const [tomorrowAimInstances, setTomorrowAimInstances] = useState<PowerdownAimInstance[]>([]);
   const [blockReviewPicks, setBlockReviewPicks] = useState<Record<string, 'COMPLETED' | 'PARTIAL' | 'MISSED'>>({});
   const [blockReviewNotes, setBlockReviewNotes] = useState<Record<string, string>>({});
   const [blockReviewActual, setBlockReviewActual] = useState<Record<string, number>>({});
@@ -272,6 +285,19 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         const blocks: PowerdownWorkBlock[] = await res.json();
         setTomorrowWorkBlocks(blocks);
       }
+    } catch {
+      // non-critical
+    }
+  }, [sessionTomorrow]);
+
+  const fetchTomorrowAimInstances = useCallback(async () => {
+    try {
+      const start = parseLocalDate(sessionTomorrow);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      end.setMilliseconds(end.getMilliseconds() - 1);
+      const res = await fetch(`/api/aims/instances?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`);
+      if (res.ok) setTomorrowAimInstances(await res.json());
     } catch {
       // non-critical
     }
@@ -402,6 +428,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchDueKpiProcesses();
     fetchTodayWorkBlocks();
     fetchTomorrowWorkBlocks();
+    fetchTomorrowAimInstances();
     // Fetch user aims to compute Deep Work block duration
     fetch('/api/aims/user').then(r => r.ok ? r.json() : []).then((userAims: any[]) => {
       if (!Array.isArray(userAims)) return;
@@ -677,7 +704,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchUnscheduledTomorrow();
     fetchTomorrowTasks();
     fetchTomorrowWorkBlocks();
-  }, [fetchUnscheduledTomorrow, fetchTomorrowTasks, fetchTomorrowWorkBlocks]);
+    fetchTomorrowAimInstances();
+  }, [fetchUnscheduledTomorrow, fetchTomorrowTasks, fetchTomorrowWorkBlocks, fetchTomorrowAimInstances]);
 
   const handleItemUnscheduled = useCallback(async (itemId: string, itemType: string) => {
     if (itemType === 'task') {
@@ -1009,45 +1037,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     }
   };
 
-  const addGoalChecklistItem = async (taskId: string) => {
-    const text = (goalInput[taskId] ?? '').trim();
-    if (!text) return;
-    setGoalInput((prev) => ({ ...prev, [taskId]: '' }));
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/clear-goals`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, powerdownId: session?.id ?? null }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const created = await res.json();
-      setGoalChecklistsByTask((prev) => ({
-        ...prev,
-        [taskId]: [...(prev[taskId] ?? []), created],
-      }));
-    } catch {
-      toast.error('Failed to save goal');
-      setGoalInput((prev) => ({ ...prev, [taskId]: text }));
-    }
-  };
-
-  const removeGoalChecklistItem = async (taskId: string, goalId: string) => {
-    const prev = goalChecklistsByTask[taskId] ?? [];
-    setGoalChecklistsByTask((curr) => ({
-      ...curr,
-      [taskId]: (curr[taskId] ?? []).filter((g) => g.id !== goalId),
-    }));
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/clear-goals?goalId=${goalId}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch {
-      toast.error('Failed to remove goal');
-      setGoalChecklistsByTask((curr) => ({ ...curr, [taskId]: prev }));
-    }
-  };
-
   if (loading) return <div className="text-[var(--text-muted)] py-12 text-center">Loading...</div>;
 
   if (completed) {
@@ -1110,19 +1099,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   // For Steps 5+6: only tasks with a time block (actually scheduled on calendar)
   const scheduledPlanTasks = planTasks.filter((t) => t.timeBlockStart);
 
-  // Group scheduled tasks by type for Clear Goals step (Steps 5+6)
-  const scheduledTasksByType: Record<string, any[]> = {};
-  for (const t of scheduledPlanTasks) {
-    const type = t.taskType ?? 'OTHER';
-    if (!scheduledTasksByType[type]) scheduledTasksByType[type] = [];
-    scheduledTasksByType[type].push(t);
-  }
-  const typeLabels: Record<string, string> = {
-    IMPROVE: 'Improve',
-    REACT: 'React',
-    MAINTENANCE: 'Maintenance',
-    OTHER: 'Other',
-  };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -1921,81 +1897,79 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 5/6: Clear Goals */}
-            {currentStepKey === 'clear_goals' && (
-              <>
-                <ClearGoalGuide isOpen={clearGoalGuideOpen} onToggle={() => setClearGoalGuideOpen(o => !o)} />
-                <div className="space-y-4">
-                  <p className="text-sm text-[var(--text-secondary)] mb-3">
-                    For each task, add specific outcomes you&apos;ll achieve. e.g., &quot;Complete first draft of proposal sections 1-3&quot;
-                  </p>
-                {scheduledPlanTasks.length === 0 && (
-                  <p className="text-sm text-[var(--text-secondary)]">Nothing is scheduled for tomorrow.</p>
-                )}
-                {Object.entries(scheduledTasksByType).map(([type, tasks]) => (
-                  <div key={type} className="space-y-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                      {typeLabels[type] ?? type}
-                    </h3>
-                    {tasks.map((t) => {
-                      const checklist = goalChecklistsByTask[t.id] ?? [];
-                      const subtasks = (t as any).children as Array<{ id: string; title: string; status: string }> | undefined;
-                      return (
-                        <div key={t.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-2 space-y-2">
-                          <span className="text-sm text-[var(--text-primary)] font-medium">{t.title}</span>
-                          {subtasks && subtasks.length > 0 && (
-                            <div className="ml-4 space-y-1">
-                              <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Subtasks</span>
-                              {subtasks.map((sub) => (
-                                <div key={sub.id} className={`text-xs flex items-center gap-2 ${sub.status === 'DONE' ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-secondary)]'}`}>
-                                  <span>{sub.status === 'DONE' ? '\u2713' : '\u25CB'}</span>
-                                  <span>{sub.title}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {checklist.length > 0 && (
-                            <div className="ml-4 space-y-1">
-                              {checklist.map((goal, i) => (
-                                <div key={goal.id} className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
-                                  <span className="text-indigo-400">{i + 1}.</span>
-                                  <span className="flex-1">{goal.text}</span>
-                                  <button
-                                    onClick={() => removeGoalChecklistItem(t.id, goal.id)}
-                                    className="text-[var(--text-muted)] hover:text-red-400"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex gap-2 ml-4">
-                            <input
-                              type="text"
-                              value={goalInput[t.id] ?? ''}
-                              onChange={(e) => setGoalInput((prev) => ({ ...prev, [t.id]: e.target.value }))}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') addGoalChecklistItem(t.id);
-                              }}
-                              placeholder="Add a specific outcome..."
-                              className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-2 py-1 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                            />
-                            <button
-                              onClick={() => addGoalChecklistItem(t.id)}
-                              className="text-xs rounded bg-indigo-600 px-2 py-1 text-white hover:bg-indigo-500"
-                            >
-                              Add
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+            {/* ClearGoals are scoped to workBlockId so the Goal Clarity Summary
+                step and the Today's Work Blocks dashboard read through the same path. */}
+            {currentStepKey === 'clear_goals' && (() => {
+              const items: Array<{ key: string; startMs: number; node: ReactNode }> = [];
+
+              for (const block of tomorrowWorkBlocks) {
+                items.push({
+                  key: `wb-${block.id}`,
+                  startMs: new Date(block.start).getTime(),
+                  node: (
+                    <ScheduledItemGoals
+                      key={`wb-${block.id}`}
+                      item={{ kind: 'workBlock', block }}
+                      mode="inline"
+                      powerdownId={session?.id}
+                      onChange={fetchTomorrowWorkBlocks}
+                    />
+                  ),
+                });
+              }
+
+              for (const aim of tomorrowAimInstances) {
+                items.push({
+                  key: `aim-${aim.id}`,
+                  startMs: aim.timeBlockStart ? new Date(aim.timeBlockStart).getTime() : Number.MAX_SAFE_INTEGER,
+                  node: (
+                    <ScheduledItemGoals
+                      key={`aim-${aim.id}`}
+                      item={{ kind: 'aimInstance', aim }}
+                      mode="inline"
+                      onChange={fetchTomorrowAimInstances}
+                    />
+                  ),
+                });
+              }
+
+              const workBlockTaskIds = new Set(tomorrowWorkBlocks.map((b) => b.task.id));
+              const orphanTasks = scheduledPlanTasks.filter((t) => !workBlockTaskIds.has(t.id));
+              for (const t of orphanTasks) {
+                items.push({
+                  key: `task-${t.id}`,
+                  startMs: t.timeBlockStart ? new Date(t.timeBlockStart).getTime() : Number.MAX_SAFE_INTEGER,
+                  node: (
+                    <ScheduledItemGoals
+                      key={`task-${t.id}`}
+                      item={{ kind: 'taskOnly', task: { id: t.id, title: t.title, taskType: t.taskType, timeBlockStart: t.timeBlockStart, timeBlockEnd: t.timeBlockEnd } }}
+                      mode="inline"
+                      powerdownId={session?.id}
+                    />
+                  ),
+                });
+              }
+
+              items.sort((a, b) => a.startMs - b.startMs);
+
+              return (
+                <>
+                  <ClearGoalGuide isOpen={clearGoalGuideOpen} onToggle={() => setClearGoalGuideOpen(o => !o)} />
+                  <div className="space-y-3">
+                    <p className="text-sm text-[var(--text-secondary)] mb-3">
+                      For each session tomorrow, write the focus and the specific outcomes you&apos;ll deliver. Goals attach to the work block, so a task with two sessions tomorrow gets two independent goal lists.
+                    </p>
+                    {items.length === 0 ? (
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        Nothing is scheduled for tomorrow. Go back to the Tomorrow&apos;s Calendar step to schedule sessions.
+                      </p>
+                    ) : (
+                      items.map((i) => i.node)
+                    )}
                   </div>
-                ))}
-                </div>
-              </>
-            )}
+                </>
+              );
+            })()}
 
             {/* Lubricate Tomorrow — pre-stage the scheduled subtasks (workblocks). */}
             {currentStepKey === 'lubricate' && (

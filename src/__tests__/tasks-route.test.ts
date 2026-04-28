@@ -138,7 +138,7 @@ describe('GET /api/tasks', () => {
     );
   });
 
-  it('includes tasks scheduled into the requested date by time block', async () => {
+  it('includes tasks scheduled into the requested date by time block, due date, or start-date span', async () => {
     const req = new Request('http://localhost/api/tasks?date=2026-04-05') as any;
     const res = await GET(req);
 
@@ -149,8 +149,11 @@ describe('GET /api/tasks', () => {
           AND: expect.arrayContaining([
             expect.objectContaining({
               OR: expect.arrayContaining([
-                { dueDate: { gte: new Date('2026-04-05'), lt: new Date('2026-04-06') } },
                 { timeBlockStart: { gte: new Date('2026-04-05'), lt: new Date('2026-04-06') } },
+                // Tasks with no start date: dueDate must fall in the window
+                { startTime: null, dueDate: { gte: new Date('2026-04-05'), lt: new Date('2026-04-06') } },
+                // Tasks with a start date: window-overlap (startTime < end AND dueDate >= start)
+                { startTime: { lt: new Date('2026-04-06') }, dueDate: { gte: new Date('2026-04-05') } },
               ]),
             }),
           ]),

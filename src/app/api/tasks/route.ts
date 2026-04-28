@@ -25,10 +25,12 @@ export async function GET(request: NextRequest) {
 
   const scope = searchParams.get('scope');
   const includeUnscheduled = searchParams.get('includeUnscheduled') === 'true';
-  // Hide tasks whose startTime is still in the future. Auto-disabled when fetching
-  // a parent's children (parentId set) — those should always be visible inside the parent view.
+  // When a date range is supplied, visibility (hide-until) is handled by the
+  // range-overlap filter below, so the upcomingFilter would over-exclude tasks
+  // whose startTime falls inside the requested window.
+  const hasDateRange = !!((startDate && endDate) || date);
   const parentId = searchParams.get('parentId');
-  const includeUpcoming = searchParams.get('includeUpcoming') === 'true' || !!parentId;
+  const includeUpcoming = searchParams.get('includeUpcoming') === 'true' || !!parentId || hasDateRange;
   const upcomingFilter: Record<string, unknown> = includeUpcoming
     ? {}
     : { OR: [{ startTime: null }, { startTime: { lte: new Date() } }] };
@@ -95,9 +97,18 @@ export async function GET(request: NextRequest) {
     const rangeEnd = endDate ? parseLocalDate(endDate) : new Date(rangeStart);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
 
+    // A task overlaps the requested window when:
+    //   • it has a time-block falling inside the window, OR
+    //   • it has no startTime and its dueDate falls inside the window
+    //     (legacy single-day behavior — show only on the due date), OR
+    //   • it has a startTime AND its [startTime, dueDate] window overlaps
+    //     the requested range — i.e. show every day from start through due.
+    // `lt: rangeEnd` and `gte: rangeStart` exclude NULLs in Postgres, so the
+    // third clause naturally requires both startTime and dueDate to be set.
     const rangeConditions = [
-      { dueDate: { gte: rangeStart, lt: rangeEnd } },
       { timeBlockStart: { gte: rangeStart, lt: rangeEnd } },
+      { startTime: null, dueDate: { gte: rangeStart, lt: rangeEnd } },
+      { startTime: { lt: rangeEnd }, dueDate: { gte: rangeStart } },
     ];
     if (includeUnscheduled) {
       dateFilter.OR = [
