@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import { ClipboardCheck, Plus, Check, X, Users, Download, PlayCircle, ChevronDown, ChevronUp, Moon } from 'lucide-react';
 import { ReviewChecklist } from '@/components/reviews/ReviewChecklist';
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, formatDateOnly } from '@/lib/date-utils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { REVIEW_LEVEL_COLORS } from '@/lib/goal-constants';
@@ -534,7 +534,7 @@ function ReviewsPageInner() {
                           <Users className="h-3 w-3 text-indigo-400/50" />
                         )}
                         <span className="text-xs text-[var(--text-secondary)]">
-                          {new Date(r.scheduledDate).toLocaleDateString()}
+                          {formatDateOnly(r.scheduledDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
                         </span>
                       </div>
                     </button>
@@ -647,7 +647,7 @@ function ReviewDetailPanel({ selectedReview, allReviews, onStartReview, onComple
           {selected.reviewType} Review
         </h3>
         <p className="text-sm text-[var(--text-muted)]">
-          Scheduled for {new Date(selected.scheduledDate).toLocaleDateString()}
+          Scheduled for {formatDateOnly(selected.scheduledDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
         </p>
         <button
           onClick={() => onStartReview(selectedReview)}

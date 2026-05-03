@@ -5,6 +5,7 @@ import { m } from 'framer-motion';
 import { Pencil, Trash2 } from 'lucide-react';
 import { PRIORITY_DOT_COLORS, TASK_STATUS_COLORS } from '@/lib/goal-constants';
 import { isTaskOverdue } from '@/lib/task-utils';
+import { formatDateOnly } from '@/lib/date-utils';
 
 interface TaskCardInlineProps {
   task: any;
@@ -77,7 +78,7 @@ export const TaskCardInline = React.memo(function TaskCardInline({
         {/* Due date */}
         {task.dueDate && (
           <span className={`text-[10px] shrink-0 ${isOverdue ? 'text-red-400' : 'text-[var(--text-muted)]'}`}>
-            {new Date(task.dueDate).toLocaleDateString()}
+            {formatDateOnly(task.dueDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
           </span>
         )}
 

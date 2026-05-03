@@ -17,6 +17,7 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
+import { formatDateOnly } from '@/lib/date-utils';
 
 type TrainingType = 'BOOK' | 'COURSE';
 
@@ -214,7 +215,7 @@ export default function TrainingPage() {
                       {item.targetCompletionDate && (
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          Due {new Date(item.targetCompletionDate).toLocaleDateString()}
+                          Due {formatDateOnly(item.targetCompletionDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
                         </span>
                       )}
                       <span>
@@ -286,7 +287,7 @@ export default function TrainingPage() {
                               )}
                               {task.dueDate && (
                                 <span className="text-xs text-[var(--text-muted)]">
-                                  {new Date(task.dueDate).toLocaleDateString()}
+                                  {formatDateOnly(task.dueDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
                                 </span>
                               )}
                             </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Pencil, Trash2, Users, Clock, CalendarCheck, Video } from 'lucide-react';
-import { getLocalDateString } from '@/lib/date-utils';
+import { formatDateOnly } from '@/lib/date-utils';
 
 interface Meeting {
   id: string;
@@ -233,7 +233,9 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
     setDescription(meeting.description || '');
     setCadence(meeting.cadence);
     setDayOfWeek(meeting.dayOfWeek);
-    setOccurDate(meeting.occurDate ? getLocalDateString(new Date(meeting.occurDate)) : '');
+    // Meeting.occurDate is stored as UTC midnight; extract the YYYY-MM-DD prefix
+    // directly so the date input shows the same day the user originally chose.
+    setOccurDate(meeting.occurDate ? meeting.occurDate.slice(0, 10) : '');
     setTimeStart(meeting.timeStart);
     setTimeEnd(meeting.timeEnd);
     setEditingId(meeting.id);
@@ -493,7 +495,7 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
                       {CADENCE_LABEL[m.cadence] || m.cadence}
                     </span>
                     {m.cadence === 'ONE_TIME' && m.occurDate && (
-                      <span>{new Date(m.occurDate).toLocaleDateString()}</span>
+                      <span>{formatDateOnly(m.occurDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}</span>
                     )}
                     {m.cadence !== 'ONE_TIME' && m.dayOfWeek !== null && (
                       <span>{DAY_OPTIONS.find((d) => d.value === m.dayOfWeek)?.label}</span>

@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { KpiProgressBar } from '@/components/goals/KpiProgressBar';
 import { ProcessKpiEditor } from './ProcessKpiEditor';
 import { ProcessKpiEntryLogger } from './ProcessKpiEntryLogger';
+import { formatDateOnly } from '@/lib/date-utils';
 
 const TIME_LEVEL_SHORT: Record<string, string> = {
   WEEKLY: 'W',
@@ -183,7 +184,7 @@ export function ProcessKpiSection({ processId, isAdmin }: ProcessKpiSectionProps
                   <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">
                     Last entry: {lastValue}{kpi.unit ? ` ${kpi.unit}` : ''}
                     {lastEntry?.date
-                      ? ` on ${new Date(lastEntry.date).toLocaleDateString()}`
+                      ? ` on ${formatDateOnly(lastEntry.date, { year: 'numeric', month: 'numeric', day: 'numeric' })}`
                       : ''}
                   </p>
                 </div>
@@ -226,9 +227,7 @@ export function ProcessKpiSection({ processId, isAdmin }: ProcessKpiSectionProps
                                   {kpi.unit ? ` ${kpi.unit}` : ''}
                                 </span>
                                 <span className="text-[var(--text-muted)]">
-                                  {entry.date
-                                    ? new Date(entry.date).toLocaleDateString()
-                                    : '—'}
+                                  {formatDateOnly(entry.date, { year: 'numeric', month: 'numeric', day: 'numeric' })}
                                 </span>
                                 {entry.notes && (
                                   <span className="max-w-[160px] truncate text-[var(--text-muted)] italic">

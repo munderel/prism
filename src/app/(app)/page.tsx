@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Focus, AlertTriangle, Lightbulb, Moon, Check, Flame, ChevronDown, Inbox } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import { getLocalDateString, toLocalDateKey, formatDisplayDate } from '@/lib/date-utils';
+import { getLocalDateString, toLocalDateKey, formatDisplayDate, formatDateOnly } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
 import { TaskCard } from '@/components/tasks/TaskCard';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
@@ -661,7 +661,7 @@ export default function DashboardPage() {
               </div>
               <p className="text-sm text-[var(--text-secondary)]">{formatDisplayDate(today, { weekday: true })}</p>
               <p className="text-sm text-[var(--text-muted)]">
-                Week of {new Date(weekRange.start + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(weekRange.end + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                Week of {formatDateOnly(weekRange.start, { year: undefined, month: 'short', day: 'numeric' })} – {formatDateOnly(weekRange.end, { year: undefined, month: 'short', day: 'numeric' })}
               </p>
             </div>
             <QuickAddMenu />
@@ -669,7 +669,7 @@ export default function DashboardPage() {
           <div className="space-y-6">
             {Object.entries(weeklyGrouped).sort(([a], [b]) => a.localeCompare(b)).map(([dateKey, dayTasks]) => {
               const isToday = dateKey === today;
-              const dayLabel = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+              const dayLabel = formatDateOnly(dateKey, { year: undefined, weekday: 'long', month: 'short', day: 'numeric' });
               return (
                 <div key={dateKey}>
                   <div className={`mb-2 flex items-center gap-2 text-sm font-semibold ${isToday ? 'text-indigo-400' : 'text-[var(--text-secondary)]'}`}>

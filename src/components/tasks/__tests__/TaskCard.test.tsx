@@ -96,9 +96,13 @@ describe('TaskCard', () => {
       dueDate: '2020-01-01T00:00:00.000Z',
     });
     renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
-    // TaskCard strips the timezone and parses as local date to avoid the
-    // one-day shift from UTC → local in non-UTC timezones; match that here.
-    const dateEl = screen.getByText(new Date('2020-01-01T00:00:00').toLocaleDateString());
+    // TaskCard formats the date-only YYYY-MM-DD via formatDateOnly (UTC-anchored
+    // en-US numeric) so the displayed calendar date is identical in any TZ.
+    const dateEl = screen.getByText(
+      new Date('2020-01-01T00:00:00.000Z').toLocaleDateString('en-US', {
+        year: 'numeric', month: 'numeric', day: 'numeric', timeZone: 'UTC',
+      }),
+    );
     expect(dateEl).toHaveClass('text-red-400');
   });
 
@@ -108,7 +112,11 @@ describe('TaskCard', () => {
       dueDate: '2099-12-31T00:00:00.000Z',
     });
     renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
-    const dateEl = screen.getByText(new Date('2099-12-31T00:00:00').toLocaleDateString());
+    const dateEl = screen.getByText(
+      new Date('2099-12-31T00:00:00.000Z').toLocaleDateString('en-US', {
+        year: 'numeric', month: 'numeric', day: 'numeric', timeZone: 'UTC',
+      }),
+    );
     expect(dateEl).toHaveClass('text-[var(--text-muted)]');
   });
 

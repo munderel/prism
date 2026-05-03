@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { INPUT_CLASSES } from '@/lib/process-constants';
+import { formatDateOnly } from '@/lib/date-utils';
 
 interface ProcessTasksListProps {
   tasks: any[];
@@ -46,7 +47,7 @@ export function ProcessTasksList({ tasks, processId, onAddTask }: ProcessTasksLi
                 </span>
                 {task.dueDate && (
                   <span className="text-[10px] text-[var(--text-muted)]">
-                    {new Date(task.dueDate).toLocaleDateString()}
+                    {formatDateOnly(task.dueDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
                   </span>
                 )}
                 <button
