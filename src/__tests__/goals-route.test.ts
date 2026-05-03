@@ -47,13 +47,16 @@ vi.mock('@/lib/progress', () => ({
 
 vi.mock('@/lib/date-utils', () => ({
   parseLocalDate: vi.fn((s: string) => ({ __sentinel: 'parseLocalDate', input: s })),
+  parseDateOnly: vi.fn((s: string | null) =>
+    s ? { __sentinel: 'parseDateOnly', input: s } : null,
+  ),
 }));
 
 import { requireAuth, requireAdmin } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { prisma } from '@/lib/prisma';
-import { parseLocalDate } from '@/lib/date-utils';
+import { parseDateOnly } from '@/lib/date-utils';
 import { GET, POST } from '@/app/api/goals/route';
 
 const mockRequireAuth = vi.mocked(requireAuth);
@@ -243,7 +246,7 @@ describe('POST /api/goals', () => {
     expect(mockGoalCreate).toHaveBeenCalled();
   });
 
-  it('parses startDate/endDate via parseLocalDate (not new Date) so YYYY-MM-DD does not drift in negative-UTC timezones', async () => {
+  it('parses startDate/endDate via parseDateOnly so YYYY-MM-DD anchors to UTC midnight', async () => {
     mockParseBody.mockResolvedValue({
       data: {
         stackId: 'stack-1',
@@ -258,10 +261,10 @@ describe('POST /api/goals', () => {
     const req = new Request('http://localhost/api/goals', { method: 'POST' }) as any;
     await POST(req);
 
-    expect(parseLocalDate).toHaveBeenCalledWith('2026-04-20');
-    expect(parseLocalDate).toHaveBeenCalledWith('2026-04-25');
+    expect(parseDateOnly).toHaveBeenCalledWith('2026-04-20');
+    expect(parseDateOnly).toHaveBeenCalledWith('2026-04-25');
     const createArgs = mockGoalCreate.mock.calls[0]![0] as any;
-    expect(createArgs.data.startDate).toEqual({ __sentinel: 'parseLocalDate', input: '2026-04-20' });
-    expect(createArgs.data.endDate).toEqual({ __sentinel: 'parseLocalDate', input: '2026-04-25' });
+    expect(createArgs.data.startDate).toEqual({ __sentinel: 'parseDateOnly', input: '2026-04-20' });
+    expect(createArgs.data.endDate).toEqual({ __sentinel: 'parseDateOnly', input: '2026-04-25' });
   });
 });

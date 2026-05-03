@@ -10,7 +10,7 @@ import { pickDefined, notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, updateGoalSchema } from '@/lib/schemas';
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
-import { parseLocalDate } from '@/lib/date-utils';
+import { parseDateOnly } from '@/lib/date-utils';
 
 export async function GET(
   request: NextRequest,
@@ -126,11 +126,11 @@ export async function PATCH(
   }
 
   const data: Record<string, any> = pickDefined(body, ['title', 'description', 'status', 'level', 'progressPct']);
-  // Bare YYYY-MM-DD strings parsed with `new Date(...)` resolve to UTC midnight,
-  // which displays as the previous calendar day in negative-UTC timezones.
-  if (dueDate !== undefined) data.dueDate = dueDate ? parseLocalDate(dueDate) : null;
-  if (startDate !== undefined) data.startDate = startDate ? parseLocalDate(startDate) : null;
-  if (endDate !== undefined) data.endDate = endDate ? parseLocalDate(endDate) : null;
+  // Date-only fields are stored as UTC midnight and displayed via formatDateOnly
+  // so the calendar date is identical regardless of the viewer's timezone.
+  if (dueDate !== undefined) data.dueDate = parseDateOnly(dueDate);
+  if (startDate !== undefined) data.startDate = parseDateOnly(startDate);
+  if (endDate !== undefined) data.endDate = parseDateOnly(endDate);
 
   const updated = await prisma.goal.update({ where: { id }, data });
 
