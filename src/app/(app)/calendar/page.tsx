@@ -14,6 +14,7 @@ import { freshFetcher } from '@/lib/fetcher';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
+import { formatDateOnly } from '@/lib/date-utils';
 
 
 // FullCalendar needs dynamic import (no SSR)
@@ -212,7 +213,7 @@ function UnscheduledItemCard({
           </div>
           {item.dueDate && (
             <p className="text-xs text-[var(--text-muted)] mt-1">
-              Due: {new Date(item.dueDate).toLocaleDateString()}
+              Due: {formatDateOnly(item.dueDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
             </p>
           )}
         </>

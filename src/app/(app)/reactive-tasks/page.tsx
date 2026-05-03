@@ -5,7 +5,7 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import { Zap, Plus, Check, Search, ChevronDown, ChevronRight, X, Pencil, MessageSquare } from 'lucide-react';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, formatDateOnly } from '@/lib/date-utils';
 
 type Task = {
   id: string;
@@ -52,10 +52,7 @@ function formatRelativeDate(dateStr: string): string {
   const tomorrow = getLocalDateString(tomorrowDate);
 
   const taskDate = dateStr.split('T')[0];
-  const display = new Date(taskDate + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
+  const display = formatDateOnly(taskDate, { year: undefined, month: 'short', day: 'numeric' });
 
   if (taskDate === today) return `${display} — today`;
   if (taskDate === tomorrow) return `${display} — tomorrow`;

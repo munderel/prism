@@ -13,6 +13,7 @@ import {
 import { StepsList } from './StepsList';
 import { ProcessTasksList } from './ProcessTasksList';
 import { ProcessKpiSection } from './ProcessKpiSection';
+import { formatDateOnly } from '@/lib/date-utils';
 import { modeBadgeClasses } from '@/lib/process-constants';
 import { expandVariants } from '@/lib/process-animations';
 import { INPUT_CLASSES } from '@/lib/process-constants';
@@ -84,7 +85,7 @@ export function ProcessDetailView({
           {proc.nextDueAt && (
             <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
               <Calendar className="h-3 w-3" />
-              {new Date(proc.nextDueAt).toLocaleDateString()}
+              {formatDateOnly(proc.nextDueAt, { year: 'numeric', month: 'numeric', day: 'numeric' })}
             </span>
           )}
         </div>
@@ -108,7 +109,7 @@ export function ProcessDetailView({
                 <>
                   {' '}
                   until{' '}
-                  {new Date(expandedData.delegateUntil).toLocaleDateString()}
+                  {formatDateOnly(expandedData.delegateUntil, { year: 'numeric', month: 'numeric', day: 'numeric' })}
                 </>
               )}
             </p>
@@ -218,7 +219,7 @@ export function ProcessDetailView({
                   className="flex items-center justify-between text-xs text-[var(--text-muted)] py-1"
                 >
                   <span>
-                    {new Date(exec.scheduledDate).toLocaleDateString()}
+                    {formatDateOnly(exec.scheduledDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
                   </span>
                   <span>{exec.executedBy?.name || 'Unknown'}</span>
                   <span

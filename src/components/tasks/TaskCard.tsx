@@ -15,6 +15,7 @@ import {
   type WorkBlockForProgress,
   type TaskScheduleState,
 } from '@/lib/workblock-progress';
+import { formatDateOnly } from '@/lib/date-utils';
 
 const SCHEDULE_STATE_STYLES: Record<TaskScheduleState, { label: string; className: string }> = {
   UNSCHEDULED: { label: 'Unscheduled', className: 'bg-gray-500/15 text-gray-400' },
@@ -199,7 +200,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
         {/* Due date */}
         {task.dueDate && (
           <span className={`text-xs ${isOverdue ? 'text-red-400' : 'text-[var(--text-muted)]'}`}>
-            {new Date(task.dueDate.split('T')[0] + 'T00:00:00').toLocaleDateString()}
+            {formatDateOnly(task.dueDate.split('T')[0], { year: 'numeric', month: 'numeric', day: 'numeric' })}
           </span>
         )}
 

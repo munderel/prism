@@ -1,3 +1,5 @@
+import { formatDateOnly } from './date-utils';
+
 export const LEVEL_LABELS: Record<string, string> = {
   HIGH_HARD: 'High Hard Goal',
   STRATEGIC: 'Yearly',
@@ -63,7 +65,9 @@ export function formatEnumLabel(value: string): string {
 }
 
 /**
- * Format a goal's date range for display based on its level.
+ * Format a goal's date range for display based on its level. Goal date fields
+ * are stored as UTC midnight; formatDateOnly handles the UTC anchoring so the
+ * displayed dates don't shift across timezones.
  */
 export function formatGoalDateRange(
   level: string,
@@ -78,26 +82,24 @@ export function formatGoalDateRange(
 
   if (!endDate) {
     if (level === 'HIGH_HARD') return '5-10 Year Goal';
-    if (level === 'STRATEGIC') return String(s.getFullYear());
+    if (level === 'STRATEGIC') return String(s.getUTCFullYear());
     return null;
   }
 
   const e = new Date(endDate);
 
-  // All dates are stored as UTC midnight. Use timeZone: 'UTC' and UTC getters
-  // everywhere so dates never shift by a day in negative-offset timezones.
   switch (level) {
     case 'HIGH_HARD': {
       const diffDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
       if (diffDays <= 14) {
-        const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-        const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+        const start = formatDateOnly(s, { year: undefined, month: 'short', day: 'numeric' });
+        const end = formatDateOnly(e, { month: 'short', day: 'numeric' });
         return `${start} \u2013 ${end}`;
       }
       const months = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth());
       if (months < 12) {
-        const start = s.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
-        const end = e.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+        const start = formatDateOnly(s, { month: 'short', day: undefined });
+        const end = formatDateOnly(e, { month: 'short', day: undefined });
         return `${months}-Month Goal (${start} \u2013 ${end})`;
       }
       const years = e.getUTCFullYear() - s.getUTCFullYear();
@@ -107,10 +109,10 @@ export function formatGoalDateRange(
     case 'STRATEGIC':
       return String(s.getUTCFullYear());
     case 'MONTHLY':
-      return s.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      return formatDateOnly(s, { month: 'long', day: undefined });
     case 'WEEKLY': {
-      const start = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-      const end = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+      const start = formatDateOnly(s, { year: undefined, month: 'short', day: 'numeric' });
+      const end = formatDateOnly(e, { month: 'short', day: 'numeric' });
       return `${start} \u2013 ${end}`;
     }
     default:

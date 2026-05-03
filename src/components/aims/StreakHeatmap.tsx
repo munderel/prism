@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
+import { formatDateOnly } from '@/lib/date-utils';
 
 interface DayEntry {
   date: string;
@@ -81,7 +82,8 @@ export default function StreakHeatmap({ aimCategoryId }: StreakHeatmapProps) {
 
   function getTooltipText(entry: DayEntry | null): string {
     if (!entry) return '';
-    const formatted = new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', {
+    const formatted = formatDateOnly(entry.date, {
+      year: undefined,
       weekday: 'short',
       month: 'short',
       day: 'numeric',

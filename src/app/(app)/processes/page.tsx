@@ -42,6 +42,7 @@ import {
   springTransition,
   cardHoverProps,
 } from '@/lib/process-animations';
+import { formatDateOnly } from '@/lib/date-utils';
 import type { BusinessFunction, ProcessData, ProcessFormValues, UserOption } from '@/types/process';
 
 // ── Confirm dialog state ──
@@ -802,7 +803,7 @@ export default function ProcessesPage() {
                                 {proc.nextDueAt && (
                                   <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
                                     <Calendar className="h-3 w-3" />
-                                    {new Date(proc.nextDueAt).toLocaleDateString()}
+                                    {formatDateOnly(proc.nextDueAt, { year: 'numeric', month: 'numeric', day: 'numeric' })}
                                   </span>
                                 )}
                                 <span className="text-xs text-[var(--text-muted)]">
