@@ -7,7 +7,8 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction';
 import type { EventClickArg, EventContentArg, EventDropArg } from '@fullcalendar/core';
 import type { EventReceiveArg, EventResizeDoneArg } from '@fullcalendar/interaction';
-import { ChevronDown, ChevronUp, X, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2 } from 'lucide-react';
+import { Popover, PopoverBody, PopoverClose, PopoverFooter, PopoverHeader } from '@/components/ui/Popover';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -76,7 +77,7 @@ interface SelectedEventPopover {
   title: string;
   source: 'aims' | 'task' | 'review' | 'powerdown' | 'meeting' | 'process' | 'google' | 'food';
   status: string;
-  position: { top: number; left: number };
+  anchorRect: DOMRect;
   aimInstanceId?: string;
   aimCategoryName?: string;
   selectedActivity?: string;
@@ -399,6 +400,118 @@ function WeeklyHourBar({ scheduledMinutes }: { scheduledMinutes: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// Event content (memoized)
+// ---------------------------------------------------------------------------
+//
+// FullCalendar invokes `eventContent` for every visible event on every parent
+// re-render. Extracting the per-event JSX into a React.memo'd component lets
+// events skip re-rendering when only the parent changed (callbacks/userColors/
+// isDark are referentially stable across all events at a given render).
+
+interface EventContentProps {
+  itemId?: string;
+  itemType?: string;
+  source?: string;
+  taskType?: string;
+  apiColor?: string;
+  backgroundColor?: string;
+  title: string;
+  timeText: string;
+  startMs: number;
+  endMs: number;
+  isDark: boolean;
+  userColors: Record<ItemType, ColorDef>;
+  onUnschedule: (itemId: string, itemType: string) => void | Promise<void>;
+  mutateEvents: () => unknown;
+  onRefresh?: () => void;
+}
+
+const EventContent = React.memo(function EventContent({
+  itemId,
+  itemType,
+  source,
+  taskType,
+  apiColor,
+  backgroundColor,
+  title,
+  timeText,
+  startMs,
+  endMs,
+  isDark,
+  userColors,
+  onUnschedule,
+  mutateEvents,
+  onRefresh,
+}: EventContentProps) {
+  let colors = getEventColor(
+    { extendedProps: { source, color: apiColor, taskType }, backgroundColor },
+    isDark,
+    userColors,
+  );
+  let colorKey: ItemType | null = null;
+  if ((itemType === 'task' || itemType === 'workblock') && typeof taskType === 'string') {
+    colorKey = taskTypeToColorKey(taskType);
+  } else if (itemType === 'aim') {
+    colorKey = 'AIM';
+  } else if (itemType === 'food') {
+    colorKey = 'FOOD';
+  } else if (source === 'meetings') {
+    colorKey = 'MEETING';
+  } else if (source === 'powerdown') {
+    colorKey = 'POWER_DOWN';
+  } else if (source === 'reviews') {
+    colorKey = 'REVIEW';
+  } else if (source === 'google') {
+    colorKey = 'GOOGLE_CAL';
+  }
+  if (colorKey && userColors[colorKey]) {
+    const hex = userColors[colorKey].color;
+    colors = { ...colors, border: hex };
+  }
+  const isGoogleEvent = source === 'google';
+  const durationMs = endMs - startMs;
+  const isShort = durationMs > 0 && durationMs <= 10 * 60 * 1000;
+
+  const emoji = colorKey ? PRISM_COLORS[colorKey].emoji : '';
+  const displayTitle =
+    emoji && title.startsWith(emoji) ? title.slice(emoji.length).trimStart() : title;
+
+  return (
+    <div
+      className={`relative h-full w-full overflow-hidden rounded px-1.5 text-[11px] leading-tight ${isShort ? 'py-0' : 'py-0.5'}`}
+      style={{
+        backgroundColor: colors.border,
+        borderLeft: `3px solid ${colors.border}`,
+        color: '#ffffff',
+      }}
+    >
+      <div className="flex items-baseline gap-1 truncate pr-4 text-white">
+        {emoji && <span aria-hidden className="flex-none">{emoji}</span>}
+        <span className="truncate font-medium">{displayTitle}</span>
+        {timeText && !isShort && (
+          <span className="ml-auto flex-none text-[10px] text-white/75">{timeText}</span>
+        )}
+      </div>
+      {!isGoogleEvent && itemId && (
+        <button
+          type="button"
+          className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-black/30 hover:bg-red-500/80 text-white/80 hover:text-white transition-colors text-[10px] leading-none"
+          title="Unschedule"
+          onClick={async (e) => {
+            e.stopPropagation();
+            await onUnschedule(itemId, itemType ?? '');
+            mutateEvents();
+            onRefresh?.();
+          }}
+        >
+          &times;
+        </button>
+      )}
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -422,7 +535,6 @@ export function CalendarSplitView({
   const pendingWorkBlocks = useRef<any[]>([]);
   const pendingScheduledItems = useRef<any[]>([]);
   const pendingFoodBlocks = useRef<any[]>([]);
-  const popoverRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme !== 'light';
   const isMobile = useMediaQuery('(max-width: 1023px)');
@@ -539,18 +651,6 @@ export function CalendarSplitView({
   const handleDatesSet = useCallback((info: { startStr: string; endStr: string }) => {
     setVisibleRange({ start: info.startStr, end: info.endStr });
   }, []);
-
-  // Dismiss popover on outside click
-  useEffect(() => {
-    if (!selectedEventPopover) return;
-    const handleClick = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setSelectedEventPopover(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [selectedEventPopover]);
 
   // Calculate scheduled hours for the FULL WEEK for the weekly target bar.
   // In week view the display events already cover the week; in day view we use
@@ -729,8 +829,7 @@ export function CalendarSplitView({
   // --- Event click handler ---
   const handleEventClick = useCallback((info: EventClickArg) => {
     const props = info.event.extendedProps || {};
-    const rect = info.el.getBoundingClientRect();
-    const position = { top: rect.top + window.scrollY, left: rect.right + 8 };
+    const anchorRect = info.el.getBoundingClientRect();
 
     // Powerdown event
     if (props.link === '/powerdown' || info.event.id?.startsWith('powerdown-')) {
@@ -739,7 +838,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'powerdown',
         status: '',
-        position,
+        anchorRect,
         link: '/powerdown',
       });
       return;
@@ -752,7 +851,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'review',
         status: '',
-        position,
+        anchorRect,
         link: props.link || '/reviews',
       });
       return;
@@ -765,7 +864,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'review',
         status: props.completed ? 'completed' : '',
-        position,
+        anchorRect,
         link: props.reviewId ? `/reviews/${props.reviewId}/complete` : '/reviews',
       });
       return;
@@ -778,7 +877,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'process',
         status: '',
-        position,
+        anchorRect,
         link: '/processes',
       });
       return;
@@ -791,7 +890,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'meeting',
         status: '',
-        position,
+        anchorRect,
         description: props.description,
         cadence: props.cadence,
         createdBy: props.createdBy,
@@ -807,7 +906,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'aims',
         status: props.status || 'SCHEDULED',
-        position,
+        anchorRect,
         aimInstanceId: props.aimInstanceId,
         aimCategoryName: props.aimCategoryName,
         selectedActivity: props.selectedActivity,
@@ -826,7 +925,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'task',
         status: props.status || 'TODO',
-        position,
+        anchorRect,
         taskId: props.taskId || info.event.id?.replace('task-', ''),
         taskType: props.taskType,
         priority: props.priority,
@@ -846,7 +945,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'food',
         status: '',
-        position,
+        anchorRect,
         foodBlockId,
       });
       return;
@@ -860,7 +959,7 @@ export function CalendarSplitView({
         title: info.event.title,
         source: 'google',
         status: '',
-        position,
+        anchorRect,
         description: props.description,
         gcalEventId: rawId,
         gcalCalendarId: props.calendarId || 'primary',
@@ -1153,78 +1252,37 @@ export function CalendarSplitView({
   );
 
   // Custom event content renderer: Google-Calendar-style single-line layout
-  // with an emoji prefix derived from the task type.
+  // with an emoji prefix derived from the task type. The actual JSX lives in
+  // the React.memo'd <EventContent> above so per-event re-renders are skipped
+  // when only the parent re-renders.
   const renderEventContent = useCallback(
     (eventInfo: EventContentArg) => {
-      const { itemId, itemType, source, taskType } =
-        eventInfo.event.extendedProps ?? {};
-      let colors = getEventColor(eventInfo.event, isDark, userColors);
-      let colorKey: ItemType | null = null;
-      if ((itemType === 'task' || itemType === 'workblock') && typeof taskType === 'string') {
-        colorKey = taskTypeToColorKey(taskType);
-      } else if (itemType === 'aim') {
-        colorKey = 'AIM';
-      } else if (itemType === 'food') {
-        colorKey = 'FOOD';
-      } else if (source === 'meetings') {
-        colorKey = 'MEETING';
-      } else if (source === 'powerdown') {
-        colorKey = 'POWER_DOWN';
-      } else if (source === 'reviews') {
-        colorKey = 'REVIEW';
-      } else if (source === 'google') {
-        colorKey = 'GOOGLE_CAL';
-      }
-      if (colorKey && userColors[colorKey]) {
-        const hex = userColors[colorKey].color;
-        colors = { ...colors, border: hex };
-      }
-      const isGoogleEvent = source === 'google';
-      const durationMs =
-        (eventInfo.event.end?.getTime() ?? 0) -
-        (eventInfo.event.start?.getTime() ?? 0);
-      const isShort = durationMs > 0 && durationMs <= 10 * 60 * 1000;
-
-      const emoji = colorKey ? PRISM_COLORS[colorKey].emoji : '';
-      // Strip a leading emoji already baked into the title (e.g. food blocks
-      // are returned as `🍽️ Lunch`) so we don't render it twice.
-      const rawTitle = eventInfo.event.title ?? '';
-      const displayTitle = emoji && rawTitle.startsWith(emoji)
-        ? rawTitle.slice(emoji.length).trimStart()
-        : rawTitle;
-
+      const { itemId, itemType, source, taskType, color: apiColor } =
+        (eventInfo.event.extendedProps ?? {}) as {
+          itemId?: string;
+          itemType?: string;
+          source?: string;
+          taskType?: string;
+          color?: string;
+        };
       return (
-        <div
-          className={`relative h-full w-full overflow-hidden rounded px-1.5 text-[11px] leading-tight ${isShort ? 'py-0' : 'py-0.5'}`}
-          style={{
-            backgroundColor: colors.border,
-            borderLeft: `3px solid ${colors.border}`,
-            color: '#ffffff',
-          }}
-        >
-          <div className="flex items-baseline gap-1 truncate pr-4 text-white">
-            {emoji && <span aria-hidden className="flex-none">{emoji}</span>}
-            <span className="truncate font-medium">{displayTitle}</span>
-            {eventInfo.timeText && !isShort && (
-              <span className="ml-auto flex-none text-[10px] text-white/75">{eventInfo.timeText}</span>
-            )}
-          </div>
-          {!isGoogleEvent && itemId && (
-            <button
-              type="button"
-              className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-black/30 hover:bg-red-500/80 text-white/80 hover:text-white transition-colors text-[10px] leading-none"
-              title="Unschedule"
-              onClick={async (e) => {
-                e.stopPropagation();
-                await onUnschedule(itemId, itemType);
-                mutateEvents();
-                onRefresh?.();
-              }}
-            >
-              &times;
-            </button>
-          )}
-        </div>
+        <EventContent
+          itemId={itemId}
+          itemType={itemType}
+          source={source}
+          taskType={taskType}
+          apiColor={apiColor}
+          backgroundColor={eventInfo.event.backgroundColor}
+          title={eventInfo.event.title ?? ''}
+          timeText={eventInfo.timeText}
+          startMs={eventInfo.event.start?.getTime() ?? 0}
+          endMs={eventInfo.event.end?.getTime() ?? 0}
+          isDark={isDark}
+          userColors={userColors}
+          onUnschedule={onUnschedule}
+          mutateEvents={mutateEvents}
+          onRefresh={onRefresh}
+        />
       );
     },
     [onUnschedule, mutateEvents, onRefresh, isDark, userColors],
@@ -1436,37 +1494,18 @@ export function CalendarSplitView({
       </div>
 
       {/* Event Popover */}
-      {selectedEventPopover && (
-        <>
-          {isMobile && (
-            <div className="fixed inset-0 z-[59] bg-black/40" onClick={() => setSelectedEventPopover(null)} />
-          )}
-          <div
-            ref={popoverRef}
-            className={isMobile
-              ? 'fixed inset-x-0 bottom-0 z-[60] w-full rounded-t-xl border-t border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm pb-6'
-              : 'fixed z-[60] w-72 rounded-xl border border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm'
-            }
-            style={isMobile ? undefined : {
-              top: Math.min(selectedEventPopover.position.top, window.innerHeight - 280),
-              left: Math.min(selectedEventPopover.position.left, window.innerWidth - 300),
-            }}
-          >
-            {/* Popover Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
+      {selectedEventPopover && (() => {
+        const closePopover = () => setSelectedEventPopover(null);
+        const popoverInner = (
+          <>
+            <PopoverHeader>
               <h4 className="text-sm font-semibold text-[var(--text-primary)] truncate pr-2">
                 {selectedEventPopover.title}
               </h4>
-              <button
-                onClick={() => setSelectedEventPopover(null)}
-                className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors flex-shrink-0"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+              <PopoverClose onClose={closePopover} />
+            </PopoverHeader>
 
-            {/* Popover Body */}
-            <div className="px-4 py-3 space-y-2.5">
+            <PopoverBody>
               {/* AIM popover */}
               {selectedEventPopover.source === 'aims' && (
                 <>
@@ -1602,10 +1641,9 @@ export function CalendarSplitView({
                   )}
                 </>
               )}
-            </div>
+            </PopoverBody>
 
-            {/* Popover Actions */}
-            <div className="px-4 py-3 border-t border-[var(--border-color)] flex flex-col gap-2">
+            <PopoverFooter>
               {/* Aim actions */}
               {selectedEventPopover.source === 'aims' && selectedEventPopover.status !== 'COMPLETED' && (
                 <button
@@ -1787,10 +1825,32 @@ export function CalendarSplitView({
                   </button>
                 </>
               )}
-            </div>
-          </div>
-        </>
-      )}
+            </PopoverFooter>
+          </>
+        );
+
+        if (isMobile) {
+          return (
+            <>
+              <div className="fixed inset-0 z-[59] bg-black/40" onClick={closePopover} />
+              <div className="fixed inset-x-0 bottom-0 z-[60] w-full flex flex-col rounded-t-xl border-t border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm pb-6 max-h-[85vh]">
+                {popoverInner}
+              </div>
+            </>
+          );
+        }
+
+        return (
+          <Popover
+            open
+            anchorRect={selectedEventPopover.anchorRect}
+            onClose={closePopover}
+            className="w-72"
+          >
+            {popoverInner}
+          </Popover>
+        );
+      })()}
 
       {/* Task Editor Modal */}
       {editingTask && (
