@@ -103,6 +103,29 @@ describe('DailyTaskList', () => {
     });
   });
 
+  it('renders without crashing on a large task list (virtualization smoke test)', async () => {
+    // 100 tasks — proves the windowed virtualizer doesn't throw or hang on
+    // large inputs. We don't assert which specific items render here:
+    // jsdom has no real layout, so the virtualizer falls back to its
+    // estimated-size pagination and only renders the first viewport-worth
+    // of rows (subsequent rows scroll into view in a real browser).
+    const tasks = Array.from({ length: 100 }, (_, i) =>
+      createTask({
+        id: `t-${i}`,
+        title: `Task ${i}`,
+        taskType: i % 3 === 0 ? 'IMPROVE' : i % 3 === 1 ? 'REACT' : 'MAINTENANCE',
+      }),
+    );
+    const { container } = renderWithProviders(
+      <DailyTaskList date={date} onEdit={onEdit} onDelete={onDelete} />,
+      { swrData: { '/api/tasks': tasks } },
+    );
+    await waitFor(() => {
+      // At least one task card has rendered into the virtualized window.
+      expect(container.querySelectorAll('[data-index]').length).toBeGreaterThan(0);
+    });
+  });
+
   it('expands a collapsed section when header is clicked again', async () => {
     const user = userEvent.setup();
     const tasks = [
