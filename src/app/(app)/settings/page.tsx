@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession, signIn } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, RefreshCw, Link2, Check, Flame, User } from 'lucide-react';
+import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun, Moon as MoonIcon, Monitor, Eye, Clock, Calendar, Sunset, RefreshCw, Link2, Check, Flame, User, Lock, LockOpen, KeyRound } from 'lucide-react';
 import { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -15,7 +15,20 @@ interface TeamUser {
   name: string | null;
   email: string;
   isAdmin: boolean;
+  is2FAEnabled?: boolean;
+  isLockedOut?: boolean;
+  lockoutUntil?: string | null;
 }
+
+// Subset of `adminUserActionSchema` actions surfaced in the admin UI.
+// Reset-password is intentionally omitted (no UI for it yet).
+type AdminUserAction = 'lockout' | 'unlock' | 'reset-2fa';
+
+const OPTIMISTIC_USER_PATCH: Record<AdminUserAction, Partial<TeamUser>> = {
+  lockout: { isLockedOut: true },
+  unlock: { isLockedOut: false, lockoutUntil: null },
+  'reset-2fa': { is2FAEnabled: false },
+};
 
 interface Invitation {
   id: string;
@@ -127,6 +140,13 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [seedingAims, setSeedingAims] = useState(false);
   const [seedAimResult, setSeedAimResult] = useState('');
+  const [enforce2FA, setEnforce2FA] = useState(false);
+  const [enforce2FALoaded, setEnforce2FALoaded] = useState(false);
+  const [pendingUserAction, setPendingUserAction] = useState<{
+    action: AdminUserAction;
+    userId: string;
+    userName: string;
+  } | null>(null);
 
   // Connected Calendars
   const [availableCalendars, setAvailableCalendars] = useState<{ id: string; summary: string; primary: boolean; backgroundColor: string }[]>([]);
@@ -191,6 +211,7 @@ export default function SettingsPage() {
       fetchUsers();
       fetchCompanySettings();
       fetchInvitations();
+      fetchAuthSettings();
     }
   }, [isAdmin]);
 
@@ -374,6 +395,45 @@ export default function SettingsPage() {
       fetchUsers(); // rollback
       const data = await res.json().catch(() => ({}));
       toast.error(data.error || 'Failed to remove user');
+    }
+  };
+
+  const fetchAuthSettings = async () => {
+    const res = await fetch('/api/settings/auth');
+    if (res.ok) {
+      const data = await res.json();
+      setEnforce2FA(Boolean(data?.enforce2FA));
+      setEnforce2FALoaded(true);
+    }
+  };
+
+  const toggleEnforce2FA = async (next: boolean) => {
+    setEnforce2FA(next); // optimistic
+    const res = await fetch('/api/settings/auth', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enforce2FA: next }),
+    });
+    if (!res.ok) {
+      setEnforce2FA(!next);
+      toast.error('Failed to update 2FA enforcement');
+    } else {
+      toast.success(next ? '2FA enforcement enabled.' : '2FA enforcement disabled.');
+    }
+  };
+
+  const performUserAction = async (userId: string, action: AdminUserAction) => {
+    const patch = OPTIMISTIC_USER_PATCH[action];
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, ...patch } : u)));
+    const res = await fetch(`/api/users/${userId}/admin`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) {
+      fetchUsers(); // rollback
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || `Failed to ${action} user`);
     }
   };
 
@@ -1222,17 +1282,56 @@ export default function SettingsPage() {
               <Shield className="h-5 w-5 text-red-400" />
               Admin Panel
             </h2>
+
+            {/* Org-wide 2FA enforcement */}
+            <div className="mb-4 flex items-center justify-between rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)]">Enforce 2FA org-wide</p>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  When enabled, users without 2FA cannot complete login.
+                </p>
+              </div>
+              <button
+                onClick={() => toggleEnforce2FA(!enforce2FA)}
+                disabled={!enforce2FALoaded}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                  enforce2FA ? 'bg-red-600' : 'bg-[var(--hover-bg)]'
+                }`}
+                aria-pressed={enforce2FA}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    enforce2FA ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
             <div className="space-y-2">
-              {users.map((user) => (
+              {users.map((user) => {
+                const isSelf = user.id === session?.user?.id;
+                return (
                 <div key={user.id} className="flex items-center justify-between rounded-lg bg-[var(--surface)] px-4 py-3">
-                  <div>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm text-[var(--text-primary)]">{user.name ?? user.email}</span>
-                    <span className="text-xs text-[var(--text-muted)] ml-2">{user.email}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{user.email}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      user.is2FAEnabled
+                        ? 'bg-green-600/15 text-green-400'
+                        : 'bg-[var(--hover-bg)] text-[var(--text-muted)]'
+                    }`}>
+                      {user.is2FAEnabled ? '2FA on' : '2FA off'}
+                    </span>
+                    {user.isLockedOut && (
+                      <span className="rounded-full bg-red-600/15 px-2 py-0.5 text-[10px] font-medium text-red-400">
+                        Locked
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => toggleAdmin(user.id, !user.isAdmin)}
-                      disabled={user.id === session?.user?.id}
+                      disabled={isSelf}
                       className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
                         user.isAdmin
                           ? 'bg-red-600 text-white hover:bg-red-700'
@@ -1241,17 +1340,45 @@ export default function SettingsPage() {
                     >
                       {user.isAdmin ? 'Remove Admin' : 'Make Admin'}
                     </button>
-                    {user.id !== session?.user?.id && (
-                      <button
-                        onClick={() => removeUser(user.id)}
-                        className="text-xs text-red-400 hover:text-red-300"
-                      >
-                        Remove
-                      </button>
+                    {!isSelf && (
+                      <>
+                        {user.isLockedOut ? (
+                          <button
+                            onClick={() => performUserAction(user.id, 'unlock')}
+                            className="inline-flex items-center gap-1 rounded-lg bg-amber-600/15 px-2.5 py-1 text-xs font-medium text-amber-400 hover:bg-amber-600/25 transition-colors"
+                          >
+                            <LockOpen className="h-3 w-3" />
+                            Unlock
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setPendingUserAction({ action: 'lockout', userId: user.id, userName: user.name ?? user.email })}
+                            className="inline-flex items-center gap-1 rounded-lg bg-[var(--hover-bg)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                          >
+                            <Lock className="h-3 w-3" />
+                            Lock
+                          </button>
+                        )}
+                        {user.is2FAEnabled && (
+                          <button
+                            onClick={() => setPendingUserAction({ action: 'reset-2fa', userId: user.id, userName: user.name ?? user.email })}
+                            className="inline-flex items-center gap-1 rounded-lg bg-[var(--hover-bg)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                          >
+                            <KeyRound className="h-3 w-3" />
+                            Reset 2FA
+                          </button>
+                        )}
+                        <button
+                          onClick={() => removeUser(user.id)}
+                          className="text-xs text-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
 
             {/* AIM Categories */}
@@ -1475,6 +1602,24 @@ export default function SettingsPage() {
         variant="danger"
         onConfirm={confirmRemoveUser}
         onCancel={() => { setConfirmOpen(false); setPendingRemoveUserId(null); }}
+      />
+
+      <ConfirmDialog
+        open={pendingUserAction !== null}
+        title={pendingUserAction?.action === 'lockout' ? 'Lock User' : 'Reset 2FA'}
+        message={
+          pendingUserAction?.action === 'lockout'
+            ? `Lock ${pendingUserAction.userName} out of their account? They will be signed out within 5 minutes and cannot log back in until you unlock them.`
+            : `Reset 2FA for ${pendingUserAction?.userName}? Their TOTP secret will be cleared and they will be prompted to set up 2FA again on their next login.`
+        }
+        confirmLabel={pendingUserAction?.action === 'lockout' ? 'Lock' : 'Reset 2FA'}
+        variant="danger"
+        onConfirm={() => {
+          if (!pendingUserAction) return;
+          performUserAction(pendingUserAction.userId, pendingUserAction.action);
+          setPendingUserAction(null);
+        }}
+        onCancel={() => setPendingUserAction(null)}
       />
     </div>
   );
