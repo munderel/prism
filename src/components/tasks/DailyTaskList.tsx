@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { m, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { TaskCard } from './TaskCard';
 import { TaskCompletionKpiModal } from './TaskCompletionKpiModal';
 import { useKpiCompletionPrompt } from '@/hooks/useKpiCompletionPrompt';
@@ -57,6 +57,12 @@ interface DailyTaskListProps {
   selectedIds?: Set<string>;
   onSelect?: (taskId: string) => void;
 }
+
+type Row =
+  | { kind: 'header'; key: string; sectionKey: string; label: string; color: string; count: number; collapsed: boolean }
+  | { kind: 'empty'; key: string }
+  | { kind: 'task'; key: string; task: DailyTask }
+  | { kind: 'completed-header'; key: string; count: number; expanded: boolean };
 
 export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick, onStatusChange, selectionMode, selectedIds, onSelect }: DailyTaskListProps) {
   const router = useRouter();
@@ -172,115 +178,147 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
     [tasks]
   );
 
+  // Flatten visible items into a single list so one virtualizer can drive
+  // the whole component. Collapsed sections contribute only their header;
+  // the completed section appends to the end.
+  const rows = useMemo<Row[]>(() => {
+    const out: Row[] = [];
+    for (const { key, label, color, tasks: sectionTasks } of grouped) {
+      const isCollapsed = !!collapsed[key];
+      out.push({ kind: 'header', key: `h-${key}`, sectionKey: key, label, color, count: sectionTasks.length, collapsed: isCollapsed });
+      if (isCollapsed) continue;
+      if (sectionTasks.length === 0) {
+        out.push({ kind: 'empty', key: `e-${key}` });
+      } else {
+        for (const task of sectionTasks) {
+          out.push({ kind: 'task', key: `${key}-${task.id}`, task });
+        }
+      }
+    }
+    if (completedTasks.length > 0) {
+      out.push({ kind: 'completed-header', key: 'c-header', count: completedTasks.length, expanded: showCompleted });
+      if (showCompleted) {
+        for (const task of completedTasks) {
+          out.push({ kind: 'task', key: `c-${task.id}`, task });
+        }
+      }
+    }
+    return out;
+  }, [grouped, collapsed, completedTasks, showCompleted]);
+
+  // Page-level scroll: scrollMargin tells the virtualizer how far down
+  // the list begins so it can position items relative to window scroll.
+  const parentRef = useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useLayoutEffect(() => {
+    if (parentRef.current) setScrollMargin(parentRef.current.offsetTop);
+  }, [rows.length]);
+
+  const virtualizer = useWindowVirtualizer({
+    count: rows.length,
+    estimateSize: () => 80,
+    overscan: 8,
+    scrollMargin,
+  });
+
   if (isLoading) {
     return <div className="text-[var(--text-muted)] text-sm py-4">Loading tasks...</div>;
   }
 
-  const totalDone = completedTasks.length;
+  const handleTaskCardClick = (t: DailyTask) => {
+    if (t.taskType === 'REVIEW') {
+      router.push('/reviews');
+      return;
+    }
+    onClick?.(t);
+  };
 
   return (
     <>
-    <div className="space-y-4">
-      {grouped.map(({ key, label, color, tasks: sectionTasks }) => (
-        <div key={key}>
-          <button
-            onClick={() => toggleCollapse(key)}
-            className="flex items-center gap-2 mb-2 w-full text-left"
-          >
-            {collapsed[key] ? (
-              <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
-            )}
-            <span className={`text-sm font-semibold ${color}`}>{label}</span>
-            <span className="text-xs text-[var(--text-muted)]">({sectionTasks.length})</span>
-          </button>
-
-          <AnimatePresence>
-            {!collapsed[key] && (
-              <m.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="space-y-2 overflow-hidden"
+      <div ref={parentRef}>
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            position: 'relative',
+            width: '100%',
+          }}
+        >
+          {virtualizer.getVirtualItems().map((vi) => {
+            const row = rows[vi.index];
+            return (
+              <div
+                key={row.key}
+                data-index={vi.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${vi.start - virtualizer.options.scrollMargin}px)`,
+                }}
+                className="pb-2"
               >
-                {sectionTasks.length === 0 ? (
-                  <p className="text-xs text-[var(--text-muted)] pl-6">No tasks</p>
-                ) : (
-                  sectionTasks.map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      onToggle={handleToggle}
-                      onEdit={onEdit}
-                      onDelete={onDelete}
-                      onClick={(t: DailyTask) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } onClick?.(t); }}
-                      onStatusChange={handleStatusChange}
-                      onWinTheDayToggle={handleWinTheDayToggle}
-                      isSelectable={selectionMode}
-                      isSelected={selectedIds?.has(task.id)}
-                      onSelect={onSelect}
-                    />
-                  ))
+                {row.kind === 'header' && (
+                  <button
+                    onClick={() => toggleCollapse(row.sectionKey)}
+                    className="flex items-center gap-2 mb-2 w-full text-left"
+                  >
+                    {row.collapsed ? (
+                      <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+                    )}
+                    <span className={`text-sm font-semibold ${row.color}`}>{row.label}</span>
+                    <span className="text-xs text-[var(--text-muted)]">({row.count})</span>
+                  </button>
                 )}
-              </m.div>
-            )}
-          </AnimatePresence>
-        </div>
-      ))}
-
-      {/* Completed tasks section */}
-      {totalDone > 0 && (
-        <div>
-          <button
-            onClick={() => setShowCompleted((v) => !v)}
-            className="flex items-center gap-2 mb-2 w-full text-left"
-          >
-            {showCompleted ? (
-              <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
-            ) : (
-              <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
-            )}
-            <CheckCircle2 className="h-4 w-4 text-green-500 dark:text-green-400" />
-            <span className="text-sm font-semibold text-green-700 dark:text-green-400">
-              Completed
-            </span>
-            <span className="text-xs text-[var(--text-muted)]">({totalDone})</span>
-          </button>
-
-          <AnimatePresence>
-            {showCompleted && (
-              <m.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="space-y-2 overflow-hidden"
-              >
-                {completedTasks.map((task) => (
+                {row.kind === 'empty' && (
+                  <p className="text-xs text-[var(--text-muted)] pl-6">No tasks</p>
+                )}
+                {row.kind === 'task' && (
                   <TaskCard
-                    key={task.id}
-                    task={task}
+                    task={row.task}
                     onToggle={handleToggle}
                     onEdit={onEdit}
                     onDelete={onDelete}
-                    onClick={(t: DailyTask) => { if (t.taskType === 'REVIEW') { router.push('/reviews'); return; } onClick?.(t); }}
+                    onClick={handleTaskCardClick}
                     onStatusChange={handleStatusChange}
                     onWinTheDayToggle={handleWinTheDayToggle}
+                    isSelectable={selectionMode}
+                    isSelected={selectedIds?.has(row.task.id)}
+                    onSelect={onSelect}
                   />
-                ))}
-              </m.div>
-            )}
-          </AnimatePresence>
+                )}
+                {row.kind === 'completed-header' && (
+                  <button
+                    onClick={() => setShowCompleted((v) => !v)}
+                    className="flex items-center gap-2 mb-2 w-full text-left"
+                  >
+                    {row.expanded ? (
+                      <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
+                    )}
+                    <CheckCircle2 className="h-4 w-4 text-green-500 dark:text-green-400" />
+                    <span className="text-sm font-semibold text-green-700 dark:text-green-400">
+                      Completed
+                    </span>
+                    <span className="text-xs text-[var(--text-muted)]">({row.count})</span>
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
+      </div>
+      {kpiPromptState && (
+        <TaskCompletionKpiModal
+          processId={kpiPromptState.processId}
+          processTitle={kpiPromptState.processTitle}
+          onClose={dismiss}
+        />
       )}
-    </div>
-    {kpiPromptState && (
-      <TaskCompletionKpiModal
-        processId={kpiPromptState.processId}
-        processTitle={kpiPromptState.processTitle}
-        onClose={dismiss}
-      />
-    )}
     </>
   );
 }
