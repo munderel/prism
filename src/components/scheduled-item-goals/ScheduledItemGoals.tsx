@@ -105,6 +105,71 @@ function TimeRow({ start, end, label }: { start?: string | null; end?: string | 
   );
 }
 
+function containerClass(
+  mode: 'inline' | 'popover',
+  spacing: 'space-y-1' | 'space-y-2' = 'space-y-2',
+): string {
+  return mode === 'popover'
+    ? spacing
+    : `rounded-lg bg-[var(--surface-raised)]/50 p-3 ${spacing}`;
+}
+
+function TypeBadge({
+  color,
+  showTooltip,
+}: {
+  color: { bgClass: string; textClass: string; emoji: string; label: string };
+  showTooltip?: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${color.bgClass} ${color.textClass}`}
+      title={showTooltip ? color.label : undefined}
+    >
+      {color.emoji} {color.label}
+    </span>
+  );
+}
+
+function EditorShell({
+  badge,
+  title,
+  timeStart,
+  timeEnd,
+  timeRowLabel,
+  pending,
+  mode,
+  spacing,
+  children,
+}: {
+  badge: React.ReactNode;
+  title: React.ReactNode;
+  timeStart?: string | null;
+  timeEnd?: string | null;
+  timeRowLabel?: string;
+  pending?: boolean;
+  mode: 'inline' | 'popover';
+  spacing?: 'space-y-1' | 'space-y-2';
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className={containerClass(mode, spacing)}>
+      <div className="flex items-center gap-2">
+        {badge}
+        <span className="text-sm font-medium text-[var(--text-primary)]">{title}</span>
+        {pending && (
+          <span
+            className="ml-auto h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400"
+            aria-label="Saving"
+          />
+        )}
+      </div>
+      <TimeRow start={timeStart} end={timeEnd} label={timeRowLabel} />
+      {children}
+    </div>
+  );
+}
+
 // ---------- WorkBlock ----------
 
 function WorkBlockEditor({
@@ -171,24 +236,15 @@ function WorkBlockEditor({
     if (!ok) setGoals(prev);
   }
 
-  const containerClass =
-    mode === 'popover' ? 'space-y-2' : 'rounded-lg bg-[var(--surface-raised)]/50 p-3 space-y-2';
-
   return (
-    <div className={containerClass}>
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${color.bgClass} ${color.textClass}`}
-          title={color.label}
-        >
-          {color.emoji} {color.label}
-        </span>
-        <span className="text-sm font-medium text-[var(--text-primary)]">{block.task.title}</span>
-        {pending && <span className="ml-auto h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" aria-label="Saving" />}
-      </div>
-
-      <TimeRow start={block.start} end={block.end} />
-
+    <EditorShell
+      badge={<TypeBadge color={color} showTooltip />}
+      title={block.task.title}
+      timeStart={block.start}
+      timeEnd={block.end}
+      pending={pending}
+      mode={mode}
+    >
       <input
         type="text"
         value={objective}
@@ -238,7 +294,7 @@ function WorkBlockEditor({
           className="flex-1 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
         />
       </div>
-    </div>
+    </EditorShell>
   );
 }
 
@@ -280,27 +336,19 @@ function AimInstanceEditor({
     }
   }
 
-  const containerClass =
-    mode === 'popover' ? 'space-y-2' : 'rounded-lg bg-[var(--surface-raised)]/50 p-3 space-y-2';
-
   const headline = aim.selectedActivity
     ? `${aim.aimCategory.name}: ${aim.selectedActivity}`
     : aim.aimCategory.name;
 
   return (
-    <div className={containerClass}>
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${aimColor.bgClass} ${aimColor.textClass}`}
-        >
-          {aimColor.emoji} {aimColor.label}
-        </span>
-        <span className="text-sm font-medium text-[var(--text-primary)]">{headline}</span>
-        {pending && <span className="ml-auto h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" aria-label="Saving" />}
-      </div>
-
-      <TimeRow start={aim.timeBlockStart ?? null} end={aim.timeBlockEnd ?? null} />
-
+    <EditorShell
+      badge={<TypeBadge color={aimColor} />}
+      title={headline}
+      timeStart={aim.timeBlockStart ?? null}
+      timeEnd={aim.timeBlockEnd ?? null}
+      pending={pending}
+      mode={mode}
+    >
       <input
         type="text"
         value={note}
@@ -313,7 +361,7 @@ function AimInstanceEditor({
         placeholder="Intent for this session..."
         className="w-full rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
       />
-    </div>
+    </EditorShell>
   );
 }
 
@@ -326,18 +374,19 @@ function ProcessExecutionDisplay({
   exec: ScheduledProcessExecution;
   mode: 'inline' | 'popover';
 }) {
-  const containerClass =
-    mode === 'popover' ? 'space-y-1' : 'rounded-lg bg-[var(--surface-raised)]/50 p-3 space-y-1';
   return (
-    <div className={containerClass}>
-      <div className="flex items-center gap-2">
+    <EditorShell
+      badge={
         <span className="inline-flex items-center rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
           Recurring process
         </span>
-        <span className="text-sm font-medium text-[var(--text-primary)]">{exec.title}</span>
-      </div>
-      <TimeRow start={exec.timeBlockStart ?? null} end={exec.timeBlockEnd ?? null} />
-    </div>
+      }
+      title={exec.title}
+      timeStart={exec.timeBlockStart ?? null}
+      timeEnd={exec.timeBlockEnd ?? null}
+      mode={mode}
+      spacing="space-y-1"
+    />
   );
 }
 
@@ -388,22 +437,15 @@ function TaskOnlyEditor({
     onChange?.();
   }
 
-  const containerClass =
-    mode === 'popover' ? 'space-y-2' : 'rounded-lg bg-[var(--surface-raised)]/50 p-3 space-y-2';
-
   return (
-    <div className={containerClass}>
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${color.bgClass} ${color.textClass}`}
-        >
-          {color.emoji} {color.label}
-        </span>
-        <span className="text-sm font-medium text-[var(--text-primary)]">{task.title}</span>
-      </div>
-
-      <TimeRow start={task.timeBlockStart ?? null} end={task.timeBlockEnd ?? null} label="No work block yet" />
-
+    <EditorShell
+      badge={<TypeBadge color={color} />}
+      title={task.title}
+      timeStart={task.timeBlockStart ?? null}
+      timeEnd={task.timeBlockEnd ?? null}
+      timeRowLabel="No work block yet"
+      mode={mode}
+    >
       {goals.length > 0 && (
         <ul className="space-y-1">
           {goals.map((goal, i) => (
@@ -440,6 +482,6 @@ function TaskOnlyEditor({
           className="flex-1 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
         />
       </div>
-    </div>
+    </EditorShell>
   );
 }
