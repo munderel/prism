@@ -42,6 +42,51 @@ export function getTomorrowDateString(): string {
 }
 
 /**
+ * Parse a 'YYYY-MM-DD' string into a Date anchored at UTC midnight.
+ * Use this for date-only field STORAGE (Goal.endDate, Meeting.occurDate, etc.) —
+ * it pairs with formatDateOnly() so the displayed calendar date never shifts
+ * across timezones. Returns null for null/undefined/empty/malformed input.
+ */
+export function parseDateOnly(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return new Date(`${s}T00:00:00.000Z`);
+}
+
+/**
+ * Convert any Date to UTC midnight at its LOCAL calendar date. Use when
+ * computing date-only field values from a Date cursor (e.g. weekly/monthly
+ * goal generation) before storage. Pairs with parseDateOnly/formatDateOnly.
+ */
+export function toUtcDateOnly(d: Date): Date {
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+}
+
+/**
+ * Format a date-only value (Date or ISO string) using UTC anchoring, so the
+ * displayed calendar date is identical regardless of the viewer's timezone.
+ * Use this for date-only field DISPLAY. Returns '—' for null/undefined/invalid.
+ *
+ * Pass options to override defaults (e.g. weekday, dateStyle), but timeZone is
+ * always forced to 'UTC' — that's the whole point of the helper.
+ */
+export function formatDateOnly(
+  value: Date | string | null | undefined,
+  options?: Intl.DateTimeFormatOptions,
+): string {
+  if (!value) return '—';
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    ...options,
+    timeZone: 'UTC',
+  });
+}
+
+/**
  * Converts a 'YYYY-MM-DD' string to a Date at local midnight.
  * Use this instead of `new Date(dateString)` which parses date-only strings as UTC.
  */
