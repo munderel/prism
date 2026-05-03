@@ -13,6 +13,7 @@
     "test:coverage": "vitest run --coverage",
     "bootstrap-admin": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/bootstrap-admin.ts",
     "backfill-progress": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/backfill-progress.ts",
+    "recompute-streaks": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/recompute-streaks.ts",
     "migrate-goal-dates": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/migrate-goal-dates-to-utc.ts"
   },
   "prisma": {

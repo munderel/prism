@@ -6,8 +6,8 @@ vi.mock('@/lib/beeminder', () => ({
   maybePostBeeminder: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/prisma', () => {
+  const prisma: any = {
     streak: {
       findUnique: vi.fn(),
       create: vi.fn(),
@@ -23,8 +23,17 @@ vi.mock('@/lib/prisma', () => ({
     powerdownSession: {
       findFirst: vi.fn(),
     },
-  },
-}));
+    // $transaction: when called with an interactive callback, invoke it with
+    // `prisma` itself so the existing top-level mocks intercept tx.streak.*.
+    // When called with an array of promises (legacy form), Promise.all them.
+    $transaction: vi.fn((arg: any) => {
+      if (typeof arg === 'function') return arg(prisma);
+      if (Array.isArray(arg)) return Promise.all(arg);
+      throw new Error('Unexpected $transaction shape in test');
+    }),
+  };
+  return { prisma };
+});
 
 import { prisma } from '@/lib/prisma';
 import { updateSpecificStreak, updateDailyStreak, checkAndBreakMissedStreaks } from '@/lib/streak-engine';
@@ -64,7 +73,7 @@ function makeStreak(overrides: Record<string, any> = {}) {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers();
   vi.setSystemTime(FIXED_NOW);
   vi.clearAllMocks();
@@ -77,6 +86,14 @@ beforeEach(() => {
     timezone: TZ,
     streakGraceDays: false,
   } as any);
+  // Reset $transaction to its default pass-through behavior — test cases
+  // that override it (e.g. P2034 retry tests) must not leak into siblings.
+  const { prisma: mockedPrisma } = await import('@/lib/prisma');
+  vi.mocked((mockedPrisma as any).$transaction).mockImplementation((arg: any) => {
+    if (typeof arg === 'function') return arg(mockedPrisma);
+    if (Array.isArray(arg)) return Promise.all(arg);
+    throw new Error('Unexpected $transaction shape in test');
+  });
 });
 
 afterEach(() => {
@@ -183,6 +200,55 @@ describe('updateSpecificStreak', () => {
     await updateSpecificStreak('u1', 'aim_cat1');
     expect(mockUpdate).not.toHaveBeenCalled(); // same-day, no update needed
   });
+
+  // Regression for cause #4: under Postgres Serializable isolation, two
+  // concurrent transactions that both read `lastActiveDate = yesterday` will
+  // collide. The losing transaction surfaces P2034; we retry, and on the
+  // retry the now-committed first write makes `lastActiveDate >= today`
+  // true, so the retry takes the same-day early return. Net effect: exactly
+  // one increment, no double-count and no lost write.
+  it('retries on P2034 serialization conflict and falls into same-day early return', async () => {
+    // First call: returns yesterday → goes to update, but transaction throws P2034.
+    // Second call (retry): returns today → same-day early return.
+    mockFindUnique
+      .mockResolvedValueOnce(makeStreak({ currentCount: 5, bestCount: 5, lastActiveDate: dayStart(-1) }))
+      .mockResolvedValueOnce(makeStreak({ currentCount: 6, bestCount: 6, lastActiveDate: dayStart(0) }));
+
+    // Make the first $transaction invocation reject with P2034, second succeeds normally.
+    const { prisma: mockedPrisma } = await import('@/lib/prisma');
+    const txMock = vi.mocked((mockedPrisma as any).$transaction);
+    let call = 0;
+    txMock.mockImplementation(async (arg: any) => {
+      if (typeof arg !== 'function') return Promise.all(arg);
+      call++;
+      if (call === 1) {
+        // Run the callback (so findUnique is consumed) then throw to simulate conflict.
+        await arg(mockedPrisma);
+        const err: any = new Error('serialization conflict');
+        err.code = 'P2034';
+        throw err;
+      }
+      return arg(mockedPrisma);
+    });
+
+    await updateSpecificStreak('u1', 'aim_cat1');
+
+    expect(call).toBe(2); // proves we retried
+    // Second pass took same-day early return — no update happened on the retry.
+    expect(mockUpdate).toHaveBeenCalledTimes(1); // only the first attempt's update
+  });
+
+  it('throws after exhausting retries on persistent P2034', async () => {
+    mockFindUnique.mockResolvedValue(makeStreak({ currentCount: 5, bestCount: 5, lastActiveDate: dayStart(-1) }));
+    const { prisma: mockedPrisma } = await import('@/lib/prisma');
+    const txMock = vi.mocked((mockedPrisma as any).$transaction);
+    txMock.mockImplementation(async () => {
+      const err: any = new Error('persistent conflict');
+      err.code = 'P2034';
+      throw err;
+    });
+    await expect(updateSpecificStreak('u1', 'aim_cat1')).rejects.toMatchObject({ code: 'P2034' });
+  });
 });
 
 describe('updateDailyStreak', () => {
@@ -283,5 +349,83 @@ describe('checkAndBreakMissedStreaks', () => {
     // cutoff = today - 1 day = Apr 23 04:00Z.
     expect(arg.where.completedAt.gte).toEqual(new Date('2026-04-23T04:00:00Z'));
     expect(arg.where.completedAt.lt).toEqual(new Date('2026-04-24T04:00:00Z'));
+  });
+});
+
+describe('timezone correctness — non-UTC users on a UTC server', () => {
+  // Regression for cause #3: previous code used `setDate(getDate() - N)` on a
+  // UTC Date, which silently operates in server-local time. For a Tokyo user
+  // (UTC+9) on a UTC server, the wrong day was subtracted at certain hours.
+  it('continuation window for Asia/Tokyo respects user-local calendar days', async () => {
+    // Tokyo 23:30 Wednesday Apr 22 = UTC 14:30 Apr 22.
+    // Tokyo "yesterday" is Tuesday Apr 21 (Tokyo midnight = UTC 15:00 Apr 20).
+    vi.setSystemTime(new Date('2026-04-22T14:30:00Z'));
+    mockUserFindUnique.mockResolvedValue({
+      timezone: 'Asia/Tokyo',
+      streakGraceDays: false,
+    } as any);
+    // Streak last active at Tokyo midnight Apr 21 (real UTC = Apr 20 15:00Z).
+    const tokyoYesterday = new Date('2026-04-20T15:00:00Z');
+    mockFindUnique.mockResolvedValue(makeStreak({
+      currentCount: 5,
+      bestCount: 5,
+      lastActiveDate: tokyoYesterday,
+    }));
+    await updateSpecificStreak('u1', 'aim_cat1');
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ currentCount: 6 }),
+      })
+    );
+  });
+
+  // Regression for cause #3 + DST: spring-forward in America/New_York 2026-03-08
+  // means the calendar day before "Sunday Mar 8" is "Saturday Mar 7" — but the
+  // duration is only 23 hours, so plain `(t - 86400000)` arithmetic lands at
+  // 01:00 Saturday rather than 00:00 Saturday and mis-classifies continuation.
+  it('continues the streak across DST spring-forward in America/New_York', async () => {
+    // Sunday Mar 8 22:00 NY local (post-DST shift) = UTC 02:00 Mar 9.
+    vi.setSystemTime(new Date('2026-03-09T02:00:00Z'));
+    mockUserFindUnique.mockResolvedValue({
+      timezone: 'America/New_York',
+      streakGraceDays: false,
+    } as any);
+    // Last active = Saturday Mar 7 at NY midnight (pre-DST, UTC-5) = 05:00Z Mar 7.
+    const saturdayNyMidnight = new Date('2026-03-07T05:00:00Z');
+    mockFindUnique.mockResolvedValue(makeStreak({
+      currentCount: 4,
+      bestCount: 4,
+      lastActiveDate: saturdayNyMidnight,
+    }));
+    await updateSpecificStreak('u1', 'aim_cat1');
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ currentCount: 5 }),
+      })
+    );
+  });
+
+  // Regression for cause #3 + DST: fall-back in America/New_York 2026-11-01
+  // adds an hour, so the calendar day duration is 25 hours.
+  it('continues the streak across DST fall-back in America/New_York', async () => {
+    // Sunday Nov 1 22:00 NY local (post-DST shift, EST UTC-5) = UTC 03:00 Nov 2.
+    vi.setSystemTime(new Date('2026-11-02T03:00:00Z'));
+    mockUserFindUnique.mockResolvedValue({
+      timezone: 'America/New_York',
+      streakGraceDays: false,
+    } as any);
+    // Last active = Saturday Oct 31 at NY midnight (pre-DST, EDT UTC-4) = 04:00Z Oct 31.
+    const saturdayNyMidnight = new Date('2026-10-31T04:00:00Z');
+    mockFindUnique.mockResolvedValue(makeStreak({
+      currentCount: 8,
+      bestCount: 8,
+      lastActiveDate: saturdayNyMidnight,
+    }));
+    await updateSpecificStreak('u1', 'aim_cat1');
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ currentCount: 9 }),
+      })
+    );
   });
 });
