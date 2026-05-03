@@ -15,6 +15,7 @@ import { ActivitySelectModal } from './ActivitySelectModal';
 import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload, type TaskLevelClearGoal } from './WorkBlockObjectiveModal';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { EventGoalsPopover } from '@/components/scheduled-item-goals/EventGoalsPopover';
+import { Popover, PopoverBody, PopoverClose, PopoverFooter, PopoverHeader } from '@/components/ui/Popover';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -28,7 +29,7 @@ interface SelectedEventPopover {
   title: string;
   source: 'aims' | 'task' | 'review' | 'powerdown' | 'meeting' | 'process' | 'google';
   status: string;
-  position: { top: number; left: number };
+  anchorRect: DOMRect;
   // Aim-specific
   aimInstanceId?: string;
   aimCategoryName?: string;
@@ -151,7 +152,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const router = useRouter();
   const toast = useToast();
   const calendarRef = useRef<FullCalendar>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const { events, error: calendarError, refreshEvents, googleStatus, googleError, isLoading: _calendarLoading } = useCalendarEvents(dateRange?.start ?? null, dateRange?.end ?? null);
   const { resolvedTheme } = useTheme();
@@ -183,18 +183,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   // Event detail popover state
   const [selectedEventPopover, setSelectedEventPopover] = useState<SelectedEventPopover | null>(null);
   const [completingEvent, setCompletingEvent] = useState(false);
-
-  // Dismiss popover on outside click
-  useEffect(() => {
-    if (!selectedEventPopover) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setSelectedEventPopover(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedEventPopover]);
 
   // Activity selection modal state
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -406,7 +394,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         title: info.event.title,
         source: 'powerdown',
         status: '',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        anchorRect: rect,
         link: '/powerdown',
       });
       return;
@@ -419,7 +407,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         title: info.event.title,
         source: 'review',
         status: '',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        anchorRect: rect,
         link: props.link || '/reviews',
       });
       return;
@@ -433,7 +421,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         title: info.event.title,
         source: 'review',
         status: props.completed ? 'completed' : '',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        anchorRect: rect,
         link: reviewId ? `/reviews/${reviewId}/complete` : '/reviews',
       });
       return;
@@ -449,7 +437,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         title: info.event.title,
         source: 'process',
         status: props.completed ? 'completed' : '',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        anchorRect: rect,
         link: '/processes',
         processId,
         scheduledDate,
@@ -464,7 +452,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         title: info.event.title,
         source: 'meeting',
         status: '',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        anchorRect: rect,
         description: props.description,
         cadence: props.cadence,
         createdBy: props.createdBy,
@@ -480,7 +468,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         title: info.event.title,
         source: 'aims',
         status: props.status || 'SCHEDULED',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        anchorRect: rect,
         aimInstanceId: props.aimInstanceId,
         aimCategoryName: props.aimCategoryName,
         selectedActivity: props.selectedActivity,
@@ -496,7 +484,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         title: info.event.title,
         source: 'task',
         status: props.status || 'TODO',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        anchorRect: rect,
         taskId: props.taskId || info.event.id?.replace('task-', ''),
         taskType: props.taskType,
         priority: props.priority,
@@ -522,7 +510,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         title: info.event.title,
         source: 'google',
         status: '',
-        position: { top: rect.top + window.scrollY, left: rect.right + 8 },
+        anchorRect: rect,
         description: props.description,
         gcalEventId: rawId,
         gcalCalendarId: props.calendarId || 'primary',
@@ -1044,37 +1032,18 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       />
 
       {/* Event Detail Popover */}
-      {selectedEventPopover && (
-        <>
-        {isMobile && (
-          <div className="fixed inset-0 z-[59] bg-black/40" onClick={() => setSelectedEventPopover(null)} />
-        )}
-        <div
-          ref={popoverRef}
-          className={isMobile
-            ? 'fixed inset-x-0 bottom-0 z-[60] w-full rounded-t-xl border-t border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm pb-6'
-            : 'fixed z-[60] w-72 rounded-xl border border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm'
-          }
-          style={isMobile ? undefined : {
-            top: Math.min(selectedEventPopover.position.top, window.innerHeight - 280),
-            left: Math.min(selectedEventPopover.position.left, window.innerWidth - 300),
-          }}
-        >
-          {/* Popover Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
-            <h4 className="text-sm font-semibold text-[var(--text-primary)] truncate pr-2">
-              {selectedEventPopover.title}
-            </h4>
-            <button
-              onClick={() => setSelectedEventPopover(null)}
-              className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--surface-raised)] transition-colors flex-shrink-0"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
+      {selectedEventPopover && (() => {
+        const closePopover = () => setSelectedEventPopover(null);
+        const popoverInner = (
+          <>
+            <PopoverHeader>
+              <h4 className="text-sm font-semibold text-[var(--text-primary)] truncate pr-2">
+                {selectedEventPopover.title}
+              </h4>
+              <PopoverClose onClose={closePopover} />
+            </PopoverHeader>
 
-          {/* Popover Body */}
-          <div className="px-4 py-3 space-y-2.5">
+            <PopoverBody>
             {/* AIM popover */}
             {selectedEventPopover.source === 'aims' && (
               <>
@@ -1204,10 +1173,9 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </>
             )}
 
-          </div>
+            </PopoverBody>
 
-          {/* Popover Actions */}
-          <div className="px-4 py-3 border-t border-[var(--border-color)] flex flex-col gap-2">
+            <PopoverFooter>
             {/* Aim actions */}
             {selectedEventPopover.source === 'aims' && selectedEventPopover.status !== 'COMPLETED' && (
               <div className="flex items-center gap-2">
@@ -1452,10 +1420,32 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </>
             )}
 
-          </div>
-        </div>
-        </>
-      )}
+            </PopoverFooter>
+          </>
+        );
+
+        if (isMobile) {
+          return (
+            <>
+              <div className="fixed inset-0 z-[59] bg-black/40" onClick={closePopover} />
+              <div className="fixed inset-x-0 bottom-0 z-[60] w-full flex flex-col rounded-t-xl border-t border-[var(--border-color)] bg-[var(--background)] shadow-2xl backdrop-blur-sm pb-6 max-h-[85vh]">
+                {popoverInner}
+              </div>
+            </>
+          );
+        }
+
+        return (
+          <Popover
+            open
+            anchorRect={selectedEventPopover.anchorRect}
+            onClose={closePopover}
+            className="w-72"
+          >
+            {popoverInner}
+          </Popover>
+        );
+      })()}
 
       {/* Calendar */}
       <div className={`${resolvedTheme === 'dark' ? 'fc-dark-theme' : 'fc-light-theme'} glass-panel p-2 sm:p-4`}>
