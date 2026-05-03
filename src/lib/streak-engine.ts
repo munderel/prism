@@ -1,7 +1,7 @@
 import { ProcessCadence } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { maybePostBeeminder, BeeminderResult } from '@/lib/beeminder';
-import { dayBoundariesForUser } from '@/lib/user-timezone';
+import { dayBoundariesForUser, subtractDaysInUserTz, toUserDayStamp } from '@/lib/user-timezone';
 
 interface StreakUserSettings {
   timezone: string;
@@ -46,6 +46,17 @@ export interface StreakUpdateResult {
   paused?: boolean;
 }
 
+/**
+ * Internal outcome of the transactional read-compute-write. We surface enough
+ * info for the (non-transactional) post-hooks — Beeminder POST and PublicWin
+ * row — to decide what to do without re-reading the streak.
+ */
+type StreakTxOutcome =
+  | { kind: 'created' }                    // first-ever row, count=1
+  | { kind: 'paused' }                     // user paused this streak
+  | { kind: 'same-day' }                   // already credited today, no-op
+  | { kind: 'updated'; newCount: number }; // count went from N to newCount
+
 export async function upsertOrUpdateStreak(
   userId: string,
   streakType: string,
@@ -55,58 +66,69 @@ export async function upsertOrUpdateStreak(
   const { timezone, graceDays } = settings ?? await getStreakUserSettings(userId);
   const { start: today } = dayBoundariesForUser(new Date(), timezone);
   const effectiveWindow = windowDays + (graceDays ? 1 : 0);
+  const windowStart = subtractDaysInUserTz(new Date(), timezone, effectiveWindow);
 
-  let existing = await prisma.streak.findUnique({
-    where: { userId_streakType: { userId, streakType } },
-  });
+  // Critical section: read-compute-write must be atomic so two concurrent
+  // submissions cannot both read count=N and both write count=N+1 (lost
+  // increment). Serializable isolation forces Postgres to detect the conflict
+  // and abort one with a serialization error (Prisma P2034), which we retry.
+  // Side effects (Beeminder, PublicWin) run AFTER the transaction commits so
+  // an external HTTP call never holds a DB connection.
+  const outcome = await runWithSerializableRetry(() =>
+    prisma.$transaction(
+      async (tx): Promise<StreakTxOutcome> => {
+        let existing = await tx.streak.findUnique({
+          where: { userId_streakType: { userId, streakType } },
+        });
 
-  if (!existing) {
-    try {
-      await prisma.streak.create({
-        data: { userId, streakType, currentCount: 1, bestCount: 1, lastActiveDate: today },
-      });
-    } catch (e: unknown) {
-      // P2002 = unique constraint violation: a concurrent request created it first.
-      // Re-fetch and fall through to normal update logic.
-      if ((e as { code?: string })?.code !== 'P2002') throw e;
-      existing = await prisma.streak.findUnique({
-        where: { userId_streakType: { userId, streakType } },
-      });
-      if (!existing) throw e;
-      // Fall through to the read-modify-write below.
-    }
-    if (!existing) {
-      // Successfully created — first-ever completion.
-      if (streakType === 'daily') {
-        return { beeminder: await maybePostBeeminder(userId) };
-      }
-      return {};
-    }
-  }
+        if (!existing) {
+          try {
+            await tx.streak.create({
+              data: { userId, streakType, currentCount: 1, bestCount: 1, lastActiveDate: today },
+            });
+            return { kind: 'created' };
+          } catch (e: unknown) {
+            // P2002 = unique constraint violation: a concurrent request created it.
+            // Re-fetch and fall through to update logic below.
+            if ((e as { code?: string })?.code !== 'P2002') throw e;
+            existing = await tx.streak.findUnique({
+              where: { userId_streakType: { userId, streakType } },
+            });
+            if (!existing) throw e;
+          }
+        }
 
-  if (!existing.isActive) return { paused: true };
+        if (!existing.isActive) return { kind: 'paused' };
 
-  const lastActive = existing.lastActiveDate;
-  if (lastActive && lastActive >= today) return {}; // idempotent same-day
+        const lastActive = existing.lastActiveDate;
+        if (lastActive && lastActive >= today) return { kind: 'same-day' };
 
-  const windowStart = new Date(today);
-  windowStart.setDate(windowStart.getDate() - effectiveWindow);
-  const isContinuation = lastActive != null && lastActive >= windowStart;
-  const newCount = isContinuation ? existing.currentCount + 1 : 1;
+        const isContinuation = lastActive != null && lastActive >= windowStart;
+        const newCount = isContinuation ? existing.currentCount + 1 : 1;
 
-  await prisma.streak.update({
-    where: { id: existing.id },
-    data: {
-      currentCount: newCount,
-      bestCount: Math.max(existing.bestCount, newCount),
-      lastActiveDate: today,
-      breakReason: null, // clear previous break reason on any update
-    },
-  });
+        await tx.streak.update({
+          where: { id: existing.id },
+          data: {
+            currentCount: newCount,
+            bestCount: Math.max(existing.bestCount, newCount),
+            lastActiveDate: today,
+            breakReason: null,
+          },
+        });
 
-  if (STREAK_MILESTONES.has(newCount)) {
+        return { kind: 'updated', newCount };
+      },
+      { isolationLevel: 'Serializable', timeout: 8000 },
+    ),
+  );
+
+  if (outcome.kind === 'paused') return { paused: true };
+  if (outcome.kind === 'same-day') return {};
+
+  // Post-commit side effects.
+  if (outcome.kind === 'updated' && STREAK_MILESTONES.has(outcome.newCount)) {
     await prisma.publicWin.create({
-      data: { userId, message: `${newCount}-period ${streakType} streak!` },
+      data: { userId, message: `${outcome.newCount}-period ${streakType} streak!` },
     });
   }
 
@@ -114,6 +136,34 @@ export async function upsertOrUpdateStreak(
     return { beeminder: await maybePostBeeminder(userId) };
   }
   return {};
+}
+
+/**
+ * Wraps an interactive transaction with Postgres-serialization-conflict retry.
+ * Under Serializable isolation, two concurrent transactions reading the same
+ * row may both commit successfully on the first try; the second to commit is
+ * aborted with SQLSTATE 40001, surfaced by Prisma as P2034. Retrying on the
+ * loser side resolves the conflict cleanly because the now-committed first
+ * transaction's write is visible — the retry takes the `same-day` early
+ * return.
+ */
+async function runWithSerializableRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e: unknown) {
+      const code = (e as { code?: string })?.code;
+      // P2034 (Prisma) and 40001 (raw Postgres) both indicate a serialization
+      // conflict that the caller should retry.
+      if (code === 'P2034' || code === '40001') {
+        lastErr = e;
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -159,8 +209,7 @@ export async function checkAndBreakMissedStreaks(userId: string): Promise<string
   const { start: today } = dayBoundariesForUser(new Date(), user.timezone);
   // When grace is enabled, look back 2 days instead of 1 before breaking.
   const lookbackDays = user.streakGraceDays ? 2 : 1;
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() - lookbackDays);
+  const cutoff = subtractDaysInUserTz(new Date(), user.timezone, lookbackDays);
 
   // Did the user complete a powerdown anywhere from cutoff to today (exclusive)?
   const recentPowerdown = await prisma.powerdownSession.findFirst({
@@ -174,9 +223,8 @@ export async function checkAndBreakMissedStreaks(userId: string): Promise<string
     // Report yesterday as the missed day — that's the day the user actually
     // failed to power down. With grace=on the window is [day-before-yesterday,
     // today) but the user-facing "missed day" is still yesterday.
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const reason = `Missed powerdown for ${yesterday.toISOString().slice(0, 10)}`;
+    const yesterday = subtractDaysInUserTz(new Date(), user.timezone, 1);
+    const reason = `Missed powerdown for ${toUserDayStamp(yesterday, user.timezone)}`;
     await breakStreak(userId, 'daily', reason);
     reasons.push(reason);
   }

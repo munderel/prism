@@ -85,7 +85,7 @@ export function dayBoundariesForUser(at: Date, tz: string): { start: Date; end: 
 
 // Day arithmetic on YYYY-MM-DD strings without going through any tz-sensitive
 // Date constructor. Uses UTC internally so month/year rollover is correct.
-function shiftDayStamp(stamp: string, days: number): string {
+export function shiftDayStamp(stamp: string, days: number): string {
   const [y, m, d] = stamp.split('-').map(Number);
   const base = Date.UTC(y, m - 1, d);
   const shifted = new Date(base + days * 86400000);
@@ -93,4 +93,14 @@ function shiftDayStamp(stamp: string, days: number): string {
   const mm = String(shifted.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(shifted.getUTCDate()).padStart(2, '0');
   return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * Returns the UTC instant for midnight `days` calendar days before `at`, in the
+ * user's timezone. DST-safe — does NOT use `setDate` / `getDate` arithmetic on
+ * a UTC Date (which silently uses server-local time and breaks across DST or
+ * when the server tz differs from the user tz).
+ */
+export function subtractDaysInUserTz(at: Date, tz: string, days: number): Date {
+  return dstSafeDate(shiftDayStamp(toUserDayStamp(at, tz), -days), tz);
 }
