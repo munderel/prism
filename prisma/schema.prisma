@@ -661,6 +661,8 @@ model ProcessExecution {
   taskId         String?   @unique
   timeBlockStart DateTime?
   timeBlockEnd   DateTime?
+  actualMinutes  Int?
+  notes          String?
   createdAt      DateTime  @default(now())
 
   process    Process @relation(fields: [processId], references: [id], onDelete: Cascade)

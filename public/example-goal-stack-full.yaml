@@ -1,49 +1,75 @@
 # =============================================================================
-# PRISM GOAL STACK — FULL EXAMPLE YAML
+# PRISM GOAL STACK — FULL AI-AUTHORING REFERENCE
 # =============================================================================
-# This file demonstrates every field supported by the Prism YAML import/export.
-# Use it as a reference template when authoring or editing a goal stack by hand.
+# This file is the canonical reference for an AI (or a human) authoring a Prism
+# goal stack by hand. Every field, status, priority, task_type, and KPI shape
+# accepted by the parser is demonstrated below. The file parses cleanly through
+# `parseYamlToGoals()` (src/lib/yaml-handler.ts) without errors.
+#
+# THE TWO INPUT FORMATS
+#   Prism accepts two top-level YAML shapes:
+#
+#     A. DIRECT HIERARCHY (what `exportGoalsToYaml` emits — round-trippable)
+#          meta + high_hard_goal { strategic_goals -> monthly_goals -> ... }
+#        This is Section A below. Use it whenever you can.
+#
+#     B. YEAR-BASED INPUT (a convenience format for business plans)
+#          meta + high_hard_goal + year_1 + year_2 + ...
+#        This is normalised down to format A on import via
+#        normalizeYearBasedYaml(). It supports semantic helpers (funnel,
+#        revenue, key_goal, deliverables, etc.) that are folded into goal
+#        descriptions. See Section B at the bottom of this file for a
+#        documented reference. The two formats are MUTUALLY EXCLUSIVE at the
+#        root — if `year_*` keys are present, year-based parsing kicks in and
+#        the direct hierarchy is ignored.
 #
 # IMPORTING THIS FILE
-#   1. Go to Goal Stack in Prism
+#   1. Open Prism → Goal Stack
 #   2. Create (or select) an empty stack
 #   3. Click "Import YAML" and choose this file
-#   4. The preview will show every goal/task/KPI as "added"; click Confirm
+#   4. The preview shows every node as "added"; click Confirm
 #
 # MATCHING ON RE-IMPORT
 #   • Goals, tasks, and KPIs are matched by `id` first, then by title/name
-#     within their parent goal.
-#   • Exported YAMLs carry `id` fields automatically — edit titles freely and
-#     the system still knows which record is which.
-#   • Hand-written entries without an `id` are matched by title. Keep task
-#     titles unique within a weekly goal to avoid ambiguity.
-#   • Removing a task from the YAML marks it as DROPPED (reversible) on the
-#     next import, not hard-deleted. DROPPED tasks remain in exports.
-#   • Comments are stripped by the YAML library on re-export — keep this file
-#     as read-only documentation, don't expect comments to round-trip.
+#     within their parent goal. Hand-written entries without an `id` are
+#     matched by title — keep titles unique within a parent goal.
+#   • Removing a task from the YAML on re-import marks it DROPPED (reversible),
+#     never hard-deleted. DROPPED tasks remain in exports.
+#   • Comments are stripped by js-yaml on re-export — treat this file as
+#     read-only documentation; do not expect comments to round-trip.
 #
-# SUPPORTED GOAL LEVELS (in hierarchy order)
-#   HIGH_HARD → STRATEGIC → MONTHLY → WEEKLY → DAILY (daily items are tasks)
+# ENUM REFERENCE
+#   Goal levels (top → bottom):  HIGH_HARD → STRATEGIC → MONTHLY → WEEKLY → DAILY
+#                                (tasks may ONLY live on WEEKLY goals)
+#   Goal statuses:               NOT_STARTED, IN_PROGRESS, COMPLETED, ABANDONED
+#   Task statuses:               TODO, IN_PROGRESS, DONE, DROPPED
+#   Task priorities:             LOW, MEDIUM, HIGH, URGENT
+#   Task types:                  IMPROVE, REACT, MAINTENANCE, REVIEW
+#                                (IMPROVE is the default; it maps to the
+#                                 legacy DB enum value GOAL_STACK — see ADR 8)
+#   KPI types:                   numeric (target/actual/unit), binary (complete)
 #
-# SUPPORTED STATUSES
-#   Goals: NOT_STARTED, IN_PROGRESS, COMPLETED, ABANDONED
-#   Tasks: TODO, IN_PROGRESS, DONE, DROPPED
-#
-# SUPPORTED TASK PRIORITIES
-#   LOW, MEDIUM, HIGH, URGENT
-#
-# SUPPORTED KPI TYPES
-#   numeric  — tracks actual/target with a unit
-#   binary   — done/not-done, no target
+# DEFAULT VALUES (omit a field to get its default)
+#   Goal status:        NOT_STARTED
+#   Task status:        TODO
+#   Task priority:      MEDIUM
+#   Task task_type:     IMPROVE
+#   KPI type:           numeric
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECTION A — DIRECT HIERARCHY FORMAT
+# -----------------------------------------------------------------------------
 
 meta:
   name: "Example Full Stack"
   owner: "you@example.com"
-  is_company: false
-  exported_at: "2026-04-07T00:00:00Z"
+  is_company: false              # true ⇒ company-shared stack; enables `links`
+  exported_at: "2026-04-28T00:00:00Z"
   mtp: "Your Massive Transformative Purpose — a single sentence that anchors every goal below"
-  # links: is only used for company stacks. Commented because this is a personal example.
+  # `links` only applies when is_company: true. It maps a company goal to the
+  # individual contributors' goals that roll up into it. Shown commented out
+  # because this example is a personal stack.
   # links:
   #   - company_goal: "Ship v1 to production"
   #     individual_goals:
@@ -52,18 +78,24 @@ meta:
   #       - user: "ic2@example.com"
   #         goal: "Deliver the billing module"
 
-# The HIGH_HARD goal sits at the top of the stack. Use one per stack.
+# Exactly one HIGH_HARD goal sits at the top of the stack.
 high_hard_goal:
   title: "Reach product-market fit by end of year"
-  description: "Multi-line descriptions are fine. Use this to capture the why, the success criteria, and any key constraints."
+  # YAML literal block scalar (`|`) preserves newlines for multi-line text.
+  description: |
+    Capture the why, the success criteria, and any key constraints here.
+
+    Multi-line descriptions render with paragraph breaks in the goal card.
+    Use this for context the rest of the stack should inherit.
   status: "IN_PROGRESS"
-  date: "2026-12-31"           # due date (the date the goal must be complete by)
-  start_date: "2026-01-01"     # shown on the goal card alongside end_date
+  date: "2026-12-31"             # due date — the date the goal must complete by
+  start_date: "2026-01-01"       # shown on the goal card alongside end_date
   end_date: "2026-12-31"
 
   # STRATEGIC goals are quarterly-ish horizons under the HHG.
   strategic_goals:
 
+    # ── Strategic 1 — full feature demo ──────────────────────────────────────
     - title: "Launch to 100 paying teams"
       description: "First growth milestone — proves the product resonates at scale."
       status: "IN_PROGRESS"
@@ -71,17 +103,26 @@ high_hard_goal:
       start_date: "2026-04-01"
       end_date: "2026-09-30"
 
-      # KPIs can live on STRATEGIC, MONTHLY, or WEEKLY goals (not on HHG or DAILY).
-      # Weekly numeric KPIs can link to monthly KPIs via `linked_to` for aggregation.
+      # KPIs may live on STRATEGIC, MONTHLY, or WEEKLY goals (not on HHG or DAILY).
       kpis:
+        # numeric KPI — tracks actual / target with a unit
         - name: "Paying teams"
           type: "numeric"
           unit: "teams"
           target: 100
           actual: 12
+        # binary KPI — done/not-done, no target. Includes completed_at because
+        # `complete: true`.
         - name: "MVP shipped"
           type: "binary"
-          complete: false
+          complete: true
+          completed_at: "2026-03-14T00:00:00Z"
+        # numeric KPI with explicit zero `actual` (default would also be 0).
+        - name: "Enterprise contracts"
+          type: "numeric"
+          unit: "contracts"
+          target: 5
+          actual: 0
 
       # MONTHLY goals are monthly horizons under a strategic goal.
       monthly_goals:
@@ -93,6 +134,7 @@ high_hard_goal:
           start_date: "2026-04-01"
           end_date: "2026-04-30"
 
+          # Monthly KPI that weekly KPIs aggregate into via `linked_to`.
           kpis:
             - name: "Monthly new teams"
               type: "numeric"
@@ -110,45 +152,62 @@ high_hard_goal:
               start_date: "2026-04-06"
               end_date: "2026-04-12"
 
-              # Tasks support every editor field. Only `title` is required.
+              # ── Tasks (only `title` is required) ─────────────────────────
               tasks:
 
-                # Task 1 — showcases every task field
+                # Task 1 — every supported task field, default task_type IMPROVE.
+                # IMPROVE maps to the legacy DB enum GOAL_STACK (see ADR 8 in
+                # prism/DESIGN-DECISIONS.md). User-facing code uses IMPROVE.
                 - title: "Send pilot proposal to Acme"
                   description: "Two-page pilot proposal with pricing table and timeline."
                   deliverable: "Signed letter of intent"
+                  task_type: "IMPROVE"
                   status: "IN_PROGRESS"
                   priority: "HIGH"
-                  date: "2026-04-09"              # due date
+                  date: "2026-04-09"                    # due date
                   estimated_minutes: 90
                   time_block_start: "2026-04-08T14:00:00Z"
                   time_block_end: "2026-04-08T15:30:00Z"
-                  preferred_time_start: "09:00"   # HH:MM, local time hint for auto-scheduling
-                  preferred_time_end: "11:00"
+                  preferred_time_start: "09:00"         # HH:MM, local time hint
+                  preferred_time_end: "11:00"           # for auto-scheduling
                   recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"   # RFC5545 RRULE
-                  win_the_day: true               # only emitted when true; marks as must-do
+                  win_the_day: true                     # marks as a must-do today
 
-                # Task 2 — minimal task, only required fields
+                # Task 2 — minimal task: only `title` required. Defaults to
+                # TODO / MEDIUM / IMPROVE.
                 - title: "Follow up with Globex"
-                  status: "TODO"
-                  priority: "MEDIUM"
 
-                # Task 3 — DONE task with deliverable
-                - title: "Schedule demo with Initech"
-                  deliverable: "Calendar invite sent"
-                  status: "DONE"
-                  priority: "LOW"
-                  date: "2026-04-07"
-
-                # Task 4 — URGENT priority example
+                # Task 3 — DONE + URGENT, task_type REACT (unplanned reactive work).
                 - title: "Respond to security review from Hooli"
-                  status: "IN_PROGRESS"
+                  deliverable: "Security questionnaire returned"
+                  task_type: "REACT"
+                  status: "DONE"
                   priority: "URGENT"
+                  date: "2026-04-07"
                   estimated_minutes: 120
 
+                # Task 4 — DROPPED status with task_type MAINTENANCE.
+                # DROPPED is reversible: the task survives re-import (it is not
+                # hard-deleted), and re-adding the title flips it back to TODO.
+                - title: "Migrate legacy onboarding script"
+                  task_type: "MAINTENANCE"
+                  status: "DROPPED"
+                  priority: "LOW"
+
+                # Task 5 — task_type REVIEW with a daily recurrence rule.
+                - title: "Daily pipeline standup"
+                  task_type: "REVIEW"
+                  status: "TODO"
+                  priority: "MEDIUM"
+                  estimated_minutes: 15
+                  recurrence_rule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
+                  preferred_time_start: "09:00"
+                  preferred_time_end: "09:15"
+
               kpis:
-                # Weekly KPI aggregating into the monthly one via `linked_to`.
-                # The monthly KPI "Monthly new teams" above will sum across weekly linked children.
+                # Weekly numeric KPI rolling up into the monthly KPI above.
+                # `linked_to` matches by KPI name on the monthly parent — the
+                # monthly KPI sums across all linked weekly children.
                 - name: "Weekly new teams"
                   type: "numeric"
                   unit: "teams"
@@ -156,7 +215,150 @@ high_hard_goal:
                   actual: 1
                   linked_to: "Monthly new teams"
 
-    # Second strategic branch — shows sibling structure and a minimal fully-valid goal
+              # DAILY goals are optional daily horizons under a weekly goal.
+              # IMPORTANT: tasks may NOT live on DAILY goals — the parser
+              # throws if it finds `tasks:` under any non-WEEKLY level. Use
+              # DAILY goals as themed buckets ("Wednesday: outreach day") and
+              # keep task entries under the parent WEEKLY goal.
+              daily_goals:
+                - title: "Wednesday: outreach blitz"
+                  description: "Book the remaining 2 demos."
+                  status: "NOT_STARTED"
+                  date: "2026-04-08"
+                  start_date: "2026-04-08"
+                  end_date: "2026-04-08"
+                - title: "Thursday: follow-up + close"
+                  status: "NOT_STARTED"
+                  date: "2026-04-09"
+
+    # ── Strategic 2 — COMPLETED example ──────────────────────────────────────
+    - title: "Ship public marketing site"
+      description: "Pre-launch site for waitlist capture."
+      status: "COMPLETED"
+      date: "2026-03-31"
+      start_date: "2026-02-01"
+      end_date: "2026-03-31"
+
+    # ── Strategic 3 — ABANDONED example ──────────────────────────────────────
+    - title: "Pursue enterprise partnership track"
+      description: "Decided to focus on self-serve SMB instead."
+      status: "ABANDONED"
+      date: "2026-06-30"
+
+    # ── Strategic 4 — minimal NOT_STARTED (everything optional except title) ─
     - title: "Publish 4 product-led case studies"
-      status: "NOT_STARTED"
       date: "2026-09-30"
+
+# =============================================================================
+# SECTION B — YEAR-BASED INPUT FORMAT (REFERENCE — DO NOT UNCOMMENT IN PLACE)
+# =============================================================================
+# The YAML below is shown as comments so this file remains valid Section-A
+# input. To USE the year-based format, write a new file containing only the
+# uncommented Section-B content (no Section A) — the parser detects `year_*`
+# keys at the root and switches modes. Mixing both in one file means Section A
+# is silently ignored.
+#
+# Year-based YAML is normalised down to direct-hierarchy YAML on import:
+#   • year_N blocks become flat lists of strategic_goals attached to the HHG
+#   • monthly_goals inside a year nest under the strategic_goal whose `id`
+#     they back-reference (e.g. `strategic_goals: [SG1]`)
+#   • Semantic blocks (funnel, revenue, profitability, subscriptions, key_goal,
+#     deliverables, why, success_criteria, people_helped, operations_overview)
+#     are folded into the corresponding goal's description as readable text.
+#   • KPI `target` values can be strings — "$50M", "750k", "20%", "16-20"
+#     — and parseKpiTarget() extracts the numeric value and unit.
+#   • `month: "April 2026"` auto-expands to start_date/end_date for that month.
+#   • `subscription_model:` (top-level reference data) is silently dropped.
+#
+# ── Example year-based YAML (parses on its own — do not mix with Section A) ──
+#
+# meta:
+#   name: "UpWhiten 5-Year Plan"
+#   owner: "munder.elgummi@gmail.com"
+#   is_company: true
+#   exported_at: "2026-04-13T00:00:00Z"
+#
+# high_hard_goal:
+#   title: "Hit $50M revenue by 2031"
+#   description: "Anchor purpose statement."
+#   confidence: 8                          # 1-10 — folded into description
+#   success_criteria:                       # array — folded into description
+#     - "16-20 locations operating"
+#     - "38,000 active subscribers"
+#   people_helped:                          # block — folded into description
+#     cumulative_people_served: 250000
+#     active_subscribers_by_y5: 38000
+#   operations_overview: "Capacity-based..."  # string — folded into description
+#   start_date: "2026-04-01"
+#   end_date: "2031-04-01"
+#   kpis:
+#     - { name: "Revenue", type: "numeric", target: "$50M" }
+#     - { name: "Locations", type: "numeric", target: "16-20" }   # range → 16
+#     - { name: "Margin", type: "numeric", target: "20%" }        # unit ← %
+#
+# year_1:
+#   label: "April 2026 — March 2027"
+#   start_date: "2026-04-01"
+#   end_date: "2027-03-31"
+#   strategic_goals:
+#     - id: SG1                           # back-reference label, NOT a DB id
+#       title: "Max out Location 1"
+#       why: "Prove the model at capacity before expanding."   # → description
+#       status: "IN_PROGRESS"
+#       deliverables:                     # array → folded into description
+#         - "Scale to 60% chair utilization"
+#         - "Hire 6 more staff"
+#       kpis:
+#         - { name: "Utilization", type: "numeric", target: "35%" }
+#     - id: SG2
+#       title: "Build subscription engine"
+#       why: "Recurring revenue is the model."
+#       deliverables:
+#         - "Launch maintenance membership tiers"
+#   yearly_kpis:                          # attached to the first SG of the year
+#     - { name: "Year 1 Revenue", target: "$686K" }
+#     - { name: "Year 1 New Customers", target: "750k" }
+#   monthly_goals:
+#     - month: "April 2026"               # auto-parses to 2026-04-01 → 2026-04-30
+#       key_goal: "Baseline month"        # used as the monthly goal title
+#       strategic_goals: [SG1]            # nests this MG under SG1
+#       funnel:
+#         leads: 250
+#         bookings: 70
+#         lead_to_booking_pct: "28%"
+#         new_customers: 18
+#         chair_utilization: "12%"
+#       revenue:
+#         total: "$17,535"
+#         subscription_revenue: "$735"
+#       profitability:
+#         profit: "$2,500"
+#         margin: "14%"
+#         staff: 8
+#       subscriptions:
+#         active_maintenance_members: 12
+#         maintenance_arpu: "$60"
+#       kpis:
+#         - { name: "April bookings", type: "numeric", target: 70, actual: 65 }
+#     - month: "May 2026"
+#       key_goal: "Add Google Ads"
+#       strategic_goals: [SG2]            # nests under SG2 instead
+#
+# year_2:
+#   label: "April 2027 — March 2028"
+#   start_date: "2027-04-01"
+#   end_date: "2028-03-31"
+#   strategic_goals:
+#     - title: "Replicate to 2 more locations"
+#       why: "Same city reduces operational complexity."
+#       deliverables:
+#         - "Location 2 opens"
+#         - "Location 3 opens"
+#   yearly_kpis:
+#     - { name: "Locations", target: 3 }
+#
+# # subscription_model is silently dropped on import (kept here for human reference).
+# subscription_model:
+#   tiers:
+#     - { name: "Basic",   price_per_month: 29, included_visits_per_year: 2 }
+#     - { name: "Premium", price_per_month: 59, included_visits_per_year: 4 }
