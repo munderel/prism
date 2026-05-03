@@ -12,9 +12,9 @@ interface QuickAddMenuProps {
 }
 
 const MENU_ITEMS = [
-  { emoji: '\uD83C\uDFAF', label: 'Improve Task', desc: 'Move goals forward', path: '/goals', color: PRISM_COLORS.IMPROVE },
+  { emoji: '\uD83C\uDFAF', label: 'Improve Task', desc: 'Move goals forward', path: '/improve/new', color: PRISM_COLORS.IMPROVE },
   { emoji: '\u26A1', label: 'React Task', desc: 'Respond to incoming requests', path: '/reactive-tasks/new', color: PRISM_COLORS.REACT },
-  { emoji: '\uD83D\uDD27', label: 'Maintenance', desc: 'Keep things running', path: '/processes', color: PRISM_COLORS.MAINTENANCE },
+  { emoji: '\uD83D\uDD27', label: 'Maintenance', desc: 'Keep things running', path: '/maintenance/new', color: PRISM_COLORS.MAINTENANCE },
   { emoji: '\uD83D\uDCCB', label: 'Review', desc: 'Plan & reflect', path: '/reviews', color: PRISM_COLORS.REVIEW },
   { emoji: '\uD83D\uDCA1', label: 'Idea', desc: 'Capture for later', path: '/ideas', color: PRISM_COLORS.POWER_DOWN },
 ];
