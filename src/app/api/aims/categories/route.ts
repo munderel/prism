@@ -8,6 +8,12 @@ export async function GET() {
   if ('error' in auth) return authError(auth);
 
   const categories = await prisma.aimCategory.findMany({
+    where: {
+      OR: [
+        { isDefault: true },
+        { createdByUserId: auth.userId },
+      ],
+    },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -32,6 +38,8 @@ export async function POST(request: NextRequest) {
       isDefault: false, // user-created
       isDaily: isDaily ?? false,
       activities: activities ?? undefined,
+      createdByUserId: auth.userId,
+      isUserHabit: true,
     },
   });
 
