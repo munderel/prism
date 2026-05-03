@@ -242,6 +242,21 @@ function IdeasTab({ from, to }: { from: string; to: string }) {
     const t = new Date(i.createdAt).getTime();
     return t >= fromMs && t <= toMs;
   });
+
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Title', 'Description'];
+    const csvRows = rows.map((i) => [
+      formatDisplayDate(i.createdAt),
+      i.title,
+      i.description ?? '',
+    ]);
+    downloadFile('ideas.csv', buildCSV(headers, csvRows), 'text/csv');
+  };
+
+  const handleExportJSON = () => {
+    downloadFile('ideas.json', JSON.stringify(rows, null, 2), 'application/json');
+  };
+
   return (
     <div className="space-y-3">
       {rows.length === 0 && (
@@ -260,6 +275,7 @@ function IdeasTab({ from, to }: { from: string; to: string }) {
           )}
         </div>
       ))}
+      {rows.length > 0 && <ExportButtons onCSV={handleExportCSV} onJSON={handleExportJSON} />}
     </div>
   );
 }
@@ -277,6 +293,21 @@ function DistractionsTab({ from, to }: { from: string; to: string }) {
     grouped.set(key, list);
   }
   const dates = Array.from(grouped.keys()).sort().reverse();
+
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Content', 'Notes'];
+    const csvRows = rows.map((d) => [
+      d.logDate.split('T')[0],
+      d.content,
+      d.notes ?? '',
+    ]);
+    downloadFile('distractions.csv', buildCSV(headers, csvRows), 'text/csv');
+  };
+
+  const handleExportJSON = () => {
+    downloadFile('distractions.json', JSON.stringify(rows, null, 2), 'application/json');
+  };
+
   return (
     <div className="space-y-4">
       {dates.length === 0 && (
@@ -299,6 +330,7 @@ function DistractionsTab({ from, to }: { from: string; to: string }) {
           </ul>
         </div>
       ))}
+      {rows.length > 0 && <ExportButtons onCSV={handleExportCSV} onJSON={handleExportJSON} />}
     </div>
   );
 }
@@ -309,6 +341,27 @@ function GratitudesTab({ from, to }: { from: string; to: string }) {
   if (error) return <ErrorMessage message="Failed to load gratitudes." />;
   const rows = Array.isArray(data) ? data : [];
   const sessions = rows.filter((r) => Array.isArray(r.gratitudes) && (r.gratitudes as unknown[]).length > 0);
+
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Gratitude'];
+    const csvRows: string[][] = [];
+    for (const s of sessions) {
+      const dateKey = s.sessionDate.split('T')[0];
+      for (const g of s.gratitudes as string[]) {
+        csvRows.push([dateKey, g]);
+      }
+    }
+    downloadFile('gratitudes.csv', buildCSV(headers, csvRows), 'text/csv');
+  };
+
+  const handleExportJSON = () => {
+    const flat = sessions.map((s) => ({
+      sessionDate: s.sessionDate,
+      gratitudes: s.gratitudes,
+    }));
+    downloadFile('gratitudes.json', JSON.stringify(flat, null, 2), 'application/json');
+  };
+
   return (
     <div className="space-y-4">
       {sessions.length === 0 && (
@@ -328,6 +381,7 @@ function GratitudesTab({ from, to }: { from: string; to: string }) {
           </ul>
         </div>
       ))}
+      {sessions.length > 0 && <ExportButtons onCSV={handleExportCSV} onJSON={handleExportJSON} />}
     </div>
   );
 }
@@ -686,6 +740,41 @@ function WorkBlocksTab({ from, to }: { from: string; to: string }) {
 
   const pdReviews = data?.powerdownReviews ?? [];
   const completions = data?.taskCompletions ?? [];
+  const hasData = pdReviews.length > 0 || completions.length > 0;
+
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Type', 'Title', 'Estimate (min)', 'Actual (min)', 'Status'];
+    const csvRows: string[][] = [];
+    for (const r of pdReviews) {
+      csvRows.push([
+        r.reviewDate.split('T')[0],
+        'powerdown-review',
+        `${r.blocksTotal} blocks`,
+        String(r.totalScheduledMinutes),
+        String(r.totalCompletedMinutes),
+        `${r.blocksCompleted}/${r.blocksTotal} completed`,
+      ]);
+    }
+    for (const c of completions) {
+      csvRows.push([
+        c.completedAt.split('T')[0],
+        'task-completion',
+        c.task.title,
+        String(c.estimatedMinutes),
+        String(c.completedMinutes),
+        `${c.goalsHit}/${c.goalsDefined} goals hit`,
+      ]);
+    }
+    downloadFile('work-blocks.csv', buildCSV(headers, csvRows), 'text/csv');
+  };
+
+  const handleExportJSON = () => {
+    downloadFile(
+      'work-blocks.json',
+      JSON.stringify({ powerdownReviews: pdReviews, taskCompletions: completions }, null, 2),
+      'application/json',
+    );
+  };
 
   return (
     <div className="space-y-8">
@@ -773,6 +862,8 @@ function WorkBlocksTab({ from, to }: { from: string; to: string }) {
           </div>
         )}
       </section>
+
+      {hasData && <ExportButtons onCSV={handleExportCSV} onJSON={handleExportJSON} />}
     </div>
   );
 }
