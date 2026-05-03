@@ -1,5 +1,6 @@
 'use client';
 
+import { mutate } from 'swr';
 import { useState, useEffect, useCallback, useMemo, ReactNode, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { m, AnimatePresence } from 'framer-motion';
@@ -547,8 +548,15 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     // Route requires start+end (see src/app/api/aims/instances/route.ts:17).
     // Pass today's full-day window so all of today's instances come back.
     try {
-      const startISO = parseLocalDate(sessionToday).toISOString();
-      const endISO = new Date(parseLocalDate(sessionToday).getTime() + 86400000 - 1).toISOString();
+      // Build the window from local midnight today to local midnight tomorrow.
+      // Using `+ 86400000ms` would shift by 24h of absolute time, which silently
+      // breaks across DST boundaries (spring forward leaks 1h; fall back loses 1h).
+      // Date.setDate advances the calendar in local time and is DST-safe.
+      const start = parseLocalDate(sessionToday);
+      const next = new Date(start);
+      next.setDate(next.getDate() + 1);
+      const startISO = start.toISOString();
+      const endISO = new Date(next.getTime() - 1).toISOString();
       const res = await fetch(`/api/aims/instances?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`);
       if (res.ok) setAimInstances(await res.json());
     } catch {
@@ -859,7 +867,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   // State for the "Break into sessions" modal (reuses SplitTaskModal).
   const [splitTaskTarget, setSplitTaskTarget] = useState<{ id: string; title: string } | null>(null);
 
-  const persistStep = async (nextStep: number, extra: Record<string, any> = {}): Promise<Response | null> => {
+  const persistStep = async (
+    nextStep: number,
+    extra: Record<string, any> = {},
+  ): Promise<{ res: Response; data: any } | null> => {
     if (!session) return null;
     const res = await fetch('/api/powerdown', {
       method: 'PATCH',
@@ -876,10 +887,18 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     });
     const data = await res.json().catch(() => ({}));
     if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
+    if (data.streakError) toast.error('Streak update failed — please retry.');
     if (!res.ok) {
       console.error('[powerdown] persistStep failed', { status: res.status, body: data });
     }
-    return res;
+    // After a successful completion submission, invalidate any SWR caches
+    // that are reading the streak count or this session, so the dashboard
+    // updates immediately instead of waiting for a manual refresh.
+    if (res.ok && extra.complete) {
+      void mutate('/api/streaks');
+      void mutate('/api/powerdown');
+    }
+    return { res, data } as const;
   };
 
   const advanceStep = async () => {
@@ -939,8 +958,15 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       setSaving(true);
       try {
         const completeRes = await persistStep(currentStep, { complete: true });
-        if (!completeRes || !completeRes.ok) {
+        if (!completeRes || !completeRes.res.ok) {
           toast.error('Failed to complete powerdown — please try again.');
+          return;
+        }
+        // The route returns 200 with `streakError` set when the completedAt
+        // write succeeded but the streak update failed. Don't show the
+        // celebration screen in that case — keep the user on the final
+        // step so a retry tap re-fires the (idempotent) streak update.
+        if (completeRes.data?.streakError) {
           return;
         }
         if (tomorrowPlan.length > 0) {

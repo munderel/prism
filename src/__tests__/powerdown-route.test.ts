@@ -139,6 +139,34 @@ describe('POST /api/powerdown', () => {
     expect(body.id).toBe('s-existing');
     expect(mockSessionCreate).not.toHaveBeenCalled();
   });
+
+  // Regression for cause #2: previous code used `startOfToday()` from
+  // date-utils which is server-local (UTC on Vercel) — for a Tokyo user
+  // (UTC+9) at 02:00Z that returned the prior calendar day in Tokyo.
+  // The route must build the session-date window from the user's timezone.
+  it('uses the user timezone (not server UTC) for the today window', async () => {
+    vi.useFakeTimers();
+    // 02:00 UTC = 11:00 in Tokyo (Apr 24). The Tokyo "today" runs from
+    // 2026-04-23T15:00:00Z (Tokyo midnight Apr 24) to 2026-04-24T15:00:00Z.
+    vi.setSystemTime(new Date('2026-04-24T02:00:00Z'));
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ timezone: 'Asia/Tokyo' } as any);
+    mockSessionFindFirst.mockResolvedValue(null);
+    mockSessionCreate.mockResolvedValue({ id: 's-new', userId: 'user1' } as any);
+
+    await POST();
+
+    expect(mockSessionFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionDate: {
+            gte: new Date('2026-04-23T15:00:00Z'),
+            lt: new Date('2026-04-24T15:00:00Z'),
+          },
+        }),
+      })
+    );
+    vi.useRealTimers();
+  });
 });
 
 function createPatchRequest(body: any) {
@@ -282,6 +310,57 @@ describe('PATCH /api/powerdown', () => {
     expect(res.status).toBe(200);
     expect(vi.mocked(updateSpecificStreak)).toHaveBeenCalledWith('user1', 'powerdown');
     expect(vi.mocked(updateDailyStreak)).toHaveBeenCalledWith('user1', 'powerdown');
+  });
+
+  // Regression for cause #5: previous code swallowed streak update errors with
+  // .catch() and returned 200 — the client never knew the streak failed and
+  // the UI happily showed a celebration screen on top of a silently broken
+  // server-side state. The route must surface the error as a `streakError`
+  // field on the 200 response so the client can react (toast + keep the user
+  // on the final step so a retry self-heals).
+  it('surfaces streakError on response when streak update throws', async () => {
+    mockSessionFindUnique.mockResolvedValue({ id: 's1', userId: 'user1' } as any);
+    mockSessionUpdateMany.mockResolvedValue({ count: 1 } as any);
+    mockSessionUpdate.mockResolvedValue({ id: 's1' } as any);
+    vi.mocked(updateDailyStreak).mockRejectedValueOnce(new Error('boom from streak engine'));
+
+    // Silence the expected console.error so the test output stays clean.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await PATCH(createPatchRequest({
+      sessionId: 's1',
+      complete: true,
+      tomorrowPlan: [],
+      distractions: [],
+      gratitudes: [],
+      ideas: [],
+    }));
+
+    expect(res.status).toBe(200); // completedAt already wrote; don't re-prompt
+    const body = await res.json();
+    expect(body.streakError).toBe('boom from streak engine');
+
+    errSpy.mockRestore();
+  });
+
+  it('omits streakError when streak update succeeds', async () => {
+    mockSessionFindUnique.mockResolvedValue({ id: 's1', userId: 'user1' } as any);
+    mockSessionUpdateMany.mockResolvedValue({ count: 1 } as any);
+    mockSessionUpdate.mockResolvedValue({ id: 's1' } as any);
+    // Default mocks resolve cleanly.
+
+    const res = await PATCH(createPatchRequest({
+      sessionId: 's1',
+      complete: true,
+      tomorrowPlan: [],
+      distractions: [],
+      gratitudes: [],
+      ideas: [],
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.streakError).toBeUndefined();
   });
 });
 
