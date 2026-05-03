@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import {
   Flame,
   Clock,
@@ -145,6 +145,18 @@ export default function AimsPage() {
   const [newActivity, setNewActivity] = useState('');
   const [editActivities, setEditActivities] = useState<string[]>([]);
   const [completingId, setCompletingId] = useState<string | null>(null);
+
+  const emptyNewAim = {
+    name: '',
+    description: '',
+    defaultFrequency: 3,
+    defaultDurationMin: 30,
+    isDaily: false,
+    isGroupable: false,
+  };
+  const [showCreateAim, setShowCreateAim] = useState(false);
+  const [newAim, setNewAim] = useState(emptyNewAim);
+  const [creatingAim, setCreatingAim] = useState(false);
 
   const isLoading = catsLoading || aimsLoading;
 
@@ -346,6 +358,39 @@ export default function AimsPage() {
     mutateAims();
   };
 
+  const submitNewAim = async () => {
+    const trimmedName = newAim.name.trim();
+    if (!trimmedName) {
+      toast.error('Name is required');
+      return;
+    }
+    setCreatingAim(true);
+    try {
+      const res = await fetch('/api/aims/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: trimmedName,
+          description: newAim.description.trim() || null,
+          defaultFrequency: Number(newAim.defaultFrequency),
+          defaultDurationMin: Number(newAim.defaultDurationMin),
+          isDaily: newAim.isDaily,
+          isGroupable: newAim.isGroupable,
+        }),
+      });
+      if (!res.ok) {
+        toast.error('Failed to create Aim');
+        return;
+      }
+      setShowCreateAim(false);
+      setNewAim(emptyNewAim);
+      await mutate('/api/aims/categories');
+      toast.success('Aim created');
+    } finally {
+      setCreatingAim(false);
+    }
+  };
+
   const addActivity = () => {
     const trimmed = newActivity.trim().toLowerCase();
     if (trimmed && !editActivities.includes(trimmed)) {
@@ -519,22 +564,31 @@ export default function AimsPage() {
             Daily and weekly rituals that fuel peak performance.
           </p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setViewMode('simplified')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                viewMode === 'simplified' ? 'bg-teal-600 text-white border border-teal-600' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              Simplified
+            </button>
+            <button
+              onClick={() => setViewMode('full')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                viewMode === 'full' ? 'bg-teal-600 text-white border border-teal-600' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              Full View
+            </button>
+          </div>
           <button
-            onClick={() => setViewMode('simplified')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              viewMode === 'simplified' ? 'bg-teal-600 text-white border border-teal-600' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
-            }`}
+            onClick={() => setShowCreateAim(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white px-3 py-1.5 text-xs font-medium transition-colors border border-teal-600"
           >
-            Simplified
-          </button>
-          <button
-            onClick={() => setViewMode('full')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              viewMode === 'full' ? 'bg-teal-600 text-white border border-teal-600' : 'text-[var(--text-secondary)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            Full View
+            <Plus className="h-3.5 w-3.5" />
+            New Aim
           </button>
         </div>
       </div>
@@ -643,6 +697,137 @@ export default function AimsPage() {
             </div>
           </section>
         </>
+      )}
+
+      {showCreateAim && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => !creatingAim && setShowCreateAim(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-white/10 bg-[var(--bg-secondary)] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                <Flame className="h-5 w-5 text-teal-500" />
+                New Aim
+              </h2>
+              <button
+                onClick={() => setShowCreateAim(false)}
+                disabled={creatingAim}
+                className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newAim.name}
+                  onChange={(e) => setNewAim({ ...newAim, name: e.target.value })}
+                  maxLength={200}
+                  autoFocus
+                  placeholder="e.g. Morning meditation"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-teal-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Description
+                </label>
+                <textarea
+                  value={newAim.description}
+                  onChange={(e) => setNewAim({ ...newAim, description: e.target.value })}
+                  maxLength={2000}
+                  rows={2}
+                  placeholder="What's this aim about?"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-teal-500 focus:outline-none resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                    Frequency / week
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={7}
+                    value={newAim.defaultFrequency}
+                    onChange={(e) =>
+                      setNewAim({ ...newAim, defaultFrequency: Math.max(1, Number(e.target.value) || 1) })
+                    }
+                    disabled={newAim.isDaily}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] focus:border-teal-500 focus:outline-none disabled:opacity-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                    Duration (min)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={newAim.defaultDurationMin}
+                    onChange={(e) =>
+                      setNewAim({ ...newAim, defaultDurationMin: Math.max(1, Number(e.target.value) || 1) })
+                    }
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] focus:border-teal-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newAim.isDaily}
+                    onChange={(e) =>
+                      setNewAim({
+                        ...newAim,
+                        isDaily: e.target.checked,
+                        defaultFrequency: e.target.checked ? 7 : newAim.defaultFrequency,
+                      })
+                    }
+                    className="h-3.5 w-3.5 rounded border-white/10 bg-white/5 text-teal-500 focus:ring-teal-500"
+                  />
+                  Daily
+                </label>
+                <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newAim.isGroupable}
+                    onChange={(e) => setNewAim({ ...newAim, isGroupable: e.target.checked })}
+                    className="h-3.5 w-3.5 rounded border-white/10 bg-white/5 text-teal-500 focus:ring-teal-500"
+                  />
+                  Groupable
+                </label>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-3">
+              <button
+                onClick={() => setShowCreateAim(false)}
+                disabled={creatingAim}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitNewAim}
+                disabled={creatingAim || !newAim.name.trim()}
+                className="flex items-center gap-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creatingAim ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
