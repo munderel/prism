@@ -3,6 +3,16 @@ import { screen, waitFor } from '@testing-library/react';
 import { renderWithProviders, userEvent, createMockFetch } from '@/test/utils';
 import { PowerDownRitual } from '../PowerDownRitual';
 
+// Spy on swr's `mutate` so the cache-revalidation contract on completion can
+// be asserted directly. `vi.hoisted` is required because vi.mock is hoisted
+// to the top of the module — without it the spy would be undefined when the
+// factory runs.
+const mutateSpy = vi.hoisted(() => vi.fn());
+vi.mock('swr', async () => {
+  const actual = await vi.importActual<typeof import('swr')>('swr');
+  return { ...actual, mutate: mutateSpy };
+});
+
 // Mock framer-motion so m.div / AnimatePresence render children
 vi.mock('framer-motion', () => ({
   m: {
@@ -36,6 +46,7 @@ describe('PowerDownRitual', () => {
 
   beforeEach(() => {
     onComplete.mockReset();
+    mutateSpy.mockReset();
   });
 
   it('shows loading state initially', () => {
@@ -240,5 +251,58 @@ describe('PowerDownRitual', () => {
     await waitFor(() => {
       expect(screen.getByText(/7-day PowerDown streak/)).toBeInTheDocument();
     });
+  });
+
+  // Regression for cause #1: after completion, the StreakCounter on the
+  // dashboard reads `useSWR('/api/streaks')` and stayed stale until manual
+  // refresh. The completion path must call `mutate('/api/streaks')` so all
+  // streak consumers re-fetch immediately. Same for `/api/powerdown` so the
+  // session view reflects the newly-set `completedAt`.
+  it('revalidates /api/streaks and /api/powerdown SWR caches after completion', async () => {
+    setup({
+      '/api/powerdown': (url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') return { ok: true };
+        return { id: 'session-1', currentStep: 10, tomorrowPlan: [] };
+      },
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Step 10/)).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /Complete Power Down/i }));
+
+    await waitFor(() => {
+      expect(mutateSpy).toHaveBeenCalledWith('/api/streaks');
+      expect(mutateSpy).toHaveBeenCalledWith('/api/powerdown');
+    });
+  });
+
+  // Regression for cause #5 client-side handling: when the server returns
+  // 200 with a `streakError` field (completedAt wrote OK but streak update
+  // threw), the client must NOT show the celebration screen. Keeping the
+  // user on the final step lets a retry tap re-fire the idempotent streak
+  // update and self-heal the divergence.
+  it('does not show completion screen when response carries streakError', async () => {
+    setup({
+      '/api/powerdown': (url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') return { streakError: 'engine exploded' };
+        return { id: 'session-1', currentStep: 10, tomorrowPlan: [] };
+      },
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Step 10/)).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /Complete Power Down/i }));
+
+    // Give the async completion handler time to settle, then assert the
+    // celebration screen never rendered and we're still on the final step.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('Power Down Complete!')).not.toBeInTheDocument();
+    expect(screen.getByText(/Step 10/)).toBeInTheDocument();
   });
 });

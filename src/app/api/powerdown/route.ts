@@ -7,7 +7,7 @@ import { getGoogleSyncInfo, updateGoogleEvent } from '@/lib/calendar';
 import { syncManagedSeriesOverride } from '@/lib/google-recurring-sync';
 import { parseLocalDateKey } from '@/lib/google-sync-state';
 import { updateSpecificStreak, updateDailyStreak, type StreakUpdateResult } from '@/lib/streak-engine';
-import { startOfToday } from '@/lib/date-utils';
+import { dayBoundariesForUser } from '@/lib/user-timezone';
 
 type PowerdownSession = Awaited<ReturnType<typeof prisma.powerdownSession.findUnique>>;
 
@@ -78,9 +78,14 @@ export async function GET(request: NextRequest) {
   // Default: today's session — strictly today, not future-dated sessions
   // (calendar drag-to-tomorrow can create sessions with sessionDate=tomorrow
   // and any currentStep, which would otherwise be returned here.)
-  const today = startOfToday();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // Use the user's timezone, not server-local — Vercel runs in UTC and a UTC
+  // "today" misses or overwrites the wrong day's session for non-UTC users.
+  const userForTz = await prisma.user.findUnique({
+    where: { id: auth.userId },
+    select: { timezone: true },
+  });
+  const tz = userForTz?.timezone ?? 'America/New_York';
+  const { start: today, end: tomorrow } = dayBoundariesForUser(new Date(), tz);
 
   const session = await prisma.powerdownSession.findFirst({
     where: {
@@ -97,9 +102,12 @@ export async function POST() {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const today = startOfToday();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const userForTz = await prisma.user.findUnique({
+    where: { id: auth.userId },
+    select: { timezone: true },
+  });
+  const tz = userForTz?.timezone ?? 'America/New_York';
+  const { start: today, end: tomorrow } = dayBoundariesForUser(new Date(), tz);
 
   const existing = await prisma.powerdownSession.findFirst({
     where: {
@@ -175,6 +183,7 @@ export async function PATCH(request: NextRequest) {
   const data: Record<string, unknown> = pickDefined(body, SESSION_UPDATABLE_FIELDS);
   let beeminderError: string | undefined;
   let streakPaused = false;
+  let streakError: string | undefined;
   if (body.timeBlockStart !== undefined) data.timeBlockStart = toDateOrNull(body.timeBlockStart);
   if (body.timeBlockEnd !== undefined) data.timeBlockEnd = toDateOrNull(body.timeBlockEnd);
 
@@ -191,13 +200,23 @@ export async function PATCH(request: NextRequest) {
       data: { completedAt: new Date() },
     });
 
-    await updateSpecificStreak(auth.userId, 'powerdown').catch((err) => console.warn('[streak] powerdown streak update failed:', err));
-    const streakResult = await updateDailyStreak(auth.userId, 'powerdown').catch((err) => { console.warn('[streak] update failed:', err); return {} as StreakUpdateResult; });
-    if (streakResult?.beeminder?.ok === false) {
-      beeminderError = streakResult.beeminder.error;
-    }
-    if (streakResult?.paused) {
-      streakPaused = true;
+    // Surface streak failures to the client instead of swallowing them. The
+    // completedAt write above already happened, so we don't 500 — the user
+    // shouldn't have to redo their submission. Instead the client sees
+    // streakError, shows a toast, and keeps the user on the final step so a
+    // retry tap re-fires the (idempotent) streak update.
+    try {
+      await updateSpecificStreak(auth.userId, 'powerdown');
+      const streakResult: StreakUpdateResult = await updateDailyStreak(auth.userId, 'powerdown');
+      if (streakResult?.beeminder?.ok === false) {
+        beeminderError = streakResult.beeminder.error;
+      }
+      if (streakResult?.paused) {
+        streakPaused = true;
+      }
+    } catch (err) {
+      streakError = err instanceof Error ? err.message : 'unknown streak update failure';
+      console.error('[streak] update failed for user=%s:', auth.userId, err);
     }
   }
 
@@ -205,5 +224,5 @@ export async function PATCH(request: NextRequest) {
 
   await syncPowerdownToGcal(auth.userId, updated, `sessionId=${body.sessionId}`);
 
-  return Response.json({ ...updated, beeminderError, streakPaused });
+  return Response.json({ ...updated, beeminderError, streakPaused, streakError });
 }
