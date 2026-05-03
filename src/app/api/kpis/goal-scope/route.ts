@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { GoalLevel, KpiTimeLevel, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { parseDateOnly, getLocalDateString } from '@/lib/date-utils';
 
 // Map the KPI dashboard's timeLevel to the goal level we scope to.
 // Only WEEKLY / MONTHLY / YEARLY map; FIVE_YEAR / HHG are not exposed on the page.
@@ -67,7 +68,11 @@ export async function GET(request: NextRequest) {
     return Response.json(empty);
   }
 
-  const now = new Date();
+  // Goal startDate/endDate are date-only fields stored as UTC midnight. Compare
+  // against today-as-UTC-midnight (in the viewer's local calendar) so a goal
+  // counts as "active today" on its start day and through its end day, not
+  // skewed by the viewer's wall-clock time.
+  const todayUtc = parseDateOnly(getLocalDateString())!;
   const isAdmin = auth.session.user.isAdmin ?? false;
 
   // Mirror checkStackReadAccess(): admins see all; otherwise owned | isCompany |
@@ -88,8 +93,8 @@ export async function GET(request: NextRequest) {
       level: mappedLevel,
       status: 'IN_PROGRESS',
       deletedAt: null,
-      startDate: { lte: now },
-      endDate: { gte: now },
+      startDate: { lte: todayUtc },
+      endDate: { gte: todayUtc },
       ...(stackAccessClause ?? {}),
     },
     orderBy: { updatedAt: 'desc' },

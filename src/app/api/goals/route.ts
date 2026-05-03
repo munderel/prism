@@ -11,7 +11,7 @@ import {
 
 import { validateGoalLevel } from '@/lib/goal-validation';
 import { cascadeProgressUp } from '@/lib/progress';
-import { parseLocalDate } from '@/lib/date-utils';
+import { parseLocalDate, parseDateOnly, toUtcDateOnly } from '@/lib/date-utils';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -217,13 +217,13 @@ export async function POST(request: NextRequest) {
         cursor.setDate(cursor.getDate() + 7);
       }
       while (cursor <= rangeEnd) {
-        const weekStart = new Date(cursor);
-        const weekEnd = new Date(cursor);
-        weekEnd.setDate(weekEnd.getDate() + 6);
-        weekEnd.setHours(23, 59, 59, 999);
+        const weekEndCursor = new Date(cursor);
+        weekEndCursor.setDate(weekEndCursor.getDate() + 6);
         weeks.push({
           stackId, parentId, level: 'WEEKLY' as const,
-          title: `Week ${weekNum}`, startDate: weekStart, endDate: weekEnd,
+          title: `Week ${weekNum}`,
+          startDate: toUtcDateOnly(cursor),
+          endDate: toUtcDateOnly(weekEndCursor),
           sortOrder: weekNum - 1,
         });
         weekNum++;
@@ -241,8 +241,8 @@ export async function POST(request: NextRequest) {
           level,
           title,
           description: description ?? null,
-          startDate: goalStart,
-          endDate: goalEnd,
+          startDate: toUtcDateOnly(goalStart),
+          endDate: toUtcDateOnly(goalEnd),
           sortOrder: siblingCount,
         },
       });
@@ -268,7 +268,7 @@ export async function POST(request: NextRequest) {
             level: 'STRATEGIC',
             title: `Yearly Goal ${yearOrder + 1}`,
             startDate: new Date(Date.UTC(year, 0, 1)),
-            endDate: new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999)),
+            endDate: new Date(Date.UTC(year, 11, 31)),
             sortOrder: yearOrder++,
           },
         });
@@ -290,8 +290,8 @@ export async function POST(request: NextRequest) {
             parentId: yearGoalId,
             level: 'MONTHLY' as const,
             title: `${monthNames[month]} ${year}`,
-            startDate: new Date(year, month, 1),
-            endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+            startDate: new Date(Date.UTC(year, month, 1)),
+            endDate: new Date(Date.UTC(year, month + 1, 0)),
             sortOrder: month - firstMonth,
           });
         }
@@ -339,8 +339,8 @@ export async function POST(request: NextRequest) {
       level,
       title,
       description: description ?? null,
-      startDate: startDate ? parseLocalDate(startDate) : null,
-      endDate: endDate ? parseLocalDate(endDate) : null,
+      startDate: parseDateOnly(startDate ?? null),
+      endDate: parseDateOnly(endDate ?? null),
       sortOrder: siblingCount,
     },
   });
