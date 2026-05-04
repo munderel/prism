@@ -93,7 +93,7 @@ export default function NewImproveTaskPage() {
       if (deliverable) body.deliverable = deliverable;
       if (dueDate) body.dueDate = dueDate;
       if (goalId) body.goalId = goalId;
-      if (assigneeId) body.ownerId = assigneeId;
+      if (assigneeId) body.assigneeId = assigneeId;
 
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -229,7 +229,7 @@ export default function NewImproveTaskPage() {
             <input
               type="number"
               min={1}
-              max={1440}
+              max={9600}
               value={estimatedMinutes}
               onChange={(e) => setEstimatedMinutes(Number(e.target.value) || 0)}
               className={inputClass}

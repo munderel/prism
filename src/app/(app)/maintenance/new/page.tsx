@@ -207,7 +207,7 @@ export default function NewMaintenanceTaskPage() {
             <input
               type="number"
               min={1}
-              max={1440}
+              max={9600}
               value={estimatedMinutes}
               onChange={(e) => setEstimatedMinutes(Number(e.target.value) || 0)}
               className={inputClass}

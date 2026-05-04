@@ -141,7 +141,7 @@ export default function NewReactiveTaskPage() {
         estimatedMinutes: 60,
       };
 
-      if (assigneeId) body.ownerId = assigneeId;
+      if (assigneeId) body.assigneeId = assigneeId;
       if (goalId) body.goalId = goalId;
 
       const res = await fetch('/api/tasks', {
