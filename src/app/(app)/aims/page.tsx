@@ -705,10 +705,10 @@ export default function AimsPage() {
           onClick={() => !creatingAim && setShowCreateAim(false)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-white/10 bg-[var(--bg-secondary)] shadow-2xl"
+            className="glass-panel w-full max-w-md shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+            <div className="flex items-center justify-between border-b border-[var(--border-color)] px-5 py-4">
               <h2 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
                 <Flame className="h-5 w-5 text-teal-500" />
                 New Aim
@@ -734,7 +734,7 @@ export default function AimsPage() {
                   maxLength={200}
                   autoFocus
                   placeholder="e.g. Morning meditation"
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-teal-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-teal-500 focus:outline-none"
                 />
               </div>
               <div>
@@ -747,7 +747,7 @@ export default function AimsPage() {
                   maxLength={2000}
                   rows={2}
                   placeholder="What's this aim about?"
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-teal-500 focus:outline-none resize-none"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-teal-500 focus:outline-none resize-none"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -764,7 +764,7 @@ export default function AimsPage() {
                       setNewAim({ ...newAim, defaultFrequency: Math.max(1, Number(e.target.value) || 1) })
                     }
                     disabled={newAim.isDaily}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] focus:border-teal-500 focus:outline-none disabled:opacity-50"
+                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-teal-500 focus:outline-none disabled:opacity-50"
                   />
                 </div>
                 <div>
@@ -778,7 +778,7 @@ export default function AimsPage() {
                     onChange={(e) =>
                       setNewAim({ ...newAim, defaultDurationMin: Math.max(1, Number(e.target.value) || 1) })
                     }
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] focus:border-teal-500 focus:outline-none"
+                    className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-teal-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -794,7 +794,7 @@ export default function AimsPage() {
                         defaultFrequency: e.target.checked ? 7 : newAim.defaultFrequency,
                       })
                     }
-                    className="h-3.5 w-3.5 rounded border-white/10 bg-white/5 text-teal-500 focus:ring-teal-500"
+                    className="h-3.5 w-3.5 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-teal-500 focus:ring-teal-500"
                   />
                   Daily
                 </label>
@@ -803,17 +803,17 @@ export default function AimsPage() {
                     type="checkbox"
                     checked={newAim.isGroupable}
                     onChange={(e) => setNewAim({ ...newAim, isGroupable: e.target.checked })}
-                    className="h-3.5 w-3.5 rounded border-white/10 bg-white/5 text-teal-500 focus:ring-teal-500"
+                    className="h-3.5 w-3.5 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-teal-500 focus:ring-teal-500"
                   />
                   Groupable
                 </label>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-3">
+            <div className="flex items-center justify-end gap-2 border-t border-[var(--border-color)] px-5 py-3">
               <button
                 onClick={() => setShowCreateAim(false)}
                 disabled={creatingAim}
-                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors disabled:opacity-50"
+                className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>

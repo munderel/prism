@@ -135,10 +135,19 @@ export default function TasksPage() {
     return `/api/reviews?scope=individual&from=${date}&to=${date}`;
   }, [date, viewMode]);
   const { data: reviewsData } = useSWR<Array<{ id: string; reviewType: string; completedAt: string | null; isTeamReview: boolean }>>(reviewsKey);
-  const reviewsDueToday = useMemo(
-    () => (Array.isArray(reviewsData) ? reviewsData.filter((r) => !r.completedAt && !r.isTeamReview) : []),
-    [reviewsData],
-  );
+  const reviewsDueToday = useMemo(() => {
+    if (!Array.isArray(reviewsData)) return [];
+    const open = reviewsData.filter((r) => !r.completedAt && !r.isTeamReview);
+    // Safety net for historical duplicate rows (same week, different
+    // scheduledDate timestamps that slipped past the unique constraint):
+    // surface only one banner per cadence.
+    const seen = new Set<string>();
+    return open.filter((r) => {
+      if (seen.has(r.reviewType)) return false;
+      seen.add(r.reviewType);
+      return true;
+    });
+  }, [reviewsData]);
 
   const refresh = useCallback(() => {
     mutateRange();

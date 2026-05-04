@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import dynamic from 'next/dynamic';
-import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw, X, CalendarPlus, Loader2, Utensils } from 'lucide-react';
+import { CalendarDays, Video, GripVertical, Clock, Users, Flame, Briefcase, Brain, RefreshCw, X, CalendarPlus, Loader2, Utensils, AlertTriangle } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import type { Draggable } from '@fullcalendar/interaction';
 import { LazyMotion, domAnimation, m, AnimatePresence } from 'framer-motion';
@@ -14,7 +14,19 @@ import { freshFetcher } from '@/lib/fetcher';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
-import { formatDateOnly } from '@/lib/date-utils';
+import { formatDateOnly, getLocalDateString } from '@/lib/date-utils';
+
+function shiftDays(d: Date, n: number): Date {
+  const next = new Date(d);
+  next.setDate(next.getDate() + n);
+  return next;
+}
+
+// Drag IDs come prefixed with their source list — `task-<id>` from the
+// unscheduled list, `overdue-task-<id>` from the overdue list. Strip both.
+function extractTaskId(dragId: string): string {
+  return dragId.replace(/^(overdue-)?task-/, '');
+}
 
 
 // FullCalendar needs dynamic import (no SSR)
@@ -43,6 +55,7 @@ interface UnscheduledAim {
   aimCategoryId: string;
   aimInstanceId?: string;
   duration: number;
+  remaining: number;
   source: 'aims';
   activities: string[] | null;
 }
@@ -62,6 +75,7 @@ type UnscheduledItem = {
   aimCategoryId?: string;
   aimInstanceId?: string;
   activities?: string[] | null;
+  remaining?: number;
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -220,11 +234,17 @@ function UnscheduledItemCard({
       );
     }
 
+    const remaining = item.itemType === 'aim' ? item.remaining : undefined;
     return (
       <div className="flex items-center gap-2 mt-1">
         {cfg.icon}
         <span className={`text-xs ${cfg.labelColor}`}>{cfg.label}</span>
         <span className="text-xs text-[var(--text-muted)]">{item.duration}min</span>
+        {remaining && remaining > 0 && (
+          <span className="text-xs text-[var(--text-muted)]">
+            · {remaining} left this week
+          </span>
+        )}
       </div>
     );
   };
@@ -262,8 +282,41 @@ export default function CalendarPage() {
   const { mutate: globalMutate } = useSWRConfig();
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [syncing, setSyncing] = useState(false);
-  const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?status=TODO');
+  // Drawer wants every open task that isn't yet on a time block. Skip the
+  // server-side hide-until filter (`includeUpcoming=true`) so future-startTime
+  // tasks remain draggable, and don't restrict by status — the client-side
+  // filter below already keeps only TODO/IN_PROGRESS without a timeBlock.
+  const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?includeUpcoming=true');
   const { data: aimsData, isLoading: loadingAims, mutate: mutateAims } = useSWR<UnscheduledAim[]>('/api/aims/unscheduled');
+
+  // Overdue tasks: dueDate before today, still open. Pattern mirrors AgendaView
+  // — 90-day backstop window, then filter out DONE/DROPPED on the client.
+  const overdueKey = useMemo(() => {
+    const now = new Date();
+    const start = getLocalDateString(shiftDays(now, -90));
+    const end = getLocalDateString(shiftDays(now, -1));
+    return `/api/tasks?startDate=${start}&endDate=${end}&includeUpcoming=true`;
+  }, []);
+  const { data: overdueData, mutate: mutateOverdue } = useSWR(overdueKey);
+  const overdueTasks = useMemo(() => {
+    const arr = Array.isArray(overdueData) ? overdueData : [];
+    return arr.filter((t: any) => t.status !== 'DONE' && t.status !== 'DROPPED' && !t.timeBlockStart) as UnscheduledTask[];
+  }, [overdueData]);
+  const overdueItems = useMemo<UnscheduledItem[]>(
+    () =>
+      overdueTasks.map((task) => ({
+        id: `overdue-task-${task.id}`,
+        itemType: 'task',
+        title: task.title,
+        duration: task.estimatedMinutes ?? 60,
+        taskId: task.id,
+        priority: task.priority,
+        taskType: task.taskType,
+        dueDate: task.dueDate,
+        goal: task.goal,
+      })),
+    [overdueTasks],
+  );
   const { data: settingsData } = useSWR('/api/settings?scope=user');
   const { data: deepWorkEffective } = useSWR<{
     active: boolean;
@@ -320,6 +373,7 @@ export default function CalendarPage() {
           aimCategoryId: aim.aimCategoryId,
           aimInstanceId: aim.aimInstanceId,
           activities: aim.activities,
+          remaining: aim.remaining,
         });
       }
     }
@@ -449,7 +503,7 @@ export default function CalendarPage() {
         }
         mutateAims();
       } else {
-        const taskId = item.taskId || item.id.replace('task-', '');
+        const taskId = item.taskId || extractTaskId(item.id);
         const res = await fetch(`/api/tasks/${taskId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -460,6 +514,7 @@ export default function CalendarPage() {
           (current: any) => Array.isArray(current) ? current.filter((t: any) => t.id !== taskId) : current,
           { revalidate: false },
         );
+        mutateOverdue();
       }
       globalMutate(
         (key: unknown) => typeof key === 'string' && key.startsWith('/api/calendar'),
@@ -481,12 +536,12 @@ export default function CalendarPage() {
     if (itemType === 'aim') {
       mutateAims();
     } else {
-      // Default: task
-      const taskId = itemId.replace('task-', '');
+      const taskId = extractTaskId(itemId);
       mutateTasks(
         (current: any) => Array.isArray(current) ? current.filter((t: any) => t.id !== taskId) : current,
         { revalidate: true }
       );
+      mutateOverdue();
     }
   };
 
@@ -517,8 +572,9 @@ export default function CalendarPage() {
           undefined,
           { revalidate: true }
         );
-        mutateTasks(freshFetcher('/api/tasks?status=TODO'));
+        mutateTasks(freshFetcher('/api/tasks?includeUpcoming=true'));
         mutateAims();
+        mutateOverdue();
       } else {
         toast.error('Sync failed');
       }
@@ -584,6 +640,26 @@ export default function CalendarPage() {
         {/* Unscheduled Items Sidebar — desktop only */}
         <div className="hidden lg:block w-72 flex-shrink-0" ref={sidebarRef}>
           <div className="glass-panel p-4 sticky top-4">
+            {overdueItems.length > 0 && (
+              <div className="mb-4 pb-4 border-b border-[var(--border-color)]">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="h-4 w-4 text-red-400" />
+                  <h2 className="text-sm font-semibold text-red-400">Overdue</h2>
+                  <span className="ml-auto rounded-full bg-red-500/15 px-2 py-0.5 text-xs text-red-400">
+                    {overdueItems.length}
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mb-2">
+                  Past due — drag onto the calendar to re-schedule.
+                </p>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {overdueItems.map((item) => (
+                    <UnscheduledItemCard key={item.id} item={item} onEdit={handleEditTask} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 mb-4">
               <Clock className="h-4 w-4 text-indigo-400" />
               <h2 className="text-sm font-semibold text-[var(--text-primary)]">Unscheduled Items</h2>
@@ -612,7 +688,8 @@ export default function CalendarPage() {
                 </div>
               ) : allUnscheduledItems.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-[var(--text-muted)] text-sm">Everything is scheduled!</p>
+                  <p className="text-[var(--text-muted)] text-sm">No unscheduled items.</p>
+                  <p className="text-[var(--text-muted)] text-xs mt-1">Use Quick task above, or add one from /improve or /reactive-tasks.</p>
                 </div>
               ) : (
                 allUnscheduledItems.map((item) => (
@@ -798,13 +875,35 @@ export default function CalendarPage() {
 
                 {/* Scrollable item list */}
                 <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-2">
+                  {overdueItems.length > 0 && (
+                    <div className="pb-3 mb-1 border-b border-[var(--border-color)]">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="h-4 w-4 text-red-400" />
+                        <h3 className="text-sm font-semibold text-red-400">Overdue</h3>
+                        <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs text-red-400">
+                          {overdueItems.length}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {overdueItems.map((item) => (
+                          <UnscheduledItemCard
+                            key={item.id}
+                            item={item}
+                            onTap={handleMobileItemTap}
+                            onEdit={handleEditTask}
+                            isSelected={scheduleModalItem?.id === item.id}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {isLoading ? (
                     <div className="text-center py-8">
                       <div className="text-[var(--text-muted)] text-sm">Loading...</div>
                     </div>
                   ) : allUnscheduledItems.length === 0 ? (
                     <div className="text-center py-8">
-                      <p className="text-[var(--text-muted)] text-sm">Everything is scheduled!</p>
+                      <p className="text-[var(--text-muted)] text-sm">No unscheduled items.</p>
                     </div>
                   ) : (
                     allUnscheduledItems.map((item) => (
