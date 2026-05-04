@@ -11,20 +11,16 @@ import { useToast } from '@/components/ui/ToastProvider';
 import {
   ChevronRight, ChevronLeft, PartyPopper,
   Target, ListTodo, AlertTriangle, Star, Calendar,
-  Wrench, BarChart3, FileText, CalendarClock,
+  Wrench, BarChart3, FileText,
 } from 'lucide-react';
 
 import { getLocalDateString, getUpcomingWeekBoundaries } from '@/lib/date-utils';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
-import { StepCurrentGoals } from './weekly-steps/StepCurrentGoals';
-import { StepReviewTasks, type ReviewTasksSummary } from './weekly-steps/StepReviewTasks';
+import { StepGoalsReview } from './weekly-steps/StepGoalsReview';
 import { StepTop3Tasks } from './weekly-steps/StepTop3Tasks';
 import { SuccessesAndDifficultiesStep } from './shared/SuccessesAndDifficultiesStep';
 import { StepMaintenanceReview } from './weekly-steps/StepMaintenanceReview';
-import { StepKpiProgress } from './weekly-steps/StepKpiProgress';
 import { StepNotesCompletion } from './weekly-steps/StepNotesCompletion';
-import { StepWeeklyGoals } from './weekly-steps/StepWeeklyGoals';
-import { StepCompanyGoalReport } from './weekly-steps/StepCompanyGoalReport';
 import { InlineTaskCreator } from './weekly-steps/InlineTaskCreator';
 
 const CalendarSplitView = dynamic(
@@ -35,24 +31,39 @@ import type { RequestNameWorkBlockFn } from '@/components/calendar/CalendarSplit
 import { WorkBlockObjectiveModal } from '@/components/calendar/WorkBlockObjectiveModal';
 import { useWorkBlockNameModal } from '@/hooks/useWorkBlockNameModal';
 
-// Step definitions — reordered per Prism overhaul spec (2026-03-28)
-// 1. Current Goals → 2. Review Tasks → 3. KPI Progress →
-// 3a. [Process KPI Log (conditional)] → 4. Successes & Difficulties → ...
-// The process_kpi_log step is inserted dynamically after kpi_progress
-// if processes with KPIs are due/scheduled this week.
+// Step definitions — consolidated per Prism overhaul (2026-05-04):
+// 1. Goals & Review (replaces former Current Goals + Company Goal Report +
+//    Review Tasks + KPI Progress) →
+// 1a. [Process KPI Log (conditional)] →
+// 2. Successes & Difficulties →
+// 3. Create & Modify Tasks →
+// 4. Rank Top 3 →
+// 5. Calendar Plan (replaces former Work Blocks + Schedule Tasks) →
+// 6. Maintenance →
+// 7. Notes & Completion.
 const STEPS_BASE = [
-  { key: 'current_goals',     title: 'Current Goals',                       icon: Target,         description: 'Review your current weekly and monthly goals grouped by hierarchy.' },
-  { key: 'review_tasks',      title: 'Review Previous Tasks',               icon: ListTodo,       description: 'Check off completed tasks. Incomplete tasks carry forward. Capture successes.' },
-  { key: 'kpi_progress',      title: 'KPI Progress',                        icon: BarChart3,      description: 'Update weekly KPI actuals and review goal progress.' },
-  { key: 'successes_difficulties', title: 'Successes & Difficulties',       icon: AlertTriangle,  description: 'Capture wins and reflect on blockers from the past week.' },
-  { key: 'weekly_goals',      title: 'Create & Adjust Weekly Goals',        icon: Target,         description: 'Create weekly goals from monthly, with goal creation coach.' },
-  { key: 'create_tasks',      title: 'Create & Modify Tasks',               icon: ListTodo,       description: 'Add tasks linked to goals. Default assign self or select team member.' },
-  { key: 'mit',               title: 'Rank Top 3 Most Important Tasks',     icon: Star,           description: 'Select #1, then #2, then #3 most important tasks for this week.' },
-  { key: 'work_blocks',       title: 'Calendar: Create Work Blocks',        icon: Calendar,       description: 'Create Deep Work, Normal Work, and AIM blocks on your calendar.' },
-  { key: 'schedule_tasks',    title: 'Calendar: Tasks into Blocks',         icon: CalendarClock,  description: 'Drag tasks and AIMs into your work blocks.' },
-  { key: 'maintenance',       title: 'Maintenance Review',                  icon: Wrench,         description: 'Keep, automate, or eliminate maintenance tasks.' },
-  { key: 'notes_completion',  title: 'Notes & Completion',                  icon: FileText,       description: 'Add final notes and complete the review.' },
+  { key: 'goals_review',           title: 'Goals & Review',                  icon: Target,         description: 'Review and edit current goals, log KPIs, tick last week’s tasks, and report on company goals.' },
+  { key: 'successes_difficulties', title: 'Successes & Difficulties',        icon: AlertTriangle,  description: 'Capture wins and reflect on blockers from the past week.' },
+  { key: 'create_tasks',           title: 'Create & Modify Tasks',           icon: ListTodo,       description: 'Add tasks linked to goals. Default assign self or select team member.' },
+  { key: 'mit',                    title: 'Rank Top 3 Most Important Tasks', icon: Star,           description: 'Select #1, then #2, then #3 most important tasks for this week.' },
+  { key: 'calendar_plan',          title: 'Calendar: Plan Your Week',        icon: Calendar,       description: 'Create work blocks and drag tasks/AIMs onto your week.' },
+  { key: 'maintenance',            title: 'Maintenance Review',              icon: Wrench,         description: 'Keep, automate, or eliminate maintenance tasks.' },
+  { key: 'notes_completion',       title: 'Notes & Completion',              icon: FileText,       description: 'Add final notes and complete the review.' },
 ];
+
+// Pretty-print titles for legacy step keys on completed reviews (rows persisted
+// before the May 2026 consolidation).
+const LEGACY_STEP_TITLES: Record<string, string> = {
+  current_goals: 'Current Goals',
+  review_tasks: 'Review Previous Tasks',
+  kpi_progress: 'KPI Progress',
+  company_goal_report: 'Company Goal Report',
+  weekly_goals: 'Create & Adjust Weekly Goals',
+  work_blocks: 'Calendar: Create Work Blocks',
+  schedule_tasks: 'Calendar: Tasks into Blocks',
+  top3: 'Rank Top 3 Most Important Tasks',
+  difficulties: 'Difficulties',
+};
 
 interface WorkBlock {
   id: string;
@@ -119,61 +130,18 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   // URL step param is 1-based for user-friendliness; internal state is 0-based
   // Processes with KPIs due this week (WEEKLY + BIWEEKLY cadences)
   const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
-  // Hidden once computed: whether to surface the company goal report step.
-  // Admin sees it if any company goal exists; non-admin sees it if they have
-  // at least one assigned company goal. `null` = not yet resolved, which we
-  // use to defer resume-step computation until STEPS is stable.
-  const [hasCompanyReportContent, setHasCompanyReportContent] = useState<boolean | null>(null);
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/goals?isCompany=true');
-        if (!res.ok) {
-          if (!cancelled) setHasCompanyReportContent(false);
-          return;
-        }
-        const raw = await res.json();
-        if (cancelled || !Array.isArray(raw)) {
-          if (!cancelled) setHasCompanyReportContent(false);
-          return;
-        }
-        const reportable = isAdmin
-          ? raw.length > 0
-          : raw.some((g: { isAssignedToMe?: boolean }) => g.isAssignedToMe);
-        setHasCompanyReportContent(reportable);
-      } catch {
-        if (!cancelled) setHasCompanyReportContent(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [isAdmin]);
-
-  // Dynamic STEPS — inserts process_kpi_log after kpi_progress when eligible
-  // processes exist, and inserts company_goal_report between current_goals and
-  // review_tasks when the user has company goals to report on.
+  // Dynamic STEPS — inserts process_kpi_log after goals_review when eligible
+  // processes exist. (Company goal reporting is folded into goals_review.)
   const STEPS = useMemo(() => {
     const result = [...STEPS_BASE];
 
-    if (hasCompanyReportContent === true) {
-      const currentGoalsIdx = result.findIndex((s) => s.key === 'current_goals');
-      if (currentGoalsIdx !== -1) {
-        result.splice(currentGoalsIdx + 1, 0, {
-          key: 'company_goal_report',
-          title: 'Company Goal Report',
-          icon: Target,
-          description: 'Report progress on company goals assigned to you.',
-        });
-      }
-    }
-
     if (dueKpiProcesses.length > 0) {
-      const kpiStepIdx = result.findIndex((s) => s.key === 'kpi_progress');
-      if (kpiStepIdx !== -1) {
-        result.splice(kpiStepIdx + 1, 0, {
+      const goalsIdx = result.findIndex((s) => s.key === 'goals_review');
+      if (goalsIdx !== -1) {
+        result.splice(goalsIdx + 1, 0, {
           key: 'process_kpi_log',
           title: 'Process KPI Log',
           icon: BarChart3,
@@ -183,7 +151,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     }
 
     return result;
-  }, [dueKpiProcesses, hasCompanyReportContent]);
+  }, [dueKpiProcesses]);
 
   const TOTAL_STEPS = STEPS.length;
   const urlStep = searchParams.get('step');
@@ -201,13 +169,15 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const [workBlocks, setWorkBlocks] = useState<WorkBlock[]>([]);
   const [maintenanceDecisions, setMaintenanceDecisions] = useState<Record<string, any>>({});
   const [maintenanceTaskCount, setMaintenanceTaskCount] = useState(0);
-  const [kpiNotes, setKpiNotes] = useState('');
   const [taskBlockAssignments, setTaskBlockAssignments] = useState<Record<string, string>>({});
   const [finalNotes, setFinalNotes] = useState('');
   const [_mitTaskPoolSize, setMitTaskPoolSize] = useState<number | null>(null);
-  const [reviewTasksSummary, setReviewTasksSummary] = useState<ReviewTasksSummary>({
-    doneIds: [], abandonedIds: [], carriedForwardIds: [], totalCount: 0,
-  });
+  const [goalsReviewSummary, setGoalsReviewSummary] = useState<{
+    editedGoalIds: string[];
+    doneTaskIds: string[];
+    abandonedTaskIds: string[];
+    kpiUpdateCount: number;
+  }>({ editedGoalIds: [], doneTaskIds: [], abandonedTaskIds: [], kpiUpdateCount: 0 });
 
 
   // Upcoming week boundaries (Mon-Sun)
@@ -372,17 +342,26 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
 
   // Resume step computation. Waits for:
   //  - URL step not explicitly set (user didn't deep-link to a step),
-  //  - answers fetched (savedAnswers populated via fetchReviewAndAnswers),
-  //  - hasCompanyReportContent resolved (STEPS array now contains the
-  //    company_goal_report step if applicable). Without this gate we could
-  //    park the user one step earlier/later than intended.
+  //  - answers fetched (savedAnswers populated via fetchReviewAndAnswers).
   const [hasResumed, setHasResumed] = useState(false);
   useEffect(() => {
     if (hasResumed || urlStep || completed) return;
-    if (hasCompanyReportContent === null) return;
     if (!savedAnswers.length) { setHasResumed(true); return; }
 
     const answeredKeys = new Set(savedAnswers.map((a) => a.stepKey));
+    // Treat any of the legacy goal/task review keys as satisfying goals_review
+    // so historical reviews resume past it instead of getting stuck.
+    if (
+      answeredKeys.has('current_goals') ||
+      answeredKeys.has('review_tasks') ||
+      answeredKeys.has('kpi_progress') ||
+      answeredKeys.has('company_goal_report')
+    ) {
+      answeredKeys.add('goals_review');
+    }
+    if (answeredKeys.has('work_blocks') || answeredKeys.has('schedule_tasks')) {
+      answeredKeys.add('calendar_plan');
+    }
     let resumeStep = 0;
     for (let i = 0; i < STEPS.length; i++) {
       if (!answeredKeys.has(STEPS[i].key)) {
@@ -393,7 +372,7 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
     }
     setCurrentStep(Math.min(resumeStep, TOTAL_STEPS - 1));
     setHasResumed(true);
-  }, [hasResumed, urlStep, completed, hasCompanyReportContent, savedAnswers, STEPS, TOTAL_STEPS]);
+  }, [hasResumed, urlStep, completed, savedAnswers, STEPS, TOTAL_STEPS]);
 
   useEffect(() => {
     const today = getLocalDateString();
@@ -448,35 +427,24 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
             case 'mit':
               setMitTaskIds(ans.answerData?.taskIds ?? []);
               break;
+            case 'calendar_plan':
+              setWorkBlocks(ans.answerData?.blocks ?? []);
+              setTaskBlockAssignments(ans.answerData?.assignments ?? {});
+              break;
+            // Legacy keys — resume past them, hydrate matching state where
+            // applicable so historical mid-review reloads still work.
             case 'work_blocks':
               setWorkBlocks(ans.answerData?.blocks ?? []);
-              break;
-            case 'maintenance':
-              setMaintenanceDecisions(ans.answerData?.decisions ?? {});
-              break;
-            case 'kpi_progress':
-              setKpiNotes(ans.answerData?.notes ?? '');
               break;
             case 'schedule_tasks':
               setTaskBlockAssignments(ans.answerData?.assignments ?? {});
               break;
+            case 'maintenance':
+              setMaintenanceDecisions(ans.answerData?.decisions ?? {});
+              break;
             case 'notes_completion':
               setFinalNotes(ans.answerData?.notes ?? '');
               break;
-            case 'review_tasks': {
-              const a = ans.answerData ?? {};
-              if (Array.isArray(a.doneIds) && Array.isArray(a.abandonedIds) && Array.isArray(a.carriedForwardIds)) {
-                setReviewTasksSummary({
-                  doneIds: a.doneIds,
-                  abandonedIds: a.abandonedIds,
-                  carriedForwardIds: a.carriedForwardIds,
-                  totalCount: typeof a.totalCount === 'number'
-                    ? a.totalCount
-                    : a.doneIds.length + a.abandonedIds.length + a.carriedForwardIds.length,
-                });
-              }
-              break;
-            }
           }
         }
 
@@ -571,11 +539,8 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const persistCurrentStep = useCallback(async () => {
     const step = STEPS[currentStep];
     switch (step.key) {
-      case 'current_goals':
-        await persistAnswer('current_goals', 'viewed', { viewed: true });
-        break;
-      case 'review_tasks':
-        await persistAnswer('review_tasks', 'task_list', reviewTasksSummary);
+      case 'goals_review':
+        await persistAnswer('goals_review', 'goals_review', goalsReviewSummary);
         break;
       case 'successes_difficulties':
         await persistAnswer('successes_difficulties', 'text_list', { successes, difficulties });
@@ -594,26 +559,17 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
           });
         }
         break;
-      case 'work_blocks':
-        await persistAnswer('work_blocks', 'work_blocks', { blocks: workBlocks });
-        break;
-      case 'weekly_goals':
-        await persistAnswer('weekly_goals', 'viewed', { viewed: true });
+      case 'calendar_plan':
+        await persistAnswer('calendar_plan', 'calendar_plan', { blocks: workBlocks, assignments: taskBlockAssignments });
         break;
       case 'maintenance':
         await persistAnswer('maintenance', 'maintenance_decisions', { decisions: maintenanceDecisions });
-        break;
-      case 'kpi_progress':
-        await persistAnswer('kpi_progress', 'kpi_progress', { notes: kpiNotes });
-        break;
-      case 'schedule_tasks':
-        await persistAnswer('schedule_tasks', 'task_block_assignments', { assignments: taskBlockAssignments });
         break;
       case 'notes_completion':
         await persistAnswer('notes_completion', 'text', { notes: finalNotes });
         break;
     }
-  }, [currentStep, successes, difficulties, mitTaskIds, workBlocks, maintenanceDecisions, kpiNotes, taskBlockAssignments, finalNotes, reviewTasksSummary, persistAnswer]);
+  }, [currentStep, STEPS, successes, difficulties, mitTaskIds, workBlocks, maintenanceDecisions, taskBlockAssignments, finalNotes, goalsReviewSummary, persistAnswer]);
 
   // Validate current step before advancing
   const validateCurrentStep = (): string | null => {
@@ -703,7 +659,10 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
         ) : (
           <div className="space-y-4">
             {savedAnswers.map((ans) => {
-              const stepTitle = STEPS.find((s) => s.key === ans.stepKey)?.title ?? ans.stepKey;
+              const stepTitle =
+                STEPS.find((s) => s.key === ans.stepKey)?.title ??
+                LEGACY_STEP_TITLES[ans.stepKey] ??
+                ans.stepKey;
               return (
                 <div key={ans.stepKey} className="glass-panel p-4">
                   <div className="text-xs font-semibold uppercase tracking-widest text-indigo-400 mb-2">
@@ -799,21 +758,12 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
 
           {/* Step content */}
           <div className="glass-panel p-6">
-            {step.key === 'current_goals' && (
-              <StepCurrentGoals reviewId={reviewId} isTeamReview={isTeamReview} />
-            )}
-            {step.key === 'company_goal_report' && (
-              <StepCompanyGoalReport reviewId={reviewId} isAdmin={isAdmin} />
-            )}
-            {step.key === 'review_tasks' && (
-              <StepReviewTasks isTeamReview={isTeamReview} onSummaryChange={setReviewTasksSummary} />
-            )}
-            {step.key === 'kpi_progress' && (
-              <StepKpiProgress
+            {step.key === 'goals_review' && (
+              <StepGoalsReview
                 reviewId={reviewId}
-                initialNotes={kpiNotes}
-                onNotesChange={setKpiNotes}
                 isTeamReview={isTeamReview}
+                isAdmin={isAdmin}
+                onSummaryChange={setGoalsReviewSummary}
               />
             )}
             {step.key === 'process_kpi_log' && (
@@ -827,9 +777,6 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 onSave={(s, d) => { setSuccesses(s); setDifficulties(d); }}
               />
             )}
-            {step.key === 'weekly_goals' && (
-              <StepWeeklyGoals reviewId={reviewId} isTeamReview={isTeamReview} />
-            )}
             {step.key === 'create_tasks' && (
               <InlineTaskCreator isTeamReview={isTeamReview} />
             )}
@@ -842,27 +789,21 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
                 isTeamReview={isTeamReview}
               />
             )}
-            {(step.key === 'work_blocks' || step.key === 'schedule_tasks') && (
+            {step.key === 'calendar_plan' && (
               <CalendarStepContent
                 isTeamReview={isTeamReview}
-                mode={step.key === 'work_blocks' ? 'work_blocks' : 'schedule_tasks'}
-                description={
-                  step.key === 'work_blocks'
-                    ? 'Create Deep Work, Normal Work, and AIM blocks on your weekly calendar.'
-                    : 'Drag your tasks and AIMs into the work blocks you created.'
-                }
+                description="Create Deep Work, Normal Work, and AIM blocks AND drag tasks/AIMs onto your week — all in one view."
                 stepTitle={step.title}
                 calendarModalOpen={calendarModalOpen}
                 onOpenModal={() => setCalendarModalOpen(true)}
                 onCloseModal={() => setCalendarModalOpen(false)}
                 dateRange={{ start: `${planningWeekStartStr}T00:00:00`, end: `${planningWeekEndStr}T23:59:59` }}
                 unscheduledItems={unscheduledForCalendar}
-                aimBlockDuration={step.key === 'work_blocks' ? aimBlockDuration : undefined}
-                onCreateWorkBlock={step.key === 'work_blocks' ? handleCreateWorkBlock : undefined}
-                onRequestNameWorkBlock={step.key === 'schedule_tasks' ? openAndAwaitNameModal : undefined}
+                aimBlockDuration={aimBlockDuration}
+                onCreateWorkBlock={handleCreateWorkBlock}
+                onRequestNameWorkBlock={openAndAwaitNameModal}
                 onUnschedule={handleUnscheduleItem}
                 onRefresh={() => { mutate(weekTasksSWRKey); mutate(weekAimsSWRKey); }}
-                showWorkBlockTemplates={step.key === 'work_blocks'}
                 weeklyTargetCalendarIds={weeklyTargetCalendarIds}
               />
             )}
@@ -911,11 +852,10 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   );
 }
 
-/* ===== Extracted calendar step to eliminate duplication between work_blocks and schedule_tasks ===== */
+/* ===== Combined calendar step (block creation + task scheduling in one view) ===== */
 
 interface CalendarStepContentProps {
   isTeamReview?: boolean;
-  mode: 'work_blocks' | 'schedule_tasks';
   description: string;
   stepTitle: string;
   calendarModalOpen: boolean;
@@ -928,13 +868,11 @@ interface CalendarStepContentProps {
   onRequestNameWorkBlock?: RequestNameWorkBlockFn;
   onUnschedule: (itemId: string, itemType: string) => Promise<void>;
   onRefresh?: () => void;
-  showWorkBlockTemplates?: boolean;
   weeklyTargetCalendarIds?: string[];
 }
 
 function CalendarStepContent({
   isTeamReview,
-  mode,
   description,
   stepTitle,
   calendarModalOpen,
@@ -947,7 +885,6 @@ function CalendarStepContent({
   onRequestNameWorkBlock,
   onUnschedule,
   onRefresh,
-  showWorkBlockTemplates,
   weeklyTargetCalendarIds,
 }: CalendarStepContentProps): ReactNode {
   if (isTeamReview) {
@@ -983,7 +920,7 @@ function CalendarStepContent({
             </div>
             <div className="flex-1 min-h-0 p-2">
               <CalendarSplitView
-                mode={mode}
+                mode="schedule_tasks"
                 viewMode="week"
                 dateRange={dateRange}
                 unscheduledItems={unscheduledItems}
@@ -992,7 +929,7 @@ function CalendarStepContent({
                 onRequestNameWorkBlock={onRequestNameWorkBlock}
                 onUnschedule={onUnschedule}
                 onRefresh={onRefresh}
-                showWorkBlockTemplates={showWorkBlockTemplates}
+                showWorkBlockTemplates={true}
                 weeklyTargetCalendarIds={weeklyTargetCalendarIds}
               />
             </div>

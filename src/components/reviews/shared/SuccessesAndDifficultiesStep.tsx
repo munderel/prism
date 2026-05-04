@@ -77,7 +77,7 @@ function ItemListSection({
           onChange={(e) => onInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className={`flex-1 rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 ${c.input}`}
+          className={`flex-1 rounded-md border bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 ${c.input}`}
         />
         <button
           type="button"
