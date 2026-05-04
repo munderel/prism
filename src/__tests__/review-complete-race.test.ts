@@ -77,6 +77,7 @@ describe('PATCH /api/reviews/[id] — double-complete race (Critical #14)', () =
     isTeamReview: false,
     completedAt: null,
     calendarEventId: null,
+    scheduledDate: new Date('2026-04-01T00:00:00Z'),
   };
 
   beforeEach(() => {
@@ -102,9 +103,18 @@ describe('PATCH /api/reviews/[id] — double-complete race (Critical #14)', () =
       paramsFor('r1'),
     );
     expect(res.status).toBe(200);
-    expect(mockUpdateMany).toHaveBeenCalledOnce();
-    const call = mockUpdateMany.mock.calls[0][0] as any;
-    expect(call.where).toEqual({ id: 'r1', completedAt: null });
+    // Two updateMany calls on the winning path: (1) the guarded target update,
+    // (2) the sibling-sweep that closes other open rows in the same week.
+    expect(mockUpdateMany).toHaveBeenCalledTimes(2);
+    const targetCall = mockUpdateMany.mock.calls[0][0] as any;
+    expect(targetCall.where).toEqual({ id: 'r1', completedAt: null });
+    const sweepCall = mockUpdateMany.mock.calls[1][0] as any;
+    expect(sweepCall.where.userId).toBe('u1');
+    expect(sweepCall.where.reviewType).toBe('WEEKLY');
+    expect(sweepCall.where.completedAt).toBeNull();
+    expect(sweepCall.where.id).toEqual({ not: 'r1' });
+    expect(sweepCall.where.scheduledDate.gte).toBeInstanceOf(Date);
+    expect(sweepCall.where.scheduledDate.lt).toBeInstanceOf(Date);
     // Two streak calls: specific + legacy
     expect(mockStreak).toHaveBeenCalledTimes(2);
     expect(mockStreak).toHaveBeenCalledWith('u1', 'review_weekly', expect.anything());

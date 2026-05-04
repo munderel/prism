@@ -58,6 +58,14 @@ export async function PATCH(
   const process = await prisma.process.findUnique({ where: { id } });
   if (!process) return notFoundResponse('Process');
 
+  const isAdmin = auth.session.user.isAdmin;
+
+  // Gate BOTH the per-execution fast path and the slow path. Previously only
+  // the slow path was gated, allowing IDOR writes on ProcessExecution.
+  if (!canAccessProcess(process, auth.userId, isAdmin)) {
+    return forbiddenResponse();
+  }
+
   // Handle per-execution time override (drag-drop from calendar)
   if (body.scheduledDate && (body.timeBlockStart !== undefined || body.timeBlockEnd !== undefined)) {
     const owner = await prisma.user.findUnique({
@@ -118,13 +126,6 @@ export async function PATCH(
     }
 
     return Response.json(updated, NO_STORE);
-  }
-
-  const isAdmin = auth.session.user.isAdmin;
-
-  // Non-admin can only update their own processes
-  if (!isAdmin && process.assigneeId !== auth.userId) {
-    return forbiddenResponse();
   }
 
   const { delegateId, delegateUntil, scheduledTime, scheduledDayOfWeek, scheduledDayOfMonth } = body;

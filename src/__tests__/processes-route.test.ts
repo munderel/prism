@@ -15,9 +15,18 @@ vi.mock('@/lib/prisma', () => ({
     },
     process: {
       findUnique: vi.fn(),
+      update: vi.fn(),
     },
     processStep: {
       findMany: vi.fn(),
+    },
+    processExecution: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    user: {
+      findUnique: vi.fn(),
     },
   },
 }));
@@ -48,8 +57,10 @@ vi.mock('@/lib/calendar', () => ({
 
 import { requireAuthFromRequest, requireAuth } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
+import { parseBody } from '@/lib/schemas';
+import { parseLocalDateKey } from '@/lib/google-sync-state';
 import { GET as listGet } from '@/app/api/processes/route';
-import { GET as detailGet } from '@/app/api/processes/[id]/route';
+import { GET as detailGet, PATCH as detailPatch } from '@/app/api/processes/[id]/route';
 import { GET as stepsGet } from '@/app/api/processes/[id]/steps/route';
 
 const mockRequireAuthFromRequest = vi.mocked(requireAuthFromRequest);
@@ -57,6 +68,12 @@ const mockRequireAuth = vi.mocked(requireAuth);
 const mockBfFindMany = vi.mocked(prisma.businessFunction.findMany);
 const mockProcessFindUnique = vi.mocked(prisma.process.findUnique);
 const mockProcessStepFindMany = vi.mocked(prisma.processStep.findMany);
+const mockExecutionFindFirst = vi.mocked(prisma.processExecution.findFirst);
+const mockExecutionCreate = vi.mocked(prisma.processExecution.create);
+const mockExecutionUpdate = vi.mocked(prisma.processExecution.update);
+const mockUserFindUnique = vi.mocked(prisma.user.findUnique);
+const mockParseBody = vi.mocked(parseBody);
+const mockParseLocalDateKey = vi.mocked(parseLocalDateKey);
 
 const userAuth = { session: { user: { id: 'user-A', isAdmin: false } }, userId: 'user-A' };
 const adminAuth = { session: { user: { id: 'admin-1', isAdmin: true } }, userId: 'admin-1' };
@@ -203,5 +220,84 @@ describe('GET /api/processes/[id]/steps', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual([{ id: 's1' }]);
+  });
+});
+
+describe('PATCH /api/processes/[id]', () => {
+  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+  const fastPathBody = {
+    scheduledDate: '2026-05-04',
+    timeBlockStart: '2026-05-04T09:00:00.000Z',
+    timeBlockEnd: '2026-05-04T10:00:00.000Z',
+  };
+
+  it('returns 403 and does not touch ProcessExecution when a non-owner hits the fast path', async () => {
+    mockRequireAuth.mockResolvedValue(userAuth as any);
+    mockParseBody.mockResolvedValue({ data: fastPathBody } as any);
+    mockProcessFindUnique.mockResolvedValue({
+      id: 'p-other',
+      assigneeId: 'someone-else',
+      delegateId: null,
+      delegateUntil: null,
+    } as any);
+
+    const response = await detailPatch({} as any, ctx('p-other') as any);
+
+    expect(response.status).toBe(403);
+    expect(mockExecutionFindFirst).not.toHaveBeenCalled();
+    expect(mockExecutionCreate).not.toHaveBeenCalled();
+    expect(mockExecutionUpdate).not.toHaveBeenCalled();
+  });
+
+  it('allows the assignee to retime an execution via the fast path', async () => {
+    mockRequireAuth.mockResolvedValue(userAuth as any);
+    mockParseBody.mockResolvedValue({ data: fastPathBody } as any);
+    mockProcessFindUnique.mockResolvedValue({
+      id: 'p-mine',
+      assigneeId: 'user-A',
+      delegateId: null,
+      delegateUntil: null,
+    } as any);
+    mockUserFindUnique.mockResolvedValue({ timezone: 'America/New_York' } as any);
+    mockParseLocalDateKey.mockReturnValue(new Date('2026-05-04T04:00:00.000Z'));
+    mockExecutionFindFirst.mockResolvedValue(null);
+    mockExecutionCreate.mockResolvedValue({ id: 'exec-new', scheduledDate: new Date('2026-05-04T04:00:00.000Z') } as any);
+    mockExecutionUpdate.mockResolvedValue({
+      id: 'exec-new',
+      scheduledDate: new Date('2026-05-04T04:00:00.000Z'),
+      timeBlockStart: new Date(fastPathBody.timeBlockStart),
+      timeBlockEnd: new Date(fastPathBody.timeBlockEnd),
+    } as any);
+
+    const response = await detailPatch({} as any, ctx('p-mine') as any);
+
+    expect(response.status).toBe(200);
+    expect(mockExecutionUpdate).toHaveBeenCalledOnce();
+  });
+
+  it('allows an admin to retime any process via the fast path', async () => {
+    mockRequireAuth.mockResolvedValue(adminAuth as any);
+    mockParseBody.mockResolvedValue({ data: fastPathBody } as any);
+    mockProcessFindUnique.mockResolvedValue({
+      id: 'p-other',
+      assigneeId: 'someone-else',
+      delegateId: null,
+      delegateUntil: null,
+    } as any);
+    mockUserFindUnique.mockResolvedValue({ timezone: 'UTC' } as any);
+    mockParseLocalDateKey.mockReturnValue(new Date('2026-05-04T00:00:00.000Z'));
+    mockExecutionFindFirst.mockResolvedValue({ id: 'exec-existing' } as any);
+    mockExecutionUpdate.mockResolvedValue({
+      id: 'exec-existing',
+      scheduledDate: new Date('2026-05-04T00:00:00.000Z'),
+      timeBlockStart: new Date(fastPathBody.timeBlockStart),
+      timeBlockEnd: new Date(fastPathBody.timeBlockEnd),
+    } as any);
+
+    const response = await detailPatch({} as any, ctx('p-other') as any);
+
+    expect(response.status).toBe(200);
+    expect(mockExecutionCreate).not.toHaveBeenCalled();
+    expect(mockExecutionUpdate).toHaveBeenCalledOnce();
   });
 });
