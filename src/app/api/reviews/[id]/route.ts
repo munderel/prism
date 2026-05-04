@@ -18,6 +18,32 @@ const REVIEW_TYPE_TO_CADENCE: Record<ReviewType, ProcessCadence> = {
   YEARLY: ProcessCadence.YEARLY,
 };
 
+// Sibling rows can exist when a review's scheduledDate was stored as UTC midnight
+// in one path and as local-midnight-in-UTC in another, slipping past the
+// (userId, reviewType, scheduledDate) unique constraint. Used to sweep them
+// closed when the user completes any one of them.
+function cadenceWindow(reviewType: ReviewType, scheduledDate: Date): { gte: Date; lt: Date } {
+  const d = new Date(scheduledDate);
+  if (reviewType === 'WEEKLY') {
+    const start = new Date(d);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - start.getDay());
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { gte: start, lt: end };
+  }
+  if (reviewType === 'MONTHLY') {
+    return {
+      gte: new Date(d.getFullYear(), d.getMonth(), 1),
+      lt: new Date(d.getFullYear(), d.getMonth() + 1, 1),
+    };
+  }
+  return {
+    gte: new Date(d.getFullYear(), 0, 1),
+    lt: new Date(d.getFullYear() + 1, 0, 1),
+  };
+}
+
 type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
 
 /** Check if an individual (non-team) review is accessible to the current user. */
@@ -79,6 +105,25 @@ export async function PATCH(
       data,
     });
     didCompleteNow = result.count === 1;
+
+    // Close sibling rows in the same cadence-window so a duplicate row (same
+    // week/month/year, different scheduledDate timestamp) doesn't reappear in
+    // the Tasks banner after the user completes one of them.
+    if (didCompleteNow) {
+      const window = cadenceWindow(review.reviewType, review.scheduledDate);
+      await prisma.review.updateMany({
+        where: {
+          userId: review.userId,
+          reviewType: review.reviewType,
+          isTeamReview: review.isTeamReview,
+          completedAt: null,
+          id: { not: id },
+          scheduledDate: window,
+        },
+        data: { completedAt: new Date() },
+      });
+    }
+
     updated = await prisma.review.findUniqueOrThrow({ where: { id } });
 
     // Streak firing is NOT gated on didCompleteNow: upsertOrUpdateStreak is
