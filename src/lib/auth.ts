@@ -247,10 +247,25 @@ export const authOptions: NextAuthOptions = {
 
         const dbUser = await prisma.user.findUnique({
           where: { email: normalizedEmail },
-          select: { isLockedOut: true },
+          select: { isLockedOut: true, is2FAEnabled: true },
         });
 
-        if (dbUser) return !dbUser.isLockedOut;
+        if (dbUser) {
+          if (dbUser.isLockedOut) return false;
+
+          // Mirror the credentials-side 2FA gate. OAuth cannot collect a TOTP
+          // code, so users with 2FA enabled (or a company that enforces it)
+          // must sign in through password + TOTP instead.
+          if (dbUser.is2FAEnabled) {
+            return '/login?error=oauth_2fa_required';
+          }
+          const companyAuth = await prisma.companyAuthSettings.findFirst();
+          if (companyAuth?.enforce2FA) {
+            return '/login?error=oauth_2fa_setup_required';
+          }
+
+          return true;
+        }
 
         // New user — require a valid pending invitation
         const invitation = await prisma.invitation.findFirst({
@@ -322,6 +337,7 @@ export const authOptions: NextAuthOptions = {
             where: {
               email: user.email.toLowerCase(),
               status: 'PENDING',
+              createdAt: { gte: new Date(Date.now() - INVITE_EXPIRY_MS) },
             },
           });
 

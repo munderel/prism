@@ -10,6 +10,8 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   access_revoked: 'Your access has been revoked. Contact your admin.',
   Callback: 'Sign in failed due to a server error. Please try again.',
   SignInCallbackError: 'Sign in failed due to a server error. Please try again.',
+  oauth_2fa_required: 'This account has 2FA enabled. Sign in with your password and authenticator code.',
+  oauth_2fa_setup_required: 'Your organization requires 2FA. Sign in with your password to set it up.',
 };
 
 const showDevLogin = process.env.NEXT_PUBLIC_DEV_LOGIN === 'true';
