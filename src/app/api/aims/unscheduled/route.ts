@@ -17,27 +17,16 @@ export async function GET() {
   weekEnd.setDate(weekStart.getDate() + 6);
   weekEnd.setHours(23, 59, 59, 999);
 
-  // Get only explicitly active user aims (no auto-include of default categories)
   const userAims = await prisma.userAim.findMany({
     where: { userId: auth.userId, isActive: true },
     include: { aimCategory: true },
   });
-
-  const activeAims = userAims.map((ua) => ({
-    aimCategoryId: ua.aimCategoryId,
-    aimCategory: ua.aimCategory,
-    customFrequency: ua.customFrequency,
-    customDuration: ua.customDuration,
-    currentPhase: ua.currentPhase,
-    phaseStartedAt: ua.phaseStartedAt,
-  }));
 
   const existingInstances = await prisma.aimInstance.findMany({
     where: {
       userId: auth.userId,
       scheduledDate: { gte: weekStart, lte: weekEnd },
     },
-    include: { aimCategory: true },
   });
 
   interface UnscheduledItem {
@@ -47,13 +36,14 @@ export async function GET() {
     aimCategoryId: string;
     aimInstanceId?: string;
     duration: number;
+    remaining: number;
     source: 'aims';
     activities: string[] | null;
   }
 
   const items: UnscheduledItem[] = [];
 
-  for (const aim of activeAims) {
+  for (const aim of userAims) {
     const userAimLike: UserAimLike = {
       customDuration: aim.customDuration,
       customFrequency: aim.customFrequency,
@@ -74,49 +64,32 @@ export async function GET() {
       (i) => i.aimCategoryId === aim.aimCategoryId
     );
 
-    // Existing instances without time blocks (need scheduling)
-    for (const inst of categoryInstances) {
-      if (!inst.timeBlockStart && inst.status === 'SCHEDULED') {
-        items.push({
-          id: `aim-instance-${inst.id}`,
-          type: 'aim',
-          title: aim.aimCategory.name,
-          aimCategoryId: aim.aimCategoryId,
-          aimInstanceId: inst.id,
-          duration,
-          source: 'aims',
-          activities,
-        });
-      }
-    }
-
-    // Missing instances (frequency not met yet)
+    // "Remaining" = existing AimInstances that have no time block yet (SCHEDULED
+    // but unplaced) + missing instances needed to reach the weekly target.
+    const existingNoTimeBlock = categoryInstances.filter(
+      (i) => !i.timeBlockStart && i.status === 'SCHEDULED'
+    );
     const missing = Math.max(0, frequency - categoryInstances.length);
-    for (let i = 0; i < missing; i++) {
-      items.push({
-        id: `aim-new-${aim.aimCategoryId}-${i}`,
-        type: 'aim',
-        title: aim.aimCategory.name,
-        aimCategoryId: aim.aimCategoryId,
-        duration,
-        source: 'aims',
-        activities,
-      });
-    }
-  }
+    const remaining = existingNoTimeBlock.length + missing;
+    if (remaining === 0) continue;
 
-  // Add index labels like "(1 of 3)" when there are multiple items for one aim
-  const countByCategory: Record<string, number> = {};
-  for (const item of items) {
-    countByCategory[item.aimCategoryId] = (countByCategory[item.aimCategoryId] || 0) + 1;
-  }
-  const indexByCategory: Record<string, number> = {};
-  for (const item of items) {
-    const total = countByCategory[item.aimCategoryId];
-    if (total > 1) {
-      indexByCategory[item.aimCategoryId] = (indexByCategory[item.aimCategoryId] || 0) + 1;
-      item.title = `${item.title} (${indexByCategory[item.aimCategoryId]} of ${total})`;
-    }
+    // Prefer to attach the first existing-without-timeBlock instance id so the
+    // drop handler PATCHes it (adding a time block) instead of creating a new
+    // AimInstance row. Once consumed, the next refresh will surface the next
+    // candidate (or fall back to POST-creating new instances).
+    const nextInstanceId = existingNoTimeBlock[0]?.id;
+
+    items.push({
+      id: `aim-${aim.aimCategoryId}`,
+      type: 'aim',
+      title: aim.aimCategory.name,
+      aimCategoryId: aim.aimCategoryId,
+      aimInstanceId: nextInstanceId,
+      duration,
+      remaining,
+      source: 'aims',
+      activities,
+    });
   }
 
   return Response.json(items);

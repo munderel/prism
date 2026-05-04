@@ -531,11 +531,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         }));
 
       const aimItems = aims.map((a: any) => ({
-        id: `aim-instance-${a.id}`,
+        id: a.id,
         itemType: 'aim' as const,
         title: a.title,
         duration: a.duration ?? 60,
         aimCategoryId: a.aimCategoryId,
+        aimInstanceId: a.aimInstanceId,
+        remaining: a.remaining,
       }));
 
       setUnscheduledTomorrowItems([...taskItems, ...aimItems]);
