@@ -151,7 +151,7 @@ export function isInviteExpired(inv: { status: string; createdAt: Date }): boole
 /**
  * Prisma select for user summary fields -- reuse wherever you include a user relation.
  */
-export const USER_SUMMARY_SELECT = { id: true, name: true, image: true } as const;
+export const USER_SUMMARY_SELECT = { id: true, name: true, image: true, email: true } as const;
 
 /**
  * Check if a user owns a resource (or is an admin).

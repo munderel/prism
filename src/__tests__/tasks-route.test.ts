@@ -71,7 +71,7 @@ vi.mock('@/lib/api-helpers', () => ({
     for (const f of fields) { if (obj[f] !== undefined) r[f] = obj[f]; }
     return r;
   }),
-  USER_SUMMARY_SELECT: { id: true, name: true, image: true },
+  USER_SUMMARY_SELECT: { id: true, name: true, image: true, email: true },
   NO_STORE: { 'Cache-Control': 'no-store' },
 }));
 
