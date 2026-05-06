@@ -55,10 +55,14 @@ export async function GET(request: NextRequest) {
   } else {
     // Individual scope is the app-wide default: you see tasks assigned to you,
     // plus your own unassigned tasks. Once a task is assigned away, it should
-    // stop appearing in your personal dashboard/reviews/calendar lists.
+    // stop appearing in your personal dashboard/reviews/calendar lists — except
+    // when `includeOwned=true` (calendar drawer opt-in) so creators always see
+    // tasks they made even if routed to another assignee.
+    const includeOwned = searchParams.get('includeOwned') === 'true';
     accessFilter.OR = [
       { assigneeId: auth.userId },
       { ownerId: auth.userId, assigneeId: null },
+      ...(includeOwned ? [{ ownerId: auth.userId }] : []),
     ];
   }
 

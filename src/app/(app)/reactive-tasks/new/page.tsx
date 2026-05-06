@@ -11,15 +11,10 @@ type User = {
   email: string;
 };
 
-type GoalAssignee = {
-  user: { id: string; name: string | null };
-};
-
 type Goal = {
   id: string;
   title: string;
   level: string;
-  assignees?: GoalAssignee[];
 };
 
 type UrgencyLevel = 'critical' | 'urgent' | 'standard' | 'consider-idea' | null;
@@ -97,14 +92,6 @@ export default function NewReactiveTaskPage() {
     fetchUsers();
     fetchGoals();
   }, []);
-
-  // Auto-assign from goal's responsible person when goal is selected
-  useEffect(() => {
-    if (!goalId) return;
-    const selected = goals.find((g) => g.id === goalId);
-    const firstAssignee = selected?.assignees?.[0]?.user?.id;
-    if (firstAssignee) setAssigneeId(firstAssignee);
-  }, [goalId, goals]);
 
   const urgency = useMemo(() => classifyDeadline(dueDate), [dueDate]);
   const autoPriority = useMemo(() => urgencyToPriority(urgency), [urgency]);

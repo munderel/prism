@@ -16,6 +16,7 @@ export function InlineTaskCreator({ defaultDate, onCreated, placeholder = 'Quick
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export function InlineTaskCreator({ defaultDate, onCreated, placeholder = 'Quick
     if (!trimmed || isSubmitting) return;
 
     setIsSubmitting(true);
+    setError(null);
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -44,7 +46,12 @@ export function InlineTaskCreator({ defaultDate, onCreated, placeholder = 'Quick
         const task = await res.json();
         setTitle('');
         onCreated?.(task);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.error ?? `Failed to create task (${res.status})`);
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create task');
     } finally {
       setIsSubmitting(false);
     }
@@ -73,25 +80,30 @@ export function InlineTaskCreator({ defaultDate, onCreated, placeholder = 'Quick
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <input
-        ref={inputRef}
-        type="text"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => { if (!title.trim()) setIsOpen(false); }}
-        placeholder={placeholder}
-        disabled={isSubmitting}
-        className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-indigo-500 focus:outline-none"
-      />
-      <button
-        onClick={handleSubmit}
-        disabled={!title.trim() || isSubmitting}
-        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-      >
-        Add
-      </button>
+    <div>
+      <div className="flex items-center gap-2">
+        <input
+          ref={inputRef}
+          type="text"
+          value={title}
+          onChange={(e) => { setTitle(e.target.value); if (error) setError(null); }}
+          onKeyDown={handleKeyDown}
+          onBlur={() => { if (!title.trim() && !error) setIsOpen(false); }}
+          placeholder={placeholder}
+          disabled={isSubmitting}
+          className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-indigo-500 focus:outline-none"
+        />
+        <button
+          onClick={handleSubmit}
+          disabled={!title.trim() || isSubmitting}
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+        >
+          Add
+        </button>
+      </div>
+      {error && (
+        <p className="mt-1 text-xs text-red-400">{error}</p>
+      )}
     </div>
   );
 }
