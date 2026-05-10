@@ -568,6 +568,60 @@ export async function listTaggedPrismEvents(
 }
 
 /**
+ * Fetch every Prism-tagged event on a single calendar with `singleEvents: false`
+ * — i.e. recurring masters and one-offs, never expanded instances. Used by the
+ * orphan sweep so deleting an item by id removes the entire series, and by the
+ * pre-insert dedup so we find masters whose instances fall outside the visible
+ * sync window.
+ *
+ * Skips modified-instance overrides (those have `recurringEventId`); their
+ * master is returned separately and is the deletable handle.
+ */
+export async function listAllTaggedPrismMasters(
+  userId: string,
+  calendarId: string,
+): Promise<(Record<string, unknown> & { id: string; _sourceCalendarId: string })[]> {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return [];
+
+  try {
+    const allEvents: (Record<string, unknown> & { id: string; _sourceCalendarId: string })[] = [];
+    let pageToken: string | undefined;
+
+    do {
+      const response = await withBackoff(
+        () =>
+          calendar.events.list({
+            calendarId,
+            singleEvents: false,
+            showDeleted: false,
+            privateExtendedProperty: [PRISM_MANAGED_EXT_KEY],
+            maxResults: 250,
+            pageToken,
+          }),
+        `events.list(masters) ${calendarId}`,
+      );
+      for (const ev of response.data.items ?? []) {
+        if (!ev.id) continue;
+        if (ev.status === 'cancelled') continue;
+        // singleEvents=false still returns modified-instance overrides; their
+        // recurringEventId points at the master, which is also in this list.
+        // Skip the override so we don't try to delete an exception (which
+        // wouldn't kill the series anyway).
+        if (ev.recurringEventId) continue;
+        allEvents.push({ ...ev, id: ev.id, _sourceCalendarId: calendarId });
+      }
+      pageToken = response.data.nextPageToken ?? undefined;
+    } while (pageToken);
+
+    return allEvents;
+  } catch (err) {
+    console.error(`[calendar] Failed to list tagged Prism masters on ${calendarId}:`, err);
+    return [];
+  }
+}
+
+/**
  * Find an existing Prism-managed Google event for a specific Prism record
  * (task, aim, meeting, recurring series, etc.) by querying for events tagged
  * with `extendedProperties.private.prismRecordId = recordId`.
@@ -598,7 +652,7 @@ export async function findExistingPrismEvent(
         privateExtendedProperty: filter,
         singleEvents: false,
         showDeleted: false,
-        maxResults: 5,
+        maxResults: 25,
       }),
     `events.list(prismRecordId=${prismRecordId}) ${calendarId}`,
   );

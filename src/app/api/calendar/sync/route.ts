@@ -5,6 +5,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, syncCalendarSchema } from '@/lib/schemas';
 import {
   listGoogleEvents,
+  listAllTaggedPrismMasters,
   createGoogleEvent,
   deleteGoogleEvent,
   safeDeleteGoogleEvent,
@@ -474,10 +475,10 @@ async function upsertRecurringSeries(
 
   // Dedup before insert: a prior force-resync may have wiped googleSyncState
   // but the actual Google event survived (silent delete failure). The caller
-  // passes the in-memory gcalEvents lookup (built from singleEvents=true so
-  // entries are *instances*; the master id is on `recurringEventId`).
-  const existingInstance = orphanLookup?.(config.recordKey);
-  const existingMasterId = existingInstance?.recurringEventId ?? existingInstance?.id;
+  // passes a lookup over `targetMasters` (singleEvents=false), so each entry
+  // is already a master/one-off — `event.id` is the deletable handle.
+  const existingMaster = orphanLookup?.(config.recordKey);
+  const existingMasterId = existingMaster?.id;
   if (existingMasterId) {
     try {
       const updated = await updateGoogleEvent(userId, existingMasterId, {
@@ -844,8 +845,15 @@ export async function POST(request: NextRequest) {
     user.googleSyncState = {};
   }
 
-  const [gcalEvents, tasks, aimInstances, processes, reviews, powerdownSessions] = await Promise.all([
+  const [gcalEvents, targetMasters, tasks, aimInstances, processes, reviews, powerdownSessions] = await Promise.all([
     listGoogleEvents(auth.userId, start, end, calendarIds, { showDeleted: true }),
+    // Window-independent inventory of Prism-tagged masters and one-offs on the
+    // sync target calendar. Used to dedupe before insert (so we attach to a
+    // surviving master whose instances may fall outside [start,end]) and to
+    // drive the orphan sweep at end-of-handler. Replaces the prior approach of
+    // mining instance-expanded gcalEvents for `recurringEventId`, which let
+    // duplicate masters survive every resync.
+    listAllTaggedPrismMasters(auth.userId, targetCalendarId),
     prisma.task.findMany({
       where: {
         AND: [
@@ -921,20 +929,21 @@ export async function POST(request: NextRequest) {
   const updates: string[] = [];
 
   const gcalById = new Map<string, GoogleEventLike>();
-  // Map of prismRecordId → live Google event on the target calendar. Used to
-  // dedupe before inserting: if a prior sync created a tagged event but the
-  // local row lost track of its eventId, we attach to the existing event
-  // instead of creating a duplicate. Built from in-memory gcalEvents so we
-  // don't pay an extra events.list round-trip per task/aim/series.
+  for (const event of gcalEvents as GoogleEventLike[]) {
+    if (event.id) gcalById.set(event.id, event);
+  }
+  // Map of prismRecordId → master/one-off Google event on the target calendar.
+  // Used to dedupe before inserting: if a prior sync created a tagged event
+  // but the local row lost track of its eventId (or `googleSyncState` was
+  // wiped by force-resync), we attach to the existing event instead of
+  // creating a duplicate. Sourced from `targetMasters` (singleEvents=false)
+  // so masters whose instances fall outside [start,end] are still found.
   type GoogleEventTagged = GoogleEventLike & {
     _sourceCalendarId?: string;
     extendedProperties?: { private?: Record<string, string> | null } | null;
   };
   const byPrismRecordId = new Map<string, GoogleEventTagged>();
-  for (const event of gcalEvents as GoogleEventTagged[]) {
-    if (event.id) gcalById.set(event.id, event);
-    if (event.status === 'cancelled') continue;
-    if (event._sourceCalendarId !== targetCalendarId) continue;
+  for (const event of targetMasters as unknown as GoogleEventTagged[]) {
     const recordId = event.extendedProperties?.private?.prismRecordId;
     if (recordId && !byPrismRecordId.has(recordId)) byPrismRecordId.set(recordId, event);
   }
@@ -1243,16 +1252,16 @@ export async function POST(request: NextRequest) {
       if (r.calendarEventId) known.add(r.calendarEventId);
     }
 
-    // Pass A: tagged events on the target calendar from the already-fetched
-    // gcalEvents (singleEvents=true expands recurring instances; we keep
-    // `recurringEventId` for the master-event allowlist check below).
+    // Pass A: tagged masters and one-offs on the target calendar (sourced from
+    // `targetMasters`, which uses singleEvents=false). Deleting by id removes
+    // the entire recurring series — the previous instance-based sweep could
+    // only cancel individual instances, so duplicate masters survived every
+    // resync. `targetMasters` is already filtered to the target calendar and
+    // already excludes modified-instance overrides and cancelled items.
     const candidates = new Map<string, GoogleEventWithMeta>();
-    for (const e of gcalEvents as GoogleEventWithMeta[]) {
+    for (const e of targetMasters as unknown as GoogleEventWithMeta[]) {
       if (!e.id) continue;
-      if (e._sourceCalendarId !== targetCalendarId) continue;
-      if (e.extendedProperties?.private?.prismManaged === '1') {
-        candidates.set(e.id, e);
-      }
+      candidates.set(e.id, e);
     }
 
     if (force) {
