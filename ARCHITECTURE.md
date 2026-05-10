@@ -283,13 +283,12 @@ The Power Down page forces dark theme regardless of user's app-wide theme settin
 
 ## Cron Jobs & Background Processing
 
-Three Vercel cron jobs defined in `vercel.json`:
+Two Vercel cron jobs defined in `vercel.json`:
 
 | Job | Schedule | Endpoint | Purpose |
 |-----|----------|----------|---------|
 | Derail Detection | Every 30 min | `POST /api/cron/derailing` | Check AIM streaks, flag derailing habits |
 | Review Nag | Daily 9 AM | `POST /api/cron/review-nag` | Send email reminders for overdue reviews |
-| Process Tasks | Daily 6 AM | `POST /api/cron/process-tasks` | Create scheduled maintenance tasks from process cadences |
 
 **Authentication:** All cron endpoints verify `CRON_SECRET` via timing-safe HMAC comparison in `requireCronSecret()`. Vercel sends the secret as `Authorization: Bearer <secret>`.
 

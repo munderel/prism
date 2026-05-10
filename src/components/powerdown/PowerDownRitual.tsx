@@ -158,6 +158,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [todayTasks, setTodayTasks] = useState<any[]>([]);
+  const [overdueTasks, setOverdueTasks] = useState<any[]>([]);
   const [tomorrowTasks, setTomorrowTasks] = useState<any[]>([]);
   const [tomorrowPlan, setTomorrowPlan] = useState<string[]>([]);
   const [completed, setCompleted] = useState(false);
@@ -483,8 +484,33 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   };
 
   const fetchTodayTasks = async () => {
-    const res = await fetch(`/api/tasks?date=${sessionToday}`);
-    if (res.ok) setTodayTasks(await res.json());
+    const todayStart = parseLocalDate(sessionToday);
+    const yesterday = new Date(todayStart);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const ninetyDaysAgo = new Date(todayStart);
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    const [todayRes, overdueRes] = await Promise.all([
+      fetch(`/api/tasks?date=${sessionToday}`),
+      fetch(
+        `/api/tasks?startDate=${getLocalDateString(ninetyDaysAgo)}&endDate=${getLocalDateString(yesterday)}` +
+          `&includeUpcoming=true&includeOwned=true`
+      ),
+    ]);
+
+    const today = todayRes.ok ? await todayRes.json() : [];
+    const overdueRaw = overdueRes.ok ? await overdueRes.json() : [];
+    const todayIds = new Set<string>(today.map((t: any) => t.id));
+    const overdue = overdueRaw.filter(
+      (t: any) =>
+        t.status !== 'DONE' &&
+        t.status !== 'DROPPED' &&
+        !t.timeBlockStart &&
+        !todayIds.has(t.id),
+    );
+
+    setTodayTasks(today);
+    setOverdueTasks(overdue);
   };
 
   const fetchTomorrowTasks = useCallback(async () => {
@@ -507,28 +533,53 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const fetchUnscheduledTomorrow = useCallback(async () => {
     try {
-      // Fetch tasks due this week or upcoming week (plus unscheduled tasks with no due date)
-      const today = new Date();
-      const startDate = today.toISOString().split('T')[0];
-      // End date: 14 days from now covers this week + next week
-      const endDate = new Date(today.getTime() + 14 * 86400000).toISOString().split('T')[0];
-      const [taskRes, aimRes] = await Promise.all([
-        fetch(`/api/tasks?status=TODO&startDate=${startDate}&endDate=${endDate}&includeUnscheduled=true`),
+      const todayStart = parseLocalDate(sessionToday);
+      const yesterday = new Date(todayStart);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const ninetyDaysAgo = new Date(todayStart);
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const tomorrow = parseLocalDate(sessionTomorrow);
+      const twoWeeksOut = new Date(tomorrow);
+      twoWeeksOut.setDate(twoWeeksOut.getDate() + 14);
+
+      const [unscheduledRes, overdueRes, aimRes] = await Promise.all([
+        fetch(
+          `/api/tasks?status=TODO&startDate=${getLocalDateString(tomorrow)}` +
+            `&endDate=${getLocalDateString(twoWeeksOut)}` +
+            `&includeUnscheduled=true&includeOwned=true`,
+        ),
+        fetch(
+          `/api/tasks?startDate=${getLocalDateString(ninetyDaysAgo)}&endDate=${getLocalDateString(yesterday)}` +
+            `&includeUpcoming=true&includeOwned=true`,
+        ),
         fetch('/api/aims/unscheduled'),
       ]);
-      const tasks = taskRes.ok ? await taskRes.json() : [];
+
+      const allTasks = unscheduledRes.ok ? await unscheduledRes.json() : [];
+      const overdueRaw = overdueRes.ok ? await overdueRes.json() : [];
       const aims = aimRes.ok ? await aimRes.json() : [];
 
-      const taskItems = tasks
-        .filter((t: any) => !t.timeBlockStart)
-        .map((t: any) => ({
-          id: t.id,
-          itemType: 'task' as const,
-          title: t.title,
-          duration: t.estimatedMinutes ?? 60,
-          taskType: t.taskType,
-          priority: t.priority,
-        }));
+      const unscheduled = allTasks.filter(
+        (t: any) =>
+          !t.timeBlockStart && (t.status === 'TODO' || t.status === 'IN_PROGRESS')
+      );
+      const overdue = overdueRaw.filter(
+        (t: any) =>
+          t.status !== 'DONE' && t.status !== 'DROPPED' && !t.timeBlockStart
+      );
+
+      const byId = new Map<string, any>();
+      for (const t of overdue) byId.set(t.id, t);
+      for (const t of unscheduled) byId.set(t.id, t);
+
+      const taskItems = Array.from(byId.values()).map((t: any) => ({
+        id: t.id,
+        itemType: 'task' as const,
+        title: t.title,
+        duration: t.estimatedMinutes ?? 60,
+        taskType: t.taskType,
+        priority: t.priority,
+      }));
 
       const aimItems = aims.map((a: any) => ({
         id: a.id,
@@ -544,7 +595,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     } catch {
       // Non-critical
     }
-  }, []);
+  }, [sessionToday, sessionTomorrow]);
 
   const fetchAimInstances = useCallback(async () => {
     // Route requires start+end (see src/app/api/aims/instances/route.ts:17).
@@ -1233,10 +1284,44 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                         </div>
                       );
                     })}
-                    {todayTasks.length === 0 && (
+                    {todayTasks.length === 0 && overdueTasks.length === 0 && (
                       <p className="text-sm text-[var(--text-secondary)]">No tasks scheduled for today.</p>
                     )}
                   </div>
+
+                  {overdueTasks.length > 0 && (
+                    <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <AlertCircle className="h-4 w-4 text-amber-400" />
+                        <h4 className="text-sm font-semibold text-[var(--text-primary)]">Overdue tasks</h4>
+                      </div>
+                      <p className="text-xs text-[var(--text-secondary)] mb-2">
+                        {overdueTasks.length} {overdueTasks.length === 1 ? 'task' : 'tasks'} from the last 90 days.
+                      </p>
+                      {overdueTasks.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => toggleTaskStatus(t, fetchTodayTasks)}
+                          className="flex items-center gap-2 text-sm w-full text-left rounded-lg px-3 py-2 hover:bg-[var(--surface-raised)]/50 transition-colors"
+                        >
+                          {t.status === 'DONE' ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-400 flex-shrink-0" />
+                          ) : (
+                            <Circle className="h-4 w-4 text-amber-400 flex-shrink-0" />
+                          )}
+                          <span
+                            className={
+                              t.status === 'DONE'
+                                ? 'text-[var(--text-muted)] line-through'
+                                : 'text-[var(--text-primary)] font-medium'
+                            }
+                          >
+                            {t.title}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {orphanWorkBlocks.length > 0 && (
                     <div className="space-y-2 border-t border-[var(--border-color)] pt-4">

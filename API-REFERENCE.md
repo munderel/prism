@@ -891,11 +891,6 @@ Check all users' AIM streaks and flag habits that are derailing. Sends notificat
 
 Send email reminders for overdue reviews.
 
-### `POST /api/cron/process-tasks`
-**Schedule:** Daily at 6 AM
-
-Create scheduled maintenance tasks from process cadences that are due.
-
 ---
 
 ## See Also

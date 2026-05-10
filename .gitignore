@@ -40,3 +40,6 @@ next-env.d.ts
 
 # Docs (internal planning, not for GitHub)
 /docs/
+
+# Playwright MCP browser session artifacts (console logs, page snapshots)
+.playwright-mcp/
