@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
       start,
       end,
       prismType: 'aim',
+      prismRecordId: instance.id,
     }, targetCalendarId);
     if (gcalEvent?.id) {
       await prisma.aimInstance.update({ where: { id: instance.id }, data: { calendarEventId: gcalEvent.id } });

@@ -49,6 +49,16 @@ export type PrismEventType =
  */
 export const PRISM_MANAGED_EXT_KEY = 'prismManaged=1' as const;
 
+/**
+ * Build the `prismRecordId=<value>` filter passed to `events.list` to find
+ * the Google event that backs a specific Prism record (task id, meeting id,
+ * recurring-series key, etc.). Used by `findExistingPrismEvent` and any caller
+ * that wants to dedupe before inserting.
+ */
+export function prismRecordExtKey(recordId: string): string {
+  return `prismRecordId=${recordId}`;
+}
+
 export interface GoogleErrorInfo {
   code: GoogleErrorCode;
   retryable: boolean;
@@ -558,6 +568,48 @@ export async function listTaggedPrismEvents(
 }
 
 /**
+ * Find an existing Prism-managed Google event for a specific Prism record
+ * (task, aim, meeting, recurring series, etc.) by querying for events tagged
+ * with `extendedProperties.private.prismRecordId = recordId`.
+ *
+ * Returns the first non-cancelled event ID found, or `null` if none exist.
+ *
+ * Throws on transient/auth errors so the caller doesn't silently fall through
+ * to a duplicate insert when the dedup query itself failed. Returns null only
+ * when we definitively know nothing exists (no calendar client, or the API
+ * returned an empty list).
+ */
+export async function findExistingPrismEvent(
+  userId: string,
+  calendarId: string,
+  prismRecordId: string,
+  prismType?: PrismEventType,
+): Promise<string | null> {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return null;
+
+  const filter = [prismRecordExtKey(prismRecordId)];
+  if (prismType) filter.push(`prismType=${prismType}`);
+
+  const response = await withBackoff(
+    () =>
+      calendar.events.list({
+        calendarId,
+        privateExtendedProperty: filter,
+        singleEvents: false,
+        showDeleted: false,
+        maxResults: 5,
+      }),
+    `events.list(prismRecordId=${prismRecordId}) ${calendarId}`,
+  );
+  const items = response.data.items ?? [];
+  for (const item of items) {
+    if (item.id && item.status !== 'cancelled') return item.id;
+  }
+  return null;
+}
+
+/**
  * Safely sync a task to Google Calendar: create, update, or delete event.
  * Swallows errors so callers don't need try/catch.
  * Uses the user's configured sync target calendar.
@@ -591,6 +643,23 @@ export async function syncTaskCalendarEvent(
     }
 
     if (action === 'create' && task.timeBlockStart && task.timeBlockEnd) {
+      // Dedup: if Google already has an event for this task (e.g. from a
+      // partial sync that lost the eventId before persistence), update it
+      // in place instead of inserting a second one.
+      if (task.id) {
+        const existing = await findExistingPrismEvent(userId, targetCalendarId, task.id, 'task');
+        if (existing) {
+          await updateGoogleEvent(userId, existing, {
+            summary: task.title,
+            description: fullDescription || undefined,
+            start: new Date(task.timeBlockStart).toISOString(),
+            end: new Date(task.timeBlockEnd).toISOString(),
+            timeZone: timezone,
+          }, targetCalendarId);
+          return existing;
+        }
+      }
+
       const gcalEvent = await createGoogleEvent(userId, {
         summary: task.title,
         description: fullDescription || undefined,
@@ -598,6 +667,7 @@ export async function syncTaskCalendarEvent(
         end: new Date(task.timeBlockEnd).toISOString(),
         timeZone: timezone,
         prismType: 'task',
+        prismRecordId: task.id,
       }, targetCalendarId);
       return gcalEvent?.id ?? null;
     }
@@ -625,6 +695,7 @@ export async function createGoogleEvent(
     recurrence?: string[];
     attendees?: Array<{ email: string }>;
     prismType?: PrismEventType;
+    prismRecordId?: string;
   },
   calendarId: string = 'primary'
 ) {
@@ -642,11 +713,16 @@ export async function createGoogleEvent(
     // Tag Prism-owned events so the force-resync sweep can find them without
     // fragile title matching. Opt-in: callers that create ad-hoc events not
     // linked to a Prism record (e.g. POST /api/calendar) should omit prismType
-    // so the sweep leaves those events alone.
+    // so the sweep leaves those events alone. `prismRecordId` (if supplied)
+    // pins the event to a specific Prism record so dedup lookups can find an
+    // existing Google event for that record before inserting a duplicate.
     if (event.prismType) {
-      eventBody.extendedProperties = {
-        private: { prismManaged: '1', prismType: event.prismType },
+      const privateProps: Record<string, string> = {
+        prismManaged: '1',
+        prismType: event.prismType,
       };
+      if (event.prismRecordId) privateProps.prismRecordId = event.prismRecordId;
+      eventBody.extendedProperties = { private: privateProps };
     }
 
     if (event.addMeetLink) {

@@ -120,6 +120,7 @@ export async function POST(request: NextRequest) {
         recurrence,
         attendees: attendeeEmails,
         prismType: 'meeting',
+        prismRecordId: meeting.id,
       }, targetCalendarId);
 
       if (!gcalEvent?.id) {

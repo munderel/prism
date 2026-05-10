@@ -5,7 +5,6 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, syncCalendarSchema } from '@/lib/schemas';
 import {
   listGoogleEvents,
-  listTaggedPrismEvents,
   createGoogleEvent,
   deleteGoogleEvent,
   safeDeleteGoogleEvent,
@@ -44,6 +43,10 @@ type GoogleEventLike = {
 
 type SeriesConfig = {
   key: string;
+  // Globally-unique tag written to the Google event's
+  // `extendedProperties.private.prismRecordId` so a future sync can find the
+  // series even if `googleSyncState` was wiped (e.g. after force-resync).
+  recordKey: string;
   title: string;
   description?: string;
   start: string;
@@ -425,11 +428,14 @@ async function applyProcessOverridesToPrism(
   }
 }
 
+type OrphanLookup = (recordKey: string) => GoogleEventLike | undefined;
+
 async function upsertRecurringSeries(
   userId: string,
   calendarId: string,
   current: ManagedRecurringSeriesState | undefined,
   config: SeriesConfig | null,
+  orphanLookup?: OrphanLookup,
 ) {
   if (!config) {
     if (current?.eventId) {
@@ -466,6 +472,33 @@ async function upsertRecurringSeries(
     }
   }
 
+  // Dedup before insert: a prior force-resync may have wiped googleSyncState
+  // but the actual Google event survived (silent delete failure). The caller
+  // passes the in-memory gcalEvents lookup (built from singleEvents=true so
+  // entries are *instances*; the master id is on `recurringEventId`).
+  const existingInstance = orphanLookup?.(config.recordKey);
+  const existingMasterId = existingInstance?.recurringEventId ?? existingInstance?.id;
+  if (existingMasterId) {
+    try {
+      const updated = await updateGoogleEvent(userId, existingMasterId, {
+        summary: config.title,
+        description: config.description,
+        start: config.start,
+        end: config.end,
+        timeZone: config.timeZone,
+        recurrence: config.recurrence,
+      }, calendarId);
+      if (updated?.id) {
+        return {
+          eventId: updated.id,
+          lastSyncedAt: new Date().toISOString(),
+        } satisfies ManagedRecurringSeriesState;
+      }
+    } catch (err) {
+      console.warn(`[calendar] Found orphan series for ${config.recordKey} but update failed; falling through to insert:`, err);
+    }
+  }
+
   const created = await createGoogleEvent(userId, {
     summary: config.title,
     description: config.description,
@@ -474,6 +507,7 @@ async function upsertRecurringSeries(
     timeZone: config.timeZone,
     recurrence: config.recurrence,
     prismType: config.prismType,
+    prismRecordId: config.recordKey,
   }, calendarId);
 
   if (!created?.id) return undefined;
@@ -494,8 +528,9 @@ async function processSeriesSync(
   config: SeriesConfig | null,
   onSync: ((series: ManagedRecurringSeriesState) => Promise<void>) | null,
   message: string,
+  orphanLookup?: OrphanLookup,
 ): Promise<ManagedRecurringSeriesState | undefined> {
-  const nextSeries = await upsertRecurringSeries(userId, calendarId, currentSeries, config);
+  const nextSeries = await upsertRecurringSeries(userId, calendarId, currentSeries, config, orphanLookup);
   if (!config || !nextSeries?.eventId) return undefined;
 
   const matchingEvents = gcalEvents.filter((e) => e.recurringEventId === nextSeries.eventId);
@@ -529,6 +564,7 @@ function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date,
       });
       configs.WEEKLY = {
         key: 'WEEKLY',
+        recordKey: 'series-review-WEEKLY',
         title: 'Weekly Review',
         description: `Start your Weekly Review in Prism: ${baseUrl}/reviews`,
         start: first.start,
@@ -560,6 +596,7 @@ function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date,
       });
       configs.MONTHLY = {
         key: 'MONTHLY',
+        recordKey: 'series-review-MONTHLY',
         title: 'Monthly Review',
         description: `Start your Monthly Review in Prism: ${baseUrl}/reviews`,
         start: first.start,
@@ -591,6 +628,7 @@ function buildReviewSeriesConfigs(user: any, timezone: string, rangeStart: Date,
       });
       configs.YEARLY = {
         key: 'YEARLY',
+        recordKey: 'series-review-YEARLY',
         title: 'Yearly Review',
         description: `Start your Yearly Review in Prism: ${baseUrl}/reviews`,
         start: first.start,
@@ -618,6 +656,7 @@ function buildPowerdownSeriesConfig(user: any, timezone: string, rangeStart: Dat
 
   return {
     key: 'powerdown',
+    recordKey: 'series-powerdown',
     title: 'Power Down Ritual',
     description: `Start your Power Down Ritual in Prism: ${baseUrl}/powerdown`,
     start: firstWindow.start,
@@ -677,6 +716,7 @@ function buildProcessSeriesConfig(process: any, timezone: string, rangeStart: Da
 
   return {
     key: process.id,
+    recordKey: `series-process-${process.id}`,
     title: process.title,
     description: `Recurring process in Prism: ${process.title}`,
     start: first.start,
@@ -881,8 +921,22 @@ export async function POST(request: NextRequest) {
   const updates: string[] = [];
 
   const gcalById = new Map<string, GoogleEventLike>();
-  for (const event of gcalEvents as GoogleEventLike[]) {
+  // Map of prismRecordId → live Google event on the target calendar. Used to
+  // dedupe before inserting: if a prior sync created a tagged event but the
+  // local row lost track of its eventId, we attach to the existing event
+  // instead of creating a duplicate. Built from in-memory gcalEvents so we
+  // don't pay an extra events.list round-trip per task/aim/series.
+  type GoogleEventTagged = GoogleEventLike & {
+    _sourceCalendarId?: string;
+    extendedProperties?: { private?: Record<string, string> | null } | null;
+  };
+  const byPrismRecordId = new Map<string, GoogleEventTagged>();
+  for (const event of gcalEvents as GoogleEventTagged[]) {
     if (event.id) gcalById.set(event.id, event);
+    if (event.status === 'cancelled') continue;
+    if (event._sourceCalendarId !== targetCalendarId) continue;
+    const recordId = event.extendedProperties?.private?.prismRecordId;
+    if (recordId && !byPrismRecordId.has(recordId)) byPrismRecordId.set(recordId, event);
   }
 
   // Pull one-off linked task changes from Google.
@@ -937,43 +991,87 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Push one-off unsynced tasks.
-  for (const task of tasks.filter((item) => !item.calendarEventId && item.timeBlockStart && item.timeBlockEnd)) {
+  // Push one-off unsynced tasks. Dedupes against `byPrismRecordId` first so
+  // a prior sync's orphan event is reused instead of creating a duplicate.
+  // Parallelized — each task is independent.
+  const unsyncedTasks = tasks.filter((item) => !item.calendarEventId && item.timeBlockStart && item.timeBlockEnd);
+  const taskPushUpdates = await Promise.all(unsyncedTasks.map(async (task) => {
     const completionUrl = getCompletionUrl(task.id, auth.userId);
     const description = task.description
       ? `${task.description}\n\nMark complete in Prism: ${completionUrl}`
       : `Mark complete in Prism: ${completionUrl}`;
+
+    const existing = byPrismRecordId.get(task.id);
+    if (existing?.id) {
+      const updated = await updateGoogleEvent(auth.userId, existing.id, {
+        summary: task.title,
+        description,
+        start: task.timeBlockStart!.toISOString(),
+        end: task.timeBlockEnd!.toISOString(),
+        timeZone: timezone,
+      }, targetCalendarId);
+      // Null = event was deleted between our list and our patch. Fall through
+      // to create so the task ends up with a live event id.
+      if (updated?.id) {
+        await prisma.task.update({ where: { id: task.id }, data: { calendarEventId: updated.id } });
+        return `Reattached task to existing Google event: ${task.title}`;
+      }
+    }
+
     const event = await createGoogleEvent(auth.userId, {
       summary: task.title,
       description,
       start: task.timeBlockStart!.toISOString(),
       end: task.timeBlockEnd!.toISOString(),
       prismType: 'task',
+      prismRecordId: task.id,
     }, targetCalendarId);
 
     if (event?.id) {
       await prisma.task.update({ where: { id: task.id }, data: { calendarEventId: event.id } });
-      updates.push(`Pushed task to Google: ${task.title}`);
+      return `Pushed task to Google: ${task.title}`;
     }
-  }
+    return null;
+  }));
+  for (const u of taskPushUpdates) if (u) updates.push(u);
 
-  // Push one-off unsynced aims.
-  for (const aim of aimInstances.filter((item) => !item.calendarEventId && item.timeBlockStart && item.timeBlockEnd)) {
+  // Push one-off unsynced aims. Same shape as tasks above.
+  const unsyncedAims = aimInstances.filter((item) => !item.calendarEventId && item.timeBlockStart && item.timeBlockEnd);
+  const aimPushUpdates = await Promise.all(unsyncedAims.map(async (aim) => {
     const title = aim.selectedActivity ? `${aim.aimCategory.name}: ${aim.selectedActivity}` : aim.aimCategory.name;
     const completionUrl = getAimCompletionUrl(aim.id, auth.userId);
+
+    const existing = byPrismRecordId.get(aim.id);
+    if (existing?.id) {
+      const updated = await updateGoogleEvent(auth.userId, existing.id, {
+        summary: title,
+        description: `Mark complete in Prism: ${completionUrl}`,
+        start: aim.timeBlockStart!.toISOString(),
+        end: aim.timeBlockEnd!.toISOString(),
+        timeZone: timezone,
+      }, targetCalendarId);
+      if (updated?.id) {
+        await prisma.aimInstance.update({ where: { id: aim.id }, data: { calendarEventId: updated.id } });
+        return `Reattached aim to existing Google event: ${title}`;
+      }
+    }
+
     const event = await createGoogleEvent(auth.userId, {
       summary: title,
       description: `Mark complete in Prism: ${completionUrl}`,
       start: aim.timeBlockStart!.toISOString(),
       end: aim.timeBlockEnd!.toISOString(),
       prismType: 'aim',
+      prismRecordId: aim.id,
     }, targetCalendarId);
 
     if (event?.id) {
       await prisma.aimInstance.update({ where: { id: aim.id }, data: { calendarEventId: event.id } });
-      updates.push(`Pushed aim to Google: ${title}`);
+      return `Pushed aim to Google: ${title}`;
     }
-  }
+    return null;
+  }));
+  for (const u of aimPushUpdates) if (u) updates.push(u);
 
   // Remove legacy one-off review events now that reviews are managed as recurring series.
   const activeRecurringReviewTypes = new Set<('WEEKLY' | 'MONTHLY' | 'YEARLY')>();
@@ -1007,6 +1105,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const orphanLookup: OrphanLookup = (recordKey) => byPrismRecordId.get(recordKey);
+
   // Recurring review series.
   const reviewConfigs = buildReviewSeriesConfigs(user, timezone, rangeStart, rangeEnd, baseUrl);
   googleSyncState.recurringReviews = googleSyncState.recurringReviews ?? {};
@@ -1019,6 +1119,7 @@ export async function POST(request: NextRequest) {
         reviewConfigs[reviewType] ?? null,
         (series) => applyReviewOverridesToPrism(auth.userId, reviewType, series, timezone, updates),
         `Synced ${reviewType.toLowerCase()} review series`,
+        orphanLookup,
       );
       if (synced) googleSyncState.recurringReviews[reviewType] = synced;
       else delete googleSyncState.recurringReviews[reviewType];
@@ -1038,6 +1139,7 @@ export async function POST(request: NextRequest) {
       powerdownConfig,
       (series) => applyPowerdownOverridesToPrism(auth.userId, series, timezone, updates),
       'Synced powerdown series',
+      orphanLookup,
     );
     if (synced) googleSyncState.powerdown = synced;
     else delete googleSyncState.powerdown;
@@ -1060,6 +1162,7 @@ export async function POST(request: NextRequest) {
         buildProcessSeriesConfig(process, timezone, rangeStart, rangeEnd),
         (series) => applyProcessOverridesToPrism(auth.userId, process.id, series, timezone, updates),
         `Synced process series: ${process.title}`,
+        orphanLookup,
       );
       if (synced) googleSyncState.processes![process.id] = synced;
       else delete googleSyncState.processes![process.id];
@@ -1085,11 +1188,26 @@ export async function POST(request: NextRequest) {
     data: { googleSyncState: googleSyncState as Prisma.InputJsonValue },
   });
 
-  // After force resync: sweep the target calendar for any Prism-owned events
-  // not in the freshly-written known-good set, and delete them. This catches
-  // orphans from prior silent delete failures, custom-titled processes, and
-  // one-off tasks/aims whose IDs were just cleared above.
-  if (force) {
+  // Sweep the target calendar for any Prism-owned events not in the freshly-
+  // written known-good set, and delete them. Catches orphans from prior
+  // silent delete failures and one-off tasks/aims whose IDs were cleared.
+  //
+  // Pass A (tag-only) runs on EVERY sync — it's gated by `prismManaged=1`
+  // so it cannot touch user-authored events.
+  //
+  // Pass B (legacy untagged title match) only runs on `force=true`. It
+  // catches pre-tag-era events but is unsafe to run unconditionally:
+  // a user-created event titled "Weekly Review" or matching a current
+  // process title would be deleted on every sync. Force gives the user
+  // an explicit opt-in.
+  type GoogleEventWithMeta = GoogleEventLike & {
+    _sourceCalendarId?: string;
+    creator?: { self?: boolean | null } | null;
+    organizer?: { self?: boolean | null } | null;
+    extendedProperties?: { private?: Record<string, string> | null } | null;
+  };
+
+  {
     // Build the known-good set from freshly-written sync state + Prism record IDs.
     const known = new Set<string>();
     for (const s of Object.values(googleSyncState.recurringReviews ?? {})) {
@@ -1125,46 +1243,50 @@ export async function POST(request: NextRequest) {
       if (r.calendarEventId) known.add(r.calendarEventId);
     }
 
-    // Pass A: tagged events on the target calendar (Prism-owned by extendedProperty).
-    const tagged = await listTaggedPrismEvents(auth.userId, start, end, [targetCalendarId]);
-
-    // Pass B (legacy fallback): events without a tag matching titles Prism is
-    // known to manage. Includes the user's actual process titles. Gated on
-    // creator.self && organizer.self on the target calendar so a user's own
-    // hand-made event with a colliding title is preserved.
-    const legacyTitles = new Set<string>([
-      'Weekly Review', 'Monthly Review', 'Yearly Review', 'Power Down Ritual',
-      ...processes.map((p) => p.title),
-    ]);
-
-    type GoogleEventWithMeta = GoogleEventLike & {
-      _sourceCalendarId?: string;
-      creator?: { self?: boolean | null } | null;
-      organizer?: { self?: boolean | null } | null;
-      extendedProperties?: { private?: Record<string, string> | null } | null;
-    };
-
+    // Pass A: tagged events on the target calendar from the already-fetched
+    // gcalEvents (singleEvents=true expands recurring instances; we keep
+    // `recurringEventId` for the master-event allowlist check below).
     const candidates = new Map<string, GoogleEventWithMeta>();
-    for (const e of tagged as GoogleEventWithMeta[]) {
-      if (e.id) candidates.set(e.id, e);
-    }
     for (const e of gcalEvents as GoogleEventWithMeta[]) {
-      if (!e.id || !e.summary) continue;
-      // Skip events already tagged — Pass A handles those.
-      if (e.extendedProperties?.private?.prismManaged === '1') continue;
-      const onTarget = e._sourceCalendarId === targetCalendarId;
-      const isSelf = e.creator?.self === true && e.organizer?.self === true;
-      if (onTarget && isSelf && legacyTitles.has(e.summary)) candidates.set(e.id, e);
+      if (!e.id) continue;
+      if (e._sourceCalendarId !== targetCalendarId) continue;
+      if (e.extendedProperties?.private?.prismManaged === '1') {
+        candidates.set(e.id, e);
+      }
     }
 
-    for (const e of Array.from(candidates.values())) {
-      if (!e.id || e.status === 'cancelled') continue;
-      if (known.has(e.id)) continue;
-      if (e.recurringEventId && known.has(e.recurringEventId)) continue;
-      const sourceCal = e._sourceCalendarId ?? targetCalendarId;
-      const r = await safeDeleteGoogleEvent(auth.userId, e.id, sourceCal);
-      if (!r.ok) failedDeletions.push(r.eventId);
-      else updates.push(`Cleaned up orphan event: ${e.summary ?? e.id}`);
+    if (force) {
+      // Pass B (legacy fallback, force-only): events without a tag matching
+      // titles Prism is known to manage. Includes the user's actual process
+      // titles, so it would delete a colliding user-authored event — that's
+      // why this is force-only.
+      const legacyTitles = new Set<string>([
+        'Weekly Review', 'Monthly Review', 'Yearly Review', 'Power Down Ritual',
+        ...processes.map((p) => p.title),
+      ]);
+      for (const e of gcalEvents as GoogleEventWithMeta[]) {
+        if (!e.id || !e.summary) continue;
+        if (e.extendedProperties?.private?.prismManaged === '1') continue;
+        const onTarget = e._sourceCalendarId === targetCalendarId;
+        const isSelf = e.creator?.self === true && e.organizer?.self === true;
+        if (onTarget && isSelf && legacyTitles.has(e.summary)) candidates.set(e.id, e);
+      }
+    }
+
+    const sweepResults = await Promise.all(
+      Array.from(candidates.values()).map(async (e) => {
+        if (!e.id || e.status === 'cancelled') return { skipped: true } as const;
+        if (known.has(e.id)) return { skipped: true } as const;
+        if (e.recurringEventId && known.has(e.recurringEventId)) return { skipped: true } as const;
+        const sourceCal = e._sourceCalendarId ?? targetCalendarId;
+        const r = await safeDeleteGoogleEvent(auth.userId, e.id, sourceCal);
+        return { skipped: false, result: r, summary: e.summary, id: e.id } as const;
+      }),
+    );
+    for (const sr of sweepResults) {
+      if (sr.skipped) continue;
+      if (!sr.result.ok) failedDeletions.push(sr.result.eventId);
+      else updates.push(`Cleaned up orphan event: ${sr.summary ?? sr.id}`);
     }
   }
 
