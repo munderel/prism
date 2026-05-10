@@ -158,7 +158,6 @@ In Vercel → Project Settings → Environment Variables, add:
 - Vercel cron jobs are auto-configured from `vercel.json`:
   - `/api/cron/derailing` — every 30 min
   - `/api/cron/review-nag` — daily 9 AM
-  - `/api/cron/process-tasks` — daily 6 AM
 
 ### Step 4: Custom Domain (optional)
 1. Vercel → Project Settings → Domains

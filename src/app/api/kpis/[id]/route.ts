@@ -28,6 +28,7 @@ async function loadAndAuthorizeKpi(
   });
 
   if (!kpi) return { error: notFoundResponse('KPI') } as const;
+  if (kpi.goal.deletedAt !== null) return { error: notFoundResponse('KPI') } as const;
 
   const { stack } = kpi.goal;
   const { userId, session } = auth;
