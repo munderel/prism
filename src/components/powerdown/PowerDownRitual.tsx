@@ -494,7 +494,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       fetch(`/api/tasks?date=${sessionToday}`),
       fetch(
         `/api/tasks?startDate=${getLocalDateString(ninetyDaysAgo)}&endDate=${getLocalDateString(yesterday)}` +
-          `&includeUpcoming=true&includeOwned=true`
+          `&includeUpcoming=true`
       ),
     ]);
 
@@ -546,11 +546,11 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         fetch(
           `/api/tasks?status=TODO&startDate=${getLocalDateString(tomorrow)}` +
             `&endDate=${getLocalDateString(twoWeeksOut)}` +
-            `&includeUnscheduled=true&includeOwned=true`,
+            `&includeUnscheduled=true`,
         ),
         fetch(
           `/api/tasks?startDate=${getLocalDateString(ninetyDaysAgo)}&endDate=${getLocalDateString(yesterday)}` +
-            `&includeUpcoming=true&includeOwned=true`,
+            `&includeUpcoming=true`,
         ),
         fetch('/api/aims/unscheduled'),
       ]);
