@@ -475,7 +475,7 @@ async function upsertRecurringSeries(
 
   // Dedup before insert: a prior force-resync may have wiped googleSyncState
   // but the actual Google event survived (silent delete failure). The caller
-  // passes a lookup over `targetMasters` (singleEvents=false), so each entry
+  // passes a lookup over `allTaggedMasters` (singleEvents=false), so each entry
   // is already a master/one-off — `event.id` is the deletable handle.
   const existingMaster = orphanLookup?.(config.recordKey);
   const existingMasterId = existingMaster?.id;
@@ -779,33 +779,35 @@ export async function POST(request: NextRequest) {
   // user. Empty for non-force runs.
   const failedDeletions: string[] = [];
 
-  // Force resync: delete all managed recurring series from Google and clear all sync state.
-  // This ensures a clean slate — all recurring series will be recreated fresh below.
-  // The post-sync sweep at the end of this handler catches any orphans whose
-  // delete failed here (silently or otherwise).
+  // Structured record of every event deleted by the end-of-handler sweep.
+  // Returned in the response so a developer or operator can confirm exactly
+  // what was cleaned up from a network-tab read. `reason` lets the reader
+  // tell apart cross-calendar orphans from same-recordId duplicates from
+  // legacy-title (force-only) cleanups.
+  type SweepReason =
+    | 'orphan-tagged'         // Prism-tagged event on the target calendar that wasn't in the known-good set
+    | 'orphan-non-target'     // Prism-tagged event on a non-target calendar (always an orphan by construction)
+    | 'duplicate-record-id'   // tagged event sharing a `prismRecordId` with the canonical pick
+    | 'legacy-title';         // pre-tag-era event matched by title under `force=true`
+  const swept: Array<{
+    id: string;
+    summary: string | null;
+    sourceCalendarId: string;
+    reason: SweepReason;
+  }> = [];
+
+  // Force resync: clear all sync state and let the end-of-handler sweep
+  // (Pass A across ALL selected calendars) delete the actual Google events.
+  //
+  // We deliberately do NOT issue targeted deletes here using stale state.
+  // Why: when `syncTargetCalendarId` has been switched at some point in the
+  // past, `oldState.*.eventId` references events that live on the previous
+  // target — not on the current `targetCalendarId`. A targeted delete to the
+  // current target would 404 (treated as success by `safeDeleteGoogleEvent`),
+  // state would be wiped, and the old events would survive untouched. The
+  // cross-calendar sweep at the end of this handler finds and deletes them
+  // correctly by their `_sourceCalendarId`.
   if (force) {
-    const oldState = parseGoogleSyncState(user.googleSyncState);
-
-    // Delete old recurring review series from Google
-    for (const series of Object.values(oldState.recurringReviews ?? {})) {
-      if (series?.eventId) {
-        const r = await safeDeleteGoogleEvent(auth.userId, series.eventId, targetCalendarId);
-        if (!r.ok) failedDeletions.push(r.eventId);
-      }
-    }
-    // Delete old powerdown series from Google
-    if (oldState.powerdown?.eventId) {
-      const r = await safeDeleteGoogleEvent(auth.userId, oldState.powerdown.eventId, targetCalendarId);
-      if (!r.ok) failedDeletions.push(r.eventId);
-    }
-    // Delete old process series from Google
-    for (const series of Object.values(oldState.processes ?? {})) {
-      if (series?.eventId) {
-        const r = await safeDeleteGoogleEvent(auth.userId, series.eventId, targetCalendarId);
-        if (!r.ok) failedDeletions.push(r.eventId);
-      }
-    }
-
     // Clear all sync state and legacy calendarEventIds in parallel.
     // Tasks and AimInstances are now cleared too (scoped to the sync window) so
     // their orphan Google events get deleted by the sweep at the end and a fresh
@@ -845,15 +847,18 @@ export async function POST(request: NextRequest) {
     user.googleSyncState = {};
   }
 
-  const [gcalEvents, targetMasters, tasks, aimInstances, processes, reviews, powerdownSessions] = await Promise.all([
+  const [gcalEvents, allTaggedMasters, tasks, aimInstances, processes, reviews, powerdownSessions] = await Promise.all([
     listGoogleEvents(auth.userId, start, end, calendarIds, { showDeleted: true }),
-    // Window-independent inventory of Prism-tagged masters and one-offs on the
-    // sync target calendar. Used to dedupe before insert (so we attach to a
-    // surviving master whose instances may fall outside [start,end]) and to
-    // drive the orphan sweep at end-of-handler. Replaces the prior approach of
-    // mining instance-expanded gcalEvents for `recurringEventId`, which let
-    // duplicate masters survive every resync.
-    listAllTaggedPrismMasters(auth.userId, targetCalendarId),
+    // Window-independent inventory of Prism-tagged masters and one-offs across
+    // ALL selected calendars (not just the sync target). Used to dedupe before
+    // insert (so we attach to a surviving master whose instances may fall
+    // outside [start,end]) and to drive the orphan sweep at end-of-handler.
+    //
+    // Spanning all calendars is what catches orphans stranded on a previous
+    // sync target after the user switches `syncTargetCalendarId`: Prism only
+    // writes to the current target, so any Prism-tagged event on a non-target
+    // calendar is, by definition, an orphan.
+    listAllTaggedPrismMasters(auth.userId, calendarIds),
     prisma.task.findMany({
       where: {
         AND: [
@@ -932,20 +937,52 @@ export async function POST(request: NextRequest) {
   for (const event of gcalEvents as GoogleEventLike[]) {
     if (event.id) gcalById.set(event.id, event);
   }
-  // Map of prismRecordId → master/one-off Google event on the target calendar.
+  // Map of prismRecordId → canonical master/one-off Google event.
   // Used to dedupe before inserting: if a prior sync created a tagged event
   // but the local row lost track of its eventId (or `googleSyncState` was
   // wiped by force-resync), we attach to the existing event instead of
-  // creating a duplicate. Sourced from `targetMasters` (singleEvents=false)
+  // creating a duplicate. Sourced from `allTaggedMasters` (singleEvents=false)
   // so masters whose instances fall outside [start,end] are still found.
+  //
+  // Canonical selection: prefer events on the target calendar (where Prism
+  // writes today). Non-target events with the same recordId are by definition
+  // orphans from a previous sync target — they get queued into
+  // `duplicateMasterIdsToDelete` and the sweep at end-of-handler deletes them.
+  // When multiple events for the same recordId live on the target calendar
+  // (silent-double-write race), the first wins as canonical; the rest are
+  // queued for deletion. This is what gets the user back to "exactly one
+  // event per Prism record".
   type GoogleEventTagged = GoogleEventLike & {
     _sourceCalendarId?: string;
     extendedProperties?: { private?: Record<string, string> | null } | null;
   };
   const byPrismRecordId = new Map<string, GoogleEventTagged>();
-  for (const event of targetMasters as unknown as GoogleEventTagged[]) {
+  // Tagged masters with a `prismRecordId` collision against the canonical pick
+  // above. These are unioned into the orphan sweep candidate set so they get
+  // deleted regardless of whether their id ended up in the known-good set
+  // (which can happen if a stale `calendarEventId` on a Prism row points at
+  // the loser).
+  const duplicateMasterIdsToDelete = new Set<string>();
+  for (const event of allTaggedMasters as unknown as GoogleEventTagged[]) {
     const recordId = event.extendedProperties?.private?.prismRecordId;
-    if (recordId && !byPrismRecordId.has(recordId)) byPrismRecordId.set(recordId, event);
+    if (!recordId || !event.id) continue;
+    const current = byPrismRecordId.get(recordId);
+    if (!current) {
+      byPrismRecordId.set(recordId, event);
+      continue;
+    }
+    // We already have a canonical pick. Decide whether to swap based on
+    // calendar residency: a target-calendar event always wins over a
+    // non-target event. Otherwise the existing canonical stays.
+    const currentOnTarget = current._sourceCalendarId === targetCalendarId;
+    const incomingOnTarget = event._sourceCalendarId === targetCalendarId;
+    if (!currentOnTarget && incomingOnTarget) {
+      // Swap: demote the previous canonical to a duplicate.
+      if (current.id) duplicateMasterIdsToDelete.add(current.id);
+      byPrismRecordId.set(recordId, event);
+    } else {
+      duplicateMasterIdsToDelete.add(event.id);
+    }
   }
 
   // Pull one-off linked task changes from Google.
@@ -1197,18 +1234,23 @@ export async function POST(request: NextRequest) {
     data: { googleSyncState: googleSyncState as Prisma.InputJsonValue },
   });
 
-  // Sweep the target calendar for any Prism-owned events not in the freshly-
-  // written known-good set, and delete them. Catches orphans from prior
-  // silent delete failures and one-off tasks/aims whose IDs were cleared.
+  // Sweep ALL selected calendars (not just the sync target) for any Prism-owned
+  // events not in the freshly-written known-good set, and delete them. Catches
+  // orphans from prior silent delete failures, one-off tasks/aims whose IDs
+  // were cleared, AND events stranded on a previous sync target after a
+  // `syncTargetCalendarId` switch.
   //
   // Pass A (tag-only) runs on EVERY sync — it's gated by `prismManaged=1`
-  // so it cannot touch user-authored events.
+  // so it cannot touch user-authored events. The tag is written exclusively
+  // by Prism's own `createGoogleEvent` and is safe across calendars: every
+  // tagged event on a non-target calendar is, by construction, an orphan.
   //
   // Pass B (legacy untagged title match) only runs on `force=true`. It
   // catches pre-tag-era events but is unsafe to run unconditionally:
   // a user-created event titled "Weekly Review" or matching a current
   // process title would be deleted on every sync. Force gives the user
-  // an explicit opt-in.
+  // an explicit opt-in. The `isSelf` filter prevents deletion of events
+  // the user was merely invited to.
   type GoogleEventWithMeta = GoogleEventLike & {
     _sourceCalendarId?: string;
     creator?: { self?: boolean | null } | null;
@@ -1252,23 +1294,37 @@ export async function POST(request: NextRequest) {
       if (r.calendarEventId) known.add(r.calendarEventId);
     }
 
-    // Pass A: tagged masters and one-offs on the target calendar (sourced from
-    // `targetMasters`, which uses singleEvents=false). Deleting by id removes
-    // the entire recurring series — the previous instance-based sweep could
-    // only cancel individual instances, so duplicate masters survived every
-    // resync. `targetMasters` is already filtered to the target calendar and
-    // already excludes modified-instance overrides and cancelled items.
+    // Pass A: tagged masters and one-offs across ALL selected calendars
+    // (sourced from `allTaggedMasters`, which uses singleEvents=false).
+    // Deleting by id removes the entire recurring series — the previous
+    // instance-based sweep could only cancel individual instances, so
+    // duplicate masters survived every resync. `allTaggedMasters` already
+    // excludes modified-instance overrides and cancelled items.
+    //
+    // Per-event delete routes through `e._sourceCalendarId` (set by
+    // `listAllTaggedPrismMasters`) so non-target deletes go to the right
+    // calendar.
     const candidates = new Map<string, GoogleEventWithMeta>();
-    for (const e of targetMasters as unknown as GoogleEventWithMeta[]) {
+    for (const e of allTaggedMasters as unknown as GoogleEventWithMeta[]) {
       if (!e.id) continue;
       candidates.set(e.id, e);
     }
 
+    // Same-recordId duplicates picked up during the canonical-selection scan
+    // above. Adding them here ensures they're swept even if `known` happens
+    // to contain their id (e.g., a stale `calendarEventId` on a Prism row
+    // pointed at the loser before this sync).
+    const forceDeleteIds = new Set<string>(duplicateMasterIdsToDelete);
+
     if (force) {
-      // Pass B (legacy fallback, force-only): events without a tag matching
-      // titles Prism is known to manage. Includes the user's actual process
-      // titles, so it would delete a colliding user-authored event — that's
-      // why this is force-only.
+      // Pass B (legacy fallback, force-only): events without a Prism tag
+      // matching titles Prism is known to manage. Includes the user's actual
+      // process titles, so it would delete a colliding user-authored event —
+      // that's why this is force-only.
+      //
+      // `isSelf` (creator AND organizer) prevents deletion of events the user
+      // was invited to. Spans all selected calendars so legacy duplicates on
+      // a previous sync target are caught.
       const legacyTitles = new Set<string>([
         'Weekly Review', 'Monthly Review', 'Yearly Review', 'Power Down Ritual',
         ...processes.map((p) => p.title),
@@ -1276,26 +1332,47 @@ export async function POST(request: NextRequest) {
       for (const e of gcalEvents as GoogleEventWithMeta[]) {
         if (!e.id || !e.summary) continue;
         if (e.extendedProperties?.private?.prismManaged === '1') continue;
-        const onTarget = e._sourceCalendarId === targetCalendarId;
         const isSelf = e.creator?.self === true && e.organizer?.self === true;
-        if (onTarget && isSelf && legacyTitles.has(e.summary)) candidates.set(e.id, e);
+        if (isSelf && legacyTitles.has(e.summary)) candidates.set(e.id, e);
       }
     }
 
     const sweepResults = await Promise.all(
       Array.from(candidates.values()).map(async (e) => {
         if (!e.id || e.status === 'cancelled') return { skipped: true } as const;
-        if (known.has(e.id)) return { skipped: true } as const;
-        if (e.recurringEventId && known.has(e.recurringEventId)) return { skipped: true } as const;
+        // Explicit duplicate (same prismRecordId as a canonical pick) — delete
+        // even if its id sneaked into `known` via a stale `calendarEventId`.
+        const forceDelete = forceDeleteIds.has(e.id);
+        if (!forceDelete) {
+          if (known.has(e.id)) return { skipped: true } as const;
+          if (e.recurringEventId && known.has(e.recurringEventId)) return { skipped: true } as const;
+        }
         const sourceCal = e._sourceCalendarId ?? targetCalendarId;
+        // Tag the reason so the response's `swept[]` tells the developer
+        // why each event was deleted.
+        const tagged = e.extendedProperties?.private?.prismManaged === '1';
+        const reason: SweepReason = forceDelete
+          ? 'duplicate-record-id'
+          : tagged
+            ? (sourceCal === targetCalendarId ? 'orphan-tagged' : 'orphan-non-target')
+            : 'legacy-title';
         const r = await safeDeleteGoogleEvent(auth.userId, e.id, sourceCal);
-        return { skipped: false, result: r, summary: e.summary, id: e.id } as const;
+        return { skipped: false, result: r, summary: e.summary, id: e.id, sourceCal, reason } as const;
       }),
     );
     for (const sr of sweepResults) {
       if (sr.skipped) continue;
-      if (!sr.result.ok) failedDeletions.push(sr.result.eventId);
-      else updates.push(`Cleaned up orphan event: ${sr.summary ?? sr.id}`);
+      if (!sr.result.ok) {
+        failedDeletions.push(sr.result.eventId);
+        continue;
+      }
+      updates.push(`Cleaned up orphan event: ${sr.summary ?? sr.id}`);
+      swept.push({
+        id: sr.id,
+        summary: sr.summary ?? null,
+        sourceCalendarId: sr.sourceCal,
+        reason: sr.reason,
+      });
     }
   }
 
@@ -1307,6 +1384,7 @@ export async function POST(request: NextRequest) {
     synced: true,
     updates,
     failedDeletions,
+    swept,
     googleEventCount: gcalEvents.length,
     oneOffTasksChecked: tasks.length,
     oneOffAimsChecked: aimInstances.length,

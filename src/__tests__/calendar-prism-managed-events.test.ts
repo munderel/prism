@@ -80,6 +80,7 @@ import {
   createGoogleEvent,
   safeDeleteGoogleEvent,
   listTaggedPrismEvents,
+  listAllTaggedPrismMasters,
   findExistingPrismEvent,
   syncTaskCalendarEvent,
   PRISM_MANAGED_EXT_KEY,
@@ -344,5 +345,60 @@ describe('listTaggedPrismEvents', () => {
     expect(eventsListMock).toHaveBeenCalledTimes(2);
     expect(eventsListMock.mock.calls[1][0].pageToken).toBe('tok');
     expect(result.map((e) => (e as any).id)).toEqual(['p1', 'p2']);
+  });
+});
+
+describe('listAllTaggedPrismMasters', () => {
+  it('queries each calendar with singleEvents=false + prismManaged tag and tags results with sourceCalendarId', async () => {
+    eventsListMock
+      .mockResolvedValueOnce({ data: { items: [{ id: 'master-A', summary: 'Weekly Review' }] } })
+      .mockResolvedValueOnce({ data: { items: [{ id: 'master-B', summary: 'Power Down Ritual' }] } });
+
+    const result = await listAllTaggedPrismMasters('user1', ['cal-target', 'cal-stale']);
+
+    expect(eventsListMock).toHaveBeenCalledTimes(2);
+    for (const call of eventsListMock.mock.calls) {
+      expect(call[0].privateExtendedProperty).toEqual(['prismManaged=1']);
+      expect(call[0].singleEvents).toBe(false);
+      expect(call[0].showDeleted).toBe(false);
+    }
+    const byId = new Map(result.map((e) => [e.id, e]));
+    expect(byId.get('master-A')?._sourceCalendarId).toBe('cal-target');
+    expect(byId.get('master-B')?._sourceCalendarId).toBe('cal-stale');
+  });
+
+  it('skips modified-instance overrides (events with recurringEventId)', async () => {
+    eventsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          { id: 'master-1', summary: 'Weekly Review' },
+          { id: 'instance-1', summary: 'Weekly Review', recurringEventId: 'master-1' },
+        ],
+      },
+    });
+
+    const result = await listAllTaggedPrismMasters('user1', ['cal-target']);
+
+    const ids = result.map((e) => e.id);
+    expect(ids).toEqual(['master-1']);
+  });
+
+  it('isolates per-calendar failures so one failed calendar does not poison others', async () => {
+    eventsListMock
+      .mockRejectedValueOnce(Object.assign(new Error('forbidden'), { code: 403 }))
+      .mockResolvedValueOnce({ data: { items: [{ id: 'master-B' }] } });
+
+    const result = await listAllTaggedPrismMasters('user1', ['cal-broken', 'cal-ok']);
+
+    // First calendar errored — its results are dropped. Second calendar succeeds.
+    const ids = result.map((e) => e.id);
+    expect(ids).toEqual(['master-B']);
+    expect(result[0]?._sourceCalendarId).toBe('cal-ok');
+  });
+
+  it('returns empty array when calendarIds is empty (no API calls)', async () => {
+    const result = await listAllTaggedPrismMasters('user1', []);
+    expect(result).toEqual([]);
+    expect(eventsListMock).not.toHaveBeenCalled();
   });
 });

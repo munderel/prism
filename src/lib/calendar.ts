@@ -568,57 +568,69 @@ export async function listTaggedPrismEvents(
 }
 
 /**
- * Fetch every Prism-tagged event on a single calendar with `singleEvents: false`
+ * Fetch every Prism-tagged event on the given calendars with `singleEvents: false`
  * — i.e. recurring masters and one-offs, never expanded instances. Used by the
  * orphan sweep so deleting an item by id removes the entire series, and by the
  * pre-insert dedup so we find masters whose instances fall outside the visible
  * sync window.
+ *
+ * Spans all supplied calendars (not just the sync target) so the sweep can
+ * delete orphaned Prism-tagged events left behind on a previous sync target.
+ * Per-calendar failures are isolated — one calendar failing doesn't poison the
+ * other results.
  *
  * Skips modified-instance overrides (those have `recurringEventId`); their
  * master is returned separately and is the deletable handle.
  */
 export async function listAllTaggedPrismMasters(
   userId: string,
-  calendarId: string,
+  calendarIds: string[],
 ): Promise<(Record<string, unknown> & { id: string; _sourceCalendarId: string })[]> {
   const calendar = await getCalendarClient(userId);
   if (!calendar) return [];
+  if (calendarIds.length === 0) return [];
 
-  try {
-    const allEvents: (Record<string, unknown> & { id: string; _sourceCalendarId: string })[] = [];
-    let pageToken: string | undefined;
+  const results = await Promise.all(
+    calendarIds.map(async (calendarId) => {
+      try {
+        const allEvents: (Record<string, unknown> & { id: string; _sourceCalendarId: string })[] = [];
+        let pageToken: string | undefined;
 
-    do {
-      const response = await withBackoff(
-        () =>
-          calendar.events.list({
-            calendarId,
-            singleEvents: false,
-            showDeleted: false,
-            privateExtendedProperty: [PRISM_MANAGED_EXT_KEY],
-            maxResults: 250,
-            pageToken,
-          }),
-        `events.list(masters) ${calendarId}`,
-      );
-      for (const ev of response.data.items ?? []) {
-        if (!ev.id) continue;
-        if (ev.status === 'cancelled') continue;
-        // singleEvents=false still returns modified-instance overrides; their
-        // recurringEventId points at the master, which is also in this list.
-        // Skip the override so we don't try to delete an exception (which
-        // wouldn't kill the series anyway).
-        if (ev.recurringEventId) continue;
-        allEvents.push({ ...ev, id: ev.id, _sourceCalendarId: calendarId });
+        do {
+          const response = await withBackoff(
+            () =>
+              calendar.events.list({
+                calendarId,
+                singleEvents: false,
+                showDeleted: false,
+                privateExtendedProperty: [PRISM_MANAGED_EXT_KEY],
+                maxResults: 250,
+                pageToken,
+              }),
+            `events.list(masters) ${calendarId}`,
+          );
+          for (const ev of response.data.items ?? []) {
+            if (!ev.id) continue;
+            if (ev.status === 'cancelled') continue;
+            // singleEvents=false still returns modified-instance overrides; their
+            // recurringEventId points at the master, which is also in this list.
+            // Skip the override so we don't try to delete an exception (which
+            // wouldn't kill the series anyway).
+            if (ev.recurringEventId) continue;
+            allEvents.push({ ...ev, id: ev.id, _sourceCalendarId: calendarId });
+          }
+          pageToken = response.data.nextPageToken ?? undefined;
+        } while (pageToken);
+
+        return allEvents;
+      } catch (err) {
+        console.error(`[calendar] Failed to list tagged Prism masters on ${calendarId}:`, err);
+        return [];
       }
-      pageToken = response.data.nextPageToken ?? undefined;
-    } while (pageToken);
+    }),
+  );
 
-    return allEvents;
-  } catch (err) {
-    console.error(`[calendar] Failed to list tagged Prism masters on ${calendarId}:`, err);
-    return [];
-  }
+  return results.flat();
 }
 
 /**
