@@ -2,7 +2,13 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse } from '@/lib/api-helpers';
-import { createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
+import {
+  createGoogleEvent,
+  updateGoogleEvent,
+  findExistingPrismEvent,
+  getGoogleSyncInfo,
+  buildMeetingRecurrence,
+} from '@/lib/calendar';
 import { getLocalDateString } from '@/lib/date-utils';
 
 /**
@@ -78,6 +84,48 @@ export async function POST(
   const recurrence = buildMeetingRecurrence(meeting.cadence, meeting.dayOfWeek);
 
   try {
+    // Dedup before insert: a previous sync attempt may have created the
+    // Google event but lost the eventId before persistence (timeout, crashed
+    // promise, etc.). If so, attach to the existing event instead of inserting
+    // a second copy.
+    let existingEventId = meeting.calendarEventId;
+    if (!existingEventId) {
+      existingEventId = await findExistingPrismEvent(meeting.createdById, targetCalendarId, meeting.id, 'meeting');
+    }
+
+    if (existingEventId) {
+      const updatedEvent = await updateGoogleEvent(meeting.createdById, existingEventId, {
+        summary: meeting.title,
+        description: meeting.description || '',
+        start: new Date(`${dateStr}T${meeting.timeStart}:00`).toISOString(),
+        end: new Date(`${dateStr}T${meeting.timeEnd}:00`).toISOString(),
+        timeZone: tz,
+        recurrence,
+      }, targetCalendarId);
+
+      // null return = 404/410 — event genuinely gone on Google. Fall through
+      // to the create branch below so the user's retry actually rebuilds it.
+      if (updatedEvent?.id) {
+        const updated = await prisma.meeting.update({
+          where: { id },
+          data: {
+            calendarEventId: updatedEvent.id,
+            syncedAt: new Date(),
+            syncError: null,
+          },
+        });
+        return Response.json({ ok: true, meeting: updated });
+      }
+
+      // Existing event was gone — clear the stale ID before re-creating
+      if (meeting.calendarEventId) {
+        await prisma.meeting.update({
+          where: { id },
+          data: { calendarEventId: null },
+        });
+      }
+    }
+
     const gcalEvent = await createGoogleEvent(meeting.createdById, {
       summary: meeting.title,
       description: meeting.description || undefined,
@@ -88,6 +136,7 @@ export async function POST(
       recurrence,
       attendees: attendeeEmails,
       prismType: 'meeting',
+      prismRecordId: meeting.id,
     }, targetCalendarId);
 
     if (!gcalEvent?.id) {

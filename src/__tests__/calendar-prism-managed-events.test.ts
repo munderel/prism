@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const eventsInsertMock = vi.fn();
 const eventsListMock = vi.fn();
 const eventsDeleteMock = vi.fn();
+const eventsPatchMock = vi.fn();
 const calendarListGetMock = vi.fn();
 
 const fakeCalendarClient = {
@@ -16,6 +17,7 @@ const fakeCalendarClient = {
     insert: eventsInsertMock,
     list: eventsListMock,
     delete: eventsDeleteMock,
+    patch: eventsPatchMock,
   },
   calendarList: { get: calendarListGetMock },
 };
@@ -68,6 +70,7 @@ beforeEach(() => {
   eventsInsertMock.mockReset();
   eventsListMock.mockReset();
   eventsDeleteMock.mockReset();
+  eventsPatchMock.mockReset();
   calendarListGetMock.mockReset();
   calendarListGetMock.mockResolvedValue({ data: { id: 'primary' } });
 });
@@ -77,7 +80,10 @@ import {
   createGoogleEvent,
   safeDeleteGoogleEvent,
   listTaggedPrismEvents,
+  findExistingPrismEvent,
+  syncTaskCalendarEvent,
   PRISM_MANAGED_EXT_KEY,
+  prismRecordExtKey,
 } from '@/lib/calendar';
 
 describe('createGoogleEvent — extendedProperties tagging', () => {
@@ -121,6 +127,140 @@ describe('createGoogleEvent — extendedProperties tagging', () => {
 
   it('exports a stable PRISM_MANAGED_EXT_KEY for use in events.list filters', () => {
     expect(PRISM_MANAGED_EXT_KEY).toBe('prismManaged=1');
+  });
+
+  it('writes prismRecordId into extendedProperties when supplied so dedup lookups can find the event', async () => {
+    eventsInsertMock.mockResolvedValueOnce({ data: { id: 'evtR' } });
+
+    await createGoogleEvent(
+      'user1',
+      {
+        summary: 'Project planning',
+        start: '2026-04-26T10:00:00Z',
+        end: '2026-04-26T11:00:00Z',
+        prismType: 'meeting',
+        prismRecordId: 'meeting-abc',
+      },
+      'primary',
+    );
+
+    const args = eventsInsertMock.mock.calls[0][0];
+    expect(args.requestBody.extendedProperties).toEqual({
+      private: {
+        prismManaged: '1',
+        prismType: 'meeting',
+        prismRecordId: 'meeting-abc',
+      },
+    });
+  });
+});
+
+describe('findExistingPrismEvent', () => {
+  it('queries events.list with privateExtendedProperty=prismRecordId=<id> and returns the first non-cancelled id', async () => {
+    eventsListMock.mockResolvedValueOnce({
+      data: { items: [{ id: 'evt-existing', status: 'confirmed' }] },
+    });
+
+    const result = await findExistingPrismEvent('user1', 'primary', 'task-xyz');
+
+    expect(result).toBe('evt-existing');
+    expect(eventsListMock).toHaveBeenCalledTimes(1);
+    expect(eventsListMock.mock.calls[0][0].privateExtendedProperty).toEqual([
+      'prismRecordId=task-xyz',
+    ]);
+  });
+
+  it('appends prismType filter when supplied to defend against record-id collisions across types', async () => {
+    eventsListMock.mockResolvedValueOnce({ data: { items: [] } });
+    await findExistingPrismEvent('user1', 'primary', 'rec-1', 'meeting');
+    expect(eventsListMock.mock.calls[0][0].privateExtendedProperty).toEqual([
+      'prismRecordId=rec-1',
+      'prismType=meeting',
+    ]);
+  });
+
+  it('throws on API errors so callers do not silently fall through to a duplicate insert', async () => {
+    const authErr = Object.assign(new Error('unauthorized'), { code: 401 });
+    eventsListMock.mockRejectedValueOnce(authErr);
+    await expect(findExistingPrismEvent('user1', 'primary', 'task-flaky')).rejects.toThrow();
+  });
+
+  it('returns null when no events match', async () => {
+    eventsListMock.mockResolvedValueOnce({ data: { items: [] } });
+    const result = await findExistingPrismEvent('user1', 'primary', 'task-missing');
+    expect(result).toBeNull();
+  });
+
+  it('skips cancelled events (Google still returns them with showDeleted=false in some cases)', async () => {
+    eventsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          { id: 'evt-cancelled', status: 'cancelled' },
+          { id: 'evt-live', status: 'confirmed' },
+        ],
+      },
+    });
+
+    const result = await findExistingPrismEvent('user1', 'primary', 'task-zzz');
+    expect(result).toBe('evt-live');
+  });
+
+  it('exports the prismRecordExtKey helper for use in events.list filters', () => {
+    expect(prismRecordExtKey('abc')).toBe('prismRecordId=abc');
+  });
+});
+
+describe('syncTaskCalendarEvent dedup contract', () => {
+  it('on create with no local calendarEventId, looks up Google by prismRecordId and updates the existing event instead of inserting a duplicate', async () => {
+    // First call: findExistingPrismEvent → returns an existing event id
+    eventsListMock.mockResolvedValueOnce({
+      data: { items: [{ id: 'evt-orphan', status: 'confirmed' }] },
+    });
+    // Second call: updateGoogleEvent → patch returns the same id
+    eventsPatchMock.mockResolvedValueOnce({ data: { id: 'evt-orphan' } });
+
+    const eventId = await syncTaskCalendarEvent(
+      'user1',
+      {
+        id: 'task-1',
+        calendarEventId: null,
+        title: 'Reattached task',
+        timeBlockStart: new Date('2026-04-26T10:00:00Z'),
+        timeBlockEnd: new Date('2026-04-26T11:00:00Z'),
+      },
+      'create',
+    );
+
+    expect(eventId).toBe('evt-orphan');
+    // The contract: NO insert was issued, only a patch — this is what
+    // prevents duplicates when the local DB lost track of the event id.
+    expect(eventsInsertMock).not.toHaveBeenCalled();
+    expect(eventsPatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('on create when Google has no matching event, inserts a fresh event with prismRecordId tag', async () => {
+    eventsListMock.mockResolvedValueOnce({ data: { items: [] } });
+    eventsInsertMock.mockResolvedValueOnce({ data: { id: 'evt-new' } });
+
+    const eventId = await syncTaskCalendarEvent(
+      'user1',
+      {
+        id: 'task-2',
+        calendarEventId: null,
+        title: 'Fresh task',
+        timeBlockStart: new Date('2026-04-26T10:00:00Z'),
+        timeBlockEnd: new Date('2026-04-26T11:00:00Z'),
+      },
+      'create',
+    );
+
+    expect(eventId).toBe('evt-new');
+    expect(eventsInsertMock).toHaveBeenCalledTimes(1);
+    expect(eventsInsertMock.mock.calls[0][0].requestBody.extendedProperties.private).toEqual({
+      prismManaged: '1',
+      prismType: 'task',
+      prismRecordId: 'task-2',
+    });
   });
 });
 

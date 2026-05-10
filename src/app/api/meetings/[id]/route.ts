@@ -50,8 +50,20 @@ export async function PATCH(
     const cadenceChanged = body.cadence !== undefined && body.cadence !== meeting.cadence;
 
     if (cadenceChanged && meeting.calendarEventId) {
-      // Cadence changed — delete old event and create new one with updated recurrence
-      await deleteGoogleEvent(meeting.createdById, meeting.calendarEventId, targetCalendarId);
+      // Cadence changed — delete old event then create new one with updated
+      // recurrence. If the delete fails we MUST NOT create a replacement,
+      // since that would leave the old recurring event live on Google
+      // alongside the new one (the user would see duplicates).
+      // `deleteGoogleEvent` returns true for 404 (idempotent — event already
+      // gone) and false only for real failures.
+      const deleted = await deleteGoogleEvent(meeting.createdById, meeting.calendarEventId, targetCalendarId);
+      if (!deleted) {
+        await prisma.meeting.update({
+          where: { id },
+          data: { syncError: 'Could not remove old recurring event on Google. Cadence change skipped — try again or run Force Resync from Settings.' },
+        });
+        return;
+      }
 
       const user = await prisma.user.findUnique({
         where: { id: meeting.createdById },
@@ -103,11 +115,14 @@ export async function PATCH(
         recurrence,
         attendees: attendeeEmails,
         prismType: 'meeting',
+        prismRecordId: id,
       }, targetCalendarId);
 
       if (gcalEvent?.id) {
-        const updateData: { calendarEventId: string; meetLink?: string } = {
+        const updateData: { calendarEventId: string; meetLink?: string; syncedAt: Date; syncError: null } = {
           calendarEventId: gcalEvent.id,
+          syncedAt: new Date(),
+          syncError: null,
         };
         if (gcalEvent.hangoutLink) {
           updateData.meetLink = gcalEvent.hangoutLink;
@@ -115,12 +130,20 @@ export async function PATCH(
         await prisma.meeting.update({ where: { id }, data: updateData });
       }
     } else if (meeting.calendarEventId) {
-      // Simple field update — patch the existing Google Calendar event
+      // Simple field update — patch the existing Google Calendar event.
+      // Pass recurrence too so a previously-bailed cadence change (where the
+      // DB row updated but the Google delete failed, leaving Google on the
+      // old cadence) self-heals on the next successful patch.
+      const recurrence = buildMeetingRecurrence(
+        body.cadence ?? meeting.cadence,
+        body.dayOfWeek !== undefined ? body.dayOfWeek : meeting.dayOfWeek,
+      );
       await updateGoogleEvent(meeting.createdById, meeting.calendarEventId, {
         summary: body.title,
         description: body.description !== undefined ? (body.description || '') : undefined,
         start: body.timeStart ? new Date(`1970-01-01T${body.timeStart}:00`).toISOString() : undefined,
         end: body.timeEnd ? new Date(`1970-01-01T${body.timeEnd}:00`).toISOString() : undefined,
+        recurrence,
       }, targetCalendarId);
     }
   };

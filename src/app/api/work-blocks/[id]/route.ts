@@ -137,6 +137,7 @@ export async function PATCH(
           end: effectiveEnd.toISOString(),
           timeZone: tz,
           prismType: 'workblock',
+          prismRecordId: id,
         }, targetCalendarId);
         if (!gcalEvent?.id) {
           return { ok: false, error: 'Google did not return an event id. Check calendar permissions.' };
