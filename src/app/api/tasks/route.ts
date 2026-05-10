@@ -35,6 +35,34 @@ export async function GET(request: NextRequest) {
     ? {}
     : { OR: [{ startTime: null }, { startTime: { lte: new Date() } }] };
 
+  const isAdmin = !!auth.session.user.isAdmin;
+  // Admin-only opt-ins. Future "view as user X" overrides should slot in here
+  // and stay admin-gated.
+  const includeOwned = searchParams.get('includeOwned') === 'true' && isAdmin;
+  const delegatedByMe = searchParams.get('delegatedByMe') === 'true' && isAdmin;
+
+  // Process page bypass: when a processId is supplied AND the requester owns
+  // the process (assignee, active delegate, or admin), the processId itself
+  // is the access boundary. The page is object-centric — show every task
+  // under the process regardless of who it's currently assigned to.
+  const processIdParam = searchParams.get('processId');
+  let processBypass = false;
+  if (processIdParam) {
+    const proc = await prisma.process.findUnique({
+      where: { id: processIdParam },
+      select: { assigneeId: true, delegateId: true, delegateUntil: true },
+    });
+    if (proc) {
+      const now = new Date();
+      const isProcessAssignee = proc.assigneeId === auth.userId;
+      const isActiveDelegate =
+        proc.delegateId === auth.userId && !!proc.delegateUntil && proc.delegateUntil >= now;
+      if (isAdmin || isProcessAssignee || isActiveDelegate) {
+        processBypass = true;
+      }
+    }
+  }
+
   // Build access filter (who can see what)
   const accessFilter: Record<string, unknown> = {};
   if (scope === 'company') {
@@ -52,13 +80,22 @@ export async function GET(request: NextRequest) {
       { taskType: { in: ['REACT', 'MAINTENANCE'] }, assigneeId: null },
       { taskType: { in: ['REACT', 'MAINTENANCE'] }, assigneeId: auth.userId },
     ];
+  } else if (delegatedByMe) {
+    // Admin opt-in: tasks I created but routed to someone else.
+    accessFilter.AND = [
+      { ownerId: auth.userId },
+      { assigneeId: { not: null } },
+      { assigneeId: { not: auth.userId } },
+    ];
+  } else if (processBypass) {
+    // processId acts as the access boundary; no assignee/owner filter applied.
   } else {
     // Individual scope is the app-wide default: you see tasks assigned to you,
-    // plus your own unassigned tasks. Once a task is assigned away, it should
-    // stop appearing in your personal dashboard/reviews/calendar lists — except
-    // when `includeOwned=true` (calendar drawer opt-in) so creators always see
-    // tasks they made even if routed to another assignee.
-    const includeOwned = searchParams.get('includeOwned') === 'true';
+    // plus your own unassigned tasks. Once a task is assigned away, it
+    // disappears from your personal dashboard/reviews/calendar lists.
+    // Admins can opt back in via `includeOwned=true` (returns tasks the admin
+    // owns, even if assigned away) or `delegatedByMe=true` (only assigned-away
+    // tasks). Both flags are silently ignored for non-admins.
     accessFilter.OR = [
       { assigneeId: auth.userId },
       { ownerId: auth.userId, assigneeId: null },
@@ -129,7 +166,6 @@ export async function GET(request: NextRequest) {
   if (goalId) extraFilter.goalId = goalId;
   if (status) extraFilter.status = status;
   if (taskType) extraFilter.taskType = taskType;
-  const processIdParam = searchParams.get('processId');
   if (processIdParam) extraFilter.processId = processIdParam;
 
   // Subtask filtering: by default exclude subtasks from top-level lists

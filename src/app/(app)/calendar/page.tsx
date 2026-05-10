@@ -74,7 +74,6 @@ type UnscheduledItem = {
   taskType?: string;
   dueDate?: string | null;
   goal?: { title: string; level: string; stack?: { name: string } } | null;
-  assigneeName?: string | null;
   // Aim-specific
   aimCategoryId?: string;
   aimInstanceId?: string;
@@ -228,9 +227,6 @@ function UnscheduledItemCard({
             {item.taskType === 'IMPROVE' && item.goal && (
               <span className="text-xs text-indigo-400 truncate">{item.goal.title}</span>
             )}
-            {item.assigneeName && (
-              <span className="text-xs text-amber-400 truncate">→ {item.assigneeName}</span>
-            )}
           </div>
           {item.dueDate && (
             <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -285,7 +281,6 @@ function UnscheduledItemCard({
 export default function CalendarPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin ?? false;
-  const currentUserId = session?.user?.id;
   const toast = useToast();
   const { mutate: globalMutate } = useSWRConfig();
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
@@ -294,7 +289,7 @@ export default function CalendarPage() {
   // server-side hide-until filter (`includeUpcoming=true`) so future-startTime
   // tasks remain draggable, and don't restrict by status — the client-side
   // filter below already keeps only TODO/IN_PROGRESS without a timeBlock.
-  const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?includeUpcoming=true&includeOwned=true');
+  const { data: tasksData, isLoading: loadingTasks, mutate: mutateTasks } = useSWR('/api/tasks?includeUpcoming=true');
   const { data: aimsData, isLoading: loadingAims, mutate: mutateAims } = useSWR<UnscheduledAim[]>('/api/aims/unscheduled');
 
   // Overdue tasks: dueDate before today, still open. Pattern mirrors AgendaView
@@ -303,7 +298,7 @@ export default function CalendarPage() {
     const now = new Date();
     const start = getLocalDateString(shiftDays(now, -90));
     const end = getLocalDateString(shiftDays(now, -1));
-    return `/api/tasks?startDate=${start}&endDate=${end}&includeUpcoming=true&includeOwned=true`;
+    return `/api/tasks?startDate=${start}&endDate=${end}&includeUpcoming=true`;
   }, []);
   const { data: overdueData, mutate: mutateOverdue } = useSWR(overdueKey);
   const overdueTasks = useMemo(() => {
@@ -312,22 +307,18 @@ export default function CalendarPage() {
   }, [overdueData]);
   const overdueItems = useMemo<UnscheduledItem[]>(
     () =>
-      overdueTasks.map((task) => {
-        const assignedAway = task.assigneeId && task.assigneeId !== currentUserId;
-        return {
-          id: `overdue-task-${task.id}`,
-          itemType: 'task',
-          title: task.title,
-          duration: task.estimatedMinutes ?? 60,
-          taskId: task.id,
-          priority: task.priority,
-          taskType: task.taskType,
-          dueDate: task.dueDate,
-          goal: task.goal,
-          assigneeName: assignedAway ? task.assignee?.name ?? task.assignee?.email ?? null : null,
-        };
-      }),
-    [overdueTasks, currentUserId],
+      overdueTasks.map((task) => ({
+        id: `overdue-task-${task.id}`,
+        itemType: 'task',
+        title: task.title,
+        duration: task.estimatedMinutes ?? 60,
+        taskId: task.id,
+        priority: task.priority,
+        taskType: task.taskType,
+        dueDate: task.dueDate,
+        goal: task.goal,
+      })),
+    [overdueTasks],
   );
   const { data: settingsData } = useSWR('/api/settings?scope=user');
   const { data: deepWorkEffective } = useSWR<{
@@ -361,7 +352,6 @@ export default function CalendarPage() {
 
     // Tasks
     for (const task of unscheduledTasks) {
-      const assignedAway = task.assigneeId && task.assigneeId !== currentUserId;
       items.push({
         id: `task-${task.id}`,
         itemType: 'task',
@@ -372,7 +362,6 @@ export default function CalendarPage() {
         taskType: task.taskType,
         dueDate: task.dueDate,
         goal: task.goal,
-        assigneeName: assignedAway ? task.assignee?.name ?? task.assignee?.email ?? null : null,
       });
     }
 
@@ -393,7 +382,7 @@ export default function CalendarPage() {
     }
 
     return items;
-  }, [unscheduledTasks, aimsData, currentUserId]);
+  }, [unscheduledTasks, aimsData]);
 
   const isMobile = useMediaQuery('(max-width: 1023px)');
   const [showMobileSheet, setShowMobileSheet] = useState(false);
@@ -586,7 +575,7 @@ export default function CalendarPage() {
           undefined,
           { revalidate: true }
         );
-        mutateTasks(freshFetcher('/api/tasks?includeUpcoming=true&includeOwned=true'));
+        mutateTasks(freshFetcher('/api/tasks?includeUpcoming=true'));
         mutateAims();
         mutateOverdue();
       } else {

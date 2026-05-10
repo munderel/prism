@@ -3,17 +3,31 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
+import { useSession } from 'next-auth/react';
 import {
   X, Sun, Moon as MoonIcon, PanelLeftClose, PanelLeftOpen,
   LayoutDashboard, Target, CheckSquare, Lightbulb, BookOpen,
   Flame, Calendar, ClipboardCheck, Moon, Trophy, BarChart3,
-  ListChecks, Settings, Zap, TrendingUp,
+  ListChecks, Settings, Zap, TrendingUp, UserCog,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { StreakCounter } from '@/components/dopamine/StreakCounter';
 import { useEffect, useState, useMemo } from 'react';
 import { useUserSettings } from '@/hooks/useUserSettings';
 
-const navSections = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  adminOnly?: boolean;
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
   {
     label: 'Work',
     items: [
@@ -47,6 +61,7 @@ const navSections = [
     label: 'System',
     items: [
       { href: '/processes', label: 'Processes', icon: ListChecks },
+      { href: '/delegated', label: 'Delegated', icon: UserCog, adminOnly: true },
       { href: '/settings', label: 'Settings', icon: Settings },
     ],
   },
@@ -64,6 +79,8 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { data: settings } = useUserSettings();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.isAdmin ?? false;
   const hiddenFeatures: string[] = useMemo(
     () => (Array.isArray(settings?.hiddenFeatures) ? settings.hiddenFeatures : []),
     [settings],
@@ -72,9 +89,11 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
   const filteredNavSections = useMemo(() =>
     navSections.map((section) => ({
       ...section,
-      items: section.items.filter((item) => !hiddenFeatures.includes(item.href)),
+      items: section.items.filter(
+        (item) => !hiddenFeatures.includes(item.href) && (!item.adminOnly || isAdmin),
+      ),
     })).filter((section) => section.items.length > 0),
-    [hiddenFeatures]
+    [hiddenFeatures, isAdmin]
   );
 
   useEffect(() => setMounted(true), []);

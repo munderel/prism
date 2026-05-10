@@ -260,6 +260,122 @@ describe('GET /api/tasks', () => {
       }),
     );
   });
+
+  it('silently ignores includeOwned=true for non-admins', async () => {
+    const req = new Request('http://localhost/api/tasks?includeOwned=true') as any;
+    await GET(req);
+
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    const conditions = findManyArg.where.AND ?? [findManyArg.where];
+    const accessClause = conditions.find(
+      (c: any) => Array.isArray(c.OR) && c.OR.some((o: any) => 'assigneeId' in o || 'ownerId' in o),
+    );
+    // Non-admin's OR clause must NOT include the bare `{ ownerId: 'user1' }` opt-in
+    expect(accessClause.OR).toEqual([
+      { assigneeId: 'user1' },
+      { ownerId: 'user1', assigneeId: null },
+    ]);
+  });
+
+  it('honors includeOwned=true for admins', async () => {
+    mockRequireAuth.mockResolvedValue(adminResult as any);
+
+    const req = new Request('http://localhost/api/tasks?includeOwned=true') as any;
+    await GET(req);
+
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    const conditions = findManyArg.where.AND ?? [findManyArg.where];
+    const accessClause = conditions.find(
+      (c: any) => Array.isArray(c.OR) && c.OR.some((o: any) => 'assigneeId' in o || 'ownerId' in o),
+    );
+    expect(accessClause.OR).toEqual([
+      { assigneeId: 'admin1' },
+      { ownerId: 'admin1', assigneeId: null },
+      { ownerId: 'admin1' },
+    ]);
+  });
+
+  it('returns only delegated tasks when admin sets delegatedByMe=true', async () => {
+    mockRequireAuth.mockResolvedValue(adminResult as any);
+
+    const req = new Request('http://localhost/api/tasks?delegatedByMe=true') as any;
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    expect(mockTaskFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              AND: [
+                { ownerId: 'admin1' },
+                { assigneeId: { not: null } },
+                { assigneeId: { not: 'admin1' } },
+              ],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('silently ignores delegatedByMe=true for non-admins (falls back to default scope)', async () => {
+    const req = new Request('http://localhost/api/tasks?delegatedByMe=true') as any;
+    await GET(req);
+
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    const conditions = findManyArg.where.AND ?? [findManyArg.where];
+    const accessClause = conditions.find(
+      (c: any) => Array.isArray(c.OR) && c.OR.some((o: any) => 'assigneeId' in o || 'ownerId' in o),
+    );
+    expect(accessClause.OR).toEqual([
+      { assigneeId: 'user1' },
+      { ownerId: 'user1', assigneeId: null },
+    ]);
+  });
+
+  it('bypasses the assignee filter when the process owner queries by processId', async () => {
+    mockProcessFindUnique.mockResolvedValue({
+      assigneeId: 'user1',
+      delegateId: null,
+      delegateUntil: null,
+    } as any);
+
+    const req = new Request('http://localhost/api/tasks?processId=proc-1') as any;
+    await GET(req);
+
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    const conditions = findManyArg.where.AND ?? [findManyArg.where];
+    // No clause should restrict by assigneeId/ownerId — processId is the access boundary
+    const hasAccessClause = conditions.some(
+      (c: any) => Array.isArray(c.OR) && c.OR.some((o: any) => 'assigneeId' in o && o.assigneeId === 'user1'),
+    );
+    expect(hasAccessClause).toBe(false);
+    // But processId IS still applied
+    const hasProcessFilter = conditions.some((c: any) => c.processId === 'proc-1');
+    expect(hasProcessFilter).toBe(true);
+  });
+
+  it('still applies the default assignee filter when a non-owner queries by processId', async () => {
+    mockProcessFindUnique.mockResolvedValue({
+      assigneeId: 'someone-else',
+      delegateId: null,
+      delegateUntil: null,
+    } as any);
+
+    const req = new Request('http://localhost/api/tasks?processId=proc-1') as any;
+    await GET(req);
+
+    const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
+    const conditions = findManyArg.where.AND ?? [findManyArg.where];
+    const accessClause = conditions.find(
+      (c: any) => Array.isArray(c.OR) && c.OR.some((o: any) => 'assigneeId' in o || 'ownerId' in o),
+    );
+    expect(accessClause.OR).toEqual([
+      { assigneeId: 'user1' },
+      { ownerId: 'user1', assigneeId: null },
+    ]);
+  });
 });
 
 describe('POST /api/tasks', () => {
