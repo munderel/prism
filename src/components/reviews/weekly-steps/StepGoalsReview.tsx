@@ -699,7 +699,7 @@ export function StepGoalsReview({ reviewId, isTeamReview, isAdmin, onSummaryChan
     if (tasks.length === 0) return null;
     return (
       <div className="ml-6 mt-3 space-y-2">
-        <h5 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">Last Week's Tasks</h5>
+        <h5 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">Last Week&apos;s Tasks</h5>
         {tasks.map((task) => {
           const saving = savingTaskIds.has(task.id);
           const isDone = task.status === 'DONE';
@@ -942,7 +942,7 @@ export function StepGoalsReview({ reviewId, isTeamReview, isAdmin, onSummaryChan
       <div className="flex items-center gap-2 text-[var(--text-secondary)]">
         <Target className="h-4 w-4" />
         <p className="text-sm">
-          Review and edit your current goals. Update KPIs, tick last week's tasks, and report on company goals.
+          Review and edit your current goals. Update KPIs, tick last week&apos;s tasks, and report on company goals.
         </p>
       </div>
 
