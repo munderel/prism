@@ -35,6 +35,14 @@ vi.mock('@/lib/recurrence', () => ({
 
 vi.mock('@/lib/date-utils', () => ({
   parseLocalDate: vi.fn((d: string) => new Date(d)),
+  // YYYY-MM-DD from the UTC date components. Tests for auto-bump pass dates
+  // unambiguous across TZs (mid-day UTC) so we always read the intended day.
+  getLocalDateString: vi.fn((d: Date) => {
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }),
 }));
 
 vi.mock('@/lib/calendar', () => ({
@@ -710,6 +718,161 @@ describe('PATCH /api/tasks/[id]', () => {
     // startedAt should NOT be in the update data since it already exists
     const updateCall = mockTaskUpdate.mock.calls[0][0] as any;
     expect(updateCall.data.startedAt).toBeUndefined();
+  });
+
+  // --- Bug-fix coverage ----------------------------------------------------
+  // The next three groups protect three regressions reported during the
+  // Power Down session:
+  //   1. Overdue tasks lose dueDate sync when scheduled (overdue filter doesn't clear).
+  //   2. Google Calendar event creation skipped prismRecordId tagging → duplicates.
+  //   3. Updates to existing events must still go through the update path.
+
+  it('bumps a past dueDate to the new timeBlockStart date when scheduled forward', async () => {
+    // Task is overdue: dueDate well before the new time block.
+    // Use mid-day UTC times so the local-date computation is stable across TZs.
+    mockTaskFindUnique.mockResolvedValue({
+      ...taskFixture,
+      dueDate: new Date('2026-04-01T12:00:00.000Z'),
+    } as any);
+    const newBlockStart = '2026-05-12T13:00:00.000Z';
+    mockParseBody.mockResolvedValue({
+      data: {
+        timeBlockStart: newBlockStart,
+        timeBlockEnd: '2026-05-12T14:00:00.000Z',
+      },
+    } as any);
+    await PATCH(createPatchRequest({ timeBlockStart: newBlockStart, timeBlockEnd: '2026-05-12T14:00:00.000Z' }), { params });
+    const updateCall = mockTaskUpdate.mock.calls[0][0] as any;
+    expect(updateCall.data.dueDate).toBeInstanceOf(Date);
+    const bumped = updateCall.data.dueDate as Date;
+    expect(bumped.toISOString().slice(0, 10)).toBe('2026-05-12');
+  });
+
+  it('does not bump dueDate when the caller already specified one', async () => {
+    mockTaskFindUnique.mockResolvedValue({
+      ...taskFixture,
+      dueDate: new Date('2026-04-01T12:00:00.000Z'),
+    } as any);
+    mockParseBody.mockResolvedValue({
+      data: {
+        timeBlockStart: '2026-05-12T13:00:00.000Z',
+        timeBlockEnd: '2026-05-12T14:00:00.000Z',
+        dueDate: '2026-06-01',
+      },
+    } as any);
+    await PATCH(
+      createPatchRequest({
+        timeBlockStart: '2026-05-12T13:00:00.000Z',
+        timeBlockEnd: '2026-05-12T14:00:00.000Z',
+        dueDate: '2026-06-01',
+      }),
+      { params },
+    );
+    const updateCall = mockTaskUpdate.mock.calls[0][0] as any;
+    // The explicit dueDate (June 1) wins — auto-bump does not overwrite.
+    const written = updateCall.data.dueDate as Date;
+    expect(written.toISOString().slice(0, 10)).toBe('2026-06-01');
+  });
+
+  it('does not bump dueDate when the existing dueDate is already in the future', async () => {
+    mockTaskFindUnique.mockResolvedValue({
+      ...taskFixture,
+      dueDate: new Date('2026-12-01T12:00:00.000Z'),
+    } as any);
+    mockParseBody.mockResolvedValue({
+      data: {
+        timeBlockStart: '2026-05-12T13:00:00.000Z',
+        timeBlockEnd: '2026-05-12T14:00:00.000Z',
+      },
+    } as any);
+    await PATCH(
+      createPatchRequest({
+        timeBlockStart: '2026-05-12T13:00:00.000Z',
+        timeBlockEnd: '2026-05-12T14:00:00.000Z',
+      }),
+      { params },
+    );
+    const updateCall = mockTaskUpdate.mock.calls[0][0] as any;
+    // dueDate not in the update payload — kept as-is in DB.
+    expect(updateCall.data.dueDate).toBeUndefined();
+  });
+
+  it('calls syncTaskCalendarEvent with create when no calendarEventId and time blocks are set', async () => {
+    const { getGoogleSyncInfo } = await import('@/lib/calendar');
+    vi.mocked(getGoogleSyncInfo).mockResolvedValue({ hasGoogle: true, calendarId: 'primary', timezone: 'America/New_York' } as any);
+    mockSyncTaskCalendar.mockResolvedValue('new-gcal-id');
+    mockTaskFindUnique.mockResolvedValue({ ...taskFixture, calendarEventId: null } as any);
+    mockParseBody.mockResolvedValue({
+      data: {
+        timeBlockStart: '2026-05-12T09:00:00',
+        timeBlockEnd: '2026-05-12T10:00:00',
+      },
+    } as any);
+    await PATCH(
+      createPatchRequest({
+        timeBlockStart: '2026-05-12T09:00:00',
+        timeBlockEnd: '2026-05-12T10:00:00',
+      }),
+      { params },
+    );
+    expect(mockSyncTaskCalendar).toHaveBeenCalledWith(
+      'user1',
+      expect.objectContaining({ id: 'task-1', calendarEventId: null }),
+      'create',
+    );
+    // Returned event id is persisted back to the task.
+    const updateCalls = mockTaskUpdate.mock.calls.map((c) => c[0] as any);
+    const persistCall = updateCalls.find((c) => c.data?.calendarEventId === 'new-gcal-id');
+    expect(persistCall).toBeDefined();
+  });
+
+  it('calls syncTaskCalendarEvent with update when calendarEventId exists and a time block changes', async () => {
+    const { getGoogleSyncInfo } = await import('@/lib/calendar');
+    vi.mocked(getGoogleSyncInfo).mockResolvedValue({ hasGoogle: true, calendarId: 'primary', timezone: 'America/New_York' } as any);
+    mockSyncTaskCalendar.mockResolvedValue('existing-gcal-id');
+    mockTaskFindUnique.mockResolvedValue({
+      ...taskFixture,
+      calendarEventId: 'existing-gcal-id',
+      timeBlockStart: new Date('2026-05-12T08:00:00'),
+      timeBlockEnd: new Date('2026-05-12T09:00:00'),
+    } as any);
+    mockParseBody.mockResolvedValue({
+      data: {
+        timeBlockStart: '2026-05-12T11:00:00',
+        timeBlockEnd: '2026-05-12T12:00:00',
+      },
+    } as any);
+    await PATCH(
+      createPatchRequest({
+        timeBlockStart: '2026-05-12T11:00:00',
+        timeBlockEnd: '2026-05-12T12:00:00',
+      }),
+      { params },
+    );
+    expect(mockSyncTaskCalendar).toHaveBeenCalledWith(
+      'user1',
+      expect.objectContaining({ id: 'task-1', calendarEventId: 'existing-gcal-id' }),
+      'update',
+    );
+  });
+
+  it('skips Google Calendar sync entirely when Google is not connected', async () => {
+    const { getGoogleSyncInfo } = await import('@/lib/calendar');
+    vi.mocked(getGoogleSyncInfo).mockResolvedValue({ hasGoogle: false } as any);
+    mockParseBody.mockResolvedValue({
+      data: {
+        timeBlockStart: '2026-05-12T09:00:00',
+        timeBlockEnd: '2026-05-12T10:00:00',
+      },
+    } as any);
+    await PATCH(
+      createPatchRequest({
+        timeBlockStart: '2026-05-12T09:00:00',
+        timeBlockEnd: '2026-05-12T10:00:00',
+      }),
+      { params },
+    );
+    expect(mockSyncTaskCalendar).not.toHaveBeenCalled();
   });
 });
 

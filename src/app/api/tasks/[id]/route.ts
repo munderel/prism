@@ -5,10 +5,10 @@ import { pickDefined, notFoundResponse, hasAccess, forbiddenResponse, USER_SUMMA
 import { parseBody, updateTaskSchema } from '@/lib/schemas';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
-import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
-import { getCompletionUrl } from '@/lib/completion-token';
+import { deleteGoogleEvent, getGoogleSyncInfo, syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { completeTask } from '@/lib/task-completion';
+import { getLocalDateString, parseLocalDate } from '@/lib/date-utils';
 
 export async function GET(
   _request: NextRequest,
@@ -86,6 +86,22 @@ export async function PATCH(
   if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
   if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
   if (body.startTime !== undefined) data.startTime = body.startTime ? new Date(body.startTime) : null;
+
+  // When scheduling a task into a time block (e.g. dragging onto the Power Down
+  // calendar), bump a past dueDate forward to the new block's local date. This
+  // stops the task from staying "overdue" after the user has acted on it, and
+  // keeps it visible via both the timeBlockStart AND dueDate paths in the
+  // calendar GET. Only auto-bumps when:
+  //   - a new timeBlockStart is being set (not cleared)
+  //   - the caller did not also explicitly specify dueDate (user intent wins)
+  //   - the task's existing dueDate is strictly before the new block's date
+  if (dueDate === undefined && timeBlockStart) {
+    const newBlockDateKey = getLocalDateString(new Date(timeBlockStart));
+    const existingDueKey = task.dueDate ? getLocalDateString(task.dueDate) : null;
+    if (existingDueKey && existingDueKey < newBlockDateKey) {
+      data.dueDate = parseLocalDate(newBlockDateKey);
+    }
+  }
 
   if (isWinTheDay === true && task.dueDate) {
     await unflagOtherWinTheDay(task.ownerId, task.dueDate, id);
@@ -165,41 +181,49 @@ export async function PATCH(
     postUpdate().catch((err) => console.warn('[tasks] post-update (recurrence/cascade) failed:', err));
   }
 
-  // Google Calendar sync — fire-and-forget (external API calls can be slow)
+  // Google Calendar sync — delegate to syncTaskCalendarEvent so create paths
+  // are tagged with prismRecordId (enables findExistingPrismEvent dedup and
+  // prevents the duplicate-events bug where stale Task.calendarEventId values
+  // produced untagged orphan events on Google's side).
   const calendarFieldsChanged = status !== undefined || timeBlockStart !== undefined || timeBlockEnd !== undefined;
   if (calendarFieldsChanged) {
     const syncCalendar = async () => {
       const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(task.ownerId);
       if (!hasGoogle) return;
-      const newStart = data.timeBlockStart ?? task.timeBlockStart;
-      const newEnd = data.timeBlockEnd ?? task.timeBlockEnd;
+      const newStart = (data.timeBlockStart ?? task.timeBlockStart) as Date | null;
+      const newEnd = (data.timeBlockEnd ?? task.timeBlockEnd) as Date | null;
+      const effectiveTitle = (data.title as string | undefined) ?? task.title;
+      const effectiveDescription = (data.description as string | undefined) ?? task.description ?? null;
 
       if ((status === 'DONE' || status === 'DROPPED') && task.calendarEventId) {
         await deleteGoogleEvent(task.ownerId, task.calendarEventId, targetCalendarId);
         await prisma.task.update({ where: { id }, data: { calendarEventId: null } });
-      } else if (task.calendarEventId && (timeBlockStart !== undefined || timeBlockEnd !== undefined)) {
-        await updateGoogleEvent(task.ownerId, task.calendarEventId, {
-          summary: (data.title as string | undefined) ?? task.title,
-          description: (data.description as string | undefined) ?? task.description ?? undefined,
-          start: newStart ? new Date(newStart as string | Date).toISOString() : undefined,
-          end: newEnd ? new Date(newEnd as string | Date).toISOString() : undefined,
-        }, targetCalendarId);
-      } else if (!task.calendarEventId && newStart && newEnd && status !== 'DONE' && status !== 'DROPPED') {
-        const completionUrl = getCompletionUrl(id, task.ownerId);
-        const rawDesc = (data.description as string | undefined) ?? task.description;
-        const descWithLink = rawDesc
-          ? `${rawDesc}\n\nMark complete in Prism: ${completionUrl}`
-          : `Mark complete in Prism: ${completionUrl}`;
-        const gcalEvent = await createGoogleEvent(task.ownerId, {
-          summary: (data.title as string | undefined) ?? task.title,
-          description: descWithLink,
-          start: new Date(newStart as string | Date).toISOString(),
-          end: new Date(newEnd as string | Date).toISOString(),
-          prismType: 'task',
-        }, targetCalendarId);
-        if (gcalEvent?.id) {
-          await prisma.task.update({ where: { id }, data: { calendarEventId: gcalEvent.id } });
-        }
+        return;
+      }
+
+      if (status === 'DONE' || status === 'DROPPED') return;
+
+      const action: 'create' | 'update' = task.calendarEventId ? 'update' : 'create';
+      // For 'update' we only sync when time fields actually changed.
+      // For 'create' we require both newStart and newEnd to be set.
+      if (action === 'update' && timeBlockStart === undefined && timeBlockEnd === undefined) return;
+      if (action === 'create' && (!newStart || !newEnd)) return;
+
+      const resultEventId = await syncTaskCalendarEvent(
+        task.ownerId,
+        {
+          id,
+          calendarEventId: task.calendarEventId ?? null,
+          title: effectiveTitle,
+          description: effectiveDescription,
+          timeBlockStart: newStart ?? null,
+          timeBlockEnd: newEnd ?? null,
+        },
+        action,
+      );
+
+      if (resultEventId && resultEventId !== task.calendarEventId) {
+        await prisma.task.update({ where: { id }, data: { calendarEventId: resultEventId } });
       }
     };
     try { await syncCalendar(); } catch (err) { console.warn('[tasks] Google Calendar sync failed:', err); }
