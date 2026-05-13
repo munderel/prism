@@ -79,6 +79,9 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? '');
   const [deliverable, setDeliverable] = useState(task?.deliverable ?? '');
   const [estimatedMinutes, setEstimatedMinutes] = useState(task?.estimatedMinutes ?? 60);
+  // Ref to the duration <input> so handleSubmit can read the live value even
+  // when the user clicks Save without first blurring the field (onBlur race).
+  const durationInputRef = useRef<HTMLInputElement>(null);
   const [preferredTimeStart, setPreferredTimeStart] = useState(task?.preferredTimeStart ?? '');
   const [preferredTimeEnd, setPreferredTimeEnd] = useState(task?.preferredTimeEnd ?? '');
   const [saving, setSaving] = useState(false);
@@ -139,11 +142,30 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
       setError('Task title must be at least 3 characters');
       return;
     }
+
+    // Read the duration input's live value directly. If the user typed a new
+    // duration but clicked Save without blurring first, the onBlur parser has
+    // not yet updated `estimatedMinutes` state — so the stale state would be
+    // submitted. Re-parse here so what's in the box always wins.
+    let effectiveMinutes = estimatedMinutes;
+    const rawDurationInput = durationInputRef.current?.value;
+    if (typeof rawDurationInput === 'string' && rawDurationInput.trim() !== '') {
+      const parsed = parseDurationToMinutes(rawDurationInput);
+      if (parsed !== null) {
+        effectiveMinutes = parsed;
+        if (parsed !== estimatedMinutes) setEstimatedMinutes(parsed);
+      }
+    }
+    if (!Number.isInteger(effectiveMinutes) || effectiveMinutes <= 0) {
+      setError('Estimated duration must be a positive number of minutes');
+      return;
+    }
+
     setSaving(true);
     setError('');
 
     try {
-      const body: any = { title, description, priority, deliverable, estimatedMinutes };
+      const body: any = { title, description, priority, deliverable, estimatedMinutes: effectiveMinutes };
       if (dueDate) body.dueDate = dueDate;
       if (preferredTimeStart) body.preferredTimeStart = preferredTimeStart;
       if (preferredTimeEnd) body.preferredTimeEnd = preferredTimeEnd;
@@ -312,6 +334,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                 ))}
               </div>
               <input
+                ref={durationInputRef}
                 type="text"
                 defaultValue={estimatedMinutes > 0 ? formatMinutesCompact(estimatedMinutes) : ''}
                 key={`est:${estimatedMinutes}`}
