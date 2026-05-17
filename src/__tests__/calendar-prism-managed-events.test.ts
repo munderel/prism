@@ -84,6 +84,7 @@ import {
   listTaggedPrismEvents,
   listAllTaggedPrismMasters,
   listWritableCalendarIds,
+  listUntaggedPrismLookalikes,
   findExistingPrismEvent,
   syncTaskCalendarEvent,
   PRISM_MANAGED_EXT_KEY,
@@ -442,5 +443,99 @@ describe('listWritableCalendarIds', () => {
     const result = await listWritableCalendarIds('user1');
 
     expect(result).toEqual(['real-cal']);
+  });
+});
+
+describe('listUntaggedPrismLookalikes', () => {
+  const PRISM_PD_DESC = 'Start your Power Down Ritual in Prism: https://prism.example/powerdown';
+
+  it('returns masters that match Prism title + description but lack the prismManaged tag', async () => {
+    eventsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          { id: 'untagged-1', summary: 'Power Down Ritual', description: PRISM_PD_DESC },
+          { id: 'tagged-1', summary: 'Power Down Ritual', description: PRISM_PD_DESC, extendedProperties: { private: { prismManaged: '1' } } },
+          { id: 'user-event', summary: 'Power Down Ritual', description: 'my own note' },
+        ],
+      },
+    });
+
+    const result = await listUntaggedPrismLookalikes('user1', ['cal-target'], ['Power Down Ritual']);
+
+    expect(result.map((e) => e.id)).toEqual(['untagged-1']);
+    expect(result[0]._sourceCalendarId).toBe('cal-target');
+    expect(eventsListMock.mock.calls[0][0]).toMatchObject({
+      calendarId: 'cal-target',
+      q: 'Power Down Ritual',
+      singleEvents: false,
+      showDeleted: false,
+    });
+  });
+
+  it('skips modified-instance overrides (events with recurringEventId)', async () => {
+    eventsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          { id: 'master', summary: 'Power Down Ritual', description: PRISM_PD_DESC },
+          { id: 'instance', summary: 'Power Down Ritual', description: PRISM_PD_DESC, recurringEventId: 'master' },
+        ],
+      },
+    });
+
+    const result = await listUntaggedPrismLookalikes('user1', ['cal-target'], ['Power Down Ritual']);
+
+    expect(result.map((e) => e.id)).toEqual(['master']);
+  });
+
+  it("rejects events whose summary doesn't exactly match (q is fuzzy)", async () => {
+    eventsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          { id: 'fuzzy', summary: 'Power Down Ritual extra', description: PRISM_PD_DESC },
+        ],
+      },
+    });
+
+    const result = await listUntaggedPrismLookalikes('user1', ['cal-target'], ['Power Down Ritual']);
+
+    expect(result).toEqual([]);
+  });
+
+  it('rejects events without the Prism description prefix (would delete user-authored events otherwise)', async () => {
+    eventsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          { id: 'no-desc', summary: 'Power Down Ritual' },
+          { id: 'wrong-desc', summary: 'Power Down Ritual', description: 'unrelated text' },
+        ],
+      },
+    });
+
+    const result = await listUntaggedPrismLookalikes('user1', ['cal-target'], ['Power Down Ritual']);
+
+    expect(result).toEqual([]);
+  });
+
+  it('isolates per-(calendar,title) failures so one bad pair does not poison others', async () => {
+    eventsListMock
+      .mockRejectedValueOnce(Object.assign(new Error('forbidden'), { code: 403 }))
+      .mockResolvedValueOnce({
+        data: { items: [{ id: 'ok-1', summary: 'Power Down Ritual', description: PRISM_PD_DESC }] },
+      });
+
+    const result = await listUntaggedPrismLookalikes(
+      'user1',
+      ['cal-broken', 'cal-ok'],
+      ['Power Down Ritual'],
+    );
+
+    expect(result.map((e) => e.id)).toEqual(['ok-1']);
+    expect(result[0]._sourceCalendarId).toBe('cal-ok');
+  });
+
+  it('returns [] for empty calendar list or empty title list (no API calls)', async () => {
+    expect(await listUntaggedPrismLookalikes('user1', [], ['Power Down Ritual'])).toEqual([]);
+    expect(await listUntaggedPrismLookalikes('user1', ['cal-target'], [])).toEqual([]);
+    expect(eventsListMock).not.toHaveBeenCalled();
   });
 });
