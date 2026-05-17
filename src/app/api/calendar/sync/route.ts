@@ -7,6 +7,7 @@ import {
   listGoogleEvents,
   listAllTaggedPrismMasters,
   listWritableCalendarIds,
+  listUntaggedPrismLookalikes,
   createGoogleEvent,
   deleteGoogleEvent,
   safeDeleteGoogleEvent,
@@ -789,7 +790,8 @@ export async function POST(request: NextRequest) {
     | 'orphan-tagged'         // Prism-tagged event on the target calendar that wasn't in the known-good set
     | 'orphan-non-target'     // Prism-tagged event on a non-target calendar (always an orphan by construction)
     | 'duplicate-record-id'   // tagged event sharing a `prismRecordId` with the canonical pick
-    | 'legacy-title';         // pre-tag-era event matched by title under `force=true`
+    | 'legacy-title'          // pre-tag-era event matched by title under `force=true`
+    | 'untagged-prism-desc';  // untagged master with Prism's exact title + description prefix (force-only)
   const swept: Array<{
     id: string;
     summary: string | null;
@@ -1343,6 +1345,38 @@ export async function POST(request: NextRequest) {
         const isSelf = e.creator?.self === true && e.organizer?.self === true;
         if (isSelf && legacyTitles.has(e.summary)) candidates.set(e.id, e);
       }
+
+      // Pass C (untagged-Prism-description, force-only): masters with one of
+      // Prism's hardcoded recurring titles AND Prism's exact description
+      // prefix ("Start your … in Prism:"), but no `prismManaged='1'` tag.
+      //
+      // Pass B can't catch these because:
+      //   1. `gcalEvents` is `singleEvents: true`, so it expands recurring
+      //      series into instances; deleting an instance only cancels one
+      //      occurrence, leaving the master + all future instances alive.
+      //   2. `creator.self` is `undefined` (not `true`) when the user owns
+      //      the host group-calendar but Google records the creator email
+      //      against the underlying account — so `isSelf` silently rejects
+      //      every untagged orphan on the user's "Prism Events" calendar.
+      //
+      // Pass C fetches MASTERS (`singleEvents: false`) across every writable
+      // calendar and gates deletion on the description prefix, which Prism
+      // is the only known writer of. Safer than title-only matching, and
+      // catches the recurring-master case that Pass B misses.
+      const untaggedLookalikes = await listUntaggedPrismLookalikes(
+        auth.userId,
+        sweepCalendarIds,
+        ['Weekly Review', 'Monthly Review', 'Yearly Review', 'Power Down Ritual'],
+      );
+      for (const e of untaggedLookalikes as unknown as GoogleEventWithMeta[]) {
+        if (!e.id) continue;
+        candidates.set(e.id, e);
+        // Force the deletion past the `known.has(e.id)` short-circuit below
+        // so a stale `googleSyncState.*.eventId` still pointing at one of
+        // these orphans (e.g. when the upsert path returned `current` on
+        // transient error) cannot accidentally protect it.
+        forceDeleteIds.add(e.id);
+      }
     }
 
     const sweepResults = await Promise.all(
@@ -1357,10 +1391,12 @@ export async function POST(request: NextRequest) {
         }
         const sourceCal = e._sourceCalendarId ?? targetCalendarId;
         // Tag the reason so the response's `swept[]` tells the developer
-        // why each event was deleted.
+        // why each event was deleted. `forceDelete` covers both same-recordId
+        // duplicates (tagged) and Pass C lookalikes (untagged) — split them
+        // by tag presence so the reason line stays diagnostic.
         const tagged = e.extendedProperties?.private?.prismManaged === '1';
         const reason: SweepReason = forceDelete
-          ? 'duplicate-record-id'
+          ? (tagged ? 'duplicate-record-id' : 'untagged-prism-desc')
           : tagged
             ? (sourceCal === targetCalendarId ? 'orphan-tagged' : 'orphan-non-target')
             : 'legacy-title';
