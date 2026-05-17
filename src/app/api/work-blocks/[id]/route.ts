@@ -95,9 +95,10 @@ export async function PATCH(
     });
   });
 
-  // Google Calendar sync — fire-and-forget. Update the linked event when
-  // calendar-relevant fields (start/end/mainObjective) changed; create one if
-  // the block was made before sync was wired up so older blocks self-heal.
+  // Google Calendar sync. Awaited so the response reflects the post-sync
+  // state. Updates the linked event when calendar-relevant fields
+  // (start/end/mainObjective) changed; creates one if the block was made
+  // before sync was wired up so older blocks self-heal.
   const calendarFieldsChanged =
     body.start !== undefined || body.end !== undefined || body.mainObjective !== undefined;
   if (calendarFieldsChanged) {
@@ -152,18 +153,22 @@ export async function PATCH(
         return { ok: false, error: message };
       }
     };
-    syncToGcal().then(async (result) => {
-      if (!result.ok) {
-        console.warn('[work-blocks] Google Calendar sync failed:', result.error);
-        await prisma.workBlock.update({
-          where: { id },
-          data: { syncError: result.error, syncedAt: null },
-        }).catch((err) => console.error('[work-blocks] failed to persist syncError', err));
-      }
-    }).catch((err) => console.warn('[work-blocks] Google Calendar sync threw:', err));
+    const syncResult = await syncToGcal();
+    if (!syncResult.ok) {
+      console.warn('[work-blocks] Google Calendar sync failed:', syncResult.error);
+      await prisma.workBlock.update({
+        where: { id },
+        data: { syncError: syncResult.error, syncedAt: null },
+      }).catch((err) => console.error('[work-blocks] failed to persist syncError', err));
+    }
   }
 
-  return Response.json(block, NO_STORE);
+  // Re-fetch so the response reflects any sync-driven writes (calendarEventId,
+  // syncedAt, syncError) without a follow-up GET from the client.
+  const finalBlock = calendarFieldsChanged
+    ? await prisma.workBlock.findUnique({ where: { id }, include: blockInclude })
+    : block;
+  return Response.json(finalBlock ?? block, NO_STORE);
 }
 
 export async function DELETE(

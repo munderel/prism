@@ -105,9 +105,10 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Sync to Google Calendar — fire-and-forget. Follows the Meeting pattern:
-  // persist syncedAt on success and syncError on failure so the UI can show
-  // a red chip with Retry (see meetings/route.ts).
+  // Sync to Google Calendar. Awaited so the response reflects the post-sync
+  // state — background promises don't survive Vercel's function suspend
+  // after Response.json. Mirrors meetings/route.ts: persist syncedAt on
+  // success and syncError on failure so the UI can show a red chip with Retry.
   const taskTitle = full?.task?.title ?? 'Work block';
   const syncToGcal = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
     const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
@@ -143,15 +144,23 @@ export async function POST(request: NextRequest) {
       return { ok: false, error: message };
     }
   };
-  syncToGcal().then(async (result) => {
-    if (!result.ok) {
-      console.warn('[work-blocks] Google Calendar sync failed:', result.error);
-      await prisma.workBlock.update({
-        where: { id: block.id },
-        data: { syncError: result.error, syncedAt: null },
-      }).catch((err) => console.error('[work-blocks] failed to persist syncError', err));
-    }
-  }).catch((err) => console.warn('[work-blocks] Google Calendar sync threw:', err));
+  const syncResult = await syncToGcal();
+  if (!syncResult.ok) {
+    console.warn('[work-blocks] Google Calendar sync failed:', syncResult.error);
+    await prisma.workBlock.update({
+      where: { id: block.id },
+      data: { syncError: syncResult.error, syncedAt: null },
+    }).catch((err) => console.error('[work-blocks] failed to persist syncError', err));
+  }
 
-  return Response.json(full, { status: 201, ...NO_STORE });
+  // Re-fetch so the response carries the post-sync state (calendarEventId,
+  // syncedAt, syncError).
+  const refreshed = await prisma.workBlock.findUnique({
+    where: { id: block.id },
+    include: {
+      task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true, dueDate: true } },
+      clearGoals: { orderBy: { sortOrder: 'asc' } },
+    },
+  });
+  return Response.json(refreshed ?? full, { status: 201, ...NO_STORE });
 }
