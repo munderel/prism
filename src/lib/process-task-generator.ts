@@ -1,4 +1,4 @@
-import { ProcessCadence } from '@prisma/client';
+import { ProcessCadence, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import {
   startOfWeek, startOfMonth, endOfMonth,
@@ -8,6 +8,7 @@ import {
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { pad2 } from '@/lib/google-sync-state';
 import { resolveAssignee } from '@/lib/delegation';
+import { conditionalUpdate } from '@/lib/concurrency';
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
@@ -123,6 +124,20 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
 
   const { periodStart, dueDate } = getCurrentPeriodRange(process);
 
+  // Atomically claim this period — Postgres row-level lock on the UPDATE
+  // serializes concurrent callers, so only one request creates tasks per
+  // period. checkAndCreateDueProcessTasks() runs on every GET /api/tasks and
+  // GET /api/calendar, so without this guard parallel SWR fetches can both
+  // pass the task.count() check and insert duplicate rows.
+  const claimed = await conditionalUpdate(prisma.process, {
+    where: {
+      id: processId,
+      OR: [{ lastRunAt: null }, { lastRunAt: { lt: periodStart } }],
+    },
+    data: { lastRunAt: new Date() },
+  });
+  if (!claimed) return;
+
   // BASIC mode: create a single task for the current period with time blocks
   if (process.mode === 'BASIC') {
     if (!process.scheduledTime) return;
@@ -148,26 +163,26 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
     const timeBlockStart = fromZonedTime(`${dateKey}T${pad2(hours)}:${pad2(minutes)}:00`, userTz);
     const timeBlockEnd = new Date(timeBlockStart.getTime() + (process.defaultDurationMinutes ?? 60) * 60_000);
 
-    await prisma.task.create({
-      data: {
-        ownerId,
-        taskType: 'MAINTENANCE',
-        title: process.title,
-        description: process.description,
-        dueDate,
-        timeBlockStart,
-        timeBlockEnd,
-        status: 'TODO',
-        priority: 'MEDIUM',
-        estimatedMinutes: process.defaultDurationMinutes,
-        processId,
-      },
-    });
-
-    await prisma.process.update({
-      where: { id: processId },
-      data: { lastRunAt: new Date() },
-    });
+    try {
+      await prisma.task.create({
+        data: {
+          ownerId,
+          taskType: 'MAINTENANCE',
+          title: process.title,
+          description: process.description,
+          dueDate,
+          timeBlockStart,
+          timeBlockEnd,
+          status: 'TODO',
+          priority: 'MEDIUM',
+          estimatedMinutes: process.defaultDurationMinutes,
+          processId,
+        },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return;
+      throw e;
+    }
     return;
   }
 
@@ -182,6 +197,11 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
   if (existing > 0) return;
 
   // Create tasks: one per step (independent), or one parent task if no steps
+  const swallowDuplicate = (e: unknown) => {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return;
+    throw e;
+  };
+
   if (process.steps.length === 0) {
     await prisma.task.create({
       data: {
@@ -195,7 +215,7 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
         estimatedMinutes: process.defaultDurationMinutes,
         processId,
       },
-    });
+    }).catch(swallowDuplicate);
   } else {
     await Promise.all(
       process.steps.map((step) =>
@@ -211,15 +231,10 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
             estimatedMinutes: process.defaultDurationMinutes,
             processId,
           },
-        })
+        }).catch(swallowDuplicate)
       )
     );
   }
-
-  await prisma.process.update({
-    where: { id: processId },
-    data: { lastRunAt: new Date() },
-  });
 }
 
 // ─── Period start helper (for route invalidation) ─────────────────────────────
@@ -264,5 +279,12 @@ export async function cleanupCurrentPeriodTasks(processId: string, cadence: Proc
       status: 'TODO',
       dueDate: { gte: periodStart, lte: periodEnd },
     },
+  });
+  // Releases the period claim so the next GET regenerates tasks. Without
+  // this, generateTasksForCurrentPeriod's atomic claim would block until
+  // the next period boundary.
+  await prisma.process.update({
+    where: { id: processId },
+    data: { lastRunAt: null },
   });
 }
