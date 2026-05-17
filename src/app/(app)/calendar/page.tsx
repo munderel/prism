@@ -285,6 +285,20 @@ export default function CalendarPage() {
   const { mutate: globalMutate } = useSWRConfig();
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [syncing, setSyncing] = useState(false);
+  // Persistent feedback from the last /api/calendar/sync response. Survives
+  // beyond the toast's 4s autohide so the user can read swept/failedDeletions
+  // without DevTools — toast-based feedback was missed in the duplicate-
+  // events investigation, leaving us blind to what the sweep actually did.
+  const [lastSyncResult, setLastSyncResult] = useState<{
+    swept: unknown[];
+    failedDeletions: string[];
+    updates: string[];
+    sweptAt: string;
+  } | null>(null);
+  // Raw JSON dump of /api/calendar/debug. Shown when the user clicks Diagnose
+  // so we can see every Prism-titled event on every writable calendar.
+  const [debugSnapshot, setDebugSnapshot] = useState<unknown | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
   // Drawer wants every open task that isn't yet on a time block. Skip the
   // server-side hide-until filter (`includeUpcoming=true`) so future-startTime
   // tasks remain draggable, and don't restrict by status — the client-side
@@ -564,6 +578,12 @@ export default function CalendarPage() {
         const count = data.updates?.length ?? 0;
         const sweptCount = Array.isArray(data.swept) ? data.swept.length : 0;
         const failedCount = Array.isArray(data.failedDeletions) ? data.failedDeletions.length : 0;
+        setLastSyncResult({
+          swept: Array.isArray(data.swept) ? data.swept : [],
+          failedDeletions: Array.isArray(data.failedDeletions) ? data.failedDeletions : [],
+          updates: Array.isArray(data.updates) ? data.updates : [],
+          sweptAt: new Date().toISOString(),
+        });
         const sweptSuffix = sweptCount > 0 ? ` — cleaned ${sweptCount} orphan${sweptCount === 1 ? '' : 's'}` : '';
         const failedSuffix = failedCount > 0 ? `, ${failedCount} delete${failedCount === 1 ? '' : 's'} failed` : '';
 
@@ -612,6 +632,27 @@ export default function CalendarPage() {
     }
   };
 
+  const handleDiagnose = async () => {
+    setDiagnosing(true);
+    setDebugSnapshot(null);
+    try {
+      const res = await fetch('/api/calendar/debug');
+      if (res.ok) {
+        const data = await res.json();
+        setDebugSnapshot(data);
+      } else {
+        const text = await res.text().catch(() => '');
+        setDebugSnapshot({ error: `HTTP ${res.status}`, body: text });
+        toast.error('Diagnose failed — see panel below');
+      }
+    } catch (err) {
+      setDebugSnapshot({ error: err instanceof Error ? err.message : String(err) });
+      toast.error('Diagnose failed — see panel below');
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
   const isLoading = loadingTasks || loadingAims;
 
   return (
@@ -639,6 +680,15 @@ export default function CalendarPage() {
             <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Resyncing...' : 'Force Resync'}
           </button>
+          <button
+            onClick={handleDiagnose}
+            disabled={diagnosing}
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-[var(--surface-raised)] border border-[var(--border-color)] px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-cyan-400 hover:text-cyan-300 hover:bg-[var(--surface-hover)] transition-colors disabled:opacity-50"
+            title="Snapshot every Prism-managed event on every writable calendar. Read-only — nothing is modified."
+          >
+            <AlertTriangle className={`h-4 w-4 ${diagnosing ? 'animate-pulse' : ''}`} />
+            {diagnosing ? 'Diagnosing...' : 'Diagnose'}
+          </button>
         {isAdmin && (
           <button
             onClick={() => setShowMeetings(true)}
@@ -651,6 +701,51 @@ export default function CalendarPage() {
         )}
         </div>
       </div>
+
+      {lastSyncResult && (
+        <div className="mb-4 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] p-3 text-xs text-[var(--text-secondary)]">
+          <div className="flex items-center justify-between gap-2">
+            <span>
+              Last sync ({lastSyncResult.sweptAt}): swept {lastSyncResult.swept.length}, failed {lastSyncResult.failedDeletions.length}, updates {lastSyncResult.updates.length}.
+            </span>
+            <button
+              onClick={() => setLastSyncResult(null)}
+              className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label="Dismiss last sync result"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {lastSyncResult.swept.length > 0 && (
+            <pre className="mt-2 max-h-40 overflow-auto rounded bg-black/30 p-2 text-[10px]">
+              {JSON.stringify(lastSyncResult.swept, null, 2)}
+            </pre>
+          )}
+          {lastSyncResult.failedDeletions.length > 0 && (
+            <pre className="mt-2 max-h-40 overflow-auto rounded bg-rose-950/40 p-2 text-[10px] text-rose-300">
+              {JSON.stringify(lastSyncResult.failedDeletions, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
+
+      {debugSnapshot !== null && (
+        <div className="mb-4 rounded-lg border border-cyan-500/30 bg-[var(--surface-raised)] p-3 text-xs text-[var(--text-secondary)]">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-medium text-cyan-300">Diagnose snapshot</span>
+            <button
+              onClick={() => setDebugSnapshot(null)}
+              className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label="Dismiss diagnose snapshot"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <pre className="mt-2 max-h-96 overflow-auto rounded bg-black/30 p-2 text-[10px]">
+            {JSON.stringify(debugSnapshot, null, 2)}
+          </pre>
+        </div>
+      )}
 
       <MeetingsManager
         open={showMeetings}
