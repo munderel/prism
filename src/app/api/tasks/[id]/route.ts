@@ -9,6 +9,7 @@ import { deleteGoogleEvent, getGoogleSyncInfo, syncTaskCalendarEvent } from '@/l
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { completeTask } from '@/lib/task-completion';
 import { getLocalDateString, parseLocalDate } from '@/lib/date-utils';
+import { getCurrentPeriodRange } from '@/lib/process-task-generator';
 
 export async function GET(
   _request: NextRequest,
@@ -244,6 +245,75 @@ export async function DELETE(
   if (!task) return notFoundResponse('Task');
   // Only owners and admins can delete (not just assignees)
   if (!hasAccess(task.ownerId, auth.userId, auth.session.user.isAdmin)) return forbiddenResponse();
+
+  // Process-linked task: stop the recurring process so the generator can't
+  // re-create the task on the next GET /api/tasks. Also sweep current-period
+  // sibling tasks (ADVANCED mode creates one task per step) so the user
+  // doesn't see stragglers, and delete their Google Calendar events.
+  if (task.processId) {
+    const process = await prisma.process.findUnique({
+      where: { id: task.processId },
+      select: {
+        id: true,
+        cadence: true,
+        scheduledDayOfWeek: true,
+        scheduledDayOfMonth: true,
+      },
+    });
+
+    if (process) {
+      const { periodStart, dueDate: periodEnd } = getCurrentPeriodRange(process);
+
+      // Disable the process FIRST. Once durationEndDate is in the past,
+      // generateTasksForCurrentPeriod() bails at its durationEndDate guard
+      // before claiming the period, so concurrent regen can't race us by
+      // re-creating rows between the sweep and the response.
+      await prisma.process.update({
+        where: { id: process.id },
+        data: { durationEndDate: new Date() },
+      });
+
+      const siblings = await prisma.task.findMany({
+        where: {
+          processId: process.id,
+          status: 'TODO',
+          dueDate: { gte: periodStart, lte: periodEnd },
+        },
+        select: { id: true, calendarEventId: true, goalId: true },
+      });
+
+      const { calendarId: targetCalendarId } = await getGoogleSyncInfo(task.ownerId);
+      for (const sib of siblings) {
+        if (!sib.calendarEventId) continue;
+        try {
+          await deleteGoogleEvent(task.ownerId, sib.calendarEventId, targetCalendarId);
+        } catch (err) {
+          console.warn('[tasks] Google Calendar sync failed on process-stop delete:', err);
+        }
+      }
+
+      await prisma.task.deleteMany({
+        where: {
+          processId: process.id,
+          status: 'TODO',
+          dueDate: { gte: periodStart, lte: periodEnd },
+        },
+      });
+
+      // Cascade progress for any siblings that were linked to goals
+      const goalIds = Array.from(new Set(siblings.map((s) => s.goalId).filter((g): g is string => !!g)));
+      for (const goalId of goalIds) {
+        cascadeProgressUp(goalId).catch((err) => console.warn('[tasks] cascade after process-stop delete failed:', err));
+      }
+
+      return Response.json(
+        { ok: true, processStopped: true, processId: process.id },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    // Process row missing (shouldn't happen — falls through to the standard
+    // single-task delete below so the orphan task still gets removed).
+  }
 
   // Delete linked Google Calendar event before removing the task
   if (task.calendarEventId) {

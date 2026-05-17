@@ -15,10 +15,11 @@ vi.mock('@/lib/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
     goal: { findUnique: vi.fn(), findMany: vi.fn() },
     goalStack: { findMany: vi.fn() },
-    process: { findUnique: vi.fn() },
+    process: { findUnique: vi.fn(), update: vi.fn() },
   },
 }));
 
@@ -59,6 +60,15 @@ vi.mock('@/lib/task-helpers', () => ({
 
 vi.mock('@/lib/process-task-checker', () => ({
   checkAndCreateDueProcessTasks: vi.fn(),
+}));
+
+vi.mock('@/lib/process-task-generator', () => ({
+  // Fixed range so tests don't drift across the wall clock. The handler only
+  // uses these two values to bound the sibling deleteMany.
+  getCurrentPeriodRange: vi.fn(() => ({
+    periodStart: new Date('2026-05-11T00:00:00Z'),
+    dueDate: new Date('2026-05-17T23:59:59Z'),
+  })),
 }));
 
 vi.mock('@/lib/task-completion', () => ({
@@ -104,6 +114,8 @@ const mockGoalFindUnique = vi.mocked(prisma.goal.findUnique);
 const mockGoalFindMany = vi.mocked(prisma.goal.findMany);
 const mockGoalStackFindMany = vi.mocked(prisma.goalStack.findMany);
 const mockProcessFindUnique = vi.mocked(prisma.process.findUnique);
+const mockProcessUpdate = vi.mocked(prisma.process.update);
+const mockTaskDeleteMany = vi.mocked(prisma.task.deleteMany);
 const mockParseRRule = vi.mocked(parseRRule);
 const mockSyncTaskCalendar = vi.mocked(syncTaskCalendarEvent);
 const mockUnflagWinTheDay = vi.mocked(unflagOtherWinTheDay);
@@ -911,5 +923,67 @@ describe('DELETE /api/tasks/[id]', () => {
     const req = new Request('http://localhost/api/tasks/task-1', { method: 'DELETE' }) as any;
     const res = await TaskDelete(req, { params });
     expect(res.status).toBe(404);
+  });
+
+  it('stops the recurring process when deleting a process-linked task', async () => {
+    mockTaskFindUnique.mockResolvedValue({
+      ...taskFixture,
+      processId: 'proc-1',
+      taskType: 'MAINTENANCE',
+    } as any);
+    mockProcessFindUnique.mockResolvedValue({
+      id: 'proc-1',
+      cadence: 'WEEKLY',
+      scheduledDayOfWeek: 0,
+      scheduledDayOfMonth: null,
+    } as any);
+    mockProcessUpdate.mockResolvedValue({} as any);
+    mockTaskFindMany.mockResolvedValue([
+      { id: 'task-1', calendarEventId: null, goalId: null },
+    ] as any);
+    mockTaskDeleteMany.mockResolvedValue({ count: 1 } as any);
+
+    const before = Date.now();
+    const req = new Request('http://localhost/api/tasks/task-1', { method: 'DELETE' }) as any;
+    const res = await TaskDelete(req, { params });
+    const after = Date.now();
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true, processStopped: true, processId: 'proc-1' });
+
+    expect(mockProcessUpdate).toHaveBeenCalledTimes(1);
+    const updateArg = mockProcessUpdate.mock.calls[0][0] as any;
+    expect(updateArg.where).toEqual({ id: 'proc-1' });
+    const newEnd = updateArg.data.durationEndDate as Date;
+    expect(newEnd.getTime()).toBeGreaterThanOrEqual(before);
+    expect(newEnd.getTime()).toBeLessThanOrEqual(after);
+
+    expect(mockTaskDeleteMany).toHaveBeenCalledWith({
+      where: {
+        processId: 'proc-1',
+        status: 'TODO',
+        dueDate: {
+          gte: new Date('2026-05-11T00:00:00Z'),
+          lte: new Date('2026-05-17T23:59:59Z'),
+        },
+      },
+    });
+
+    // The bare single-task path must not run for process-linked tasks
+    expect(mockTaskDelete).not.toHaveBeenCalled();
+  });
+
+  it('does not touch Process rows when deleting a non-process task', async () => {
+    mockTaskFindUnique.mockResolvedValue({ ...taskFixture, processId: null } as any);
+
+    const req = new Request('http://localhost/api/tasks/task-1', { method: 'DELETE' }) as any;
+    const res = await TaskDelete(req, { params });
+
+    expect(res.status).toBe(200);
+    expect(mockProcessFindUnique).not.toHaveBeenCalled();
+    expect(mockProcessUpdate).not.toHaveBeenCalled();
+    expect(mockTaskDeleteMany).not.toHaveBeenCalled();
+    expect(mockTaskDelete).toHaveBeenCalledWith({ where: { id: 'task-1' } });
   });
 });
