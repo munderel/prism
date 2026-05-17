@@ -12,7 +12,7 @@ import { conditionalUpdate } from '@/lib/concurrency';
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
-interface PeriodRange {
+export interface PeriodRange {
   periodStart: Date;
   dueDate: Date;
 }
@@ -22,7 +22,7 @@ interface PeriodRange {
  * dueDate is the day within the period the process is "due" — used as the
  * task's dueDate (no timeBlockStart/End, so the task is unscheduled).
  */
-function getCurrentPeriodRange(process: {
+export function getCurrentPeriodRange(process: {
   cadence: ProcessCadence;
   scheduledDayOfWeek: number | null;
   scheduledDayOfMonth: number | null;

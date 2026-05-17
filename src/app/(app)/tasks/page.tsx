@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useMemo } from 'react';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import { ListTodo, ChevronLeft, ChevronRight, CalendarRange, Inbox, ChevronDown } from 'lucide-react';
 import { ReviewDueBanner } from '@/components/reviews/ReviewDueBanner';
 import { DailyTaskList } from '@/components/tasks/DailyTaskList';
@@ -162,15 +162,32 @@ export default function TasksPage() {
   }, []);
 
   const handleDelete = useCallback(async (taskId: string) => {
-    if (!confirm('Delete this task?')) return;
+    // Look the task up from local state to detect a process-linked task —
+    // deleting one stops the recurring process, so the confirmation must
+    // make that consequence explicit.
+    const candidate =
+      rangeTasks.find((t: any) => t.id === taskId)
+      ?? unscheduledTasks.find((t: any) => t.id === taskId)
+      ?? (selectedTask?.id === taskId ? selectedTask : null);
+    const isProcessTask = !!candidate?.processId;
+    const message = isProcessTask
+      ? `Delete this task and stop the recurring process "${candidate.title}"? You can re-enable it later by clearing the end date on the process.`
+      : 'Delete this task?';
+    if (!confirm(message)) return;
     const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     if (res.ok) {
       setSelectedTask((prev: any) => prev?.id === taskId ? null : prev);
       mutateRange();
+      mutateUnscheduled();
+      if (isProcessTask) {
+        // Process row was updated (durationEndDate); revalidate any open
+        // process list/detail SWR keys so the stopped state is reflected.
+        mutate((key) => typeof key === 'string' && key.startsWith('/api/processes'));
+      }
       setShowEditor(false);
       setEditingTask(null);
     }
-  }, [mutateRange]);
+  }, [mutateRange, mutateUnscheduled, rangeTasks, unscheduledTasks, selectedTask]);
 
   const toggleSelection = useCallback((taskId: string) => {
     setSelectedIds((prev) => {
