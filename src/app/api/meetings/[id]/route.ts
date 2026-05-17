@@ -42,10 +42,13 @@ export async function PATCH(
     include: MEETING_INCLUDE,
   });
 
-  // Sync changes to Google Calendar — fire-and-forget
-  const syncToGcal = async () => {
+  // Sync changes to Google Calendar. Awaited so the response reflects the
+  // post-sync state and any syncError is surfaced immediately.
+  const syncToGcal = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
     const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(meeting.createdById);
-    if (!hasGoogle) return;
+    // Disconnected users can still edit DB-only fields; first-time sync is
+    // the create endpoint's responsibility. Treat as success here.
+    if (!hasGoogle) return { ok: true };
 
     const cadenceChanged = body.cadence !== undefined && body.cadence !== meeting.cadence;
 
@@ -58,11 +61,12 @@ export async function PATCH(
       // gone) and false only for real failures.
       const deleted = await deleteGoogleEvent(meeting.createdById, meeting.calendarEventId, targetCalendarId);
       if (!deleted) {
+        const errorMsg = 'Could not remove old recurring event on Google. Cadence change skipped — try again or run Force Resync from Settings.';
         await prisma.meeting.update({
           where: { id },
-          data: { syncError: 'Could not remove old recurring event on Google. Cadence change skipped — try again or run Force Resync from Settings.' },
+          data: { syncError: errorMsg },
         });
-        return;
+        return { ok: false, error: errorMsg };
       }
 
       const user = await prisma.user.findUnique({
@@ -118,18 +122,23 @@ export async function PATCH(
         prismRecordId: id,
       }, targetCalendarId);
 
-      if (gcalEvent?.id) {
-        const updateData: { calendarEventId: string; meetLink?: string; syncedAt: Date; syncError: null } = {
-          calendarEventId: gcalEvent.id,
-          syncedAt: new Date(),
-          syncError: null,
-        };
-        if (gcalEvent.hangoutLink) {
-          updateData.meetLink = gcalEvent.hangoutLink;
-        }
-        await prisma.meeting.update({ where: { id }, data: updateData });
+      if (!gcalEvent?.id) {
+        return { ok: false, error: 'Google did not return an event id. Check calendar permissions.' };
       }
-    } else if (meeting.calendarEventId) {
+
+      const updateData: { calendarEventId: string; meetLink?: string; syncedAt: Date; syncError: null } = {
+        calendarEventId: gcalEvent.id,
+        syncedAt: new Date(),
+        syncError: null,
+      };
+      if (gcalEvent.hangoutLink) {
+        updateData.meetLink = gcalEvent.hangoutLink;
+      }
+      await prisma.meeting.update({ where: { id }, data: updateData });
+      return { ok: true };
+    }
+
+    if (meeting.calendarEventId) {
       // Simple field update — patch the existing Google Calendar event.
       // Pass recurrence too so a previously-bailed cadence change (where the
       // DB row updated but the Google delete failed, leaving Google on the
@@ -138,18 +147,50 @@ export async function PATCH(
         body.cadence ?? meeting.cadence,
         body.dayOfWeek !== undefined ? body.dayOfWeek : meeting.dayOfWeek,
       );
-      await updateGoogleEvent(meeting.createdById, meeting.calendarEventId, {
-        summary: body.title,
-        description: body.description !== undefined ? (body.description || '') : undefined,
-        start: body.timeStart ? new Date(`1970-01-01T${body.timeStart}:00`).toISOString() : undefined,
-        end: body.timeEnd ? new Date(`1970-01-01T${body.timeEnd}:00`).toISOString() : undefined,
-        recurrence,
-      }, targetCalendarId);
+      try {
+        const patched = await updateGoogleEvent(meeting.createdById, meeting.calendarEventId, {
+          summary: body.title,
+          description: body.description !== undefined ? (body.description || '') : undefined,
+          start: body.timeStart ? new Date(`1970-01-01T${body.timeStart}:00`).toISOString() : undefined,
+          end: body.timeEnd ? new Date(`1970-01-01T${body.timeEnd}:00`).toISOString() : undefined,
+          recurrence,
+        }, targetCalendarId);
+        if (!patched) {
+          // Event was deleted on Google's side (404/410). Surface so the user
+          // can hit Retry sync, which will create a replacement.
+          return { ok: false, error: 'Google Calendar event no longer exists. Click Retry sync to recreate it.' };
+        }
+        await prisma.meeting.update({
+          where: { id },
+          data: { syncedAt: new Date(), syncError: null },
+        });
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Unknown Google Calendar error' };
+      }
     }
-  };
-  syncToGcal().catch((err) => console.warn('[meetings] Google Calendar sync on update failed:', err));
 
-  return Response.json(updated, NO_STORE);
+    // No existing Google event and no cadence-driven create — nothing to sync.
+    return { ok: true };
+  };
+
+  const syncResult = await syncToGcal();
+  if (!syncResult.ok) {
+    console.warn('[meetings] Google Calendar sync on update failed:', syncResult.error);
+    // Persist the error if the inner branch didn't already (e.g. update path).
+    await prisma.meeting.update({
+      where: { id },
+      data: { syncError: syncResult.error },
+    }).catch((err) => console.error('[meetings] failed to persist syncError', err));
+  }
+
+  // Re-fetch so the response reflects any sync-driven writes (calendarEventId,
+  // syncedAt, syncError) without a follow-up GET from the client.
+  const finalMeeting = await prisma.meeting.findUnique({
+    where: { id },
+    include: MEETING_INCLUDE,
+  });
+  return Response.json(finalMeeting ?? updated, NO_STORE);
 }
 
 export async function DELETE(

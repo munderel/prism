@@ -51,9 +51,11 @@ export async function POST(request: NextRequest) {
     include: MEETING_INCLUDE,
   });
 
-  // Sync meeting to Google Calendar (all cadences). Fire-and-forget, but
-  // the outcome (success or error message) is persisted on the meeting row
-  // so the UI can surface sync failures instead of swallowing them.
+  // Sync meeting to Google Calendar (all cadences). Awaited so the response
+  // body reflects the final sync state (calendarEventId / meetLink on success,
+  // syncError on failure). Background promises don't survive Vercel's
+  // function suspend after Response.json — see /api/meetings/[id]/sync for
+  // the retry pattern this mirrors.
   const syncToGcal = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
     const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
     if (!hasGoogle) {
@@ -154,20 +156,25 @@ export async function POST(request: NextRequest) {
     }
   };
 
-  syncToGcal().then(async (result) => {
-    if (!result.ok) {
-      console.warn('[meetings] Google Calendar sync failed:', result.error);
-      await prisma.meeting.update({
-        where: { id: meeting.id },
-        data: { syncError: result.error, syncedAt: null },
-      }).catch((err) => {
-        // Don't swallow silently — if we can't persist the error the meeting
-        // row is stuck in a middle state (no calendarEventId, no syncError)
-        // and the UI has no way to know sync failed.
-        console.error('[meetings] failed to persist syncError', err);
-      });
-    }
-  }).catch((err) => console.warn('[meetings] Google Calendar sync threw:', err));
+  const syncResult = await syncToGcal();
+  if (!syncResult.ok) {
+    console.warn('[meetings] Google Calendar sync failed:', syncResult.error);
+    await prisma.meeting.update({
+      where: { id: meeting.id },
+      data: { syncError: syncResult.error, syncedAt: null },
+    }).catch((err) => {
+      // Don't swallow silently — if we can't persist the error the meeting
+      // row is stuck in a middle state (no calendarEventId, no syncError)
+      // and the UI has no way to know sync failed.
+      console.error('[meetings] failed to persist syncError', err);
+    });
+  }
 
-  return Response.json(meeting, { status: 201 });
+  // Re-fetch so the response carries the post-sync state (calendarEventId,
+  // meetLink, htmlLink, syncedAt, syncError).
+  const finalMeeting = await prisma.meeting.findUnique({
+    where: { id: meeting.id },
+    include: MEETING_INCLUDE,
+  });
+  return Response.json(finalMeeting ?? meeting, { status: 201 });
 }
