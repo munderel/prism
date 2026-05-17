@@ -11,6 +11,7 @@ const eventsListMock = vi.fn();
 const eventsDeleteMock = vi.fn();
 const eventsPatchMock = vi.fn();
 const calendarListGetMock = vi.fn();
+const calendarListListMock = vi.fn();
 
 const fakeCalendarClient = {
   events: {
@@ -19,7 +20,7 @@ const fakeCalendarClient = {
     delete: eventsDeleteMock,
     patch: eventsPatchMock,
   },
-  calendarList: { get: calendarListGetMock },
+  calendarList: { get: calendarListGetMock, list: calendarListListMock },
 };
 
 vi.mock('googleapis', () => {
@@ -73,6 +74,7 @@ beforeEach(() => {
   eventsPatchMock.mockReset();
   calendarListGetMock.mockReset();
   calendarListGetMock.mockResolvedValue({ data: { id: 'primary' } });
+  calendarListListMock.mockReset();
 });
 
 // Import AFTER mocks so the module under test sees the stubbed deps.
@@ -81,6 +83,7 @@ import {
   safeDeleteGoogleEvent,
   listTaggedPrismEvents,
   listAllTaggedPrismMasters,
+  listWritableCalendarIds,
   findExistingPrismEvent,
   syncTaskCalendarEvent,
   PRISM_MANAGED_EXT_KEY,
@@ -400,5 +403,44 @@ describe('listAllTaggedPrismMasters', () => {
     const result = await listAllTaggedPrismMasters('user1', []);
     expect(result).toEqual([]);
     expect(eventsListMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('listWritableCalendarIds', () => {
+  it('asks Google for writer-or-above calendars and returns just their ids', async () => {
+    calendarListListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          { id: 'primary', accessRole: 'owner' },
+          { id: 'cal-team', accessRole: 'writer' },
+        ],
+      },
+    });
+
+    const result = await listWritableCalendarIds('user1');
+
+    expect(calendarListListMock).toHaveBeenCalledTimes(1);
+    expect(calendarListListMock.mock.calls[0][0]).toEqual({ minAccessRole: 'writer' });
+    expect(result).toEqual(['primary', 'cal-team']);
+  });
+
+  it('returns [] on API failure (non-fatal — sweep falls back to caller calendar set)', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    calendarListListMock.mockRejectedValueOnce(Object.assign(new Error('rate limited'), { code: 429 }));
+
+    const result = await listWritableCalendarIds('user1');
+
+    expect(result).toEqual([]);
+    consoleWarn.mockRestore();
+  });
+
+  it('drops items without an id (Google sometimes returns synthetic entries)', async () => {
+    calendarListListMock.mockResolvedValueOnce({
+      data: { items: [{ id: 'real-cal' }, { id: null }, {}] },
+    });
+
+    const result = await listWritableCalendarIds('user1');
+
+    expect(result).toEqual(['real-cal']);
   });
 });

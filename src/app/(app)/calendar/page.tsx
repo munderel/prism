@@ -562,13 +562,37 @@ export default function CalendarPage() {
       if (res.ok) {
         const data = await res.json();
         const count = data.updates?.length ?? 0;
-        toast.success(
-          forceResync
-            ? `Force resync complete — ${count} change${count === 1 ? '' : 's'} applied`
-            : count > 0
-              ? `Synced ${count} change${count === 1 ? '' : 's'} from Google Calendar`
-              : 'Calendar is up to date'
-        );
+        const sweptCount = Array.isArray(data.swept) ? data.swept.length : 0;
+        const failedCount = Array.isArray(data.failedDeletions) ? data.failedDeletions.length : 0;
+        const sweptSuffix = sweptCount > 0 ? ` — cleaned ${sweptCount} orphan${sweptCount === 1 ? '' : 's'}` : '';
+        const failedSuffix = failedCount > 0 ? `, ${failedCount} delete${failedCount === 1 ? '' : 's'} failed` : '';
+
+        // When a delete fails, dump the swept + failedDeletions payload so the
+        // user can copy it from DevTools. The sweep is the only path that can
+        // clear duplicate Prism-tagged events on Google; if Google rejects the
+        // delete (auth scope, ACL, rate limit) we need the event ids visible.
+        if (failedCount > 0) {
+          console.warn('[calendar] Force Resync had delete failures', {
+            swept: data.swept,
+            failedDeletions: data.failedDeletions,
+            updates: data.updates,
+          });
+          toast.error(
+            forceResync
+              ? `Force resync complete${sweptSuffix}${failedSuffix} — see console`
+              : `Sync complete${sweptSuffix}${failedSuffix} — see console`
+          );
+        } else {
+          toast.success(
+            forceResync
+              ? `Force resync complete — ${count} change${count === 1 ? '' : 's'} applied${sweptSuffix}`
+              : count > 0
+                ? `Synced ${count} change${count === 1 ? '' : 's'} from Google Calendar${sweptSuffix}`
+                : sweptCount > 0
+                  ? `Calendar up to date${sweptSuffix}`
+                  : 'Calendar is up to date'
+          );
+        }
         // Invalidate all calendar SWR caches (any date range) so CalendarView refreshes
         globalMutate(
           (key: unknown) => typeof key === 'string' && key.startsWith('/api/calendar'),

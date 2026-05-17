@@ -634,6 +634,35 @@ export async function listAllTaggedPrismMasters(
 }
 
 /**
+ * Return every calendar id the user has writer or owner access to. Used by the
+ * orphan sweep so Prism-tagged events on calendars the user can edit but hasn't
+ * marked as selected for display (e.g. the primary calendar after switching the
+ * sync target, or a previously-selected calendar that's since been hidden) are
+ * still discovered and deleted. `minAccessRole: 'writer'` filters out read-only
+ * shared calendars at the Google API layer so we never attempt to delete from
+ * a calendar Prism cannot have written to.
+ *
+ * Non-fatal: returns [] on any failure so the sweep falls back to whatever
+ * calendar set the caller already had.
+ */
+export async function listWritableCalendarIds(userId: string): Promise<string[]> {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return [];
+  try {
+    const response = await withBackoff(
+      () => calendar.calendarList.list({ minAccessRole: 'writer' }),
+      'calendarList.list(writable)',
+    );
+    return (response.data.items ?? [])
+      .map((cal) => cal.id)
+      .filter((id): id is string => typeof id === 'string');
+  } catch (err) {
+    console.warn('[calendar] listWritableCalendarIds failed:', err);
+    return [];
+  }
+}
+
+/**
  * Find an existing Prism-managed Google event for a specific Prism record
  * (task, aim, meeting, recurring series, etc.) by querying for events tagged
  * with `extendedProperties.private.prismRecordId = recordId`.
