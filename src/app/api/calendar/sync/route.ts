@@ -6,6 +6,7 @@ import { parseBody, syncCalendarSchema } from '@/lib/schemas';
 import {
   listGoogleEvents,
   listAllTaggedPrismMasters,
+  listWritableCalendarIds,
   createGoogleEvent,
   deleteGoogleEvent,
   safeDeleteGoogleEvent,
@@ -847,18 +848,25 @@ export async function POST(request: NextRequest) {
     user.googleSyncState = {};
   }
 
+  // Widen the inventory beyond `selectedCalendarIds` to every calendar the user
+  // has writer/owner access to. Catches Prism-tagged orphans on calendars the
+  // user has since hidden from `selectedCalendarIds` but Prism wrote to under
+  // an older sync target — those are invisible to a `calendarIds`-only scan
+  // and therefore survive every sweep, including Force Resync.
+  const writableCalendarIds = await listWritableCalendarIds(auth.userId);
+  const sweepCalendarIds = Array.from(new Set([...calendarIds, ...writableCalendarIds]));
+
   const [gcalEvents, allTaggedMasters, tasks, aimInstances, processes, reviews, powerdownSessions] = await Promise.all([
     listGoogleEvents(auth.userId, start, end, calendarIds, { showDeleted: true }),
     // Window-independent inventory of Prism-tagged masters and one-offs across
-    // ALL selected calendars (not just the sync target). Used to dedupe before
-    // insert (so we attach to a surviving master whose instances may fall
-    // outside [start,end]) and to drive the orphan sweep at end-of-handler.
-    //
-    // Spanning all calendars is what catches orphans stranded on a previous
-    // sync target after the user switches `syncTargetCalendarId`: Prism only
-    // writes to the current target, so any Prism-tagged event on a non-target
-    // calendar is, by definition, an orphan.
-    listAllTaggedPrismMasters(auth.userId, calendarIds),
+    // every writable calendar — wider than `calendarIds` so the sweep catches
+    // orphans on calendars the user has since deselected from display. Used to
+    // dedupe before insert (so we attach to a surviving master whose instances
+    // may fall outside [start,end]) and to drive the orphan sweep at end-of-
+    // handler. The `prismManaged='1'` tag is what makes the cross-calendar
+    // delete safe: Prism is the only writer of that tag, so any tagged event
+    // on a non-selected calendar is, by construction, an orphan.
+    listAllTaggedPrismMasters(auth.userId, sweepCalendarIds),
     prisma.task.findMany({
       where: {
         AND: [
