@@ -41,6 +41,7 @@ export function YamlImportExport({
 }: YamlImportExportProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [diff, setDiff] = useState<any>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [yamlContent, setYamlContent] = useState('');
   const [importing, setImporting] = useState(false);
   const [exampleMenuOpen, setExampleMenuOpen] = useState(false);
@@ -101,6 +102,7 @@ export function YamlImportExport({
     if (res.ok) {
       const data = await res.json();
       setDiff(data.diff);
+      setWarnings(data.warnings ?? []);
     }
 
     // Reset file input
@@ -116,8 +118,13 @@ export function YamlImportExport({
     });
 
     if (res.ok) {
-      setDiff(null);
-      setYamlContent('');
+      const data = await res.json();
+      setWarnings(data.warnings ?? []);
+      // Only auto-dismiss the diff if there are no warnings worth showing.
+      if (!data.warnings?.length) {
+        setDiff(null);
+        setYamlContent('');
+      }
       onImportComplete();
     }
     setImporting(false);
@@ -251,10 +258,80 @@ export function YamlImportExport({
               </div>
             )}
 
+            {(diff.meta?.linksAdded?.length > 0 || diff.meta?.linksRemoved?.length > 0) && (
+              <div className="mb-2">
+                <span className="text-xs font-medium text-cyan-400">Goal link changes</span>
+                {diff.meta.linksAdded.map((l: any, i: number) => (
+                  <div key={`la${i}`} className="text-xs text-green-300/70 ml-4">
+                    + {l.companyGoal} → {l.user}: {l.goal}
+                  </div>
+                ))}
+                {diff.meta.linksRemoved.map((l: any, i: number) => (
+                  <div key={`lr${i}`} className="text-xs text-red-300/70 ml-4">
+                    - {l.companyGoal} → {l.user}: {l.goal}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(diff.meta?.companyAssignmentsAdded?.length > 0 ||
+              diff.meta?.companyAssignmentsRemoved?.length > 0 ||
+              diff.meta?.companyAssignmentsModified?.length > 0) && (
+              <div className="mb-2">
+                <span className="text-xs font-medium text-cyan-400">Company assignment changes</span>
+                {diff.meta.companyAssignmentsAdded.map((a: any, i: number) => (
+                  <div key={`caa${i}`} className="text-xs text-green-300/70 ml-4">
+                    + {a.user}{a.notes ? ` (${a.notes})` : ''}
+                  </div>
+                ))}
+                {diff.meta.companyAssignmentsRemoved.map((a: any, i: number) => (
+                  <div key={`car${i}`} className="text-xs text-red-300/70 ml-4">
+                    - {a.user}
+                  </div>
+                ))}
+                {diff.meta.companyAssignmentsModified.map((a: any, i: number) => (
+                  <div key={`cam${i}`} className="text-xs text-yellow-300/70 ml-4">
+                    ~ {a.user}: {Object.keys(a.changes).join(', ')}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(diff.meta?.visibility || diff.meta?.weekStartDay) && (
+              <div className="mb-2">
+                <span className="text-xs font-medium text-yellow-400">Stack metadata</span>
+                {diff.meta.visibility && (
+                  <div className="text-xs text-yellow-300/70 ml-4">
+                    visibility: {String(diff.meta.visibility.from)} → {String(diff.meta.visibility.to)}
+                  </div>
+                )}
+                {diff.meta.weekStartDay && (
+                  <div className="text-xs text-yellow-300/70 ml-4">
+                    week_start_day: {String(diff.meta.weekStartDay.from)} → {String(diff.meta.weekStartDay.to)}
+                  </div>
+                )}
+              </div>
+            )}
+
             {diff.added.length === 0 && diff.deleted.length === 0 &&
-              diff.modified.length === 0 && !diff.kpiChanges?.length && !diff.taskChanges?.length && (
+              diff.modified.length === 0 && !diff.kpiChanges?.length && !diff.taskChanges?.length &&
+              !diff.meta?.linksAdded?.length && !diff.meta?.linksRemoved?.length &&
+              !diff.meta?.companyAssignmentsAdded?.length && !diff.meta?.companyAssignmentsRemoved?.length &&
+              !diff.meta?.companyAssignmentsModified?.length &&
+              !diff.meta?.visibility && !diff.meta?.weekStartDay && (
                 <p className="text-xs text-[var(--text-muted)]">No changes detected.</p>
               )}
+
+            {warnings.length > 0 && (
+              <div className="mt-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-2">
+                <div className="text-xs font-medium text-yellow-400 mb-1">
+                  {warnings.length} warning{warnings.length !== 1 ? 's' : ''}
+                </div>
+                {warnings.map((w, i) => (
+                  <div key={i} className="text-xs text-yellow-300/70 ml-2">• {w}</div>
+                ))}
+              </div>
+            )}
 
             <div className="flex items-center gap-2 mt-4">
               <button
@@ -268,6 +345,7 @@ export function YamlImportExport({
               <button
                 onClick={() => {
                   setDiff(null);
+                  setWarnings([]);
                   setYamlContent('');
                 }}
                 className="flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"

@@ -16,6 +16,21 @@ export interface TaskNode {
   preferredTimeStart?: string;
   preferredTimeEnd?: string;
   taskType?: string;
+  // Round-trip additions
+  parentId?: string;
+  processId?: string;
+  aimInstanceId?: string;
+  calendarEventId?: string;
+  assignee?: string;           // email
+  deliverableDone?: boolean;
+  successCriteria?: unknown;   // JSON passthrough
+  isPinned?: boolean;
+  isAutoScheduled?: boolean;
+  winTheDayRank?: number;
+  startedAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+  rescheduledTo?: string;
 }
 
 export interface KpiNode {
@@ -28,6 +43,8 @@ export interface KpiNode {
   complete?: boolean;
   completed_at?: string;
   linked_to?: string;
+  owner?: string;              // email
+  sortOrder?: number;
 }
 
 export interface GoalNode {
@@ -42,6 +59,8 @@ export interface GoalNode {
   children?: GoalNode[];
   tasks?: TaskNode[];
   kpis?: KpiNode[];
+  sortOrder?: number;
+  assignees?: string[];        // emails
 }
 
 export interface YamlMeta {
@@ -51,6 +70,9 @@ export interface YamlMeta {
   exported_at: string;
   mtp?: string;
   links?: { company_goal: string; individual_goals: { user: string; goal: string }[] }[];
+  visibility?: string;
+  week_start_day?: number;
+  company_assignments?: { user: string; notes?: string }[];
 }
 
 export interface GoalDiffChange {
@@ -74,12 +96,24 @@ export interface TaskDiffEntry {
   modified: { id?: string; title: string; changes: Record<string, GoalDiffChange> }[];
 }
 
+export interface MetaDiff {
+  visibility?: GoalDiffChange;
+  weekStartDay?: GoalDiffChange;
+  companyAssignmentsAdded: { user: string; notes?: string }[];
+  companyAssignmentsRemoved: { user: string }[];
+  companyAssignmentsModified: { user: string; changes: Record<string, GoalDiffChange> }[];
+  linksAdded: { companyGoal: string; user: string; goal: string }[];
+  linksRemoved: { companyGoal: string; user: string; goal: string }[];
+}
+
 export interface GoalDiff {
   added: GoalNode[];
   deleted: { id: string; title: string }[];
   modified: { id: string; title: string; changes: Record<string, GoalDiffChange> }[];
   kpiChanges: KpiDiffEntry[];
   taskChanges: TaskDiffEntry[];
+  meta?: MetaDiff;
+  warnings: string[];
 }
 
 // Maps GoalLevel to YAML child key name
@@ -108,6 +142,8 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
   if (node.dueDate) obj.date = node.dueDate;
   if (node.startDate) obj.start_date = node.startDate;
   if (node.endDate) obj.end_date = node.endDate;
+  if (node.sortOrder != null && node.sortOrder !== 0) obj.sort_order = node.sortOrder;
+  if (node.assignees?.length) obj.assignees = [...node.assignees];
 
   if (node.tasks?.length) {
     obj.tasks = node.tasks.map((t) => {
@@ -116,6 +152,10 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
       tObj.title = t.title;
       if (t.description) tObj.description = t.description;
       if (t.deliverable) tObj.deliverable = t.deliverable;
+      if (t.deliverableDone) tObj.deliverable_done = true;
+      if (t.successCriteria !== undefined && t.successCriteria !== null) {
+        tObj.success_criteria = t.successCriteria;
+      }
       if (t.status && t.status !== 'TODO') tObj.status = t.status;
       if (t.priority && t.priority !== 'MEDIUM') tObj.priority = t.priority;
       if (t.taskType && t.taskType !== 'IMPROVE') tObj.task_type = t.taskType;
@@ -125,8 +165,20 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
       if (t.timeBlockEnd) tObj.time_block_end = t.timeBlockEnd;
       if (t.recurrenceRule) tObj.recurrence_rule = t.recurrenceRule;
       if (t.isWinTheDay) tObj.win_the_day = true;
+      if (t.winTheDayRank != null) tObj.win_the_day_rank = t.winTheDayRank;
+      if (t.isPinned) tObj.is_pinned = true;
+      if (t.isAutoScheduled) tObj.is_auto_scheduled = true;
       if (t.preferredTimeStart) tObj.preferred_time_start = t.preferredTimeStart;
       if (t.preferredTimeEnd) tObj.preferred_time_end = t.preferredTimeEnd;
+      if (t.startedAt) tObj.started_at = t.startedAt;
+      if (t.completedAt) tObj.completed_at = t.completedAt;
+      if (t.failedAt) tObj.failed_at = t.failedAt;
+      if (t.rescheduledTo) tObj.rescheduled_to = t.rescheduledTo;
+      if (t.parentId) tObj.parent_task_id = t.parentId;
+      if (t.processId) tObj.process_id = t.processId;
+      if (t.aimInstanceId) tObj.aim_instance_id = t.aimInstanceId;
+      if (t.calendarEventId) tObj.calendar_event_id = t.calendarEventId;
+      if (t.assignee) tObj.assignee = t.assignee;
       return tObj;
     });
   }
@@ -143,6 +195,8 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
       if (k.complete) kObj.complete = k.complete;
       if (k.completed_at) kObj.completed_at = k.completed_at;
       if (k.linked_to) kObj.linked_to = k.linked_to;
+      if (k.owner) kObj.owner = k.owner;
+      if (k.sortOrder != null && k.sortOrder !== 0) kObj.sort_order = k.sortOrder;
       return kObj;
     });
   }
@@ -167,6 +221,10 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
   if (obj.date) node.dueDate = obj.date;
   if (obj.start_date) node.startDate = obj.start_date;
   if (obj.end_date) node.endDate = obj.end_date;
+  if (obj.sort_order !== undefined) node.sortOrder = obj.sort_order;
+  if (Array.isArray(obj.assignees)) {
+    node.assignees = obj.assignees.filter((e: unknown): e is string => typeof e === 'string');
+  }
 
   if (obj.tasks && Array.isArray(obj.tasks)) {
     if (level !== 'WEEKLY') {
@@ -184,14 +242,28 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
       if (t.task_type !== undefined) task.taskType = t.task_type;
       if (t.description !== undefined) task.description = t.description;
       if (t.deliverable !== undefined) task.deliverable = t.deliverable;
+      if (t.deliverable_done !== undefined) task.deliverableDone = Boolean(t.deliverable_done);
+      if (t.success_criteria !== undefined) task.successCriteria = t.success_criteria;
       if (t.date !== undefined) task.dueDate = t.date;
       if (t.estimated_minutes !== undefined) task.estimatedMinutes = t.estimated_minutes;
       if (t.time_block_start !== undefined) task.timeBlockStart = t.time_block_start;
       if (t.time_block_end !== undefined) task.timeBlockEnd = t.time_block_end;
       if (t.recurrence_rule !== undefined) task.recurrenceRule = t.recurrence_rule;
       if (t.win_the_day !== undefined) task.isWinTheDay = Boolean(t.win_the_day);
+      if (t.win_the_day_rank !== undefined) task.winTheDayRank = t.win_the_day_rank;
+      if (t.is_pinned !== undefined) task.isPinned = Boolean(t.is_pinned);
+      if (t.is_auto_scheduled !== undefined) task.isAutoScheduled = Boolean(t.is_auto_scheduled);
       if (t.preferred_time_start !== undefined) task.preferredTimeStart = t.preferred_time_start;
       if (t.preferred_time_end !== undefined) task.preferredTimeEnd = t.preferred_time_end;
+      if (t.started_at !== undefined) task.startedAt = t.started_at;
+      if (t.completed_at !== undefined) task.completedAt = t.completed_at;
+      if (t.failed_at !== undefined) task.failedAt = t.failed_at;
+      if (t.rescheduled_to !== undefined) task.rescheduledTo = t.rescheduled_to;
+      if (t.parent_task_id !== undefined) task.parentId = t.parent_task_id;
+      if (t.process_id !== undefined) task.processId = t.process_id;
+      if (t.aim_instance_id !== undefined) task.aimInstanceId = t.aim_instance_id;
+      if (t.calendar_event_id !== undefined) task.calendarEventId = t.calendar_event_id;
+      if (t.assignee !== undefined) task.assignee = t.assignee;
       return task;
     });
   }
@@ -207,6 +279,8 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
       complete: k.complete,
       completed_at: k.completed_at,
       linked_to: k.linked_to,
+      owner: k.owner,
+      sortOrder: k.sort_order,
     }));
   }
 
@@ -498,8 +572,16 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
       dueDate: toIsoString(g.dueDate),
       startDate: toIsoString(g.startDate),
       endDate: toIsoString(g.endDate),
+      sortOrder: g.sortOrder ?? undefined,
       children: [],
     };
+
+    if (Array.isArray(g.assignees) && g.assignees.length > 0) {
+      const emails = g.assignees
+        .map((a: any) => a.user?.email)
+        .filter((e: unknown): e is string => typeof e === 'string');
+      if (emails.length > 0) node.assignees = emails;
+    }
 
     // Include KPIs if present on DB record
     if (g.kpis?.length) {
@@ -513,6 +595,8 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
         complete: k.type === 'BINARY' ? k.isComplete : undefined,
         completed_at: toIsoString(k.completedAt),
         linked_to: k._linkedKpiName ?? undefined,
+        owner: k.owner?.email ?? undefined,
+        sortOrder: k.sortOrder ?? undefined,
       }));
     }
 
@@ -523,6 +607,8 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
         title: t.title,
         description: t.description ?? undefined,
         deliverable: t.deliverable ?? undefined,
+        deliverableDone: t.deliverableDone || undefined,
+        successCriteria: t.successCriteria ?? undefined,
         status: t.status,
         priority: t.priority,
         dueDate: toIsoString(t.dueDate),
@@ -531,9 +617,21 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
         timeBlockEnd: toIsoString(t.timeBlockEnd),
         recurrenceRule: t.recurrenceRule ?? undefined,
         isWinTheDay: t.isWinTheDay || undefined,
+        winTheDayRank: t.winTheDayRank ?? undefined,
+        isPinned: t.isPinned || undefined,
+        isAutoScheduled: t.isAutoScheduled || undefined,
         preferredTimeStart: t.preferredTimeStart ?? undefined,
         preferredTimeEnd: t.preferredTimeEnd ?? undefined,
         taskType: t.taskType ?? undefined,
+        startedAt: toIsoString(t.startedAt),
+        completedAt: toIsoString(t.completedAt),
+        failedAt: toIsoString(t.failedAt),
+        rescheduledTo: toIsoString(t.rescheduledTo),
+        parentId: t.parentId ?? undefined,
+        processId: t.processId ?? undefined,
+        aimInstanceId: t.aimInstanceId ?? undefined,
+        calendarEventId: t.calendarEventId ?? undefined,
+        assignee: t.assignee?.email ?? undefined,
       }));
     }
 
@@ -588,6 +686,7 @@ const DIFF_FIELDS: (keyof GoalNode)[] = [
   'dueDate',
   'startDate',
   'endDate',
+  'sortOrder',
 ];
 const KPI_DIFF_FIELDS: (keyof KpiNode)[] = [
   'type',
@@ -597,11 +696,14 @@ const KPI_DIFF_FIELDS: (keyof KpiNode)[] = [
   'complete',
   'completed_at',
   'linked_to',
+  'owner',
+  'sortOrder',
 ];
 const TASK_DIFF_FIELDS: (keyof TaskNode)[] = [
   'title',
   'description',
   'deliverable',
+  'deliverableDone',
   'status',
   'priority',
   'taskType',
@@ -611,18 +713,56 @@ const TASK_DIFF_FIELDS: (keyof TaskNode)[] = [
   'timeBlockEnd',
   'recurrenceRule',
   'isWinTheDay',
+  'winTheDayRank',
+  'isPinned',
+  'isAutoScheduled',
   'preferredTimeStart',
   'preferredTimeEnd',
+  'startedAt',
+  'completedAt',
+  'failedAt',
+  'rescheduledTo',
+  'parentId',
+  'processId',
+  'aimInstanceId',
+  'calendarEventId',
+  'assignee',
 ];
+
+// Fields whose values are JSON-like objects/arrays. Strict !== always returns
+// "changed" for these because each parse produces a new reference, so compare
+// by JSON.stringify instead. Stable key order is preserved by both Prisma and
+// js-yaml for plain objects, so this round-trips correctly in practice.
+const JSON_DEEP_EQUAL_FIELDS = new Set<string>(['successCriteria']);
 
 function diffFields<T>(current: T, incoming: T, fields: (keyof T)[]): Record<string, GoalDiffChange> {
   const changes: Record<string, GoalDiffChange> = {};
   for (const field of fields) {
-    if (current[field] !== incoming[field]) {
-      changes[field as string] = { from: current[field], to: incoming[field] };
+    const cur = current[field];
+    const inc = incoming[field];
+    if (JSON_DEEP_EQUAL_FIELDS.has(field as string)) {
+      if (JSON.stringify(cur) !== JSON.stringify(inc)) {
+        changes[field as string] = { from: cur, to: inc };
+      }
+    } else if (cur !== inc) {
+      changes[field as string] = { from: cur, to: inc };
     }
   }
   return changes;
+}
+
+function diffAssignees(
+  current: string[] | undefined,
+  incoming: string[] | undefined
+): { added: string[]; removed: string[] } | null {
+  const cur = new Set(current ?? []);
+  const inc = new Set(incoming ?? []);
+  const added: string[] = [];
+  const removed: string[] = [];
+  inc.forEach((e) => { if (!cur.has(e)) added.push(e); });
+  cur.forEach((e) => { if (!inc.has(e)) removed.push(e); });
+  if (added.length === 0 && removed.length === 0) return null;
+  return { added, removed };
 }
 
 function diffKpis(currentKpis: KpiNode[], incomingKpis: KpiNode[]): Omit<KpiDiffEntry, 'goalTitle' | 'goalId'> | null {
@@ -722,7 +862,12 @@ function diffTasks(currentTasks: TaskNode[], incomingTasks: TaskNode[]): Omit<Ta
   return { added, removed, modified };
 }
 
-export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
+export function diffGoals(
+  current: GoalNode[],
+  incoming: GoalNode[],
+  currentMeta?: Partial<YamlMeta>,
+  incomingMeta?: Partial<YamlMeta>
+): GoalDiff {
   const currentMap = flattenGoals(current);
   const incomingMap = flattenGoals(incoming);
 
@@ -744,6 +889,19 @@ export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
     if (!currentNode) return;
 
     const changes = diffFields(currentNode, incomingNode, DIFF_FIELDS);
+
+    // Assignees: emit as paired {added,removed} entries inside the same
+    // `changes` map so existing consumers iterating Object.keys() still work.
+    const assigneesDiff = diffAssignees(currentNode.assignees, incomingNode.assignees);
+    if (assigneesDiff) {
+      if (assigneesDiff.added.length > 0) {
+        changes.assignees_added = { from: [], to: assigneesDiff.added };
+      }
+      if (assigneesDiff.removed.length > 0) {
+        changes.assignees_removed = { from: assigneesDiff.removed, to: [] };
+      }
+    }
+
     if (Object.keys(changes).length > 0) {
       modified.push({ id, title: incomingNode.title, changes });
     }
@@ -759,5 +917,85 @@ export function diffGoals(current: GoalNode[], incoming: GoalNode[]): GoalDiff {
     }
   });
 
-  return { added, deleted, modified, kpiChanges, taskChanges };
+  const meta = diffMeta(currentMeta, incomingMeta);
+  return { added, deleted, modified, kpiChanges, taskChanges, meta, warnings: [] };
+}
+
+function diffMeta(
+  current: Partial<YamlMeta> | undefined,
+  incoming: Partial<YamlMeta> | undefined
+): MetaDiff | undefined {
+  if (!current && !incoming) return undefined;
+  const cur = current ?? {};
+  const inc = incoming ?? {};
+
+  const result: MetaDiff = {
+    companyAssignmentsAdded: [],
+    companyAssignmentsRemoved: [],
+    companyAssignmentsModified: [],
+    linksAdded: [],
+    linksRemoved: [],
+  };
+  let touched = false;
+
+  if (inc.visibility !== undefined && cur.visibility !== inc.visibility) {
+    result.visibility = { from: cur.visibility, to: inc.visibility };
+    touched = true;
+  }
+  if (inc.week_start_day !== undefined && cur.week_start_day !== inc.week_start_day) {
+    result.weekStartDay = { from: cur.week_start_day, to: inc.week_start_day };
+    touched = true;
+  }
+
+  // Company assignments — match by user email.
+  const curAssign = new Map((cur.company_assignments ?? []).map((a) => [a.user, a]));
+  const incAssign = new Map((inc.company_assignments ?? []).map((a) => [a.user, a]));
+  incAssign.forEach((a, user) => {
+    const existing = curAssign.get(user);
+    if (!existing) {
+      result.companyAssignmentsAdded.push({ user, notes: a.notes });
+      touched = true;
+    } else if ((existing.notes ?? null) !== (a.notes ?? null)) {
+      result.companyAssignmentsModified.push({
+        user,
+        changes: { notes: { from: existing.notes ?? null, to: a.notes ?? null } },
+      });
+      touched = true;
+    }
+  });
+  curAssign.forEach((_a, user) => {
+    if (!incAssign.has(user)) {
+      result.companyAssignmentsRemoved.push({ user });
+      touched = true;
+    }
+  });
+
+  // Links — flatten both sides to (companyGoal, user, goal) triples.
+  type LinkTriple = { companyGoal: string; user: string; goal: string };
+  const flatten = (links: YamlMeta['links']): LinkTriple[] => {
+    const out: LinkTriple[] = [];
+    for (const l of links ?? []) {
+      for (const ig of l.individual_goals ?? []) {
+        out.push({ companyGoal: l.company_goal, user: ig.user, goal: ig.goal });
+      }
+    }
+    return out;
+  };
+  const key = (l: LinkTriple) => `${l.companyGoal} ${l.user} ${l.goal}`;
+  const curLinks = new Map(flatten(cur.links).map((l) => [key(l), l]));
+  const incLinks = new Map(flatten(inc.links).map((l) => [key(l), l]));
+  incLinks.forEach((l, k) => {
+    if (!curLinks.has(k)) {
+      result.linksAdded.push(l);
+      touched = true;
+    }
+  });
+  curLinks.forEach((l, k) => {
+    if (!incLinks.has(k)) {
+      result.linksRemoved.push(l);
+      touched = true;
+    }
+  });
+
+  return touched ? result : undefined;
 }
