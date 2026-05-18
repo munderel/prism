@@ -32,11 +32,16 @@ export async function GET(
     include: {
       kpis: {
         orderBy: { sortOrder: 'asc' },
-        include: { linkedKpi: { select: { name: true } } },
+        include: {
+          linkedKpi: { select: { name: true } },
+          owner: { select: { email: true } },
+        },
       },
       tasks: {
         orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+        include: { assignee: { select: { email: true } } },
       },
+      assignees: { include: { user: { select: { email: true } } } },
     },
   });
 
@@ -58,9 +63,11 @@ export async function GET(
     is_company: stack.isCompany,
     exported_at: new Date().toISOString(),
     mtp: stack.owner?.mtp ?? undefined,
+    visibility: stack.visibility,
+    week_start_day: stack.weekStartDay,
   };
 
-  // Include goal links for company stacks
+  // Include goal links and company assignments for company stacks
   if (stack.isCompany) {
     const links = await prisma.goalLink.findMany({
       where: { companyGoal: { stackId: id, deletedAt: null } },
@@ -88,6 +95,15 @@ export async function GET(
     meta.links = Array.from(linkMap.entries()).map(([companyGoal, individualGoals]) => ({
       company_goal: companyGoal,
       individual_goals: individualGoals,
+    }));
+
+    const assignments = await prisma.companyGoalAssignment.findMany({
+      where: { goalStackId: id },
+      include: { user: { select: { email: true } } },
+    });
+    meta.company_assignments = assignments.map((a) => ({
+      user: a.user.email,
+      notes: a.notes ?? undefined,
     }));
   }
 

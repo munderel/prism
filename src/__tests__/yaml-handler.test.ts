@@ -587,3 +587,389 @@ year_2:
     expect(goals[0].children![0].title).toBe('Double pipeline');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Round-trip full fidelity — all new fields
+// ---------------------------------------------------------------------------
+
+describe('round-trip full fidelity — all new fields', () => {
+  // Fixed past timestamp so an accidental `new Date()` overwrite would fail
+  // the assertion. (See plan: never use the current time here.)
+  const FIXED_PAST = '2025-12-01T10:00:00.000Z';
+
+  function buildWeeklyTree(taskOverrides: Partial<GoalNode['tasks'] extends (infer T)[] ? T : never> = {}): GoalNode[] {
+    return [
+      {
+        id: 'h1',
+        level: 'HIGH_HARD',
+        title: 'HHG',
+        status: 'IN_PROGRESS',
+        children: [
+          {
+            id: 's1',
+            level: 'STRATEGIC',
+            title: 'Strat',
+            status: 'IN_PROGRESS',
+            children: [
+              {
+                id: 'm1',
+                level: 'MONTHLY',
+                title: 'Monthly',
+                status: 'IN_PROGRESS',
+                children: [
+                  {
+                    id: 'w1',
+                    level: 'WEEKLY',
+                    title: 'Week 1',
+                    status: 'IN_PROGRESS',
+                    children: [],
+                    tasks: [
+                      {
+                        id: 't1',
+                        title: 'A task',
+                        status: 'TODO',
+                        priority: 'MEDIUM',
+                        ...taskOverrides,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+  }
+
+  function getTask(goals: GoalNode[]) {
+    return goals[0].children![0].children![0].children![0].tasks![0];
+  }
+
+  it('preserves task completedAt, startedAt, failedAt, rescheduledTo', () => {
+    const tree = buildWeeklyTree({
+      status: 'DONE',
+      startedAt: FIXED_PAST,
+      completedAt: '2025-12-01T11:00:00.000Z',
+      failedAt: '2025-12-01T12:00:00.000Z',
+      rescheduledTo: '2025-12-02T00:00:00.000Z',
+    });
+    const yaml = exportGoalsToYaml(tree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    const task = getTask(goals);
+    expect(task.startedAt).toBe(FIXED_PAST);
+    expect(task.completedAt).toBe('2025-12-01T11:00:00.000Z');
+    expect(task.failedAt).toBe('2025-12-01T12:00:00.000Z');
+    expect(task.rescheduledTo).toBe('2025-12-02T00:00:00.000Z');
+  });
+
+  it('preserves task deliverableDone, isPinned, isAutoScheduled, winTheDayRank', () => {
+    const tree = buildWeeklyTree({
+      deliverableDone: true,
+      isPinned: true,
+      isAutoScheduled: true,
+      winTheDayRank: 2,
+    });
+    const yaml = exportGoalsToYaml(tree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    const task = getTask(goals);
+    expect(task.deliverableDone).toBe(true);
+    expect(task.isPinned).toBe(true);
+    expect(task.isAutoScheduled).toBe(true);
+    expect(task.winTheDayRank).toBe(2);
+  });
+
+  it('preserves task successCriteria JSON shape', () => {
+    const criteria = [{ id: 'a', done: false, text: 'first' }, { id: 'b', done: true, text: 'second' }];
+    const tree = buildWeeklyTree({ successCriteria: criteria });
+    const yaml = exportGoalsToYaml(tree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    const task = getTask(goals);
+    expect(task.successCriteria).toEqual(criteria);
+  });
+
+  it('preserves task parentId, processId, aimInstanceId, calendarEventId as opaque ids', () => {
+    const tree = buildWeeklyTree({
+      parentId: 'task_parent_abc',
+      processId: 'proc_xyz',
+      aimInstanceId: 'aim_qwe',
+      calendarEventId: 'gcal_event_123',
+    });
+    const yaml = exportGoalsToYaml(tree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    const task = getTask(goals);
+    expect(task.parentId).toBe('task_parent_abc');
+    expect(task.processId).toBe('proc_xyz');
+    expect(task.aimInstanceId).toBe('aim_qwe');
+    expect(task.calendarEventId).toBe('gcal_event_123');
+  });
+
+  it('preserves task assignee email', () => {
+    const tree = buildWeeklyTree({ assignee: 'someone@example.com' });
+    const yaml = exportGoalsToYaml(tree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    expect(getTask(goals).assignee).toBe('someone@example.com');
+  });
+
+  it('preserves goal sortOrder', () => {
+    const tree: GoalNode[] = [
+      {
+        id: 'h1',
+        level: 'HIGH_HARD',
+        title: 'HHG',
+        status: 'IN_PROGRESS',
+        sortOrder: 3,
+        children: [
+          { id: 's1', level: 'STRATEGIC', title: 'S1', status: 'NOT_STARTED', sortOrder: 5, children: [] },
+        ],
+      },
+    ];
+    const yaml = exportGoalsToYaml(tree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    expect(goals[0].sortOrder).toBe(3);
+    expect(goals[0].children![0].sortOrder).toBe(5);
+  });
+
+  it('preserves goal assignees email list', () => {
+    const tree: GoalNode[] = [
+      {
+        id: 'h1',
+        level: 'HIGH_HARD',
+        title: 'HHG',
+        status: 'IN_PROGRESS',
+        assignees: ['a@example.com', 'b@example.com'],
+        children: [],
+      },
+    ];
+    const yaml = exportGoalsToYaml(tree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    expect(goals[0].assignees).toEqual(['a@example.com', 'b@example.com']);
+  });
+
+  it('preserves kpi sortOrder and owner', () => {
+    const tree: GoalNode[] = [
+      {
+        id: 'h1',
+        level: 'HIGH_HARD',
+        title: 'HHG',
+        status: 'IN_PROGRESS',
+        children: [],
+        kpis: [
+          { name: 'Revenue', type: 'NUMERIC', target: 1000, owner: 'kpi-owner@example.com', sortOrder: 2 },
+        ],
+      },
+    ];
+    const yaml = exportGoalsToYaml(tree, sampleMeta);
+    const { goals } = parseYamlToGoals(yaml);
+    expect(goals[0].kpis![0].owner).toBe('kpi-owner@example.com');
+    expect(goals[0].kpis![0].sortOrder).toBe(2);
+  });
+
+  it('preserves meta.visibility and meta.week_start_day', () => {
+    const meta: YamlMeta = { ...sampleMeta, visibility: 'group', week_start_day: 1 };
+    const yaml = exportGoalsToYaml(sampleTree, meta);
+    const { meta: parsed } = parseYamlToGoals(yaml);
+    expect(parsed.visibility).toBe('group');
+    expect(parsed.week_start_day).toBe(1);
+  });
+
+  it('preserves meta.links round-trip on a company stack', () => {
+    const meta: YamlMeta = {
+      ...sampleMeta,
+      is_company: true,
+      links: [
+        {
+          company_goal: 'Reach $1M ARR',
+          individual_goals: [
+            { user: 'alice@example.com', goal: 'Build pipeline' },
+            { user: 'bob@example.com', goal: 'Close deals' },
+          ],
+        },
+      ],
+    };
+    const yaml = exportGoalsToYaml(sampleTree, meta);
+    const { meta: parsed } = parseYamlToGoals(yaml);
+    expect(parsed.links).toHaveLength(1);
+    expect(parsed.links![0].company_goal).toBe('Reach $1M ARR');
+    expect(parsed.links![0].individual_goals).toHaveLength(2);
+    expect(parsed.links![0].individual_goals[0].user).toBe('alice@example.com');
+  });
+
+  it('preserves meta.company_assignments', () => {
+    const meta: YamlMeta = {
+      ...sampleMeta,
+      is_company: true,
+      company_assignments: [
+        { user: 'alice@example.com', notes: 'owns acquisition' },
+        { user: 'bob@example.com' },
+      ],
+    };
+    const yaml = exportGoalsToYaml(sampleTree, meta);
+    const { meta: parsed } = parseYamlToGoals(yaml);
+    expect(parsed.company_assignments).toHaveLength(2);
+    expect(parsed.company_assignments![0].notes).toBe('owns acquisition');
+    expect(parsed.company_assignments![1].user).toBe('bob@example.com');
+  });
+});
+
+describe('diffGoals — new diff categories', () => {
+  it('KPI sortOrder change surfaces in kpiChanges.modified', () => {
+    const current: GoalNode[] = [
+      {
+        id: 'g1', level: 'WEEKLY', title: 'Week 1', status: 'IN_PROGRESS', children: [],
+        kpis: [{ id: 'k1', name: 'Leads', type: 'NUMERIC', sortOrder: 0 }],
+      },
+    ];
+    const incoming: GoalNode[] = [
+      {
+        id: 'g1', level: 'WEEKLY', title: 'Week 1', status: 'IN_PROGRESS', children: [],
+        kpis: [{ id: 'k1', name: 'Leads', type: 'NUMERIC', sortOrder: 3 }],
+      },
+    ];
+    const diff = diffGoals(current, incoming);
+    expect(diff.kpiChanges).toHaveLength(1);
+    expect(diff.kpiChanges[0].modified[0].changes.sortOrder).toEqual({ from: 0, to: 3 });
+  });
+
+  it('goal assignees added and removed surface in modified.changes', () => {
+    const current: GoalNode[] = [
+      { id: 'g1', level: 'HIGH_HARD', title: 'HHG', status: 'IN_PROGRESS', assignees: ['old@x.com'], children: [] },
+    ];
+    const incoming: GoalNode[] = [
+      { id: 'g1', level: 'HIGH_HARD', title: 'HHG', status: 'IN_PROGRESS', assignees: ['new@x.com'], children: [] },
+    ];
+    const diff = diffGoals(current, incoming);
+    expect(diff.modified).toHaveLength(1);
+    expect(diff.modified[0].changes.assignees_added).toEqual({ from: [], to: ['new@x.com'] });
+    expect(diff.modified[0].changes.assignees_removed).toEqual({ from: ['old@x.com'], to: [] });
+  });
+
+  it('meta.linksAdded and linksRemoved are detected', () => {
+    const currentMeta = {
+      links: [
+        { company_goal: 'A', individual_goals: [{ user: 'u1@x.com', goal: 'old goal' }] },
+      ],
+    };
+    const incomingMeta = {
+      links: [
+        { company_goal: 'A', individual_goals: [{ user: 'u1@x.com', goal: 'new goal' }] },
+      ],
+    };
+    const diff = diffGoals([], [], currentMeta, incomingMeta);
+    expect(diff.meta?.linksAdded).toEqual([{ companyGoal: 'A', user: 'u1@x.com', goal: 'new goal' }]);
+    expect(diff.meta?.linksRemoved).toEqual([{ companyGoal: 'A', user: 'u1@x.com', goal: 'old goal' }]);
+  });
+
+  it('meta.visibility and meta.weekStartDay changes are detected', () => {
+    const diff = diffGoals(
+      [],
+      [],
+      { visibility: 'private', week_start_day: 0 },
+      { visibility: 'group', week_start_day: 1 }
+    );
+    expect(diff.meta?.visibility).toEqual({ from: 'private', to: 'group' });
+    expect(diff.meta?.weekStartDay).toEqual({ from: 0, to: 1 });
+  });
+
+  it('meta.companyAssignmentsAdded/Removed/Modified are detected', () => {
+    const diff = diffGoals(
+      [],
+      [],
+      { company_assignments: [{ user: 'a@x.com', notes: 'old' }, { user: 'b@x.com' }] },
+      { company_assignments: [{ user: 'a@x.com', notes: 'new' }, { user: 'c@x.com' }] }
+    );
+    expect(diff.meta?.companyAssignmentsAdded).toEqual([{ user: 'c@x.com', notes: undefined }]);
+    expect(diff.meta?.companyAssignmentsRemoved).toEqual([{ user: 'b@x.com' }]);
+    expect(diff.meta?.companyAssignmentsModified).toEqual([
+      { user: 'a@x.com', changes: { notes: { from: 'old', to: 'new' } } },
+    ]);
+  });
+
+  it('warnings array is always initialized', () => {
+    const diff = diffGoals([], []);
+    expect(diff.warnings).toEqual([]);
+  });
+});
+
+describe('buildGoalTree — new fields surface from DB rows', () => {
+  it('emits task completedAt, startedAt, failedAt, rescheduledTo, deliverableDone, successCriteria', () => {
+    const criteria = [{ id: 'a', done: false }];
+    const flat = [
+      {
+        id: 'g1', parentId: null, level: 'WEEKLY', title: 'Week', description: null,
+        status: 'IN_PROGRESS', dueDate: null, sortOrder: 0,
+        tasks: [
+          {
+            id: 't1', title: 'T', status: 'DONE', priority: 'MEDIUM',
+            dueDate: null,
+            startedAt: new Date('2025-12-01T10:00:00Z'),
+            completedAt: new Date('2025-12-01T11:00:00Z'),
+            failedAt: null,
+            rescheduledTo: null,
+            deliverableDone: true,
+            successCriteria: criteria,
+            isPinned: true,
+            isAutoScheduled: true,
+            winTheDayRank: 1,
+            isWinTheDay: true,
+            parentId: 'parent_xyz',
+            processId: 'proc_xyz',
+            aimInstanceId: 'aim_xyz',
+            calendarEventId: 'cal_xyz',
+            assignee: { email: 'someone@x.com' },
+          },
+        ],
+      },
+    ];
+    const tree = buildGoalTree(flat as any);
+    const task = tree[0].tasks![0];
+    expect(task.startedAt).toBe('2025-12-01T10:00:00.000Z');
+    expect(task.completedAt).toBe('2025-12-01T11:00:00.000Z');
+    expect(task.deliverableDone).toBe(true);
+    expect(task.successCriteria).toEqual(criteria);
+    expect(task.isPinned).toBe(true);
+    expect(task.isAutoScheduled).toBe(true);
+    expect(task.winTheDayRank).toBe(1);
+    expect(task.parentId).toBe('parent_xyz');
+    expect(task.processId).toBe('proc_xyz');
+    expect(task.aimInstanceId).toBe('aim_xyz');
+    expect(task.calendarEventId).toBe('cal_xyz');
+    expect(task.assignee).toBe('someone@x.com');
+  });
+
+  it('surfaces goal assignees from GoalAssignee relation', () => {
+    const flat = [
+      {
+        id: 'g1', parentId: null, level: 'HIGH_HARD', title: 'HHG', description: null,
+        status: 'IN_PROGRESS', dueDate: null, sortOrder: 0,
+        assignees: [
+          { user: { email: 'alice@x.com' } },
+          { user: { email: 'bob@x.com' } },
+        ],
+      },
+    ];
+    const tree = buildGoalTree(flat as any);
+    expect(tree[0].assignees).toEqual(['alice@x.com', 'bob@x.com']);
+  });
+
+  it('surfaces kpi sortOrder and owner email', () => {
+    const flat = [
+      {
+        id: 'g1', parentId: null, level: 'HIGH_HARD', title: 'HHG', description: null,
+        status: 'IN_PROGRESS', dueDate: null, sortOrder: 0,
+        kpis: [
+          {
+            id: 'k1', name: 'Revenue', type: 'NUMERIC',
+            unit: '$', targetValue: 1000, actualValue: 0,
+            isComplete: false, completedAt: null,
+            sortOrder: 4,
+            owner: { email: 'kpi-owner@x.com' },
+          },
+        ],
+      },
+    ];
+    const tree = buildGoalTree(flat as any);
+    expect(tree[0].kpis![0].sortOrder).toBe(4);
+    expect(tree[0].kpis![0].owner).toBe('kpi-owner@x.com');
+  });
+});
