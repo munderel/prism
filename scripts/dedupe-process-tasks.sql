@@ -30,13 +30,13 @@ ORDER BY "processId", "dueDate", title, "createdAt";
 -- ─── Step 2: actual delete ───────────────────────────────────────────────────
 -- Run only after Step 1 returns the expected rows.
 
--- BEGIN;
--- DELETE FROM "Task"
--- WHERE "processId" IS NOT NULL
---   AND id NOT IN (
---     SELECT DISTINCT ON ("processId", "dueDate", title) id
---     FROM "Task"
---     WHERE "processId" IS NOT NULL
---     ORDER BY "processId", "dueDate", title, "createdAt" ASC
---   );
--- COMMIT;
+BEGIN;
+DELETE FROM "Task"
+WHERE "processId" IS NOT NULL
+  AND id NOT IN (
+    SELECT DISTINCT ON ("processId", "dueDate", title) id
+    FROM "Task"
+    WHERE "processId" IS NOT NULL
+    ORDER BY "processId", "dueDate", title, "createdAt" ASC
+  );
+COMMIT;
