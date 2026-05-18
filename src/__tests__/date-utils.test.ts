@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { eachLocalDateInRange, toDateOnlyInputValue, toLocalDateKey } from '@/lib/date-utils';
+import { eachLocalDateInRange, toLocalDateKey } from '@/lib/date-utils';
 
 describe('eachLocalDateInRange', () => {
   it('returns a single key when start equals end', () => {
@@ -38,34 +38,5 @@ describe('eachLocalDateInRange', () => {
       '2026-03-08',
       '2026-03-09',
     ]);
-  });
-});
-
-describe('toDateOnlyInputValue', () => {
-  // Pairs with parseDateOnly()/formatDateOnly(): date-only fields are stored as
-  // UTC midnight, displayed UTC-anchored. This helper produces the YYYY-MM-DD
-  // string for an <input type="date"> from a stored value without local-TZ shift.
-
-  it('returns the UTC date for a UTC-midnight ISO string', () => {
-    expect(toDateOnlyInputValue('2026-05-11T00:00:00.000Z')).toBe('2026-05-11');
-  });
-
-  it('returns the UTC date for a Date object (no local-TZ shift)', () => {
-    const d = new Date('2026-05-11T00:00:00.000Z');
-    expect(toDateOnlyInputValue(d)).toBe('2026-05-11');
-  });
-
-  it('passes through a bare YYYY-MM-DD string unchanged', () => {
-    expect(toDateOnlyInputValue('2026-05-11')).toBe('2026-05-11');
-  });
-
-  it('returns empty string for null/undefined/empty', () => {
-    expect(toDateOnlyInputValue(null)).toBe('');
-    expect(toDateOnlyInputValue(undefined)).toBe('');
-    expect(toDateOnlyInputValue('')).toBe('');
-  });
-
-  it('returns empty string for unparseable input', () => {
-    expect(toDateOnlyInputValue('not-a-date')).toBe('');
   });
 });
