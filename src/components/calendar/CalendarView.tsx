@@ -446,19 +446,11 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       return;
     }
 
-    // Meeting event → show popover
+    // Meeting event → focused edit page (Component 6). Popover bypassed so
+    // every calendar surface routes to one canonical destination.
     if (info.event.id?.startsWith('meeting-')) {
-      setSelectedEventPopover({
-        eventId: info.event.id,
-        title: info.event.title,
-        source: 'meeting',
-        status: '',
-        anchorRect: rect,
-        description: props.description,
-        cadence: props.cadence,
-        createdBy: props.createdBy,
-        link: props.meetLink,
-      });
+      const meetingId = info.event.id.replace('meeting-', '');
+      router.push(`/meetings/${meetingId}/edit`);
       return;
     }
 

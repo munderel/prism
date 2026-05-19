@@ -915,19 +915,11 @@ export function CalendarSplitView({
       return;
     }
 
-    // Meeting event
+    // Meeting event → focused edit page (Component 6). Skips the popover so
+    // the calendar surface has a single canonical destination for editing.
     if (info.event.id?.startsWith('meeting-')) {
-      setSelectedEventPopover({
-        eventId: info.event.id,
-        title: info.event.title,
-        source: 'meeting',
-        status: '',
-        anchorRect,
-        description: props.description,
-        cadence: props.cadence,
-        createdBy: props.createdBy,
-        link: props.meetLink,
-      });
+      const meetingId = info.event.id.replace('meeting-', '');
+      router.push(`/meetings/${meetingId}/edit`);
       return;
     }
 
