@@ -34,27 +34,33 @@ export async function deleteWorkBlock(id: string): Promise<Response> {
   return fetch(`/api/work-blocks/${id}`, { method: 'DELETE' });
 }
 
-export async function fetchTaskLevelClearGoals(taskId: string): Promise<TaskLevelClearGoal[]> {
-  const { clearGoals } = await fetchTaskWorkBlockHints(taskId);
-  return clearGoals;
-}
-
 export interface TaskWorkBlockHints {
   /** task.deliverable free-text, used as the create-mode main-objective default. */
   deliverable: string | null;
   /** Task-level (workBlockId=null) clear goals available to carry into a new workblock. */
   clearGoals: TaskLevelClearGoal[];
+  /** Total minutes already scheduled across this task's existing workblocks. */
+  scheduledMinutes: number;
+  /** Task's stored estimatedMinutes; null when the task didn't provide one. */
+  estimatedMinutes: number | null;
 }
 
 /**
  * Single fetch for everything the work-block naming modal needs to pre-populate
- * a sensible default. Returns empty fallbacks rather than throwing — the modal
- * is still useful with no hints.
+ * a sensible default — deliverable for the main-objective seed, clear goals to
+ * carry over, and the schedule arithmetic so callers can derive a proposed
+ * duration. Returns safe fallbacks rather than throwing.
  */
 export async function fetchTaskWorkBlockHints(taskId: string): Promise<TaskWorkBlockHints> {
+  const empty: TaskWorkBlockHints = {
+    deliverable: null,
+    clearGoals: [],
+    scheduledMinutes: 0,
+    estimatedMinutes: null,
+  };
   try {
     const res = await fetch(`/api/tasks/${taskId}`);
-    if (!res.ok) return { deliverable: null, clearGoals: [] };
+    if (!res.ok) return empty;
     const task = await res.json();
     const deliverable = typeof task.deliverable === 'string' && task.deliverable.trim().length > 0
       ? task.deliverable
@@ -64,8 +70,15 @@ export async function fetchTaskWorkBlockHints(taskId: string): Promise<TaskWorkB
           .filter((g: { workBlockId?: string | null }) => !g.workBlockId)
           .map((g: { id: string; text: string }): TaskLevelClearGoal => ({ id: g.id, text: g.text }))
       : [];
-    return { deliverable, clearGoals };
+    const scheduledMinutes = Array.isArray(task.workBlocks)
+      ? task.workBlocks.reduce((acc: number, b: { start: string; end: string }) => {
+          const dur = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
+          return acc + dur;
+        }, 0)
+      : 0;
+    const estimatedMinutes = typeof task.estimatedMinutes === 'number' ? task.estimatedMinutes : null;
+    return { deliverable, clearGoals, scheduledMinutes, estimatedMinutes };
   } catch {
-    return { deliverable: null, clearGoals: [] };
+    return empty;
   }
 }

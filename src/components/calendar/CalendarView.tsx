@@ -12,7 +12,8 @@ import type { WorkBlockStatus } from '@prisma/client';
 import { type ProposedSlot } from '@/lib/scheduling-engine';
 import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2, RotateCcw } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
-import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload, type TaskLevelClearGoal } from './WorkBlockObjectiveModal';
+import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload } from './WorkBlockObjectiveModal';
+import { fetchTaskWorkBlockHints } from '@/lib/work-blocks-client';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { EventGoalsPopover } from '@/components/scheduled-item-goals/EventGoalsPopover';
 import { Popover, PopoverBody, PopoverClose, PopoverFooter, PopoverHeader } from '@/components/ui/Popover';
@@ -651,40 +652,23 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         if (!taskId) return;
 
         // Compute proposed block size: min(defaultWorkBlockMinutes, remaining estimate)
-        let proposedMinutes = defaultWorkBlockMinutes;
-        let taskTitle = info.event.title;
-        let taskLevelClearGoals: TaskLevelClearGoal[] = [];
-        try {
-          const taskRes = await fetch(`/api/tasks/${taskId}`);
-          if (taskRes.ok) {
-            const task = await taskRes.json();
-            const estimated = task.estimatedMinutes ?? 60;
-            const scheduled = (task.workBlocks ?? []).reduce((acc: number, b: { start: string; end: string }) => {
-              const dur = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
-              return acc + dur;
-            }, 0);
-            const remaining = Math.max(0, estimated - scheduled);
-            proposedMinutes = remaining === 0 ? defaultWorkBlockMinutes : Math.min(defaultWorkBlockMinutes, remaining);
-            taskTitle = task.title ?? taskTitle;
-            taskLevelClearGoals = Array.isArray(task.clearGoals)
-              ? task.clearGoals
-                  .filter((g: { workBlockId?: string | null }) => !g.workBlockId)
-                  .map((g: { id: string; text: string }): TaskLevelClearGoal => ({ id: g.id, text: g.text }))
-              : [];
-          }
-        } catch {
-          // swallow fetch errors — modal opens with defaults
-        }
+        const hints = await fetchTaskWorkBlockHints(taskId);
+        const estimated = hints.estimatedMinutes ?? 60;
+        const remaining = Math.max(0, estimated - hints.scheduledMinutes);
+        const proposedMinutes = remaining === 0
+          ? defaultWorkBlockMinutes
+          : Math.min(defaultWorkBlockMinutes, remaining);
 
         // Always open the naming modal on drag-create so every workblock gets a
         // deliberate name and a chance to carry over task-level clear goals.
         setWorkBlockModalInput({
           taskId,
-          taskTitle,
+          taskTitle: info.event.title,
+          taskDeliverable: hints.deliverable,
           start,
           end: new Date(start.getTime() + proposedMinutes * 60000),
           proposedMinutes,
-          taskLevelClearGoals,
+          taskLevelClearGoals: hints.clearGoals,
         });
         setPendingWorkBlockInfo(info);
       }
