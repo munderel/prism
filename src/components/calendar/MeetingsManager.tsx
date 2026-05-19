@@ -3,30 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Pencil, Trash2, Users, Clock, CalendarCheck, Video } from 'lucide-react';
 import { formatDateOnly } from '@/lib/date-utils';
+import { useToast } from '@/components/ui/ToastProvider';
+import { MeetingEditor } from './MeetingEditor';
 
-interface Meeting {
-  id: string;
-  title: string;
-  description: string | null;
-  cadence: string;
-  dayOfWeek: number | null;
-  occurDate: string | null;
-  timeStart: string;
-  timeEnd: string;
-  attendeeIds: string[];
-  meetLink: string | null;
-  calendarEventId: string | null;
-  syncedAt: string | null;
-  syncError: string | null;
-  createdBy: { id: string; name: string | null; email: string };
-}
-
-interface UserOption {
-  id: string;
-  name: string | null;
-  email: string;
-  image: string | null;
-}
+import type { Meeting } from '@/types/meeting';
 
 const CADENCE_OPTIONS = [
   { value: 'ONE_TIME', label: 'One-Time' },
@@ -76,11 +56,11 @@ interface MeetingsManagerProps {
 }
 
 export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: MeetingsManagerProps) {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<'meetings' | 'team-reviews'>('meetings');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Team Reviews state
   const [teamReviews, setTeamReviews] = useState<TeamReview[]>([]);
@@ -93,30 +73,8 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
   const [trDuration, setTrDuration] = useState(60);
   const [savingTeamReview, setSavingTeamReview] = useState(false);
 
-  // Form state
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  // Default new meetings to ONE_TIME so the date picker shows immediately
-  // and users pick a specific date instead of a weekday.
-  const [cadence, setCadence] = useState('ONE_TIME');
-  const [dayOfWeek, setDayOfWeek] = useState<number | null>(1);
-  // Default occurDate to today so "book a meeting for right now" is a
-  // one-click change rather than navigating the date picker from empty.
-  const [occurDate, setOccurDate] = useState<string>(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  });
-  const [timeStart, setTimeStart] = useState('09:00');
-  const [timeEnd, setTimeEnd] = useState('10:00');
-  const [selectedAttendees, setSelectedAttendees] = useState<UserOption[]>([]);
-  const [userSearch, setUserSearch] = useState('');
-  const [userResults, setUserResults] = useState<UserOption[]>([]);
-  const [searchingUsers, setSearchingUsers] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [addMeetLink, setAddMeetLink] = useState(true);
+  // Meeting being edited (null when the form is in create mode).
+  const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
 
   const fetchMeetings = useCallback(async () => {
     setLoading(true);
@@ -143,27 +101,6 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
     }
   }, [open, fetchMeetings, fetchTeamReviews, isAdmin]);
 
-  // Debounced user search
-  useEffect(() => {
-    if (!userSearch.trim()) {
-      setUserResults([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setSearchingUsers(true);
-      const res = await fetch(`/api/users/search?q=${encodeURIComponent(userSearch)}`);
-      if (res.ok) {
-        const users = await res.json();
-        // Filter out already selected
-        const selectedIds = new Set(selectedAttendees.map((a) => a.id));
-        setUserResults(users.filter((u: UserOption) => !selectedIds.has(u.id)));
-      }
-      setSearchingUsers(false);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [userSearch, selectedAttendees]);
 
   const resetTeamReviewForm = () => {
     setTrReviewType('WEEKLY');
@@ -210,77 +147,21 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
   };
 
   const resetForm = () => {
-    setTitle('');
-    setDescription('');
-    setCadence('ONE_TIME');
-    setDayOfWeek(1);
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    setOccurDate(`${y}-${m}-${day}`);
-    setTimeStart('09:00');
-    setTimeEnd('10:00');
-    setSelectedAttendees([]);
-    setUserSearch('');
-    setEditingId(null);
+    setEditingMeeting(null);
     setShowForm(false);
-    setAddMeetLink(true);
   };
 
   const startEdit = (meeting: Meeting) => {
-    setTitle(meeting.title);
-    setDescription(meeting.description || '');
-    setCadence(meeting.cadence);
-    setDayOfWeek(meeting.dayOfWeek);
-    // Meeting.occurDate is stored as UTC midnight; extract the YYYY-MM-DD prefix
-    // directly so the date input shows the same day the user originally chose.
-    setOccurDate(meeting.occurDate ? meeting.occurDate.slice(0, 10) : '');
-    setTimeStart(meeting.timeStart);
-    setTimeEnd(meeting.timeEnd);
-    setEditingId(meeting.id);
-    // We don't have full user objects for attendees, so set minimal info
-    setSelectedAttendees(
-      (meeting.attendeeIds || []).map((id: string) => ({
-        id,
-        name: null,
-        email: '',
-        image: null,
-      }))
-    );
-    setAddMeetLink(!!meeting.meetLink);
+    setEditingMeeting(meeting);
     setShowForm(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-
-    const payload: any = {
-      title,
-      description: description || null,
-      cadence,
-      dayOfWeek: cadence === 'ONE_TIME' ? null : dayOfWeek,
-      // Send the bare YYYY-MM-DD string so the server parses it in the
-      // user's local timezone. new Date('2026-04-18').toISOString() would
-      // anchor to UTC midnight and shift to the previous day for users in
-      // negative UTC offsets.
-      occurDate: cadence === 'ONE_TIME' && occurDate ? occurDate : null,
-      timeStart,
-      timeEnd,
-      attendeeIds: selectedAttendees.map((a) => a.id),
-      addMeetLink,
-    };
-
-    const url = editingId ? `/api/meetings/${editingId}` : '/api/meetings';
-    const method = editingId ? 'PATCH' : 'POST';
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    setSaving(false);
+  // MeetingEditor handles submit + non-Google warnings internally and notifies
+  // back here so the list refreshes. Warnings surface for both create and
+  // edit — the attendee-deliverability advisory is just as relevant after a
+  // re-save (attendee set may have changed).
+  const handleEditorSaved = (_: unknown, warnings: string[]) => {
+    for (const w of warnings) toast.info(w);
     resetForm();
     fetchMeetings();
     onUpdate?.();
@@ -291,16 +172,6 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
     await fetch(`/api/meetings/${id}`, { method: 'DELETE' });
     fetchMeetings();
     onUpdate?.();
-  };
-
-  const addAttendee = (user: UserOption) => {
-    setSelectedAttendees((prev) => [...prev, user]);
-    setUserSearch('');
-    setUserResults([]);
-  };
-
-  const removeAttendee = (userId: string) => {
-    setSelectedAttendees((prev) => prev.filter((a) => a.id !== userId));
   };
 
   if (!open) return null;
@@ -561,192 +432,15 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
 
         {/* Create / Edit form */}
         {showForm ? (
-          <form onSubmit={handleSubmit} className="space-y-4 glass-panel p-4">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-              {editingId ? 'Edit Meeting' : 'New Meeting'}
-            </h3>
-
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Title</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-emerald-500 focus:outline-none"
-                placeholder="e.g., Weekly Team Standup"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Description (optional)</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-emerald-500 focus:outline-none resize-none"
-                placeholder="Meeting agenda or notes..."
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-[var(--text-secondary)] mb-1">Cadence</label>
-                <select
-                  value={cadence}
-                  onChange={(e) => setCadence(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
-                >
-                  {CADENCE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                {cadence === 'ONE_TIME' ? (
-                  <>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Date</label>
-                    <input
-                      type="date"
-                      value={occurDate}
-                      onChange={(e) => setOccurDate(e.target.value)}
-                      required
-                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Day of Week</label>
-                    <select
-                      value={dayOfWeek ?? ''}
-                      onChange={(e) =>
-                        setDayOfWeek(e.target.value === '' ? null : Number(e.target.value))
-                      }
-                      className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
-                    >
-                      <option value="">Any / N/A</option>
-                      {DAY_OPTIONS.map((d) => (
-                        <option key={d.value} value={d.value}>
-                          {d.label}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-[var(--text-secondary)] mb-1">Start Time</label>
-                <input
-                  type="time"
-                  value={timeStart}
-                  onChange={(e) => setTimeStart(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[var(--text-secondary)] mb-1">End Time</label>
-                <input
-                  type="time"
-                  value={timeEnd}
-                  onChange={(e) => setTimeEnd(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Attendee multi-select */}
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)] mb-1">Attendees</label>
-              {selectedAttendees.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {selectedAttendees.map((a) => (
-                    <span
-                      key={a.id}
-                      className="inline-flex items-center gap-1 rounded-full bg-emerald-900/40 px-3 py-1 text-xs text-emerald-300"
-                    >
-                      {a.name || a.email || a.id}
-                      <button
-                        type="button"
-                        onClick={() => removeAttendee(a.id)}
-                        className="hover:text-[var(--text-primary)]"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="relative">
-                <input
-                  type="text"
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                  placeholder="Search users by name or email..."
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-emerald-500 focus:outline-none"
-                />
-                {(userResults.length > 0 || searchingUsers) && (
-                  <div className="absolute z-10 mt-1 w-full rounded-lg border border-[var(--border-color)] bg-background shadow-xl max-h-40 overflow-y-auto">
-                    {searchingUsers && (
-                      <p className="px-3 py-2 text-xs text-[var(--text-muted)]">Searching...</p>
-                    )}
-                    {userResults.map((u) => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => addAttendee(u)}
-                        className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] transition-colors"
-                      >
-                        {u.name || u.email}
-                        {u.name && (
-                          <span className="ml-2 text-xs text-[var(--text-muted)]">{u.email}</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Google Meet link toggle */}
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="addMeetLink"
-                checked={addMeetLink}
-                onChange={(e) => setAddMeetLink(e.target.checked)}
-                className="rounded border-[var(--border-color)] bg-[var(--surface-raised)] text-emerald-600 focus:ring-emerald-500 h-4 w-4"
-              />
-              <label htmlFor="addMeetLink" className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                <Video className="h-3.5 w-3.5 text-emerald-400" />
-                Create Google Meet link
-              </label>
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-              >
-                {saving ? 'Saving...' : editingId ? 'Update Meeting' : 'Create Meeting'}
-              </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--glass-border)] transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+          <MeetingEditor
+            // Remount when switching between create-new and any existing
+            // meeting so the form re-syncs from the new `meeting` prop
+            // (MeetingEditor reads its initial state once on mount).
+            key={editingMeeting?.id ?? 'new'}
+            meeting={editingMeeting}
+            onSaved={handleEditorSaved}
+            onCancel={resetForm}
+          />
         ) : (
           <button
             onClick={() => setShowForm(true)}
