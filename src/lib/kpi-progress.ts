@@ -51,10 +51,14 @@ export async function recalculateBinaryKpi(
 }
 
 /**
- * Entry point: given a KPI that was just updated, cascade the change
- * to its linked monthly KPI if one exists.
+ * Recompute a KPI's linked parent, then chain upward through the full
+ * link tree (weekly → monthly → quarterly → yearly → HHG). `visited`
+ * guards against cycles in misconfigured data.
  */
-export async function cascadeKpiUpdate(kpiId: string): Promise<void> {
+export async function cascadeKpiUpdate(kpiId: string, visited: Set<string> = new Set()): Promise<void> {
+  if (visited.has(kpiId)) return;
+  visited.add(kpiId);
+
   const kpi = await prisma.kpi.findUnique({
     where: { id: kpiId },
     select: { linkedKpiId: true, type: true, actualValue: true, isComplete: true },
@@ -67,4 +71,6 @@ export async function cascadeKpiUpdate(kpiId: string): Promise<void> {
   } else if (kpi.type === 'BINARY') {
     await recalculateBinaryKpi(kpi.linkedKpiId, kpi.isComplete);
   }
+
+  await cascadeKpiUpdate(kpi.linkedKpiId, visited);
 }
