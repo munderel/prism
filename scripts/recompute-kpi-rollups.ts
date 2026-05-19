@@ -16,15 +16,21 @@
 //
 //   npx tsx scripts/recompute-kpi-rollups.ts [--dry-run]
 
+import { GoalLevel } from '@prisma/client';
 import { prisma } from '../src/lib/prisma';
 import { cascadeKpiUpdate } from '../src/lib/kpi-progress';
 
 const dryRun = process.argv.includes('--dry-run');
 
 // Bottom-up so each level's update reaches an already-current child.
-// Mirrors the GoalLevel enum in prisma/schema.prisma; HIGH_HARD is the
-// top so it's intentionally last (it has nothing above to cascade into).
-const LEVELS_BOTTOM_UP = ['DAILY', 'WEEKLY', 'MONTHLY', 'STRATEGIC', 'HIGH_HARD'] as const;
+// HIGH_HARD is intentionally last — it has nothing above to cascade into.
+const LEVELS_BOTTOM_UP: GoalLevel[] = [
+  GoalLevel.DAILY,
+  GoalLevel.WEEKLY,
+  GoalLevel.MONTHLY,
+  GoalLevel.STRATEGIC,
+  GoalLevel.HIGH_HARD,
+];
 
 async function main() {
   let total = 0;
