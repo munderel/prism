@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
       include: {
         owner: { select: { id: true, name: true, email: true } },
         assignee: { select: USER_SUMMARY_SELECT },
-        goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } },
+        goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } }, parent: { select: { id: true, title: true, level: true } } } },
         _count: { select: { comments: true, children: true } },
         children: { select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true } },
         workBlocks: { select: { id: true, start: true, end: true, completionStatus: true, actualMinutes: true } },
@@ -192,7 +192,7 @@ export async function GET(request: NextRequest) {
     include: {
       owner: { select: { id: true, name: true, email: true } },
       assignee: { select: USER_SUMMARY_SELECT },
-      goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } } } },
+      goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } }, parent: { select: { id: true, title: true, level: true } } } },
       processExecution: { include: { process: { select: { title: true } } } },
       _count: { select: { comments: true, children: true } },
       attachments: { select: { id: true, fileName: true, fileUrl: true } },

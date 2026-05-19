@@ -9,6 +9,7 @@ import { TaskCard } from './TaskCard';
 import { TaskCompletionKpiModal } from './TaskCompletionKpiModal';
 import { useKpiCompletionPrompt } from '@/hooks/useKpiCompletionPrompt';
 import { playCompletionFeedback } from '@/lib/completion-feedback';
+import { compareTasksByScheduledTime } from '@/lib/task-ordering';
 
 // REVIEW is intentionally omitted here: weekly/monthly/yearly reviews are
 // Review rows (not Task rows) and surface via the pink banner on the Tasks
@@ -169,7 +170,10 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
 
   const grouped = useMemo(() => SECTIONS.map(({ key, label, color }) => {
     const all = tasks.filter((t: DailyTask) => t.taskType === key);
-    const active = all.filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED');
+    const active = all
+      .filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED')
+      .slice()
+      .sort(compareTasksByScheduledTime);
     return { key, label, color, tasks: active };
   }), [tasks]);
 
