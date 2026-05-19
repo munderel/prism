@@ -130,4 +130,42 @@ describe('GoalEditor', () => {
     expect(screen.getByDisplayValue('Grow Revenue')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Increase revenue 2x')).toBeInTheDocument();
   });
+
+  it('pre-fills date inputs with stored UTC-anchored dates without TZ shift', () => {
+    // API stores date-only fields as UTC midnight via parseDateOnly().
+    // The editor must display the same calendar date the user picked,
+    // regardless of viewer timezone — date-only display should be UTC-anchored.
+    const goal = createGoal({
+      id: 'g-1',
+      level: 'WEEKLY',
+      startDate: '2026-05-11T00:00:00.000Z',
+      endDate: '2026-05-17T00:00:00.000Z',
+    });
+    renderWithProviders(<GoalEditor stackId={stackId} goal={goal} onSave={onSave} onClose={onClose} />);
+    const dateInputs = document.querySelectorAll('input[type="date"]');
+    expect(dateInputs).toHaveLength(2);
+    expect(dateInputs[0]).toHaveValue('2026-05-11');
+    expect(dateInputs[1]).toHaveValue('2026-05-17');
+  });
+
+  it('preserves stored dates on PATCH when the user does not touch them', async () => {
+    const user = userEvent.setup();
+    const goal = createGoal({
+      id: 'g-1',
+      level: 'WEEKLY',
+      startDate: '2026-05-11T00:00:00.000Z',
+      endDate: '2026-05-17T00:00:00.000Z',
+    });
+    const fetchMock = createMockFetch({ '/api/goals/g-1': { id: 'g-1' } });
+    global.fetch = fetchMock as any;
+
+    renderWithProviders(<GoalEditor stackId={stackId} goal={goal} onSave={onSave} onClose={onClose} />);
+    await user.click(screen.getByRole('button', { name: 'Update' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.startDate).toBe('2026-05-11');
+    expect(body.endDate).toBe('2026-05-17');
+  });
 });

@@ -9,6 +9,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Pin a non-UTC timezone so date-only regression tests catch local-TZ
+    // shifts. CI runs on ubuntu-latest with no TZ override (defaults to UTC),
+    // which silently green-lights the getLocalDateString(new Date(<UTC-Z>))
+    // bug class. Pinning to America/New_York exercises the shift in CI.
+    env: { TZ: 'America/New_York' },
     // Ratcheted thresholds: set just below current coverage so regressions
     // fail CI without requiring blanket new-test work. Raise as later waves
     // add coverage to specific hotspots.

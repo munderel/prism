@@ -6,7 +6,7 @@ import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
 import { LEVEL_LABELS, formatGoalDateRange } from '@/lib/goal-constants';
 import { GoalCreationCoach } from '@/components/reviews/shared/GoalCreationCoach';
-import { getLocalDateString, getWeekBoundaries } from '@/lib/date-utils';
+import { getWeekBoundaries, toDateOnlyInputValue } from '@/lib/date-utils';
 
 /** Compute the appropriate root goal level based on the date range duration. */
 function computeRootLevel(startDate: string, endDate: string): string {
@@ -41,12 +41,12 @@ export function GoalEditor({
   const [description, setDescription] = useState(goal?.description ?? '');
   const [status, setStatus] = useState(goal?.status ?? 'NOT_STARTED');
   const [startDate, setStartDate] = useState(() => {
-    if (goal?.startDate) return getLocalDateString(new Date(goal.startDate));
+    if (goal?.startDate) return toDateOnlyInputValue(goal.startDate);
     if (childLevel === 'WEEKLY') return getWeekBoundaries().start;
     return '';
   });
   const [endDate, setEndDate] = useState(() => {
-    if (goal?.endDate) return getLocalDateString(new Date(goal.endDate));
+    if (goal?.endDate) return toDateOnlyInputValue(goal.endDate);
     if (childLevel === 'WEEKLY') return getWeekBoundaries().end;
     return '';
   });

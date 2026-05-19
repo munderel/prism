@@ -63,6 +63,25 @@ export function toUtcDateOnly(d: Date): Date {
 }
 
 /**
+ * Format a date-only stored value as a 'YYYY-MM-DD' string suitable for an
+ * <input type="date"> value. Pairs with parseDateOnly()/formatDateOnly() —
+ * extraction is UTC-anchored so the calendar date round-trips unchanged
+ * across timezones. Use this for editing date-only fields (Goal start/end,
+ * Meeting occurDate, etc.); never use getLocalDateString(new Date(value))
+ * for those — it shifts by a day in non-UTC viewer timezones.
+ */
+export function toDateOnlyInputValue(value: Date | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (isNaN(d.getTime())) return '';
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Format a date-only value (Date or ISO string) using UTC anchoring, so the
  * displayed calendar date is identical regardless of the viewer's timezone.
  * Use this for date-only field DISPLAY. Returns '—' for null/undefined/invalid.
