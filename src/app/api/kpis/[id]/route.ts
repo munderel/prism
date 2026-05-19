@@ -149,7 +149,8 @@ export async function DELETE(
 
   await prisma.kpi.delete({ where: { id } });
 
-  // Recalculate former linked monthly KPI if there was a link
+  // Recalculate the now-orphaned parent and chain the change upward so
+  // grandparents (quarterly, yearly, HHG) reflect the delete too.
   if (kpi.linkedKpiId) {
     const linkedKpi = await prisma.kpi.findUnique({
       where: { id: kpi.linkedKpiId },
@@ -161,6 +162,7 @@ export async function DELETE(
       } else {
         await recalculateBinaryKpi(kpi.linkedKpiId, false);
       }
+      await cascadeKpiUpdate(kpi.linkedKpiId);
     }
   }
 
