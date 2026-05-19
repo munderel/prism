@@ -76,11 +76,11 @@ export async function PATCH(
 
   const block = await prisma.$transaction(async (tx) => {
     const updated = await tx.workBlock.update({ where: { id }, data });
-    if (body.subGoals !== undefined) {
+    if (body.clearGoals !== undefined) {
       await tx.clearGoal.deleteMany({ where: { workBlockId: id } });
-      if (body.subGoals.length > 0) {
+      if (body.clearGoals.length > 0) {
         await tx.clearGoal.createMany({
-          data: body.subGoals.map((text, idx) => ({
+          data: body.clearGoals.map((text, idx) => ({
             taskId: updated.taskId,
             workBlockId: id,
             text,
@@ -106,7 +106,10 @@ export async function PATCH(
     const effectiveObjective = block?.mainObjective ?? existing.mainObjective;
     const effectiveStart = resolvedStart;
     const effectiveEnd = resolvedEnd;
-    const summary = `${taskTitle}: ${effectiveObjective}`;
+    // Workblock title is mainObjective only — the linked task surfaces in
+    // the description. Matches the create path in work-blocks/route.ts.
+    const summary = effectiveObjective;
+    const description = `${taskTitle}\n${effectiveObjective}`;
     const syncToGcal = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
       const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
       if (!hasGoogle) {
@@ -116,7 +119,7 @@ export async function PATCH(
         if (existing.calendarEventId) {
           await updateGoogleEvent(auth.userId, existing.calendarEventId, {
             summary,
-            description: effectiveObjective,
+            description,
             start: effectiveStart.toISOString(),
             end: effectiveEnd.toISOString(),
           }, targetCalendarId);

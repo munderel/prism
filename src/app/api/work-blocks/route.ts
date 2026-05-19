@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, createWorkBlockSchema);
   if ('error' in parsed) return parsed.error;
-  const { taskId, start, end, mainObjective, subGoals } = parsed.data;
+  const { taskId, start, end, mainObjective, clearGoals } = parsed.data;
 
   // Authorize via the shared helper (owner or assignee or admin).
   const taskAccess = await requireTaskAccess(taskId);
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  if (subGoals && subGoals.length > 0) {
+  if (clearGoals && clearGoals.length > 0) {
     // Determine starting sortOrder to append after any existing task-level clear goals
     const maxOrder = await prisma.clearGoal.aggregate({
       where: { taskId },
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     const baseOrder = (maxOrder._max.sortOrder ?? -1) + 1;
 
     await prisma.clearGoal.createMany({
-      data: subGoals.map((text, idx) => ({
+      data: clearGoals.map((text, idx) => ({
         taskId,
         workBlockId: block.id,
         text: text.trim(),
@@ -120,11 +120,15 @@ export async function POST(request: NextRequest) {
       select: { timezone: true },
     });
     const tz = user?.timezone ?? 'America/New_York';
-    const summary = `${taskTitle}: ${block.mainObjective}`;
+    // mainObjective is the user-authored "what must happen in this block"
+    // string; it stays the canonical title across surfaces (calendar event,
+    // Google sync). The linked task title surfaces in the description.
+    const summary = block.mainObjective;
+    const description = `${taskTitle}\n${block.mainObjective}`;
     try {
       const gcalEvent = await createGoogleEvent(auth.userId, {
         summary,
-        description: block.mainObjective,
+        description,
         start: startDate.toISOString(),
         end: endDate.toISOString(),
         timeZone: tz,

@@ -704,7 +704,7 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         start: payload.start,
         end: payload.end,
         mainObjective: payload.mainObjective,
-        subGoals: payload.subGoals,
+        clearGoals: payload.clearGoals,
       }),
     });
     if (!res.ok) {

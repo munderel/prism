@@ -193,7 +193,7 @@ export function TodayWorkBlocks() {
                     >
                       {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                       <Target className="h-3 w-3" />
-                      <span>{doneGoals} / {goalCount} sub-goals</span>
+                      <span>{doneGoals} / {goalCount} clear goals</span>
                     </button>
                   )}
                 </div>

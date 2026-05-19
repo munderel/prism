@@ -99,7 +99,7 @@ export function WorkBlocksSection({ taskId, taskTitle, taskEstimatedMinutes, def
       end,
       proposedMinutes: mins,
       initialMainObjective: block.mainObjective,
-      initialSubGoals: block.clearGoals.map((g) => g.text),
+      initialClearGoals: block.clearGoals.map((g) => g.text),
     });
     setEditingBlockId(block.id);
     setModalMode('edit');
@@ -120,14 +120,14 @@ export function WorkBlocksSection({ taskId, taskTitle, taskEstimatedMinutes, def
           start: payload.start,
           end: payload.end,
           mainObjective: payload.mainObjective,
-          subGoals: payload.subGoals,
+          clearGoals: payload.clearGoals,
         }
       : {
           taskId,
           start: payload.start,
           end: payload.end,
           mainObjective: payload.mainObjective,
-          subGoals: payload.subGoals,
+          clearGoals: payload.clearGoals,
         };
     const res = await fetch(url, {
       method,
@@ -207,7 +207,7 @@ export function WorkBlocksSection({ taskId, taskTitle, taskEstimatedMinutes, def
                   <p className="text-xs text-[var(--text-secondary)] truncate mt-0.5">{block.mainObjective}</p>
                   {block.clearGoals.length > 0 && (
                     <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                      {block.clearGoals.filter((g) => g.isComplete).length}/{block.clearGoals.length} sub-goals hit
+                      {block.clearGoals.filter((g) => g.isComplete).length}/{block.clearGoals.length} clear goals hit
                     </p>
                   )}
                 </div>
