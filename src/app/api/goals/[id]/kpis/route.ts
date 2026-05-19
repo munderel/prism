@@ -41,7 +41,9 @@ export async function GET(
   if (LEVELS_WITH_CHILDREN.includes(goal.level)) {
     const kpiIds = kpis.map((k) => k.id);
     const allLinkedChildren = await prisma.kpi.findMany({
-      where: { linkedKpiId: { in: kpiIds } },
+      // Skip KPIs whose parent goal is in the trash — they'd otherwise
+      // inflate the parent KPI's "linked weekly actuals" display.
+      where: { linkedKpiId: { in: kpiIds }, goal: { deletedAt: null } },
       include: {
         goal: { select: { title: true, sortOrder: true, dueDate: true } },
       },
