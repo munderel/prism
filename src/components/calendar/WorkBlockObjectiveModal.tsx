@@ -12,15 +12,17 @@ export interface TaskLevelClearGoal {
 export interface WorkBlockObjectiveInput {
   taskId: string;
   taskTitle: string;
+  /** Task's free-text deliverable, used as the create-mode default main objective. */
+  taskDeliverable?: string | null;
   start: Date;
   end: Date;
   /** Initial proposed duration in minutes (min(defaultWorkBlockMinutes, remaining)) */
   proposedMinutes: number;
-  /** Prefill main objective (edit mode). If empty in create mode, defaults to "Work on {taskTitle}". */
+  /** Prefill main objective (edit mode). If empty in create mode, falls back to the task's deliverable or "Work on {taskTitle}". */
   initialMainObjective?: string;
-  /** Prefill sub-goals (edit mode) */
-  initialSubGoals?: string[];
-  /** Task-level clear goals the user can carry over as new workblock-scoped sub-goals */
+  /** Prefill clear goals (edit mode) */
+  initialClearGoals?: string[];
+  /** Task-level clear goals the user can carry over as new workblock-scoped clear goals */
   taskLevelClearGoals?: TaskLevelClearGoal[];
 }
 
@@ -28,13 +30,14 @@ export interface WorkBlockObjectivePayload {
   start: string; // ISO
   end: string;   // ISO
   mainObjective: string;
-  subGoals: string[];
+  clearGoals: string[];
 }
 
 /** Shape used when a caller opens the naming modal on drag-create. */
 export interface WorkBlockNameRequest {
   taskId: string;
   taskTitle: string;
+  taskDeliverable?: string | null;
   start: Date;
   end: Date;
   proposedMinutes: number;
@@ -44,23 +47,25 @@ export interface WorkBlockNameResolved {
   start: Date;
   end: Date;
   mainObjective: string;
-  subGoals: string[];
+  clearGoals: string[];
 }
 
 const MIN_DURATION_MINUTES = 15;
 const MAX_DURATION_MINUTES = 480;
 
-function defaultMainObjective(taskTitle: string): string {
-  return `Work on ${taskTitle}`;
+function defaultMainObjective(input: WorkBlockObjectiveInput): string {
+  const deliverable = input.taskDeliverable?.trim();
+  if (deliverable) return deliverable;
+  return `Work on ${input.taskTitle}`;
 }
 
 function seedMainObjective(input: WorkBlockObjectiveInput, mode: 'create' | 'edit'): string {
   const trimmed = input.initialMainObjective?.trim();
   if (trimmed) return input.initialMainObjective ?? '';
-  return mode === 'create' ? defaultMainObjective(input.taskTitle) : '';
+  return mode === 'create' ? defaultMainObjective(input) : '';
 }
 
-interface SubGoalRow {
+interface ClearGoalRow {
   key: string;
   text: string;
   /** Set when this row was added by checking a task-level clear goal checkbox. */
@@ -111,7 +116,7 @@ export function WorkBlockObjectiveModal({
   onSave,
 }: Props) {
   const [mainObjective, setMainObjective] = useState('');
-  const [subGoals, setSubGoals] = useState<SubGoalRow[]>([]);
+  const [clearGoals, setClearGoals] = useState<ClearGoalRow[]>([]);
   const [durationMinutes, setDurationMinutes] = useState(input?.proposedMinutes ?? 30);
   const [startDate, setStartDate] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -124,7 +129,7 @@ export function WorkBlockObjectiveModal({
   useEffect(() => {
     if (open && input) {
       setMainObjective(seedMainObjective(input, mode));
-      setSubGoals((input.initialSubGoals ?? []).map((text) => ({ key: crypto.randomUUID(), text })));
+      setClearGoals((input.initialClearGoals ?? []).map((text) => ({ key: crypto.randomUUID(), text })));
       setDurationMinutes(input.proposedMinutes);
       setStartDate(toDateInputValue(input.start));
       setStartTime(toTimeInputValue(input.start));
@@ -137,18 +142,18 @@ export function WorkBlockObjectiveModal({
 
   const isEditMode = mode === 'edit';
 
-  const addSubGoal = () => setSubGoals((prev) => [...prev, { key: crypto.randomUUID(), text: '' }]);
-  const updateSubGoal = (key: string, value: string) => {
-    setSubGoals((prev) => prev.map((row) => (row.key === key ? { ...row, text: value } : row)));
+  const addClearGoal = () => setClearGoals((prev) => [...prev, { key: crypto.randomUUID(), text: '' }]);
+  const updateClearGoal = (key: string, value: string) => {
+    setClearGoals((prev) => prev.map((row) => (row.key === key ? { ...row, text: value } : row)));
   };
-  const removeSubGoal = (key: string) => {
-    setSubGoals((prev) => prev.filter((row) => row.key !== key));
+  const removeClearGoal = (key: string) => {
+    setClearGoals((prev) => prev.filter((row) => row.key !== key));
   };
   const bumpMinutes = (delta: number) => {
     setDurationMinutes((prev) => Math.max(MIN_DURATION_MINUTES, Math.min(MAX_DURATION_MINUTES, prev + delta)));
   };
   const toggleCarryOver = (goal: TaskLevelClearGoal) => {
-    setSubGoals((prev) => {
+    setClearGoals((prev) => {
       const existing = prev.findIndex((row) => row.originId === goal.id);
       if (existing >= 0) return prev.filter((_, i) => i !== existing);
       return [...prev, { key: crypto.randomUUID(), text: goal.text, originId: goal.id }];
@@ -181,7 +186,7 @@ export function WorkBlockObjectiveModal({
         start: resolvedStart.toISOString(),
         end: newEnd.toISOString(),
         mainObjective: objective,
-        subGoals: subGoals.map((row) => row.text.trim()).filter((text) => text.length > 0),
+        clearGoals: clearGoals.map((row) => row.text.trim()).filter((text) => text.length > 0),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save');
@@ -240,7 +245,7 @@ export function WorkBlockObjectiveModal({
               </label>
               <div className="space-y-1">
                 {input.taskLevelClearGoals.map((goal) => {
-                  const checked = subGoals.some((row) => row.originId === goal.id);
+                  const checked = clearGoals.some((row) => row.originId === goal.id);
                   return (
                     <label
                       key={goal.id}
@@ -262,20 +267,20 @@ export function WorkBlockObjectiveModal({
 
           <div>
             <label className="block text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-1">
-              Sub-goals (optional)
+              Clear goals (optional)
             </label>
             <div className="space-y-1.5">
-              {subGoals.map((row) => (
+              {clearGoals.map((row) => (
                 <div key={row.key} className="flex items-center gap-2">
                   <input
                     type="text"
                     value={row.text}
-                    onChange={(e) => updateSubGoal(row.key, e.target.value)}
+                    onChange={(e) => updateClearGoal(row.key, e.target.value)}
                     placeholder="A concrete win for this block"
                     className="flex-1 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
                   />
                   <button
-                    onClick={() => removeSubGoal(row.key)}
+                    onClick={() => removeClearGoal(row.key)}
                     className="rounded p-1.5 text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-400"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -283,11 +288,11 @@ export function WorkBlockObjectiveModal({
                 </div>
               ))}
               <button
-                onClick={addSubGoal}
+                onClick={addClearGoal}
                 className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] transition-colors"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add sub-goal
+                Add clear goal
               </button>
             </div>
           </div>

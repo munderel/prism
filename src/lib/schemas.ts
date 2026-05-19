@@ -730,7 +730,7 @@ export const createWorkBlockSchema = z
     start: z.string().datetime({ message: 'start must be an ISO datetime' }),
     end: z.string().datetime({ message: 'end must be an ISO datetime' }),
     mainObjective: z.string().min(1, 'mainObjective is required').max(500),
-    subGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
+    clearGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
   })
   .refine((v) => new Date(v.end) > new Date(v.start), {
     message: 'end must be after start',
@@ -750,7 +750,7 @@ export const updateWorkBlockSchema = z
     completionStatus: z.enum(['PENDING', 'COMPLETED', 'PARTIAL', 'MISSED']).optional(),
     actualMinutes: z.number().int().min(0).max(WORK_BLOCK_MAX_MINUTES).optional().nullable(),
     notes: z.string().max(2000).optional().nullable(),
-    subGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
+    clearGoals: z.array(z.string().min(1).max(500)).max(20).optional(),
   })
   .refine(
     (v) =>
