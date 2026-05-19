@@ -36,6 +36,13 @@ vi.mock('@/lib/recurrence', () => ({
 
 vi.mock('@/lib/date-utils', () => ({
   parseLocalDate: vi.fn((d: string) => new Date(d)),
+  // Date-only fields (Task.dueDate, etc.) are stored UTC-anchored. The real
+  // helper returns UTC midnight for bare 'YYYY-MM-DD' input and null
+  // otherwise; full ISO datetimes flow through the new Date(...) fallback.
+  parseDateOnly: vi.fn((s: string | null | undefined) => {
+    if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    return new Date(`${s}T00:00:00.000Z`);
+  }),
   // YYYY-MM-DD from the UTC date components. Tests for auto-bump pass dates
   // unambiguous across TZs (mid-day UTC) so we always read the intended day.
   getLocalDateString: vi.fn((d: Date) => {

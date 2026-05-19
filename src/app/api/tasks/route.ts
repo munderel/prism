@@ -4,7 +4,7 @@ import { requireAuth, authError, checkStackWriteAccess } from '@/lib/auth-guard'
 import { NO_STORE, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
 import { parseBody, createTaskSchema } from '@/lib/schemas';
 import { parseRRule } from '@/lib/recurrence';
-import { parseLocalDate } from '@/lib/date-utils';
+import { parseDateOnly } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
@@ -143,9 +143,13 @@ export async function GET(request: NextRequest) {
   // Build date filter
   const dateFilter: Record<string, unknown> = {};
   if ((startDate && endDate) || date) {
-    const rangeStart = startDate ? parseLocalDate(startDate) : parseLocalDate(date!);
-    const rangeEnd = endDate ? parseLocalDate(endDate) : new Date(rangeStart);
-    rangeEnd.setDate(rangeEnd.getDate() + 1);
+    // Date-only fields are anchored to UTC midnight (see parseDateOnly /
+    // toDateOnlyInputValue). The filter must use the same anchor so the
+    // calendar date the user picked matches the row regardless of which
+    // timezone the Node runtime happens to be in.
+    const rangeStart = parseDateOnly(startDate ?? date!) ?? new Date();
+    const rangeEnd = endDate ? (parseDateOnly(endDate) ?? new Date()) : new Date(rangeStart);
+    rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
 
     // A task overlaps the requested window when:
     //   • it has a time-block falling inside the window, OR
@@ -285,7 +289,9 @@ export async function POST(request: NextRequest) {
       title,
       description: description ?? null,
       priority: priority ?? 'MEDIUM',
-      dueDate: dueDate ? new Date(dueDate) : null,
+      // Bare YYYY-MM-DD → UTC midnight (consistent with goal dates and the
+      // dashboard's UTC-anchored display); full ISO datetimes pass through.
+      dueDate: dueDate ? (parseDateOnly(dueDate) ?? new Date(dueDate)) : null,
       goalId: goalId ?? null,
       processId: processId ?? null,
       recurrenceRule: recurrenceRule ?? null,
