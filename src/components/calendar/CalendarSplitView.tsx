@@ -419,6 +419,10 @@ interface EventContentProps {
   timeText: string;
   startMs: number;
   endMs: number;
+  /** Linked task title — used to render the second line of workblock events. */
+  taskTitle?: string;
+  /** Workblock's parent goal title — used to render the first line of workblock events. */
+  goalTitle?: string;
   isDark: boolean;
   userColors: Record<ItemType, ColorDef>;
   onUnschedule: (itemId: string, itemType: string) => void | Promise<void>;
@@ -437,6 +441,8 @@ const EventContent = React.memo(function EventContent({
   timeText,
   startMs,
   endMs,
+  taskTitle,
+  goalTitle,
   isDark,
   userColors,
   onUnschedule,
@@ -471,10 +477,20 @@ const EventContent = React.memo(function EventContent({
   const isGoogleEvent = source === 'google';
   const durationMs = endMs - startMs;
   const isShort = durationMs > 0 && durationMs <= 10 * 60 * 1000;
+  // Three-line workblock visual collapses to time-only below this duration —
+  // anything ≤30min in a typical day view doesn't fit goal + task + time
+  // without overflow. Goal + task still surface via the tooltip.
+  const isNarrowWorkblock = itemType === 'workblock' && durationMs > 0 && durationMs <= 30 * 60 * 1000;
+  const showWorkblockMultiLine = itemType === 'workblock' && !isNarrowWorkblock;
 
   const emoji = colorKey ? PRISM_COLORS[colorKey].emoji : '';
   const displayTitle =
     emoji && title.startsWith(emoji) ? title.slice(emoji.length).trimStart() : title;
+
+  // Tooltip surface: workblock collapses → put goal + task on hover.
+  const tooltip = itemType === 'workblock'
+    ? [goalTitle, taskTitle, displayTitle].filter(Boolean).join(' → ')
+    : undefined;
 
   return (
     <div
@@ -484,14 +500,30 @@ const EventContent = React.memo(function EventContent({
         borderLeft: `3px solid ${colors.border}`,
         color: '#ffffff',
       }}
+      title={tooltip}
     >
-      <div className="flex items-baseline gap-1 truncate pr-4 text-white">
-        {emoji && <span aria-hidden className="flex-none">{emoji}</span>}
-        <span className="truncate font-medium">{displayTitle}</span>
-        {timeText && !isShort && (
-          <span className="ml-auto flex-none text-[10px] text-white/75">{timeText}</span>
-        )}
-      </div>
+      {showWorkblockMultiLine ? (
+        <div className="flex flex-col gap-0 pr-4 text-white">
+          {goalTitle && (
+            <span className="truncate text-[10px] text-white/80">{goalTitle}</span>
+          )}
+          {taskTitle && (
+            <span className="truncate text-[10px] text-white/70">{taskTitle}</span>
+          )}
+          <span className="truncate font-medium">{displayTitle}</span>
+          {timeText && (
+            <span className="truncate text-[10px] text-white/75">{timeText}</span>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-baseline gap-1 truncate pr-4 text-white">
+          {emoji && <span aria-hidden className="flex-none">{emoji}</span>}
+          <span className="truncate font-medium">{displayTitle}</span>
+          {timeText && !isShort && (
+            <span className="ml-auto flex-none text-[10px] text-white/75">{timeText}</span>
+          )}
+        </div>
+      )}
       {!isGoogleEvent && itemId && (
         <button
           type="button"
@@ -1122,7 +1154,7 @@ export function CalendarSplitView({
             start: payload.start,
             end: payload.end,
             mainObjective: payload.mainObjective,
-            subGoals: payload.subGoals,
+            clearGoals: payload.clearGoals,
           });
           if (!res.ok) throw new Error(`API returned ${res.status}`);
           await mutateEvents();
@@ -1257,13 +1289,15 @@ export function CalendarSplitView({
   // when only the parent re-renders.
   const renderEventContent = useCallback(
     (eventInfo: EventContentArg) => {
-      const { itemId, itemType, source, taskType, color: apiColor } =
+      const { itemId, itemType, source, taskType, color: apiColor, taskTitle, goalTitle } =
         (eventInfo.event.extendedProps ?? {}) as {
           itemId?: string;
           itemType?: string;
           source?: string;
           taskType?: string;
           color?: string;
+          taskTitle?: string;
+          goalTitle?: string;
         };
       return (
         <EventContent
@@ -1277,6 +1311,8 @@ export function CalendarSplitView({
           timeText={eventInfo.timeText}
           startMs={eventInfo.event.start?.getTime() ?? 0}
           endMs={eventInfo.event.end?.getTime() ?? 0}
+          taskTitle={taskTitle}
+          goalTitle={goalTitle}
           isDark={isDark}
           userColors={userColors}
           onUnschedule={onUnschedule}

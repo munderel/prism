@@ -433,8 +433,11 @@ export async function GET(request: NextRequest) {
   for (const block of workBlocks) {
     events.push({
       id: `workblock-${block.id}`,
-      title: block.task.title,
-      description: block.mainObjective,
+      // Workblock title is its mainObjective — the linked task surfaces
+      // separately in the 3-line eventContent and in the Google sync
+      // description.
+      title: block.mainObjective,
+      description: `${block.task.title}\n${block.mainObjective}`,
       start: block.start.toISOString(),
       end: block.end.toISOString(),
       allDay: false,
@@ -446,6 +449,7 @@ export async function GET(request: NextRequest) {
       status: block.task.status,
       taskType: block.task.taskType,
       priority: block.task.priority,
+      taskTitle: block.task.title,
       goalTitle: block.task.goal?.title,
       mainObjective: block.mainObjective,
       completionStatus: block.completionStatus,

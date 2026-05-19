@@ -15,7 +15,6 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { subtaskDoneCount } from '@/lib/task-utils';
 import { ClearGoalGuide } from './ClearGoalGuide';
 import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
-import { SplitTaskModal } from '@/components/tasks/SplitTaskModal';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 const CalendarSplitView = dynamic(
   () => import('@/components/calendar/CalendarSplitView').then(m => m.CalendarSplitView),
@@ -28,7 +27,7 @@ import {
   type WorkBlockNameRequest,
   type WorkBlockNameResolved,
 } from '@/components/calendar/WorkBlockObjectiveModal';
-import { fetchTaskLevelClearGoals, patchWorkBlock, deleteWorkBlock } from '@/lib/work-blocks-client';
+import { fetchTaskWorkBlockHints, patchWorkBlock, deleteWorkBlock } from '@/lib/work-blocks-client';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { ScheduledItemGoals } from '@/components/scheduled-item-goals/ScheduledItemGoals';
 
@@ -786,10 +785,13 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     } else if (itemType === 'food') {
       // Food blocks have no "unscheduled" state — unschedule = delete.
       await fetch(`/api/food-blocks/${itemId}`, { method: 'DELETE' });
+    } else if (itemType === 'workblock') {
+      // Workblocks behave like food blocks here: there's no "unscheduled"
+      // state for a workblock — dragging it off the calendar deletes it.
+      await deleteWorkBlock(itemId);
     }
-    fetchUnscheduledTomorrow();
-    fetchTomorrowTasks();
-  }, [fetchUnscheduledTomorrow, fetchTomorrowTasks]);
+    refreshTomorrowLists();
+  }, [refreshTomorrowLists]);
 
   const handleCreateWorkBlock = useCallback(async (start: Date, end: Date) => {
     try {
@@ -826,11 +828,15 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const openAndAwaitNameModal = useCallback(async (input: WorkBlockNameRequest) => {
     clearStaleAwaiter();
-    const taskLevelClearGoals = await fetchTaskLevelClearGoals(input.taskId);
+    const hints = await fetchTaskWorkBlockHints(input.taskId);
     return new Promise<WorkBlockNameResolved | null>((resolve) => {
       nameModalResolveRef.current = resolve;
       setNameModalMode('create');
-      setNameModalInput({ ...input, taskLevelClearGoals });
+      setNameModalInput({
+        ...input,
+        taskDeliverable: input.taskDeliverable ?? hints.deliverable,
+        taskLevelClearGoals: hints.clearGoals,
+      });
     });
   }, [clearStaleAwaiter]);
 
@@ -877,7 +883,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
           Math.round((new Date(block.end).getTime() - new Date(block.start).getTime()) / 60000),
         ),
         initialMainObjective: block.mainObjective,
-        initialSubGoals: block.clearGoals.map((g) => g.text),
+        initialClearGoals: block.clearGoals.map((g) => g.text),
       });
     },
     [clearStaleAwaiter],
@@ -889,7 +895,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         start: new Date(payload.start),
         end: new Date(payload.end),
         mainObjective: payload.mainObjective,
-        subGoals: payload.subGoals,
+        clearGoals: payload.clearGoals,
       };
       if (nameModalMode === 'edit' && editingWorkBlockIdRef.current) {
         const blockId = editingWorkBlockIdRef.current;
@@ -899,7 +905,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
           start: resolved.start.toISOString(),
           end: resolved.end.toISOString(),
           mainObjective: resolved.mainObjective,
-          subGoals: resolved.subGoals,
+          clearGoals: resolved.clearGoals,
         });
         return;
       }
@@ -917,8 +923,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     setNameModalInput(null);
   }, []);
 
-  // State for the "Break into sessions" modal (reuses SplitTaskModal).
-  const [splitTaskTarget, setSplitTaskTarget] = useState<{ id: string; title: string } | null>(null);
 
   const persistStep = async (
     nextStep: number,
@@ -1980,33 +1984,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                   )}
                 </div>
 
-                {/* Break into sessions — per top-3 task */}
-                {tomorrowPlan.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                      Break a top task into sessions
-                    </h3>
-                    <p className="text-xs text-[var(--text-secondary)]">
-                      Split a big task into smaller subtasks you can then schedule individually.
-                    </p>
-                    <div className="flex flex-col gap-1">
-                      {tomorrowPlan.map((taskId) => {
-                        const task = top3TaskLookup.get(taskId);
-                        if (!task) return null;
-                        return (
-                          <button
-                            key={taskId}
-                            onClick={() => setSplitTaskTarget({ id: task.id, title: task.title })}
-                            className="inline-flex items-center justify-between gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)]/50 px-3 py-1.5 text-xs text-[var(--text-primary)] hover:border-indigo-500/30"
-                          >
-                            <span className="truncate">{task.title}</span>
-                            <span className="text-[var(--text-muted)]">Split →</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -2338,18 +2315,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
         onSave={handleNameModalSave}
       />
 
-      {splitTaskTarget && (
-        <SplitTaskModal
-          taskId={splitTaskTarget.id}
-          taskTitle={splitTaskTarget.title}
-          onClose={() => setSplitTaskTarget(null)}
-          onSplit={() => {
-            setSplitTaskTarget(null);
-            fetchTomorrowTasks();
-            fetchUnscheduledTomorrow();
-          }}
-        />
-      )}
     </div>
   );
 }

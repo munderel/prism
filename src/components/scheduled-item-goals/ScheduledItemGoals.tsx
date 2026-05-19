@@ -224,7 +224,7 @@ function WorkBlockEditor({
     const next = [...goals, { id: `tmp-${Date.now()}`, text, isComplete: false, sortOrder: goals.length }];
     setGoals(next);
     setNewGoal('');
-    const ok = await savePatch({ subGoals: next.map((g) => g.text) });
+    const ok = await savePatch({ clearGoals: next.map((g) => g.text) });
     if (!ok) setGoals(prev);
   }
 
@@ -232,7 +232,7 @@ function WorkBlockEditor({
     const prev = goals;
     const next = goals.filter((g) => g.id !== id);
     setGoals(next);
-    const ok = await savePatch({ subGoals: next.map((g) => g.text) });
+    const ok = await savePatch({ clearGoals: next.map((g) => g.text) });
     if (!ok) setGoals(prev);
   }
 
@@ -266,7 +266,7 @@ function WorkBlockEditor({
               <span className="flex-1">{goal.text}</span>
               <button
                 type="button"
-                aria-label="Remove sub-goal"
+                aria-label="Remove clear goal"
                 onClick={() => removeGoal(goal.id)}
                 className="rounded p-0.5 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
               >
@@ -454,7 +454,7 @@ function TaskOnlyEditor({
               <span className="flex-1">{goal.text}</span>
               <button
                 type="button"
-                aria-label="Remove sub-goal"
+                aria-label="Remove clear goal"
                 onClick={() => removeGoal(goal.id)}
                 className="rounded p-0.5 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
               >

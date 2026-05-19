@@ -65,7 +65,7 @@ function makeTask(overrides: Record<string, any> = {}) {
 }
 
 describe('ScheduledItemGoals — workBlock', () => {
-  it('renders the main objective and existing sub-goals', () => {
+  it('renders the main objective and existing clear goals', () => {
     const block = makeWorkBlock();
     renderWithProviders(
       <ScheduledItemGoals item={{ kind: 'workBlock', block }} mode="inline" />,
@@ -120,7 +120,7 @@ describe('ScheduledItemGoals — workBlock', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('adds a sub-goal by sending the full new subGoals list', async () => {
+  it('adds a clear goal by sending the full new clearGoals list', async () => {
     const user = userEvent.setup();
     const block = makeWorkBlock();
     const fetchMock = vi.fn(() =>
@@ -142,12 +142,12 @@ describe('ScheduledItemGoals — workBlock', () => {
     expect(url).toBe('/api/work-blocks/wb-1');
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(init.body as string)).toEqual({
-      subGoals: ['Outline the 3 charts', 'Wire up the SQL', 'Push to staging'],
+      clearGoals: ['Outline the 3 charts', 'Wire up the SQL', 'Push to staging'],
     });
     await waitFor(() => expect(onChange).toHaveBeenCalled());
   });
 
-  it('removes a sub-goal by sending the remaining subGoals list', async () => {
+  it('removes a clear goal by sending the remaining clearGoals list', async () => {
     const user = userEvent.setup();
     const block = makeWorkBlock();
     const fetchMock = vi.fn(() =>
@@ -159,13 +159,13 @@ describe('ScheduledItemGoals — workBlock', () => {
       <ScheduledItemGoals item={{ kind: 'workBlock', block }} mode="inline" />,
     );
 
-    const removeButtons = screen.getAllByRole('button', { name: /remove sub-goal/i });
+    const removeButtons = screen.getAllByRole('button', { name: /remove clear goal/i });
     await user.click(removeButtons[0]);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [, init] = fetchMock.mock.calls[0];
     expect(JSON.parse(init.body as string)).toEqual({
-      subGoals: ['Wire up the SQL'],
+      clearGoals: ['Wire up the SQL'],
     });
   });
 });

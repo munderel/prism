@@ -7,7 +7,7 @@ import type {
   WorkBlockNameRequest,
   WorkBlockNameResolved,
 } from '@/components/calendar/WorkBlockObjectiveModal';
-import { fetchTaskLevelClearGoals } from '@/lib/work-blocks-client';
+import { fetchTaskWorkBlockHints } from '@/lib/work-blocks-client';
 
 interface UseWorkBlockNameModalResult {
   /** Pass to `<CalendarSplitView onRequestNameWorkBlock={openAndAwait}>` so drops open the modal. */
@@ -37,10 +37,14 @@ export function useWorkBlockNameModal(): UseWorkBlockNameModalResult {
       resolveRef.current(null);
       resolveRef.current = null;
     }
-    const taskLevelClearGoals = await fetchTaskLevelClearGoals(request.taskId);
+    const hints = await fetchTaskWorkBlockHints(request.taskId);
     return new Promise<WorkBlockNameResolved | null>((resolve) => {
       resolveRef.current = resolve;
-      setInput({ ...request, taskLevelClearGoals });
+      setInput({
+        ...request,
+        taskDeliverable: request.taskDeliverable ?? hints.deliverable,
+        taskLevelClearGoals: hints.clearGoals,
+      });
     });
   }, []);
 
@@ -49,7 +53,7 @@ export function useWorkBlockNameModal(): UseWorkBlockNameModalResult {
       start: new Date(payload.start),
       end: new Date(payload.end),
       mainObjective: payload.mainObjective,
-      subGoals: payload.subGoals,
+      clearGoals: payload.clearGoals,
     });
     resolveRef.current = null;
     setInput(null);
