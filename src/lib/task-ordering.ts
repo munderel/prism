@@ -1,15 +1,7 @@
 /**
- * Section-internal ordering for the Tasks page and dashboard.
- *
- * Rule (per the Phase 1 fix plan, Components 2 + 3):
- *   1. work-block start ASC, NULLS LAST    — scheduled tasks rise to the top
- *      in the order they will actually happen
- *   2. dueDate ASC, NULLS LAST             — among same-or-no schedule, the
- *      soonest deadline wins
- *   3. priority DESC (HIGH > MEDIUM > LOW) — final tiebreak
- *
- * A task with multiple work blocks is keyed on its EARLIEST block start —
- * that's the user-visible "when does this task begin today" answer.
+ * Section-internal ordering: workBlock.start ASC NULLS LAST,
+ * dueDate ASC NULLS LAST, priority DESC. A task with multiple
+ * work blocks is keyed on its earliest block start.
  */
 
 interface OrderableTask {

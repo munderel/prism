@@ -63,9 +63,6 @@ export default function TasksPage() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [selectedTask, setSelectedTask] = useState<any>(null);
-  // Selection is window-scoped: navigating to a different day or switching
-  // view mode clears the right-hand detail panel so it never points at a
-  // task that's no longer visible in the list.
   useEffect(() => { setSelectedTask(null); }, [date, viewMode]);
   const [showUnscheduled, setShowUnscheduled] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);

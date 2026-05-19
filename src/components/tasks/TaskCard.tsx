@@ -63,6 +63,13 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
   const statePill = SCHEDULE_STATE_STYLES[scheduleState];
   const showProgress = blocks.length > 0 || scheduleState !== 'UNSCHEDULED' || time.completedMinutes > 0;
 
+  let subLabel: { text: string; className: string } | null = null;
+  if (task.taskType === 'IMPROVE' && task.goal?.parent?.title) {
+    subLabel = { text: task.goal.parent.title, className: PRISM_COLORS.IMPROVE.textClass };
+  } else if (task.goal?.stack?.name) {
+    subLabel = { text: task.goal.stack.name, className: 'text-[var(--text-muted)]' };
+  }
+
   return (
     <m.div
       layout
@@ -145,11 +152,9 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
               onStatusChange={(newStatus) => onStatusChange?.(task.id, newStatus)}
             />
           </div>
-          {task.taskType === 'IMPROVE' && task.goal?.parent?.title ? (
-            <span className={`text-xs ${PRISM_COLORS.IMPROVE.textClass}`}>{task.goal.parent.title}</span>
-          ) : task.goal?.stack?.name ? (
-            <span className="text-xs text-[var(--text-muted)]">{task.goal.stack.name}</span>
-          ) : null}
+          {subLabel && (
+            <span className={`text-xs ${subLabel.className}`}>{subLabel.text}</span>
+          )}
           {task.taskType === 'MAINTENANCE' && task.processExecution?.process?.title && (
             <span className="text-xs text-orange-400/70">⚙ {task.processExecution.process.title}</span>
           )}

@@ -172,7 +172,6 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
     const all = tasks.filter((t: DailyTask) => t.taskType === key);
     const active = all
       .filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED')
-      .slice()
       .sort(compareTasksByScheduledTime);
     return { key, label, color, tasks: active };
   }), [tasks]);

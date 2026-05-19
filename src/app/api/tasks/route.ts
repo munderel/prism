@@ -8,6 +8,15 @@ import { parseLocalDate } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
+
+const GOAL_WITH_PARENT_SELECT = {
+  id: true,
+  title: true,
+  level: true,
+  stack: { select: { name: true } },
+  parent: { select: { id: true, title: true, level: true } },
+} as const;
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
@@ -120,7 +129,7 @@ export async function GET(request: NextRequest) {
       include: {
         owner: { select: { id: true, name: true, email: true } },
         assignee: { select: USER_SUMMARY_SELECT },
-        goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } }, parent: { select: { id: true, title: true, level: true } } } },
+        goal: { select: GOAL_WITH_PARENT_SELECT },
         _count: { select: { comments: true, children: true } },
         children: { select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true } },
         workBlocks: { select: { id: true, start: true, end: true, completionStatus: true, actualMinutes: true } },
@@ -192,7 +201,7 @@ export async function GET(request: NextRequest) {
     include: {
       owner: { select: { id: true, name: true, email: true } },
       assignee: { select: USER_SUMMARY_SELECT },
-      goal: { select: { id: true, title: true, level: true, stack: { select: { name: true } }, parent: { select: { id: true, title: true, level: true } } } },
+      goal: { select: GOAL_WITH_PARENT_SELECT },
       processExecution: { include: { process: { select: { title: true } } } },
       _count: { select: { comments: true, children: true } },
       attachments: { select: { id: true, fileName: true, fileUrl: true } },
