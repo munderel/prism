@@ -86,10 +86,10 @@ interface SelectedEventPopover {
   priority?: string;
   goalTitle?: string;
   workBlockId?: string;
+  // meetings no longer surface in this popover — clicks route to
+  // /meetings/[id]/edit; review/process/google still use it.
   link?: string;
   description?: string;
-  cadence?: string;
-  createdBy?: string;
   gcalEventId?: string;
   gcalCalendarId?: string;
   foodBlockId?: string;
@@ -1651,24 +1651,6 @@ export function CalendarSplitView({
                 </div>
               )}
 
-              {/* MEETING popover */}
-              {selectedEventPopover.source === 'meeting' && (
-                <>
-                  {selectedEventPopover.cadence && (
-                    <div className="text-xs text-[var(--text-muted)]">
-                      <span className="font-medium">Cadence:</span> {selectedEventPopover.cadence.toLowerCase().replace('_', ' ')}
-                    </div>
-                  )}
-                  {selectedEventPopover.createdBy && (
-                    <div className="text-xs text-[var(--text-muted)]">
-                      <span className="font-medium">Created by:</span> {selectedEventPopover.createdBy}
-                    </div>
-                  )}
-                  {selectedEventPopover.description && (
-                    <div className="text-xs text-[var(--text-secondary)] mt-1">{selectedEventPopover.description}</div>
-                  )}
-                </>
-              )}
             </PopoverBody>
 
             <PopoverFooter>
@@ -1803,18 +1785,6 @@ export function CalendarSplitView({
                 >
                   Open
                 </button>
-              )}
-
-              {/* Meeting: Join (if meet link) */}
-              {selectedEventPopover.source === 'meeting' && selectedEventPopover.link && (
-                <a
-                  href={selectedEventPopover.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
-                >
-                  Join Meeting
-                </a>
               )}
 
               {/* Food / meal block actions */}

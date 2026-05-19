@@ -3,19 +3,10 @@
 import { useEffect, useState } from 'react';
 import { Video, X } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
+import { getLocalDateString } from '@/lib/date-utils';
+import type { MeetingEditorMeeting } from '@/types/meeting';
 
-export interface MeetingEditorMeeting {
-  id: string;
-  title: string;
-  description: string | null;
-  cadence: string;
-  dayOfWeek: number | null;
-  occurDate: string | null;
-  timeStart: string;
-  timeEnd: string;
-  attendeeIds: string[];
-  meetLink: string | null;
-}
+export type { MeetingEditorMeeting };
 
 interface UserOption {
   id: string;
@@ -25,10 +16,14 @@ interface UserOption {
 }
 
 interface MeetingEditorProps {
-  /** Edit an existing meeting; omit for create-new. */
+  /**
+   * Edit an existing meeting; omit for create-new. Read once on mount —
+   * the form populates from this on the first render only. To edit a
+   * different meeting, remount the component (e.g. via React `key`).
+   */
   meeting?: MeetingEditorMeeting | null;
   /** Fires after a successful POST/PATCH with the saved meeting + any
-   *  non-persistent warnings (e.g. non-Google attendees). */
+   *  non-persistent warnings (e.g. attendee deliverability advisory). */
   onSaved: (saved: unknown, warnings: string[]) => void;
   onCancel: () => void;
 }
@@ -53,14 +48,6 @@ const DAY_OPTIONS = [
   { value: 6, label: 'Saturday' },
 ];
 
-function todayYmd(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 export function MeetingEditor({ meeting, onSaved, onCancel }: MeetingEditorProps) {
   const toast = useToast();
   const editingId = meeting?.id ?? null;
@@ -72,7 +59,7 @@ export function MeetingEditor({ meeting, onSaved, onCancel }: MeetingEditorProps
   // Meeting.occurDate is stored as UTC midnight; extract the YYYY-MM-DD prefix
   // directly so the date input shows the same day the user originally chose.
   const [occurDate, setOccurDate] = useState<string>(
-    meeting?.occurDate ? meeting.occurDate.slice(0, 10) : todayYmd(),
+    meeting?.occurDate ? meeting.occurDate.slice(0, 10) : getLocalDateString(),
   );
   const [timeStart, setTimeStart] = useState(meeting?.timeStart ?? '09:00');
   const [timeEnd, setTimeEnd] = useState(meeting?.timeEnd ?? '10:00');

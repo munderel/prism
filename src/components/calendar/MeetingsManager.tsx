@@ -6,22 +6,7 @@ import { formatDateOnly } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MeetingEditor } from './MeetingEditor';
 
-interface Meeting {
-  id: string;
-  title: string;
-  description: string | null;
-  cadence: string;
-  dayOfWeek: number | null;
-  occurDate: string | null;
-  timeStart: string;
-  timeEnd: string;
-  attendeeIds: string[];
-  meetLink: string | null;
-  calendarEventId: string | null;
-  syncedAt: string | null;
-  syncError: string | null;
-  createdBy: { id: string; name: string | null; email: string };
-}
+import type { Meeting } from '@/types/meeting';
 
 const CADENCE_OPTIONS = [
   { value: 'ONE_TIME', label: 'One-Time' },
@@ -76,7 +61,6 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Team Reviews state
   const [teamReviews, setTeamReviews] = useState<TeamReview[]>([]);
@@ -164,22 +148,20 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
 
   const resetForm = () => {
     setEditingMeeting(null);
-    setEditingId(null);
     setShowForm(false);
   };
 
   const startEdit = (meeting: Meeting) => {
     setEditingMeeting(meeting);
-    setEditingId(meeting.id);
     setShowForm(true);
   };
 
   // MeetingEditor handles submit + non-Google warnings internally and notifies
-  // back here so the list refreshes (and any non-edit-mode warnings surface).
+  // back here so the list refreshes. Warnings surface for both create and
+  // edit — the attendee-deliverability advisory is just as relevant after a
+  // re-save (attendee set may have changed).
   const handleEditorSaved = (_: unknown, warnings: string[]) => {
-    if (!editingId) {
-      for (const w of warnings) toast.info(w);
-    }
+    for (const w of warnings) toast.info(w);
     resetForm();
     fetchMeetings();
     onUpdate?.();
@@ -451,6 +433,10 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
         {/* Create / Edit form */}
         {showForm ? (
           <MeetingEditor
+            // Remount when switching between create-new and any existing
+            // meeting so the form re-syncs from the new `meeting` prop
+            // (MeetingEditor reads its initial state once on mount).
+            key={editingMeeting?.id ?? 'new'}
             meeting={editingMeeting}
             onSaved={handleEditorSaved}
             onCancel={resetForm}

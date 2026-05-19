@@ -176,30 +176,17 @@ export async function POST(request: NextRequest) {
     where: { id: meeting.id },
     include: MEETING_INCLUDE,
   });
-  // Surface non-Google attendees so the creator knows those addresses won't
-  // get an email invite from Google. Non-persistent — toast-only on create.
+  // Non-Google attendees may not get an email invite (only Google can decide
+  // — Workspace domains do receive it, free-tier non-Google domains may not).
+  // We can't tell from a domain string alone, so surface a single advisory
+  // when there are any attendees; better to set expectations than to risk
+  // false-positive per-address warnings.
   const warnings: string[] = [];
-  // The closure-scoped `nonGoogleAttendees` lives inside syncToGcal; recompute
-  // here using the attendeeIds we just persisted so the surface doesn't depend
-  // on whether the sync succeeded.
-  if (Array.isArray(meeting.attendeeIds) && (meeting.attendeeIds as string[]).length > 0) {
-    const ids = meeting.attendeeIds as string[];
-    const attendees = await prisma.user.findMany({
-      where: { id: { in: ids } },
-      select: { email: true },
-    });
-    const nonGoogle = attendees
-      .map((a) => a.email)
-      .filter((email): email is string => !!email && /.+@.+\..+/.test(email))
-      .filter((email) => {
-        const domain = email.split('@')[1]?.toLowerCase() ?? '';
-        return domain !== 'gmail.com' && !domain.endsWith('.gserviceaccount.com');
-      });
-    if (nonGoogle.length > 0) {
-      warnings.push(
-        `Attendees on non-Google domains may not receive an email invite: ${nonGoogle.join(', ')}`,
-      );
-    }
+  const attendeeCount = Array.isArray(meeting.attendeeIds) ? (meeting.attendeeIds as string[]).length : 0;
+  if (attendeeCount > 0) {
+    warnings.push(
+      'Attendees without Google Calendar may need to subscribe to this calendar to see the event.',
+    );
   }
   return Response.json({ ...(finalMeeting ?? meeting), warnings }, { status: 201 });
 }

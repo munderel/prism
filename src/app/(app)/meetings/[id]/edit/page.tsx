@@ -40,7 +40,7 @@ export default function MeetingEditPage() {
     return (
       <div className="text-sm text-[var(--text-muted)] py-10">
         Meeting not found.{' '}
-        <button onClick={() => router.back()} className="text-emerald-400 hover:underline">
+        <button onClick={() => router.push('/calendar')} className="text-emerald-400 hover:underline">
           Go back
         </button>
       </div>
@@ -54,10 +54,10 @@ export default function MeetingEditPage() {
       </h1>
       <MeetingEditor
         meeting={meeting}
-        onCancel={() => router.back()}
+        onCancel={() => router.push('/calendar')}
         onSaved={(_, warnings) => {
           for (const w of warnings) toast.info(w);
-          router.back();
+          router.push('/calendar');
         }}
       />
     </div>
