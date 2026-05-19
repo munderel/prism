@@ -50,6 +50,36 @@ describe('compareTasksByScheduledTime', () => {
     expect([b, a].sort(compareTasksByScheduledTime).map((t) => t.id)).toEqual(['a-high', 'b-med']);
   });
 
+  it('among same-scheduled-time, URGENT priority sorts before HIGH', () => {
+    const a = createTask({
+      id: 'a-urgent',
+      priority: 'URGENT',
+      workBlocks: [{ start: '2026-05-18T10:00:00.000Z' }],
+    });
+    const b = createTask({
+      id: 'b-high',
+      priority: 'HIGH',
+      workBlocks: [{ start: '2026-05-18T10:00:00.000Z' }],
+    });
+    expect([b, a].sort(compareTasksByScheduledTime).map((t) => t.id)).toEqual(['a-urgent', 'b-high']);
+  });
+
+  it('scheduled trumps priority: LOW scheduled sorts before URGENT unscheduled', () => {
+    const scheduledLow = createTask({
+      id: 'scheduled-low',
+      priority: 'LOW',
+      workBlocks: [{ start: '2026-05-18T10:00:00.000Z' }],
+    });
+    const unscheduledUrgent = createTask({
+      id: 'unscheduled-urgent',
+      priority: 'URGENT',
+      workBlocks: [],
+    });
+    expect(
+      [unscheduledUrgent, scheduledLow].sort(compareTasksByScheduledTime).map((t) => t.id)
+    ).toEqual(['scheduled-low', 'unscheduled-urgent']);
+  });
+
   it('stable: equal-key tasks keep their original relative order', () => {
     const a = createTask({ id: 'a', workBlocks: [] });
     const b = createTask({ id: 'b', workBlocks: [] });

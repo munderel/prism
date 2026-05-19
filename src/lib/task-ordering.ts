@@ -10,7 +10,7 @@ interface OrderableTask {
   workBlocks?: Array<{ start: string | Date }>;
 }
 
-const PRIORITY_RANK: Record<string, number> = { HIGH: 3, MEDIUM: 2, LOW: 1 };
+const PRIORITY_RANK: Record<string, number> = { URGENT: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
 function earliestStartMs(task: OrderableTask): number | null {
   if (!task.workBlocks || task.workBlocks.length === 0) return null;
