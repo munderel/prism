@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
 import { ListTodo, ChevronLeft, ChevronRight, CalendarRange, Inbox, ChevronDown } from 'lucide-react';
 import { ReviewDueBanner } from '@/components/reviews/ReviewDueBanner';
@@ -63,6 +63,7 @@ export default function TasksPage() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  useEffect(() => { setSelectedTask(null); }, [date, viewMode]);
   const [showUnscheduled, setShowUnscheduled] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

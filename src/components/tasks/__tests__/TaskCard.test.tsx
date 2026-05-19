@@ -143,4 +143,38 @@ describe('TaskCard', () => {
     renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
     expect(screen.getByText(/→ Final report/)).toBeInTheDocument();
   });
+
+  it('IMPROVE task shows its monthly goal title as a sub-label', () => {
+    // Improve tasks always link to a WEEKLY goal; its parent is MONTHLY.
+    // The card should surface the monthly goal title (e.g. "Revenue (May)")
+    // so users can read why the task exists without opening the goal stack.
+    const task = createTask({
+      taskType: 'IMPROVE',
+      goal: {
+        id: 'g-weekly',
+        title: 'Week 3',
+        level: 'WEEKLY',
+        parent: { id: 'g-monthly', title: 'Revenue (May)', level: 'MONTHLY' },
+        stack: { name: 'Revenue 2026' },
+      },
+    });
+    renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
+    expect(screen.getByText('Revenue (May)')).toBeInTheDocument();
+  });
+
+  it('non-IMPROVE task does NOT render a monthly goal sub-label even when goal.parent exists', () => {
+    // Only IMPROVE tasks carry a goal context worth surfacing; React /
+    // Maintenance tasks remain free-standing.
+    const task = createTask({
+      taskType: 'REACT',
+      goal: {
+        id: 'g-weekly',
+        title: 'Week 3',
+        level: 'WEEKLY',
+        parent: { id: 'g-monthly', title: 'Revenue (May)', level: 'MONTHLY' },
+      },
+    });
+    renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
+    expect(screen.queryByText('Revenue (May)')).not.toBeInTheDocument();
+  });
 });

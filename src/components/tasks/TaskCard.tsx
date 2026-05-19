@@ -4,6 +4,7 @@ import React from 'react';
 import { m } from 'framer-motion';
 import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star, ListChecks, Clock } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
+import { PRISM_COLORS } from '@/lib/prism-colors';
 import { isTaskOverdue, subtaskDoneCount } from '@/lib/task-utils';
 import { StatusChip } from './StatusChip';
 import { ClearGoalsDisplay } from './ClearGoalsDisplay';
@@ -61,6 +62,13 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
   const timePercentCapped = Math.min(100, time.percent);
   const statePill = SCHEDULE_STATE_STYLES[scheduleState];
   const showProgress = blocks.length > 0 || scheduleState !== 'UNSCHEDULED' || time.completedMinutes > 0;
+
+  let subLabel: { text: string; className: string } | null = null;
+  if (task.taskType === 'IMPROVE' && task.goal?.parent?.title) {
+    subLabel = { text: task.goal.parent.title, className: PRISM_COLORS.IMPROVE.textClass };
+  } else if (task.goal?.stack?.name) {
+    subLabel = { text: task.goal.stack.name, className: 'text-[var(--text-muted)]' };
+  }
 
   return (
     <m.div
@@ -144,8 +152,8 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
               onStatusChange={(newStatus) => onStatusChange?.(task.id, newStatus)}
             />
           </div>
-          {task.goal?.stack?.name && (
-            <span className="text-xs text-[var(--text-muted)]">{task.goal.stack.name}</span>
+          {subLabel && (
+            <span className={`text-xs ${subLabel.className}`}>{subLabel.text}</span>
           )}
           {task.taskType === 'MAINTENANCE' && task.processExecution?.process?.title && (
             <span className="text-xs text-orange-400/70">⚙ {task.processExecution.process.title}</span>
