@@ -176,5 +176,17 @@ export async function POST(request: NextRequest) {
     where: { id: meeting.id },
     include: MEETING_INCLUDE,
   });
-  return Response.json(finalMeeting ?? meeting, { status: 201 });
+  // Non-Google attendees may not get an email invite (only Google can decide
+  // — Workspace domains do receive it, free-tier non-Google domains may not).
+  // We can't tell from a domain string alone, so surface a single advisory
+  // when there are any attendees; better to set expectations than to risk
+  // false-positive per-address warnings.
+  const warnings: string[] = [];
+  const attendeeCount = Array.isArray(meeting.attendeeIds) ? (meeting.attendeeIds as string[]).length : 0;
+  if (attendeeCount > 0) {
+    warnings.push(
+      'Attendees without Google Calendar may need to subscribe to this calendar to see the event.',
+    );
+  }
+  return Response.json({ ...(finalMeeting ?? meeting), warnings }, { status: 201 });
 }

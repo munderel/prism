@@ -43,11 +43,10 @@ interface SelectedEventPopover {
   // Work-block-specific (set when eventId starts with 'workblock-')
   workBlockId?: string;
   workBlockCompletionStatus?: WorkBlockStatus;
-  // Review/powerdown/meeting/process/google
+  // Review/powerdown/process/google (meetings no longer use the popover —
+  // they route directly to /meetings/[id]/edit).
   link?: string;
   description?: string;
-  cadence?: string;
-  createdBy?: string;
   // Process-specific
   processId?: string;
   scheduledDate?: string;
@@ -446,19 +445,11 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       return;
     }
 
-    // Meeting event → show popover
+    // Meeting event → focused edit page (Component 6). Popover bypassed so
+    // every calendar surface routes to one canonical destination.
     if (info.event.id?.startsWith('meeting-')) {
-      setSelectedEventPopover({
-        eventId: info.event.id,
-        title: info.event.title,
-        source: 'meeting',
-        status: '',
-        anchorRect: rect,
-        description: props.description,
-        cadence: props.cadence,
-        createdBy: props.createdBy,
-        link: props.meetLink,
-      });
+      const meetingId = info.event.id.replace('meeting-', '');
+      router.push(`/meetings/${meetingId}/edit`);
       return;
     }
 
@@ -1138,25 +1129,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               </div>
             )}
 
-            {/* MEETING popover */}
-            {selectedEventPopover.source === 'meeting' && (
-              <>
-                {selectedEventPopover.cadence && (
-                  <div className="text-xs text-[var(--text-muted)]">
-                    <span className="font-medium">Cadence:</span> {selectedEventPopover.cadence.toLowerCase().replace('_', ' ')}
-                  </div>
-                )}
-                {selectedEventPopover.createdBy && (
-                  <div className="text-xs text-[var(--text-muted)]">
-                    <span className="font-medium">Created by:</span> {selectedEventPopover.createdBy}
-                  </div>
-                )}
-                {selectedEventPopover.description && (
-                  <div className="text-xs text-[var(--text-secondary)] mt-1">{selectedEventPopover.description}</div>
-                )}
-              </>
-            )}
-
             </PopoverBody>
 
             <PopoverFooter>
@@ -1364,18 +1336,6 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
                   Open
                 </button>
               </>
-            )}
-
-            {/* Meeting: Join (if meet link) */}
-            {selectedEventPopover.source === 'meeting' && selectedEventPopover.link && (
-              <a
-                href={selectedEventPopover.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
-              >
-                Join Meeting
-              </a>
             )}
 
             {/* Google event actions */}

@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { render, userEvent, createMockFetch } from '@/test/utils';
+import { renderWithProviders, userEvent, createMockFetch } from '@/test/utils';
 import { MeetingsManager } from '../MeetingsManager';
 import { createMeeting } from '@/test/fixtures';
 
@@ -19,19 +19,22 @@ describe('MeetingsManager', () => {
   });
 
   it('returns null when open is false', () => {
-    const { container } = render(<MeetingsManager open={false} onClose={onClose} />);
-    expect(container.innerHTML).toBe('');
+    renderWithProviders(<MeetingsManager open={false} onClose={onClose} />);
+    // The provider chain renders a toast container even when MeetingsManager
+    // itself returns null; assert the manager-owned heading isn't present
+    // instead of checking the whole container.
+    expect(screen.queryByText('Manage Meetings')).not.toBeInTheDocument();
   });
 
   it('shows loading state when opened', () => {
     global.fetch = vi.fn(() => new Promise(() => {}));
-    render(<MeetingsManager open={true} onClose={onClose} />);
+    renderWithProviders(<MeetingsManager open={true} onClose={onClose} />);
     expect(screen.getByText('Loading meetings...')).toBeInTheDocument();
   });
 
   it('shows empty state when no meetings exist', async () => {
     setup([]);
-    render(<MeetingsManager open={true} onClose={onClose} />);
+    renderWithProviders(<MeetingsManager open={true} onClose={onClose} />);
 
     await waitFor(() => {
       expect(screen.getByText(/No meetings yet/)).toBeInTheDocument();
@@ -49,7 +52,7 @@ describe('MeetingsManager', () => {
       attendeeIds: ['u1', 'u2'],
     });
     setup([meeting]);
-    render(<MeetingsManager open={true} onClose={onClose} />);
+    renderWithProviders(<MeetingsManager open={true} onClose={onClose} />);
 
     await waitFor(() => {
       expect(screen.getByText('Weekly Standup')).toBeInTheDocument();
@@ -63,7 +66,7 @@ describe('MeetingsManager', () => {
   it('shows New Meeting button and opens form on click', async () => {
     setup([]);
     const user = userEvent.setup();
-    render(<MeetingsManager open={true} onClose={onClose} />);
+    renderWithProviders(<MeetingsManager open={true} onClose={onClose} />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /New Meeting/i })).toBeInTheDocument();
@@ -80,7 +83,7 @@ describe('MeetingsManager', () => {
   it('submits new meeting form', async () => {
     setup([]);
     const user = userEvent.setup();
-    render(<MeetingsManager open={true} onClose={onClose} />);
+    renderWithProviders(<MeetingsManager open={true} onClose={onClose} />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /New Meeting/i })).toBeInTheDocument();
@@ -104,7 +107,7 @@ describe('MeetingsManager', () => {
   it('calls onClose when close button is clicked', async () => {
     setup([]);
     const user = userEvent.setup();
-    render(<MeetingsManager open={true} onClose={onClose} />);
+    renderWithProviders(<MeetingsManager open={true} onClose={onClose} />);
 
     await waitFor(() => {
       expect(screen.getByText('Manage Meetings')).toBeInTheDocument();
@@ -120,7 +123,7 @@ describe('MeetingsManager', () => {
     const meeting = createMeeting({ id: 'm1', title: 'Team Sync' });
     setup([meeting]);
     const user = userEvent.setup();
-    render(<MeetingsManager open={true} onClose={onClose} />);
+    renderWithProviders(<MeetingsManager open={true} onClose={onClose} />);
 
     await waitFor(() => {
       expect(screen.getByText('Team Sync')).toBeInTheDocument();
