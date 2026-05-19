@@ -34,24 +34,27 @@ vi.mock('@/lib/recurrence', () => ({
   getNextOccurrence: vi.fn(),
 }));
 
-vi.mock('@/lib/date-utils', () => ({
-  parseLocalDate: vi.fn((d: string) => new Date(d)),
-  // Date-only fields (Task.dueDate, etc.) are stored UTC-anchored. The real
-  // helper returns UTC midnight for bare 'YYYY-MM-DD' input and null
-  // otherwise; full ISO datetimes flow through the new Date(...) fallback.
-  parseDateOnly: vi.fn((s: string | null | undefined) => {
+vi.mock('@/lib/date-utils', () => {
+  const parseDateOnly = (s: string | null | undefined) => {
     if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
     return new Date(`${s}T00:00:00.000Z`);
-  }),
-  // YYYY-MM-DD from the UTC date components. Tests for auto-bump pass dates
-  // unambiguous across TZs (mid-day UTC) so we always read the intended day.
-  getLocalDateString: vi.fn((d: Date) => {
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(d.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }),
-}));
+  };
+  return {
+    parseLocalDate: vi.fn((d: string) => new Date(d)),
+    parseDateOnly: vi.fn(parseDateOnly),
+    parseTaskDueInput: vi.fn((s: string | null | undefined) => {
+      if (!s) return null;
+      return parseDateOnly(s) ?? new Date(s);
+    }),
+    // Tests pass mid-day-UTC instants so getUTC* reads the intended day.
+    getLocalDateString: vi.fn((d: Date) => {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }),
+  };
+});
 
 vi.mock('@/lib/calendar', () => ({
   syncTaskCalendarEvent: vi.fn(),

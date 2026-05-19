@@ -54,6 +54,18 @@ export function parseDateOnly(s: string | null | undefined): Date | null {
 }
 
 /**
+ * Parse a Task.dueDate input that may be either a bare 'YYYY-MM-DD' or a
+ * full ISO datetime. Date-only inputs anchor to UTC midnight; full ISO
+ * inputs preserve their wall-clock instant. Returns null for empty input.
+ * Returns an Invalid Date for unparseable strings — Prisma rejects those
+ * loudly at write time, which is the intended failure mode.
+ */
+export function parseTaskDueInput(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  return parseDateOnly(s) ?? new Date(s);
+}
+
+/**
  * Convert any Date to UTC midnight at its LOCAL calendar date. Use when
  * computing date-only field values from a Date cursor (e.g. weekly/monthly
  * goal generation) before storage. Pairs with parseDateOnly/formatDateOnly.

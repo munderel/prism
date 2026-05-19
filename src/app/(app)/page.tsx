@@ -197,8 +197,6 @@ export default function DashboardPage() {
       groups[getLocalDateString(d)] = [];
     }
     for (const t of list) {
-      // Use UTC extraction so a task stored at UTC midnight surfaces under
-      // its actual calendar date, not the previous day in non-UTC viewer TZs.
       const dateKey = t.dueDate ? toDateOnlyInputValue(t.dueDate) : weekRange.start;
       if (groups[dateKey]) {
         groups[dateKey].push(t);

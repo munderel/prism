@@ -8,7 +8,7 @@ import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { deleteGoogleEvent, getGoogleSyncInfo, syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { completeTask } from '@/lib/task-completion';
-import { getLocalDateString, parseDateOnly } from '@/lib/date-utils';
+import { getLocalDateString, parseDateOnly, parseTaskDueInput } from '@/lib/date-utils';
 import { getCurrentPeriodRange } from '@/lib/process-task-generator';
 
 export async function GET(
@@ -83,9 +83,7 @@ export async function PATCH(
     'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay', 'winTheDayRank',
     'assigneeId',
   ]);
-  if (dueDate !== undefined) {
-    data.dueDate = dueDate ? (parseDateOnly(dueDate) ?? new Date(dueDate)) : null;
-  }
+  if (dueDate !== undefined) data.dueDate = parseTaskDueInput(dueDate);
   if (timeBlockStart !== undefined) data.timeBlockStart = timeBlockStart ? new Date(timeBlockStart) : null;
   if (timeBlockEnd !== undefined) data.timeBlockEnd = timeBlockEnd ? new Date(timeBlockEnd) : null;
   if (body.startTime !== undefined) data.startTime = body.startTime ? new Date(body.startTime) : null;

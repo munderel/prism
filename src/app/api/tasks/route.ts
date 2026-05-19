@@ -4,7 +4,7 @@ import { requireAuth, authError, checkStackWriteAccess } from '@/lib/auth-guard'
 import { NO_STORE, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
 import { parseBody, createTaskSchema } from '@/lib/schemas';
 import { parseRRule } from '@/lib/recurrence';
-import { parseDateOnly } from '@/lib/date-utils';
+import { parseDateOnly, parseTaskDueInput } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
@@ -143,12 +143,23 @@ export async function GET(request: NextRequest) {
   // Build date filter
   const dateFilter: Record<string, unknown> = {};
   if ((startDate && endDate) || date) {
-    // Date-only fields are anchored to UTC midnight (see parseDateOnly /
-    // toDateOnlyInputValue). The filter must use the same anchor so the
-    // calendar date the user picked matches the row regardless of which
-    // timezone the Node runtime happens to be in.
-    const rangeStart = parseDateOnly(startDate ?? date!) ?? new Date();
-    const rangeEnd = endDate ? (parseDateOnly(endDate) ?? new Date()) : new Date(rangeStart);
+    // Anchor on UTC midnight so the filter matches dueDate storage in any
+    // Node TZ. Reject malformed input loudly rather than silently filtering
+    // around `now`.
+    const rangeStart = parseDateOnly(startDate ?? date!);
+    if (!rangeStart) {
+      return Response.json({ error: 'Invalid date parameter' }, { status: 400 });
+    }
+    let rangeEnd: Date;
+    if (endDate) {
+      const parsed = parseDateOnly(endDate);
+      if (!parsed) {
+        return Response.json({ error: 'Invalid endDate parameter' }, { status: 400 });
+      }
+      rangeEnd = parsed;
+    } else {
+      rangeEnd = new Date(rangeStart);
+    }
     rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
 
     // A task overlaps the requested window when:
@@ -289,9 +300,7 @@ export async function POST(request: NextRequest) {
       title,
       description: description ?? null,
       priority: priority ?? 'MEDIUM',
-      // Bare YYYY-MM-DD → UTC midnight (consistent with goal dates and the
-      // dashboard's UTC-anchored display); full ISO datetimes pass through.
-      dueDate: dueDate ? (parseDateOnly(dueDate) ?? new Date(dueDate)) : null,
+      dueDate: parseTaskDueInput(dueDate),
       goalId: goalId ?? null,
       processId: processId ?? null,
       recurrenceRule: recurrenceRule ?? null,
