@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "UserAim" ADD COLUMN "activeWeekdays" INTEGER NOT NULL DEFAULT 127;

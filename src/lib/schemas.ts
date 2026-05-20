@@ -671,6 +671,12 @@ const aimInputSchema = z.object({
   phaseStartedAt: z.string().optional(),
   completionCount: z.number().int().min(0).optional(),
   currentStreak: z.number().int().min(0).optional(),
+  activeWeekdays: z
+    .number()
+    .int('activeWeekdays must be an integer')
+    .min(0, 'activeWeekdays must be >= 0')
+    .max(127, 'activeWeekdays must be <= 127')
+    .optional(),
 });
 
 export const putUserAimsSchema = z.object({

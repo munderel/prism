@@ -26,6 +26,7 @@ interface AimInput {
   phaseStartedAt?: string;
   completionCount?: number;
   currentStreak?: number;
+  activeWeekdays?: number;
 }
 
 /** Build the shared data payload for both create and update in a upsert. */
@@ -47,6 +48,9 @@ function buildAimData(aim: AimInput, userId?: string): Record<string, unknown> {
   if (aim.phaseStartedAt !== undefined) data.phaseStartedAt = new Date(aim.phaseStartedAt);
   if (aim.completionCount !== undefined) data.completionCount = aim.completionCount;
   if (aim.currentStreak !== undefined) data.currentStreak = aim.currentStreak;
+
+  // activeWeekdays bitmask (0–127); only update when explicitly provided.
+  if (aim.activeWeekdays !== undefined) data.activeWeekdays = aim.activeWeekdays;
 
   return data;
 }

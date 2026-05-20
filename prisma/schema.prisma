@@ -867,6 +867,7 @@ model UserAim {
   safetyBufferDays      Float     @default(7) // Beeminder-style slack days remaining
   safetyBufferUpdatedAt DateTime? // last recompute timestamp for buffer
   derailedAt            DateTime? // set when buffer hits 0; cleared by "back on track"
+  activeWeekdays        Int       @default(127) // bitmask: Sun=1, Mon=2, Tue=4, Wed=8, Thu=16, Fri=32, Sat=64; 127 = all 7 days
   createdAt             DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
