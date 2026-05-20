@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { cacheHeaders } from '@/lib/api-helpers';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -9,6 +10,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const aimCategoryId = searchParams.get('aimCategoryId');
   const daysParam = searchParams.get('days');
+  const weeksParam = searchParams.get('weeks');
 
   if (!aimCategoryId) {
     return Response.json(
@@ -17,7 +19,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const days = Math.min(Math.max(parseInt(daysParam || '56', 10) || 56, 1), 120);
+  // Support ?weeks=N as an alias for ?days=(N*7). weeks takes precedence.
+  let days: number;
+  if (weeksParam !== null) {
+    const weeks = Math.min(Math.max(parseInt(weeksParam, 10) || 8, 1), 52);
+    days = weeks * 7;
+  } else {
+    days = Math.min(Math.max(parseInt(daysParam || '56', 10) || 56, 1), 365);
+  }
 
   const now = new Date();
   const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
@@ -65,5 +74,5 @@ export async function GET(request: NextRequest) {
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  return Response.json(result);
+  return Response.json(result, { headers: cacheHeaders() });
 }

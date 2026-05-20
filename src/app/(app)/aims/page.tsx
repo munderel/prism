@@ -1245,7 +1245,12 @@ function AimCard({
       {/* Streak heatmap */}
       {active && !isEditing && (
         <div className="mt-2">
-          <StreakHeatmap aimCategoryId={category.id} />
+          <StreakHeatmap
+            aimCategoryId={category.id}
+            isDaily={category.isDaily}
+            activeWeekdays={userAim?.activeWeekdays ?? 127}
+            weeklyTarget={userAim?.customFrequency ?? category.defaultFrequency}
+          />
         </div>
       )}
 
