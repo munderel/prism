@@ -10,12 +10,14 @@ const KPI_PROGRESS_FIELDS = ['actualValue', 'isComplete'] as const;
 /**
  * Fetch a KPI and verify the caller may modify it.
  * - Admin or stack owner: full access.
+ * - GoalAssignee on this KPI's goal: full access (rename, retarget, unit
+ *   change, progress). Lets weekly-goal owners manage their KPIs without
+ *   needing stack-owner permissions on the whole stack.
  * - The KPI owner (`kpi.ownerId === auth.userId`): may update progress fields only.
- * - Goal/stack assignees: may update progress fields only (via `checkStackWriteAccess` restricted mode).
+ * - CompanyGoalAssignment / other GoalAssignees: may update progress fields only.
  * - Others: 403.
  *
- * `intendedProgressOnly` tells callers whether the intended mutation is progress-only;
- * we use this to decide whether assignee/KPI-owner access is sufficient.
+ * `intendedProgressOnly` is true when the body touches only actualValue / isComplete.
  */
 async function loadAndAuthorizeKpi(
   id: string,
@@ -36,6 +38,18 @@ async function loadAndAuthorizeKpi(
   // Owner of the KPI may log progress on their own KPI.
   if (intendedProgressOnly && kpi.ownerId === userId) {
     return { kpi } as const;
+  }
+
+  // GoalAssignee on this KPI's goal gets full edit rights — they "own" the
+  // goal in the user's mental model and so should manage its KPIs end-to-end.
+  // This widens access beyond what checkStackWriteAccess(restricted: false)
+  // would grant (admin / stack owner only).
+  if (!intendedProgressOnly && !session.user.isAdmin && stack.ownerId !== userId) {
+    const assignee = await prisma.goalAssignee.findUnique({
+      where: { goalId_userId: { goalId: kpi.goalId, userId } },
+      select: { id: true },
+    });
+    if (assignee) return { kpi } as const;
   }
 
   const denied = await checkStackWriteAccess(stack, userId, session.user.isAdmin, {

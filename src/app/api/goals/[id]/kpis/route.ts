@@ -90,13 +90,23 @@ export async function POST(
 
   if (!goal || goal.deletedAt) return notFoundResponse('Goal');
 
-  // Creating a KPI is a structural write — admin or stack owner only.
-  const accessDenied = await checkStackWriteAccess(
-    goal.stack,
-    auth.userId,
-    auth.session.user.isAdmin
-  );
-  if (accessDenied) return accessDenied;
+  // Creating a KPI on a goal: admin, stack owner, OR a user assigned to
+  // the goal (GoalAssignee). The goal-assignee branch matches PATCH /api/kpis
+  // /[id] — owners of a weekly goal manage its KPIs end-to-end.
+  if (!auth.session.user.isAdmin && goal.stack.ownerId !== auth.userId) {
+    const assignee = await prisma.goalAssignee.findUnique({
+      where: { goalId_userId: { goalId, userId: auth.userId } },
+      select: { id: true },
+    });
+    if (!assignee) {
+      const accessDenied = await checkStackWriteAccess(
+        goal.stack,
+        auth.userId,
+        auth.session.user.isAdmin
+      );
+      if (accessDenied) return accessDenied;
+    }
+  }
 
   if (!validateKpiLevel(goal.level)) {
     return Response.json(
