@@ -9,6 +9,12 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // .claude/ is the harness's working space for git worktrees and other
+    // session state. It's gitignored, but vitest's default file discovery
+    // scans it anyway — worktree copies have their own node_modules with a
+    // mismatched React, blowing up every test there. Excluding stops the
+    // pre-push hook from blocking on local-only cruft that CI never sees.
+    exclude: ['**/node_modules/**', '**/.git/**', '.claude/**'],
     // Pin a non-UTC timezone so date-only regression tests catch local-TZ
     // shifts. CI runs on ubuntu-latest with no TZ override (defaults to UTC),
     // which silently green-lights the getLocalDateString(new Date(<UTC-Z>))
