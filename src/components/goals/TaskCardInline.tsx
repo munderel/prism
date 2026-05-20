@@ -6,6 +6,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { PRIORITY_DOT_COLORS, TASK_STATUS_COLORS } from '@/lib/goal-constants';
 import { isTaskOverdue } from '@/lib/task-utils';
 import { formatDateOnly } from '@/lib/date-utils';
+import { Avatar } from '@/components/ui/Avatar';
 
 interface TaskCardInlineProps {
   task: any;
@@ -74,6 +75,11 @@ export const TaskCardInline = React.memo(function TaskCardInline({
         <span className={`text-[10px] ${TASK_STATUS_COLORS[task.status] ?? ''}`}>
           {task.status.replace('_', ' ')}
         </span>
+
+        {/* Assignee avatar */}
+        {task.assignee && (
+          <Avatar user={task.assignee} size="sm" />
+        )}
 
         {/* Due date */}
         {task.dueDate && (
