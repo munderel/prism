@@ -55,12 +55,13 @@ export async function POST(
       });
       created.push(inv.id);
 
-      // Fire notification — non-blocking
+      // Fire notification — non-blocking. URL deep-links to the work-block
+      // edit page (not /aims) so the recipient can see the actual block.
       notifyUser(
         inviteeId,
         'Work Block Invitation',
         `You've been invited to join a work block: "${workBlock.mainObjective}" (${taskTitle}).`,
-        `/aims?invitation=${inv.id}`,
+        `/work-blocks/${workBlock.id}/edit?invitation=${inv.id}`,
         NotificationType.WORKBLOCK_INVITE,
       ).catch((err) => console.error('[invitations] notifyUser failed:', err));
     } catch (err: unknown) {
