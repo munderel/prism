@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { m } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { Pencil, Trash2 } from 'lucide-react';
 import { PRIORITY_DOT_COLORS, TASK_STATUS_COLORS } from '@/lib/goal-constants';
 import { isTaskOverdue } from '@/lib/task-utils';
@@ -20,9 +21,10 @@ export const TaskCardInline = React.memo(function TaskCardInline({
   task,
   depth,
   onToggle,
-  onEdit,
+  onEdit: _onEdit,
   onDelete,
 }: TaskCardInlineProps) {
+  const router = useRouter();
   const isDone = task.status === 'DONE';
   const isOverdue = isTaskOverdue(task);
 
@@ -110,7 +112,7 @@ export const TaskCardInline = React.memo(function TaskCardInline({
         {/* Hover actions */}
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
-            onClick={(e) => { e.stopPropagation(); onEdit(task); }}
+            onClick={(e) => { e.stopPropagation(); router.push(`/tasks/${task.id}/edit`); }}
             className="rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
             title="Edit task"
           >
