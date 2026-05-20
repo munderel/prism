@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Focus, AlertTriangle, Lightbulb, Moon, Check, Flame, ChevronDown, Inbox } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import { getLocalDateString, toLocalDateKey, toDateOnlyInputValue, formatDisplayDate, formatDateOnly } from '@/lib/date-utils';
+import { getLocalDateString, toLocalDateKey, toTaskDueDateKey, formatDisplayDate, formatDateOnly } from '@/lib/date-utils';
 import { sortBucketsByScheduledTime } from '@/lib/task-ordering';
 import { useToast } from '@/components/ui/ToastProvider';
 import { TaskCard } from '@/components/tasks/TaskCard';
@@ -197,7 +197,7 @@ export default function DashboardPage() {
       groups[getLocalDateString(d)] = [];
     }
     for (const t of list) {
-      const dateKey = t.dueDate ? toDateOnlyInputValue(t.dueDate) : weekRange.start;
+      const dateKey = t.dueDate ? toTaskDueDateKey(t.dueDate) : weekRange.start;
       if (groups[dateKey]) {
         groups[dateKey].push(t);
       } else {

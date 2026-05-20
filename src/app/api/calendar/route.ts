@@ -411,13 +411,24 @@ export async function GET(request: NextRequest) {
     // If the task has a WorkBlock in range, skip the legacy timeBlock event to avoid double-rendering.
     // We still emit an all-day due-date event if the task has a dueDate and no time block.
     if (tasksWithBlocks.has(task.id)) continue;
+
+    // A task is timed when it has a timeBlockStart, OR when dueDate carries a
+    // non-midnight time (i.e. the user set a specific due time). allDay=true
+    // tells FullCalendar to render an all-day banner; allDay=false renders a
+    // positioned time slot event. Tasks with only a date-only dueDate (stored
+    // as UTC midnight) have hours=0, minutes=0 in UTC — those stay all-day.
+    const dueDateHasTime = task.dueDate != null && (
+      task.dueDate.getUTCHours() !== 0 || task.dueDate.getUTCMinutes() !== 0
+    );
+    const isTimedEvent = !!task.timeBlockStart || dueDateHasTime;
+
     events.push({
       id: `task-${task.id}`,
       title: task.title,
       description: task.description,
       start: task.timeBlockStart?.toISOString() ?? task.dueDate?.toISOString(),
       end: task.timeBlockEnd?.toISOString() ?? undefined,
-      allDay: !task.timeBlockStart,
+      allDay: !isTimedEvent,
       source: 'tasks',
       taskId: task.id,
       itemId: task.id,

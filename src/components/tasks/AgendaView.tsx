@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import { AlertTriangle, Check } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
-import { getLocalDateString, toLocalDateKey, toDateOnlyInputValue, eachLocalDateInRange } from '@/lib/date-utils';
+import { getLocalDateString, toLocalDateKey, toTaskDueDateKey, eachLocalDateInRange } from '@/lib/date-utils';
 
 // ── helpers ──────────────────────────────────────────────────────────
 const toDateStr = getLocalDateString;
@@ -93,10 +93,10 @@ export function AgendaView({ onEdit, onDelete, onClick, onStatusChange }: Agenda
   const grouped = useMemo(() => {
     const groups: Record<string, any[]> = {};
     for (const task of allTasks) {
-      // dueDate is UTC-anchored midnight (PR #27); extract its calendar day
-      // via getUTC* components. startTime is a real instant — toLocalDateKey
-      // is correct there.
-      const dueKey = task.dueDate ? toDateOnlyInputValue(task.dueDate) : null;
+      // dueDate has two storage conventions: legacy date-only (UTC midnight)
+      // and Component 11 timed (real wall-clock instant). toTaskDueDateKey
+      // returns the user's intended local calendar day for both.
+      const dueKey = task.dueDate ? toTaskDueDateKey(task.dueDate) : null;
       const startKey = task.startTime ? toLocalDateKey(task.startTime) : null;
 
       let keys: string[];

@@ -13,7 +13,7 @@ import { ClearGoalsDisplay } from '@/components/tasks/ClearGoalsDisplay';
 import { QuickAddMenu } from '@/components/dashboard/QuickAddMenu';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { PowerDownStatusCard } from '@/components/powerdown/PowerDownStatusCard';
-import { getLocalDateString, toLocalDateKey, toDateOnlyInputValue, eachLocalDateInRange } from '@/lib/date-utils';
+import { getLocalDateString, toLocalDateKey, toTaskDueDateKey, eachLocalDateInRange } from '@/lib/date-utils';
 import { useUserSettings } from '@/hooks/useUserSettings';
 
 type ViewMode = 'day' | 'week' | 'month' | 'agenda';
@@ -261,10 +261,10 @@ export default function TasksPage() {
     const undated: any[] = [];
     const range = getRange();
     for (const task of rangeTasks) {
-      // dueDate is UTC-anchored midnight (PR #27); extract its calendar day
-      // via getUTC* components so the bucket key matches what the dashboard
-      // shows. startTime is a real instant — toLocalDateKey is correct there.
-      const dueKey = task.dueDate ? toDateOnlyInputValue(task.dueDate) : null;
+      // Two dueDate conventions live in the wild: legacy date-only (UTC
+      // midnight) and Component 11 timed (real wall-clock instant). The helper
+      // returns the user's intended local calendar day for both.
+      const dueKey = task.dueDate ? toTaskDueDateKey(task.dueDate) : null;
       const startKey = task.startTime ? toLocalDateKey(task.startTime) : null;
 
       if (startKey && dueKey && range) {
