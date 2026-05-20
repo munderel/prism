@@ -91,6 +91,19 @@ describe('POST /api/aims/instances/[id]/attend', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 400 when attending own AIM instance', async () => {
+    // Source instance belongs to u1 (the auth'd user). Self-attend has no
+    // valid use case and would duplicate the user's own instance on GOING.
+    vi.mocked(prisma.aimInstance.findUnique).mockResolvedValue({
+      ...baseInstance,
+      userId: 'u1',
+    } as any);
+    const res = await POST(makeRequest({ status: 'GOING' }) as any, paramsFor('inst-t1'));
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/own AIM instance/i);
+  });
+
   describe('GOING', () => {
     it('creates own AimInstance and removes any dismissal', async () => {
       const res = await POST(makeRequest({ status: 'GOING' }) as any, paramsFor('inst-t1'));

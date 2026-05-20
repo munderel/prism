@@ -45,6 +45,16 @@ export async function POST(
   });
   if (!sourceInstance) return notFoundResponse('AimInstance');
 
+  // The attend flow is only meaningful for *teammate* instances. Posting attend
+  // against one's own AimInstance would either duplicate it (GOING) or pollute
+  // the dismissal table with self-references (NOT_GOING / MAYBE). Reject 400.
+  if (sourceInstance.userId === auth.userId) {
+    return Response.json(
+      { error: 'Cannot attend your own AIM instance' },
+      { status: 400 },
+    );
+  }
+
   // Parse body
   let body: unknown;
   try {
