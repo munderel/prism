@@ -287,18 +287,25 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
 
   const unscheduledForCalendar = useMemo(() => {
     const items: any[] = [];
-    // Tasks filtered for Step 9: upcoming week goals, maintenance, react, personal goal stack
+    // Capture the planning anchor once so REACT overdue ("dueDate before
+    // upcoming-week start") gets the same time origin as the window check.
+    const planningAnchor = upcomingWeekStart;
+    // Tasks filtered for Step 9: upcoming week goals, maintenance, react
+    // (overdue or due this/next week), personal goal stack
     if (Array.isArray(weekTasks)) {
       for (const t of weekTasks) {
         if (t.status === 'DONE' || t.status === 'DROPPED') continue;
         if (t.timeBlockStart) continue;
-        const dueDateInPlanningWindow = t.dueDate &&
-          new Date(t.dueDate) >= upcomingWeekStart &&
-          new Date(t.dueDate) <= nextWeekEnd;
+        const dueDate = t.dueDate ? new Date(t.dueDate) : null;
+        const dueDateInPlanningWindow = !!dueDate &&
+          dueDate >= upcomingWeekStart &&
+          dueDate <= nextWeekEnd;
+        const reactOverdue = t.taskType === 'REACT' && !!dueDate && dueDate < planningAnchor;
         const include =
           (t.goalId && upcomingWeekGoalIds.has(t.goalId)) || // linked to upcoming week goal
           (t.taskType === 'MAINTENANCE' && dueDateInPlanningWindow) || // maintenance due this/next week
           (t.taskType === 'REACT' && dueDateInPlanningWindow) ||       // react tasks due this/next week
+          reactOverdue ||                                              // react tasks overdue (drag them in)
           (t.goalId && personalGoalIds.has(t.goalId)) ||     // part of personal goal stack
           dueDateInPlanningWindow ||                         // any task due this/next week
           (!t.goalId && !t.dueDate && t.status === 'TODO');  // unlinked TODO tasks
