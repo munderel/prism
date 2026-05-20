@@ -48,6 +48,9 @@ export async function GET(
           completionStatus: true, actualMinutes: true, notes: true, reviewedAt: true,
         },
       },
+      deliverableItems: {
+        orderBy: { position: 'asc' },
+      },
       _count: { select: { children: true } },
     },
   });

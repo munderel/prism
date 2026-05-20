@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
-import { X, Split } from 'lucide-react';
+import { X, Split, Plus, Trash2 } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { WorkBlocksSection } from './WorkBlocksSection';
 import { SplitTaskModal } from './SplitTaskModal';
 import { parseDurationToMinutes, formatMinutesCompact } from '@/lib/task-utils';
 import { Avatar } from '@/components/ui/Avatar';
+import { mutate } from 'swr';
 
 const DURATION_PRESET_GROUPS: Array<{ label: string; presets: Array<{ label: string; minutes: number }> }> = [
   {
@@ -79,6 +80,11 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [usersLoading, setUsersLoading] = useState(true);
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? '');
   const [deliverable, setDeliverable] = useState(task?.deliverable ?? '');
+  const [deliverableItems, setDeliverableItems] = useState<Array<{ id: string; text: string; isDone: boolean; position: number }>>(
+    task?.deliverableItems ?? [],
+  );
+  const [addingItem, setAddingItem] = useState(false);
+  const [newItemText, setNewItemText] = useState('');
   const [estimatedMinutes, setEstimatedMinutes] = useState(task?.estimatedMinutes ?? 60);
   // Ref to the duration <input> so handleSubmit can read the live value even
   // when the user clicks Save without first blurring the field (onBlur race).
@@ -134,6 +140,71 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
       setGoals(allGoals);
     } catch {
       setError('Failed to load goal stacks');
+    }
+  };
+
+  const refreshTask = () => {
+    if (task?.id) {
+      mutate(`/api/tasks/${task.id}`);
+      mutate('/api/tasks');
+    }
+  };
+
+  const handleAddItem = async () => {
+    const text = newItemText.trim();
+    if (!text || !task?.id) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/deliverables`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        setError('Failed to add deliverable item');
+        return;
+      }
+      const item = await res.json();
+      setDeliverableItems((prev) => [...prev, item]);
+      setNewItemText('');
+      setAddingItem(false);
+      refreshTask();
+    } catch {
+      setError('Failed to add deliverable item');
+    }
+  };
+
+  const handleToggleItem = async (itemId: string, current: boolean) => {
+    if (!task?.id) return;
+    try {
+      const res = await fetch(`/api/deliverables/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isDone: !current }),
+      });
+      if (!res.ok) {
+        setError('Failed to update deliverable item');
+        return;
+      }
+      const updated = await res.json();
+      setDeliverableItems((prev) => prev.map((it) => (it.id === itemId ? updated : it)));
+      refreshTask();
+    } catch {
+      setError('Failed to update deliverable item');
+    }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!task?.id) return;
+    try {
+      const res = await fetch(`/api/deliverables/${itemId}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204 || res.status === 404) {
+        setDeliverableItems((prev) => prev.filter((it) => it.id !== itemId));
+        refreshTask();
+        return;
+      }
+      setError('Failed to delete deliverable item');
+    } catch {
+      setError('Failed to delete deliverable item');
     }
   };
 
@@ -314,6 +385,90 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                 placeholder="e.g., 'Final report PDF', 'Working prototype'"
               />
             </div>
+
+            {/* Deliverable Items — only shown when editing a saved task */}
+            {isEditing && task?.id && (
+              <div>
+                <label className="block text-sm text-[var(--text-secondary)] mb-2">Deliverable Items</label>
+                <div className="space-y-1.5">
+                  {deliverableItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2 group"
+                    >
+                      <button
+                        type="button"
+                        aria-label={item.isDone ? 'Mark incomplete' : 'Mark done'}
+                        onClick={() => handleToggleItem(item.id, item.isDone)}
+                        className={`flex-shrink-0 h-4 w-4 rounded border-2 transition-colors ${
+                          item.isDone
+                            ? 'bg-green-600 border-green-600'
+                            : 'border-[var(--border-color)] hover:border-indigo-500'
+                        }`}
+                      >
+                        {item.isDone && (
+                          <svg className="h-full w-full text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+                            <path d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                      <span className={`flex-1 text-sm min-w-0 ${item.isDone ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
+                        {item.text}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="Delete item"
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-red-400"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {addingItem ? (
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={newItemText}
+                      onChange={(e) => setNewItemText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleAddItem(); }
+                        if (e.key === 'Escape') { setAddingItem(false); setNewItemText(''); }
+                      }}
+                      className="flex-1 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-1.5 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                      placeholder="Deliverable item text…"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddItem}
+                      disabled={!newItemText.trim()}
+                      className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAddingItem(false); setNewItemText(''); }}
+                      className="rounded-lg px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setAddingItem(true)}
+                    className="mt-2 flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add item
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Estimated Duration */}
             <div>
