@@ -1,5 +1,12 @@
 import { vi, beforeEach, beforeAll, describe, it, expect } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
+
+const mockMutate = vi.fn();
+vi.mock('swr', async () => {
+  const actual = await vi.importActual<typeof import('swr')>('swr');
+  return { ...actual, mutate: (...args: unknown[]) => mockMutate(...args) };
+});
+
 import { renderWithProviders, userEvent, createMockFetch } from '@/test/utils';
 import { createTask } from '@/test/fixtures';
 import { StartNowPopover } from '../StartNowPopover';
@@ -55,6 +62,8 @@ describe('StartNowPopover', () => {
   beforeEach(() => {
     onClose.mockReset();
     onCreated.mockReset();
+    mockMutate.mockReset();
+    mockMutate.mockResolvedValue(undefined);
   });
 
   it('renders with default duration from task.estimatedMinutes', () => {
@@ -152,10 +161,6 @@ describe('StartNowPopover', () => {
       '/api/work-blocks': makeWorkBlockResponse(),
     });
 
-    // Also mock mutate calls (fetch won't resolve them; just need no crash).
-    const { mutate: swrMutate } = await import('swr');
-    vi.spyOn({ mutate: swrMutate }, 'mutate').mockResolvedValue(undefined);
-
     renderWithProviders(
       <StartNowPopover
         task={task}
@@ -175,8 +180,10 @@ describe('StartNowPopover', () => {
       );
     });
 
-    const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    const body = JSON.parse(fetchCall[1].body as string);
+    const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === '/api/work-blocks' && call[1]?.method === 'POST',
+    );
+    const body = JSON.parse(fetchCall![1].body as string);
     expect(body.taskId).toBe('task-abc');
     expect(body.mainObjective).toBe('Deliver X');
     expect(typeof body.start).toBe('string');
@@ -185,6 +192,21 @@ describe('StartNowPopover', () => {
     await waitFor(() => {
       expect(onCreated).toHaveBeenCalled();
     });
+
+    // Calendar / work-blocks / tasks SWR caches must be invalidated by predicate
+    // so parameterised keys (e.g. /api/calendar?start=…) are hit.
+    const invalidatedPrefixes = new Set<string>();
+    for (const call of mockMutate.mock.calls) {
+      const predicate = call[0];
+      if (typeof predicate === 'function') {
+        if (predicate('/api/calendar?start=x&end=y')) invalidatedPrefixes.add('/api/calendar');
+        if (predicate('/api/work-blocks?date=2026-05-20')) invalidatedPrefixes.add('/api/work-blocks');
+        if (predicate('/api/tasks?date=2026-05-20')) invalidatedPrefixes.add('/api/tasks');
+      }
+    }
+    expect(invalidatedPrefixes.has('/api/calendar')).toBe(true);
+    expect(invalidatedPrefixes.has('/api/work-blocks')).toBe(true);
+    expect(invalidatedPrefixes.has('/api/tasks')).toBe(true);
   });
 
   it('shows an error toast on non-ok response', async () => {

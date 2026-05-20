@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { PlayCircle, Plus, Trash2 } from 'lucide-react';
-import { mutate } from 'swr';
+import useSWR, { mutate } from 'swr';
 import {
   Popover,
   PopoverBody,
@@ -11,6 +11,7 @@ import {
   PopoverHeader,
 } from '@/components/ui/Popover';
 import { useToast } from '@/components/ui/ToastProvider';
+import { getLocalDateString } from '@/lib/date-utils';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -84,40 +85,22 @@ export function StartNowPopover({
     [],
   );
 
-  // ── overlap detection ──
-  const detectOverlapFromCache = useCallback(
+  // Today's work blocks — used for client-side overlap detection.
+  const todayKey = getLocalDateString();
+  const { data: todayBlocks } = useSWR<Array<{ start: string; end: string }>>(
+    `/api/work-blocks?date=${todayKey}`,
+  );
+
+  const detectOverlap = useCallback(
     (start: Date, end: Date): boolean => {
-      try {
-        // Attempt a client-side check from the SWR cache.
-        // useSWR's global cache exposes data keyed by URL strings.
-        // We need the raw cache — import the global cache accessor.
-        const cache = (globalThis as Record<string, unknown>).__SWR_CACHE__ as
-          | Map<string, { data?: unknown }>
-          | undefined;
-        if (!cache) return false;
-        // Scan for any work-blocks entry in the cache.
-        for (const [, value] of Array.from(cache.entries())) {
-          const blocks = value?.data;
-          if (!Array.isArray(blocks)) continue;
-          for (const b of blocks) {
-            if (
-              b &&
-              typeof b === 'object' &&
-              'start' in b &&
-              'end' in b
-            ) {
-              const bStart = new Date(b.start as string);
-              const bEnd = new Date(b.end as string);
-              if (bStart < end && bEnd > start) return true;
-            }
-          }
-        }
-      } catch {
-        // Best-effort — don't block submission on errors.
-      }
-      return false;
+      if (!Array.isArray(todayBlocks)) return false;
+      return todayBlocks.some((b) => {
+        const bStart = new Date(b.start);
+        const bEnd = new Date(b.end);
+        return bStart < end && bEnd > start;
+      });
     },
-    [],
+    [todayBlocks],
   );
 
   // ── submit ──
@@ -145,11 +128,20 @@ export function StartNowPopover({
           return;
         }
 
-        // Invalidate relevant SWR caches.
+        // Invalidate relevant SWR caches. Calendar keys are parameterised
+        // (e.g. `/api/calendar?start=…&end=…`), so a bare-string mutate would
+        // miss them — match by prefix instead. Same for /api/work-blocks (the
+        // overlap check uses /api/work-blocks?date=…).
         await Promise.all([
-          mutate('/api/calendar'),
-          mutate('/api/work-blocks'),
-          mutate('/api/tasks'),
+          mutate(
+            (key) => typeof key === 'string' && key.startsWith('/api/calendar'),
+          ),
+          mutate(
+            (key) => typeof key === 'string' && key.startsWith('/api/work-blocks'),
+          ),
+          mutate(
+            (key) => typeof key === 'string' && key.startsWith('/api/tasks'),
+          ),
         ]);
 
         toast.success('Work block started!');
@@ -173,16 +165,14 @@ export function StartNowPopover({
     const startISO = now.toISOString();
     const endISO = end.toISOString();
 
-    // Check for overlap in the SWR cache — warn-and-allow.
-    const hasOverlap = detectOverlapFromCache(now, end);
-    if (hasOverlap) {
+    if (detectOverlap(now, end)) {
       pendingPayload.current = { start: startISO, end: endISO };
       setShowOverlapWarn(true);
       return;
     }
 
     await doSubmit(startISO, endISO);
-  }, [duration, detectOverlapFromCache, doSubmit, toast]);
+  }, [duration, detectOverlap, doSubmit, toast]);
 
   const handleOverlapConfirm = useCallback(async () => {
     setShowOverlapWarn(false);
