@@ -168,6 +168,40 @@ export function toLocalDateKey(dateOrString: Date | string): string {
 }
 
 /**
+ * Extract the bucket day for a Task.dueDate that may be stored under either
+ * convention:
+ *
+ *  - **Date-only** tasks (legacy): the value is anchored at UTC midnight
+ *    (`parseDateOnly`). The user's intended calendar day is the *UTC* date —
+ *    extracting in local time would shift it for non-UTC users.
+ *  - **Timed** tasks (Component 11+): the value is a real wall-clock instant
+ *    in the user's local timezone. The user's intended calendar day is the
+ *    *local* date — extracting in UTC would shift it for users near either
+ *    side of midnight UTC.
+ *
+ * Distinguishes the two by checking whether the stored value has UTC midnight
+ * hours+minutes; if so, treats as date-only; otherwise treats as timed.
+ *
+ * Returns '' for null/undefined/invalid input.
+ */
+export function toTaskDueDateKey(value: Date | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (isNaN(d.getTime())) return '';
+  const isUtcMidnight = d.getUTCHours() === 0 && d.getUTCMinutes() === 0;
+  if (isUtcMidnight) {
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return getLocalDateString(d);
+}
+
+/**
  * Formats a date for human-readable display.
  * Returns "Mar 29, 2026" by default, or "Sunday, March 29, 2026" with weekday option.
  * Returns '—' for null/undefined/invalid input.

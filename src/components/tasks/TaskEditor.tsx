@@ -10,7 +10,7 @@ import { SplitTaskModal } from './SplitTaskModal';
 import { parseDurationToMinutes, formatMinutesCompact } from '@/lib/task-utils';
 import { Avatar } from '@/components/ui/Avatar';
 import { mutate } from 'swr';
-import { parseLocalDate } from '@/lib/date-utils';
+import { parseLocalDate, toTaskDueDateKey } from '@/lib/date-utils';
 
 const DURATION_PRESET_GROUPS: Array<{ label: string; presets: Array<{ label: string; minutes: number }> }> = [
   {
@@ -67,7 +67,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [priority, setPriority] = useState(task?.priority ?? 'MEDIUM');
   const [status, setStatus] = useState(task?.status ?? 'TODO');
   const [dueDate, setDueDate] = useState(
-    task?.dueDate ? task.dueDate.split('T')[0] : ''
+    task?.dueDate ? toTaskDueDateKey(task.dueDate) : ''
   );
   // dueTime: 'HH:mm' string or empty. Initialized from existing dueDate when
   // the stored value has a non-UTC-midnight time.
