@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { Focus, AlertTriangle, Lightbulb, Moon, Check, Flame, ChevronDown, Inbox } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { getLocalDateString, toLocalDateKey, toDateOnlyInputValue, formatDisplayDate, formatDateOnly } from '@/lib/date-utils';
-import { compareTasksByScheduledTime } from '@/lib/task-ordering';
+import { sortBucketsByScheduledTime } from '@/lib/task-ordering';
 import { useToast } from '@/components/ui/ToastProvider';
 import { TaskCard } from '@/components/tasks/TaskCard';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
@@ -205,10 +205,7 @@ export default function DashboardPage() {
         groups[weekRange.start]?.push(t);
       }
     }
-    for (const k of Object.keys(groups)) {
-      groups[k].sort(compareTasksByScheduledTime);
-    }
-    return groups;
+    return sortBucketsByScheduledTime(groups);
   }, [viewMode, list, weekRange]);
 
   // Fetch AIM instances — daily or weekly based on view
@@ -409,10 +406,7 @@ export default function DashboardPage() {
         groups.IMPROVE.push(t);
       }
     }
-    for (const k of Object.keys(groups)) {
-      groups[k].sort(compareTasksByScheduledTime);
-    }
-    return groups;
+    return sortBucketsByScheduledTime(groups);
   }, [list, showDoneTasks]);
 
   const doneTotalDashboard = useMemo(

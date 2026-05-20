@@ -49,3 +49,17 @@ export function compareTasksByScheduledTime(a: OrderableTask, b: OrderableTask):
   const bPri = PRIORITY_RANK[b.priority ?? ''] ?? 0;
   return bPri - aPri;
 }
+
+/**
+ * In-place sort every bucket of a `{ [key]: Task[] }` map by scheduled time.
+ * Use this after a date-grouped fan-out so each day's list is consistently
+ * ordered. Mutates each bucket array; returns the same map for chaining.
+ */
+export function sortBucketsByScheduledTime<T extends OrderableTask>(
+  groups: Record<string, T[]>,
+): Record<string, T[]> {
+  for (const key of Object.keys(groups)) {
+    groups[key].sort(compareTasksByScheduledTime);
+  }
+  return groups;
+}
