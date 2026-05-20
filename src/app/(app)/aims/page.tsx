@@ -1072,6 +1072,38 @@ function AimCard({
   onKpiPickerGoalChange,
 }: AimCardProps) {
   const [chartExpanded, setChartExpanded] = useState(false);
+  // Invite teammates state
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteUserIds, setInviteUserIds] = useState<string[]>([]);
+  const [inviting, setInviting] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null);
+  const { data: allUsers } = useSWR<{ id: string; name: string | null; email: string }[]>(
+    inviteOpen ? '/api/users' : null,
+  );
+  const handleAimInvite = async () => {
+    if (!todayInstanceId || inviteUserIds.length === 0) return;
+    setInviting(true);
+    setInviteMsg(null);
+    try {
+      const res = await fetch(`/api/aims/instances/${todayInstanceId}/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds: inviteUserIds }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setInviteMsg((json as { error?: string }).error ?? 'Failed to send invitations.');
+      } else {
+        setInviteUserIds([]);
+        setInviteMsg('Invitations sent!');
+        setTimeout(() => setInviteMsg(null), 3000);
+      }
+    } catch {
+      setInviteMsg('An error occurred.');
+    } finally {
+      setInviting(false);
+    }
+  };
   const phase = (userAim?.currentPhase || 'SEED') as string;
   const phaseStyle = PHASE_STYLES[phase] || PHASE_STYLES.SEED;
   const streak = userAim?.currentStreak ?? 0;
@@ -1335,6 +1367,55 @@ function AimCard({
         </div>
       )}
 
+
+      {/* Invite teammates to today's session */}
+      {active && !isEditing && todayInstanceId && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setInviteOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+          >
+            <Users className="h-3.5 w-3.5" />
+            Invite teammates
+          </button>
+          {inviteOpen && (
+            <div className="mt-2 space-y-2 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] p-3">
+              <select
+                multiple
+                value={inviteUserIds}
+                onChange={(e) =>
+                  setInviteUserIds(Array.from(e.target.selectedOptions, (o) => o.value))
+                }
+                className="w-full rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-400 focus:outline-none"
+                size={Math.min(4, (allUsers?.length ?? 0) + 1)}
+              >
+                {(allUsers ?? []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name ?? u.email}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAimInvite}
+                  disabled={inviting || inviteUserIds.length === 0}
+                  className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+                >
+                  {inviting && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Send
+                </button>
+                {inviteMsg && (
+                  <span className={`text-xs ${inviteMsg.includes('sent') ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {inviteMsg}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Activities (non-editing) */}
       {!isEditing && activities.length > 0 && (
