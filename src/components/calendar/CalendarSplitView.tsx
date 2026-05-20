@@ -947,8 +947,7 @@ export function CalendarSplitView({
     }
 
     // Task event — route to the dedicated edit page (Component 13).
-    // WorkBlock events (workblock- prefix) continue to show the popover so
-    // Component 14 can handle them separately.
+    // WorkBlock events (workblock- prefix) are handled below (Component 14).
     if ((props.taskId && !props.workBlockId && !info.event.id?.startsWith('workblock-')) || info.event.id?.startsWith('task-')) {
       const taskId = props.taskId || info.event.id?.replace('task-', '');
       if (taskId) {
@@ -957,25 +956,15 @@ export function CalendarSplitView({
       }
     }
 
-    // WorkBlock event — show popover (Component 14 handles completion UI).
+    // WorkBlock event — route to the dedicated edit page (Component 14).
     if (info.event.id?.startsWith('workblock-') || (props.taskId && props.workBlockId)) {
       const workBlockId = typeof props.workBlockId === 'string'
         ? props.workBlockId
         : info.event.id?.startsWith('workblock-') ? info.event.id.replace('workblock-', '') : undefined;
-      setSelectedEventPopover({
-        eventId: info.event.id,
-        title: info.event.title,
-        source: 'task',
-        status: props.status || 'TODO',
-        anchorRect,
-        taskId: props.taskId || info.event.id?.replace('task-', ''),
-        taskType: props.taskType,
-        priority: props.priority,
-        goalTitle: props.goalTitle,
-        description: props.description,
-        workBlockId,
-      });
-      return;
+      if (workBlockId) {
+        router.push(`/work-blocks/${workBlockId}/edit`);
+        return;
+      }
     }
 
     // Food / meal block

@@ -182,10 +182,22 @@ export function InlineCalendar({
   };
 
   // Route Task event clicks to the dedicated edit page (Component 13).
-  // WorkBlock and Meeting events are handled by other components.
-  // Google read-only events: no-op.
+  // WorkBlock events route to /work-blocks/[id]/edit (Component 14).
+  // Meeting and Google read-only events: no-op.
   const handleEventClick = (info: EventClickArg) => {
     const props = info.event.extendedProps || {};
+
+    // WorkBlock event — route to the dedicated edit page (Component 14).
+    if (info.event.id?.startsWith('workblock-') || (props.taskId && props.workBlockId)) {
+      const workBlockId = typeof props.workBlockId === 'string'
+        ? props.workBlockId
+        : info.event.id?.startsWith('workblock-') ? info.event.id.replace('workblock-', '') : undefined;
+      if (workBlockId) {
+        router.push(`/work-blocks/${workBlockId}/edit`);
+        return;
+      }
+    }
+
     // Task event (not a workblock)
     if (
       (props.taskId && !props.workBlockId && !info.event.id?.startsWith('workblock-')) ||
@@ -196,7 +208,7 @@ export function InlineCalendar({
         router.push(`/tasks/${taskId}/edit`);
       }
     }
-    // WorkBlock, Meeting, Google, and other events: no-op or handled elsewhere.
+    // Meeting, Google, and other events: no-op.
   };
 
   const typeColors: Record<string, string> = {
