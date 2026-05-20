@@ -2,9 +2,11 @@
 
 import { useRef, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
+import { useRouter } from 'next/navigation';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction';
+import type { EventClickArg } from '@fullcalendar/core';
 import { GripVertical, Clock, Loader2 } from 'lucide-react';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
@@ -37,6 +39,7 @@ export function InlineCalendar({
   onItemScheduled,
   readOnly = false,
 }: InlineCalendarProps) {
+  const router = useRouter();
   const calendarRef = useRef<any>(null);
   const unscheduledListRef = useRef<HTMLDivElement>(null);
   const draggableRef = useRef<Draggable | null>(null);
@@ -178,6 +181,24 @@ export function InlineCalendar({
     });
   };
 
+  // Route Task event clicks to the dedicated edit page (Component 13).
+  // WorkBlock and Meeting events are handled by other components.
+  // Google read-only events: no-op.
+  const handleEventClick = (info: EventClickArg) => {
+    const props = info.event.extendedProps || {};
+    // Task event (not a workblock)
+    if (
+      (props.taskId && !props.workBlockId && !info.event.id?.startsWith('workblock-')) ||
+      info.event.id?.startsWith('task-')
+    ) {
+      const taskId = props.taskId || info.event.id?.replace('task-', '');
+      if (taskId) {
+        router.push(`/tasks/${taskId}/edit`);
+      }
+    }
+    // WorkBlock, Meeting, Google, and other events: no-op or handled elsewhere.
+  };
+
   const typeColors: Record<string, string> = {
     task: 'bg-indigo-500',
     aim: 'bg-teal-500',
@@ -235,6 +256,7 @@ export function InlineCalendar({
             droppable={true}
             eventDrop={handleEventDrop}
             eventReceive={handleEventReceive}
+            eventClick={handleEventClick}
             height="auto"
             nowIndicator={true}
             slotMinTime={workingHoursStart + ':00'}

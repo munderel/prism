@@ -24,7 +24,14 @@ export async function GET(
     include: {
       owner: { select: { id: true, name: true, email: true } },
       assignee: { select: USER_SUMMARY_SELECT },
-      goal: { select: { id: true, title: true, level: true } },
+      goal: {
+        select: {
+          id: true,
+          title: true,
+          level: true,
+          parent: { select: { id: true, title: true, level: true } },
+        },
+      },
       comments: {
         orderBy: { createdAt: 'asc' },
         include: {

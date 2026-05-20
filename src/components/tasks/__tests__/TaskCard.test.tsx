@@ -72,13 +72,25 @@ describe('TaskCard', () => {
     expect(props.onClick).toHaveBeenCalledWith(task);
   });
 
-  it('edit button calls onEdit with the task', async () => {
+  it('edit button navigates to /tasks/[id]/edit', async () => {
     const user = userEvent.setup();
+    const pushSpy = vi.fn();
+    vi.spyOn(
+      await import('next/navigation'),
+      'useRouter'
+    ).mockReturnValue({
+      push: pushSpy,
+      replace: vi.fn(),
+      back: vi.fn(),
+      refresh: vi.fn(),
+      forward: vi.fn(),
+      prefetch: vi.fn(),
+    });
     const props = defaultProps();
-    const task = createTask();
+    const task = createTask({ id: 'edit-task-id' });
     renderWithProviders(<TaskCard task={task} {...props} />);
     await user.click(screen.getByTitle('Edit task'));
-    expect(props.onEdit).toHaveBeenCalledWith(task);
+    expect(pushSpy).toHaveBeenCalledWith('/tasks/edit-task-id/edit');
   });
 
   it('delete button calls onDelete with task.id', async () => {

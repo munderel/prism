@@ -468,8 +468,19 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
       return;
     }
 
-    // If this is a task or workblock event, show popover with Complete action
-    if (props.taskId || info.event.id?.startsWith('task-') || info.event.id?.startsWith('workblock-')) {
+    // Task event — route to the dedicated edit page (Component 13).
+    // WorkBlock events (workblock- prefix) continue to show the popover so
+    // Component 14 can handle them separately.
+    if ((props.taskId && !props.workBlockId && !info.event.id?.startsWith('workblock-')) || info.event.id?.startsWith('task-')) {
+      const taskId = props.taskId || info.event.id?.replace('task-', '');
+      if (taskId) {
+        router.push(`/tasks/${taskId}/edit`);
+        return;
+      }
+    }
+
+    // WorkBlock event — show popover (Component 14 handles completion UI).
+    if (info.event.id?.startsWith('workblock-') || (props.taskId && props.workBlockId)) {
       const isWorkBlock = info.event.id?.startsWith('workblock-') ?? false;
       setSelectedEventPopover({
         eventId: info.event.id,

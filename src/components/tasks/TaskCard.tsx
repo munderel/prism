@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { m } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star, ListChecks, Clock } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
 import { PRISM_COLORS } from '@/lib/prism-colors';
@@ -49,7 +50,8 @@ interface TaskCardProps {
   onSelect?: (taskId: string) => void;
 }
 
-export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, onDelete, onClick, onStatusChange, onWinTheDayToggle, hideClearGoals, isSelectable, isSelected, onSelect }: TaskCardProps) {
+export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit: _onEdit, onDelete, onClick, onStatusChange, onWinTheDayToggle, hideClearGoals, isSelectable, isSelected, onSelect }: TaskCardProps) {
+  const router = useRouter();
   const isDone = task.status === 'DONE';
   const isOverdue = isTaskOverdue(task);
 
@@ -215,7 +217,7 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
         {/* Hover actions */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
-            onClick={(e) => { e.stopPropagation(); onEdit(task); }}
+            onClick={(e) => { e.stopPropagation(); router.push(`/tasks/${task.id}/edit`); }}
             className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
             title="Edit task"
           >

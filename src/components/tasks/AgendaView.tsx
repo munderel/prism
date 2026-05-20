@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
+import { useRouter } from 'next/navigation';
 import { AlertTriangle, Check } from 'lucide-react';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
 import { getLocalDateString, toLocalDateKey, toTaskDueDateKey, eachLocalDateInRange } from '@/lib/date-utils';
@@ -63,7 +64,8 @@ interface AgendaViewProps {
 }
 
 // ── component ────────────────────────────────────────────────────────
-export function AgendaView({ onEdit, onDelete, onClick, onStatusChange }: AgendaViewProps) {
+export function AgendaView({ onEdit: _onEdit, onDelete, onClick, onStatusChange }: AgendaViewProps) {
+  const router = useRouter();
   const todayStr = useMemo(() => toDateStr(new Date()), []);
   const todayDate = useMemo(() => new Date(todayStr + 'T00:00:00'), [todayStr]);
 
@@ -249,7 +251,7 @@ export function AgendaView({ onEdit, onDelete, onClick, onStatusChange }: Agenda
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onEdit(task);
+              router.push(`/tasks/${task.id}/edit`);
             }}
             className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
             title="Edit task"

@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
-import { X, Split, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2 } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { WorkBlocksSection } from './WorkBlocksSection';
-import { SplitTaskModal } from './SplitTaskModal';
 import { parseDurationToMinutes, formatMinutesCompact } from '@/lib/task-utils';
 import { Avatar } from '@/components/ui/Avatar';
 import { mutate } from 'swr';
@@ -53,21 +52,68 @@ interface TaskEditorProps {
   prefilledGoalId?: string; // Pre-select goal when creating from goal stack
   onSave: () => void;
   onClose: () => void;
+  /** When true, renders inline (no fixed backdrop, no dialog role). For the /tasks/[id]/edit page. */
+  fullPage?: boolean;
 }
 
-export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEditorProps) {
+export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = false }: TaskEditorProps) {
   const isEditing = !!task;
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [splitOpen, setSplitOpen] = useState(false);
-  useEffect(() => { dialogRef.current?.focus(); }, []);
+  useEffect(() => { if (!fullPage) dialogRef.current?.focus(); }, [fullPage]);
 
-  const [taskType, setTaskType] = useState(task?.taskType ?? (prefilledGoalId ? 'IMPROVE' : 'IMPROVE'));
-  const [title, setTitle] = useState(task?.title ?? '');
-  const [description, setDescription] = useState(task?.description ?? '');
-  const [priority, setPriority] = useState(task?.priority ?? 'MEDIUM');
-  const [status, setStatus] = useState(task?.status ?? 'TODO');
+  // Hydration: tracks whether a full-task fetch has completed (used to
+  // populate relation fields like deliverableItems and workBlocks that may
+  // be missing from a partial task prop passed by list-row callers).
+  const [fetchedRelations, setFetchedRelations] = useState<{
+    workBlocks?: any[];
+    deliverableItems?: any[];
+    assignee?: any;
+    goal?: any;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!task?.id) return;
+    const needsHydration =
+      task.workBlocks === undefined ||
+      task.deliverableItems === undefined;
+    if (!needsHydration) return;
+    fetch(`/api/tasks/${task.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: any) => {
+        if (data) {
+          setFetchedRelations({
+            workBlocks: data.workBlocks,
+            deliverableItems: data.deliverableItems,
+            assignee: data.assignee,
+            goal: data.goal,
+          });
+        }
+      })
+      .catch(() => { /* ignore; editor will use the partial task */ });
+  }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Merge the passed task with any fetched relations into a single object.
+  const hydratedTask = task
+    ? {
+        ...task,
+        workBlocks: fetchedRelations?.workBlocks ?? task.workBlocks,
+        deliverableItems: fetchedRelations?.deliverableItems ?? task.deliverableItems,
+        assignee: fetchedRelations?.assignee ?? task.assignee,
+        goal: fetchedRelations?.goal ?? task.goal,
+      }
+    : null;
+
+  // Use task (the original prop) as the source of truth for form field init.
+  // hydratedTask is used only for relation-heavy computed values (hours, deliverableItems).
+  const effectiveTask = task;
+
+  const [taskType, setTaskType] = useState(effectiveTask?.taskType ?? (prefilledGoalId ? 'IMPROVE' : 'IMPROVE'));
+  const [title, setTitle] = useState(effectiveTask?.title ?? '');
+  const [description, setDescription] = useState(effectiveTask?.description ?? '');
+  const [priority, setPriority] = useState(effectiveTask?.priority ?? 'MEDIUM');
+  const [status, setStatus] = useState(effectiveTask?.status ?? 'TODO');
   const [dueDate, setDueDate] = useState(
-    task?.dueDate ? toTaskDueDateKey(task.dueDate) : ''
+    effectiveTask?.dueDate ? toTaskDueDateKey(effectiveTask.dueDate) : ''
   );
   // dueTime: 'HH:mm' string or empty. Initialized from existing dueDate when
   // the stored value has a non-UTC-midnight time.
@@ -90,28 +136,26 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   });
   const [startTime, setStartTime] = useState(
-    task?.startTime ? task.startTime.slice(0, 16) : ''
+    effectiveTask?.startTime ? effectiveTask.startTime.slice(0, 16) : ''
   );
-  const [goalId, setGoalId] = useState(task?.goalId ?? prefilledGoalId ?? '');
+  const [goalId, setGoalId] = useState(effectiveTask?.goalId ?? prefilledGoalId ?? '');
   const [recurrenceFreq, setRecurrenceFreq] = useState('DAILY');
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);
   // Time blocking is now managed via the calendar drag-to-schedule UI
   const [goals, setGoals] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? '');
-  const [deliverable, setDeliverable] = useState(task?.deliverable ?? '');
+  const [assigneeId, setAssigneeId] = useState(effectiveTask?.assigneeId ?? '');
+  const [deliverable, setDeliverable] = useState(effectiveTask?.deliverable ?? '');
   const [deliverableItems, setDeliverableItems] = useState<Array<{ id: string; text: string; isDone: boolean; position: number }>>(
-    task?.deliverableItems ?? [],
+    effectiveTask?.deliverableItems ?? [],
   );
   const [addingItem, setAddingItem] = useState(false);
   const [newItemText, setNewItemText] = useState('');
-  const [estimatedMinutes, setEstimatedMinutes] = useState(task?.estimatedMinutes ?? 60);
+  const [estimatedMinutes, setEstimatedMinutes] = useState(effectiveTask?.estimatedMinutes ?? 60);
   // Ref to the duration <input> so handleSubmit can read the live value even
   // when the user clicks Save without first blurring the field (onBlur race).
   const durationInputRef = useRef<HTMLInputElement>(null);
-  const [preferredTimeStart, setPreferredTimeStart] = useState(task?.preferredTimeStart ?? '');
-  const [preferredTimeEnd, setPreferredTimeEnd] = useState(task?.preferredTimeEnd ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const { data: userSettingsData } = useUserSettings();
@@ -165,17 +209,17 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   };
 
   const refreshTask = () => {
-    if (task?.id) {
-      mutate(`/api/tasks/${task.id}`);
+    if (hydratedTask?.id) {
+      mutate(`/api/tasks/${hydratedTask.id}`);
       mutate('/api/tasks');
     }
   };
 
   const handleAddItem = async () => {
     const text = newItemText.trim();
-    if (!text || !task?.id) return;
+    if (!text || !hydratedTask?.id) return;
     try {
-      const res = await fetch(`/api/tasks/${task.id}/deliverables`, {
+      const res = await fetch(`/api/tasks/${hydratedTask.id}/deliverables`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -195,7 +239,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   };
 
   const handleToggleItem = async (itemId: string, current: boolean) => {
-    if (!task?.id) return;
+    if (!hydratedTask?.id) return;
     try {
       const res = await fetch(`/api/deliverables/${itemId}`, {
         method: 'PATCH',
@@ -215,7 +259,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    if (!task?.id) return;
+    if (!hydratedTask?.id) return;
     try {
       const res = await fetch(`/api/deliverables/${itemId}`, { method: 'DELETE' });
       if (res.ok || res.status === 204 || res.status === 404) {
@@ -274,8 +318,6 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
           body.dueDate = dueDate;
         }
       }
-      if (preferredTimeStart) body.preferredTimeStart = preferredTimeStart;
-      if (preferredTimeEnd) body.preferredTimeEnd = preferredTimeEnd;
       if (startTime) body.startTime = new Date(startTime).toISOString();
       else if (isEditing) body.startTime = null;
       body.assigneeId = assigneeId || null;
@@ -283,7 +325,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
 
       if (isEditing) {
         body.status = status;
-        const res = await fetch(`/api/tasks/${task.id}`, {
+        const res = await fetch(`/api/tasks/${hydratedTask.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -317,47 +359,49 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
     }
   };
 
+  // When fetched deliverableItems arrive, sync the local state list.
+  useEffect(() => {
+    if (fetchedRelations?.deliverableItems != null) {
+      setDeliverableItems(fetchedRelations.deliverableItems);
+    }
+  }, [fetchedRelations?.deliverableItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Compute hours-done from workBlocks (read-only summary)
+  const doneMinutes = useMemo(() => {
+    const blocks: Array<{ start: string; end: string; actualMinutes: number | null; completionStatus: string }> =
+      hydratedTask?.workBlocks ?? [];
+    return blocks
+      .filter((b) => b.completionStatus === 'COMPLETED' || b.completionStatus === 'PARTIAL')
+      .reduce((sum, b) => {
+        if (b.actualMinutes != null) return sum + b.actualMinutes;
+        const ms = new Date(b.end).getTime() - new Date(b.start).getTime();
+        return sum + Math.round(ms / 60000);
+      }, 0);
+  }, [hydratedTask?.workBlocks]);
+
   const assigneeOptions = useMemo(() => {
-    const seed = task?.assignee;
+    const seed = hydratedTask?.assignee;
     if (!seed) return users;
     return users.some((u: any) => u.id === seed.id) ? users : [seed, ...users];
-  }, [users, task?.assignee]);
+  }, [users, hydratedTask?.assignee]);
 
   const selectedAssignee = assigneeId
     ? assigneeOptions.find((u: any) => u.id === assigneeId) ?? null
     : null;
 
-  return (
-    <AnimatePresence>
-      <m.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      >
-        <m.div
-          ref={dialogRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="task-editor-title"
-          tabIndex={-1}
-          onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          className="w-full max-w-lg rounded-xl border border-[var(--border-color)] bg-background p-6 max-h-[90vh] overflow-y-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
+  const formContent = (
+    <>
           <div className="flex items-center justify-between mb-4">
             <h2 id="task-editor-title" className="text-lg font-semibold text-[var(--text-primary)]">
               {isEditing ? 'Edit Task' : 'New Task'}
             </h2>
             <div className="flex items-center gap-2">
               {selectedAssignee && <Avatar user={selectedAssignee} size="sm" />}
-              <button aria-label="Close" title="Close" onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-                <X className="h-5 w-5" />
-              </button>
+              {!fullPage && (
+                <button aria-label="Close" title="Close" onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                  <X className="h-5 w-5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -422,7 +466,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             </div>
 
             {/* Deliverable Items — only shown when editing a saved task */}
-            {isEditing && task?.id && (
+            {isEditing && hydratedTask?.id && (
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-2">Deliverable Items</label>
                 <div className="space-y-1.5">
@@ -552,28 +596,6 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               </p>
             </div>
 
-            {/* Preferred Time Window */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-[var(--text-secondary)] mb-1">Preferred Time From</label>
-                <input
-                  type="time"
-                  value={preferredTimeStart}
-                  onChange={(e) => setPreferredTimeStart(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-[var(--text-secondary)] mb-1">Preferred Time To</label>
-                <input
-                  type="time"
-                  value={preferredTimeEnd}
-                  onChange={(e) => setPreferredTimeEnd(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-1">Priority</label>
@@ -699,11 +721,24 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               </div>
             )}
 
+            {/* Hours summary — edit mode only, when task has been saved */}
+            {isEditing && hydratedTask?.id && (estimatedMinutes > 0 || doneMinutes > 0) && (
+              <div className="rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2">
+                <p className="text-sm text-[var(--text-secondary)]">
+                  <span className="font-medium text-[var(--text-primary)]">Hours: </span>
+                  <span>{(doneMinutes / 60).toFixed(1)} done</span>
+                  {estimatedMinutes > 0 && (
+                    <span className="text-[var(--text-muted)]"> / {(estimatedMinutes / 60).toFixed(1)} estimated</span>
+                  )}
+                </p>
+              </div>
+            )}
+
             {/* Work Blocks (edit only) */}
-            {isEditing && task?.id && (
+            {isEditing && hydratedTask?.id && (
               <WorkBlocksSection
-                taskId={task.id}
-                taskTitle={title || task.title}
+                taskId={hydratedTask.id}
+                taskTitle={title || hydratedTask.title}
                 taskEstimatedMinutes={estimatedMinutes}
                 defaultBlockMinutes={defaultBlockMinutes}
               />
@@ -726,51 +761,59 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               </div>
             )}
 
-            <div className="flex justify-between gap-3 pt-2">
-              {isEditing ? (
-                <button
-                  type="button"
-                  onClick={() => setSplitOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-indigo-500/40 transition-colors"
-                  title="Break this task into shorter named sessions"
-                >
-                  <Split className="h-3.5 w-3.5" />
-                  Split into sessions
-                </button>
-              ) : (
-                <span />
-              )}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded-lg px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving || !title || estimatedMinutes <= 0}
-                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? 'Saving...' : isEditing ? 'Update' : 'Create'}
-                </button>
-              </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving || !title || estimatedMinutes <= 0}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+              >
+                {saving ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+              </button>
             </div>
           </form>
+    </>
+  );
+
+  if (fullPage) {
+    return (
+      <div className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--surface)] p-6">
+        {formContent}
+      </div>
+    );
+  }
+
+  return (
+    <AnimatePresence>
+      <m.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <m.div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="task-editor-title"
+          tabIndex={-1}
+          onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          className="w-full max-w-lg rounded-xl border border-[var(--border-color)] bg-background p-6 max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {formContent}
         </m.div>
       </m.div>
-      {splitOpen && task && (
-        <SplitTaskModal
-          taskId={task.id}
-          taskTitle={task.title}
-          defaultDurationMinutes={estimatedMinutes}
-          onClose={() => setSplitOpen(false)}
-          onSplit={() => {
-            onSave();
-          }}
-        />
-      )}
     </AnimatePresence>
   );
 }
