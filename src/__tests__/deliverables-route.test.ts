@@ -292,6 +292,34 @@ describe('PATCH /api/deliverables/[id]', () => {
     expect(res.status).toBe(400);
     expect(mockUpdate).not.toHaveBeenCalled();
   });
+
+  it('returns 400 for negative position', async () => {
+    mockRequireAuth.mockResolvedValue(ownerSession as any);
+    mockFindUnique.mockResolvedValue(makeItem() as any);
+
+    const req = new Request('http://x/api/deliverables/di-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ position: -1 }),
+    });
+    const res = await PATCH(req as any, taskParams('di-1'));
+    expect(res.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for non-integer position', async () => {
+    mockRequireAuth.mockResolvedValue(ownerSession as any);
+    mockFindUnique.mockResolvedValue(makeItem() as any);
+
+    const req = new Request('http://x/api/deliverables/di-1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ position: 1.5 }),
+    });
+    const res = await PATCH(req as any, taskParams('di-1'));
+    expect(res.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
 });
 
 // ── DELETE /api/deliverables/[id] ────────────────────────────────────────────

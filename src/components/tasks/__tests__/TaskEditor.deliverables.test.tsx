@@ -199,4 +199,27 @@ describe('TaskEditor — Deliverable Items section', () => {
       expect(mockMutate).toHaveBeenCalled();
     });
   });
+
+  it('surfaces an error when add fails', async () => {
+    const user = userEvent.setup();
+    // 500 response on POST → handler should setError instead of failing silently.
+    global.fetch = vi.fn(async (url: string, opts?: RequestInit) => {
+      if (url.startsWith('/api/users')) return new Response(JSON.stringify([]), { status: 200 });
+      if (url.startsWith('/api/goals')) return new Response(JSON.stringify([]), { status: 200 });
+      if (url.includes('/deliverables') && opts?.method === 'POST') {
+        return new Response('boom', { status: 500 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as any;
+
+    renderWithProviders(<TaskEditor task={buildTask()} onSave={onSave} onClose={onClose} />);
+
+    await user.click(screen.getByText('Add item'));
+    await user.type(screen.getByPlaceholderText('Deliverable item text…'), 'Will fail');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to add deliverable item')).toBeInTheDocument();
+    });
+  });
 });

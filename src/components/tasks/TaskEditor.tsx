@@ -159,14 +159,17 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setError('Failed to add deliverable item');
+        return;
+      }
       const item = await res.json();
       setDeliverableItems((prev) => [...prev, item]);
       setNewItemText('');
       setAddingItem(false);
       refreshTask();
     } catch {
-      // silently ignore — the item list still shows existing items
+      setError('Failed to add deliverable item');
     }
   };
 
@@ -178,12 +181,15 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isDone: !current }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setError('Failed to update deliverable item');
+        return;
+      }
       const updated = await res.json();
       setDeliverableItems((prev) => prev.map((it) => (it.id === itemId ? updated : it)));
       refreshTask();
     } catch {
-      // silently ignore
+      setError('Failed to update deliverable item');
     }
   };
 
@@ -194,9 +200,11 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
       if (res.ok || res.status === 204 || res.status === 404) {
         setDeliverableItems((prev) => prev.filter((it) => it.id !== itemId));
         refreshTask();
+        return;
       }
+      setError('Failed to delete deliverable item');
     } catch {
-      // silently ignore
+      setError('Failed to delete deliverable item');
     }
   };
 
