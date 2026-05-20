@@ -20,6 +20,11 @@ export interface Meeting {
   createdBy: { id: string; name: string | null; email: string };
 }
 
+/** Shape POST/PATCH /api/meetings actually returns — the Meeting row plus a
+ * transient `warnings` array (attendee-deliverability advisory etc.). The
+ * warnings are not persisted, only surfaced to whoever just saved. */
+export type SavedMeeting = Meeting & { warnings?: string[] };
+
 /** Subset of Meeting that MeetingEditor actually reads to populate the form. */
 export type MeetingEditorMeeting = Pick<
   Meeting,
