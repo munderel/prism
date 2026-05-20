@@ -609,6 +609,12 @@ model Notification {
 
 // === INVITATIONS ===
 
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 enum InvitationStatus {
   PENDING
   ACCEPTED
@@ -631,6 +637,34 @@ model Invitation {
 
   @@index([email])
   @@index([status])
+}
+
+model AimInvitation {
+  id            String       @id @default(cuid())
+  aimInstanceId String
+  aimInstance   AimInstance  @relation(fields: [aimInstanceId], references: [id], onDelete: Cascade)
+  inviterId     String
+  inviteeId     String
+  status        InviteStatus @default(PENDING)
+  createdAt     DateTime     @default(now())
+  respondedAt   DateTime?
+
+  @@unique([aimInstanceId, inviteeId])
+  @@index([inviteeId])
+}
+
+model WorkBlockInvitation {
+  id          String       @id @default(cuid())
+  workBlockId String
+  workBlock   WorkBlock    @relation(fields: [workBlockId], references: [id], onDelete: Cascade)
+  inviterId   String
+  inviteeId   String
+  status      InviteStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  respondedAt DateTime?
+
+  @@unique([workBlockId, inviteeId])
+  @@index([inviteeId])
 }
 
 // === BUSINESS PROCESSES ===
@@ -951,9 +985,10 @@ model AimInstance {
   calendarEventId   String? // Google Calendar event ID for sync
   createdAt         DateTime  @default(now())
 
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aimCategory AimCategory      @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
   tasks       Task[] // Deep Work container: nested tasks
+  aimInvitations AimInvitation[]
 
   @@index([userId, scheduledDate])
 }
@@ -1232,9 +1267,10 @@ model WorkBlock {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
-  task       Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task       Task                  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   clearGoals ClearGoal[]
+  workBlockInvitations WorkBlockInvitation[]
 
   @@index([userId, start])
   @@index([taskId])

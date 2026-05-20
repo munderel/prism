@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Loader2, Plus, Trash2, Target, Clock, CheckSquare, ExternalLink } from 'lucide-react';
-import { mutate } from 'swr';
+import { Loader2, Plus, Trash2, Target, Clock, CheckSquare, ExternalLink, Users } from 'lucide-react';
+import useSWR, { mutate } from 'swr';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,6 +86,17 @@ export function WorkBlockEditor({ workBlock, fullPage = false, onSave, onClose }
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Invite teammates — lazy-fetch users only when the section is opened so the
+  // editor doesn't issue a /api/users request on every mount.
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteUserIds, setInviteUserIds] = useState<string[]>([]);
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState(false);
+  const { data: allUsers } = useSWR<{ id: string; name: string | null; email: string }[]>(
+    inviteOpen ? '/api/users' : null,
+  );
 
   // Seed form when workBlock data arrives/changes.
   useEffect(() => {
@@ -187,6 +198,31 @@ export function WorkBlockEditor({ workBlock, fullPage = false, onSave, onClose }
       setError(e instanceof Error ? e.message : 'An error occurred.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleInvite = async () => {
+    if (inviteUserIds.length === 0) return;
+    setInviting(true);
+    setInviteError(null);
+    setInviteSuccess(false);
+    try {
+      const res = await fetch(`/api/work-blocks/${workBlock.id}/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds: inviteUserIds }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error((json as { error?: string }).error ?? 'Failed to send invitations.');
+      }
+      setInviteUserIds([]);
+      setInviteSuccess(true);
+      setTimeout(() => setInviteSuccess(false), 3000);
+    } catch (e) {
+      setInviteError(e instanceof Error ? e.message : 'An error occurred.');
+    } finally {
+      setInviting(false);
     }
   };
 
@@ -374,6 +410,56 @@ export function WorkBlockEditor({ workBlock, fullPage = false, onSave, onClose }
           placeholder="Any notes about this session…"
           className="w-full rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 resize-none"
         />
+      </div>
+
+      {/* Invite teammates — collapsed by default so we don't fetch /api/users
+          for every WorkBlockEditor mount. */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setInviteOpen((open) => !open)}
+          className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-1 hover:text-[var(--text-primary)]"
+        >
+          <Users className="inline h-3.5 w-3.5" />
+          Invite teammates
+          <span className="ml-1 text-[10px] normal-case">{inviteOpen ? '▾' : '▸'}</span>
+        </button>
+        {inviteOpen && (
+          <div className="space-y-2">
+            <select
+              multiple
+              value={inviteUserIds}
+              onChange={(e) =>
+                setInviteUserIds(Array.from(e.target.selectedOptions, (o) => o.value))
+              }
+              className="w-full rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
+              size={Math.min(4, (allUsers?.length ?? 0) + 1)}
+            >
+              {(allUsers ?? []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name ?? u.email}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleInvite}
+                disabled={inviting || inviteUserIds.length === 0}
+                className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+              >
+                {inviting && <Loader2 className="h-3 w-3 animate-spin" />}
+                Send invite{inviteUserIds.length > 1 ? 's' : ''}
+              </button>
+              {inviteSuccess && (
+                <span className="text-xs text-emerald-400">Invitations sent!</span>
+              )}
+            </div>
+            {inviteError && (
+              <p className="text-xs text-red-400">{inviteError}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Error */}
