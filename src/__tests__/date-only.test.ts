@@ -1,6 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { parseDateOnly, formatDateOnly, toDateOnlyInputValue } from '@/lib/date-utils';
 
+// Pinned via vitest.config.ts `env: { TZ: 'America/New_York' }`. If this
+// assertion ever fails, the date-only regression tests below are silently
+// green-lighting the very bug class they exist to catch (CI defaults to UTC,
+// where local-tz and UTC-anchored extraction collapse to the same thing). Run
+// in any wall-clock state — the offset is timezone-dependent, not date-
+// dependent — so 'EST/EDT' both produce a non-zero offset.
+describe('test environment TZ pin', () => {
+  it('is not running in UTC (otherwise every TZ-shift test would silently pass)', () => {
+    expect(new Date().getTimezoneOffset()).not.toBe(0);
+  });
+});
+
 describe('parseDateOnly', () => {
   it('parses a YYYY-MM-DD string to UTC midnight', () => {
     const d = parseDateOnly('2026-04-30');
@@ -118,5 +130,21 @@ describe('toDateOnlyInputValue', () => {
 
   it('returns empty string for unparseable input', () => {
     expect(toDateOnlyInputValue('not-a-date')).toBe('');
+  });
+
+  // The bare-YYYY-MM-DD branch must also reject impossible dates. Without
+  // this guard, an input like '2026-13-45' would pass the shape regex and
+  // be handed to <input type="date">, which silently renders empty (no
+  // hint to the user about what went wrong).
+  it('returns empty string for shape-valid but calendar-invalid bare strings', () => {
+    expect(toDateOnlyInputValue('2026-13-45')).toBe('');
+    expect(toDateOnlyInputValue('2026-02-31')).toBe('');
+    expect(toDateOnlyInputValue('2026-00-15')).toBe('');
+  });
+
+  it('still accepts every legal bare YYYY-MM-DD including leap day', () => {
+    expect(toDateOnlyInputValue('2028-02-29')).toBe('2028-02-29');
+    expect(toDateOnlyInputValue('2026-01-01')).toBe('2026-01-01');
+    expect(toDateOnlyInputValue('2026-12-31')).toBe('2026-12-31');
   });
 });

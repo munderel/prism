@@ -6,16 +6,24 @@ import { X } from 'lucide-react';
 import { getChildLevel } from '@/lib/goal-validation';
 import { LEVEL_LABELS, formatGoalDateRange } from '@/lib/goal-constants';
 import { GoalCreationCoach } from '@/components/reviews/shared/GoalCreationCoach';
-import { getWeekBoundaries, toDateOnlyInputValue } from '@/lib/date-utils';
+import { getWeekBoundaries, toDateOnlyInputValue, parseDateOnly } from '@/lib/date-utils';
 
-/** Compute the appropriate root goal level based on the date range duration. */
+/**
+ * Compute the appropriate root goal level based on the date range duration.
+ * Both endpoints are bare 'YYYY-MM-DD' strings from the form; parseDateOnly
+ * anchors them to UTC midnight and getUTCFullYear extracts the year via UTC
+ * components — without that, a goal spanning exactly one calendar year
+ * (2026-01-01 → 2027-01-01) could flip between MONTHLY and HIGH_HARD
+ * depending on the viewer's local timezone.
+ */
 function computeRootLevel(startDate: string, endDate: string): string {
   if (!startDate || !endDate) return 'HIGH_HARD';
-  const s = new Date(startDate);
-  const e = new Date(endDate);
+  const s = parseDateOnly(startDate);
+  const e = parseDateOnly(endDate);
+  if (!s || !e) return 'HIGH_HARD';
   const durationDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
   if (durationDays <= 14) return 'WEEKLY';
-  if (s.getFullYear() === e.getFullYear()) return 'MONTHLY';
+  if (s.getUTCFullYear() === e.getUTCFullYear()) return 'MONTHLY';
   return 'HIGH_HARD';
 }
 
