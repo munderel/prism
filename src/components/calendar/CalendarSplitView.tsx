@@ -492,6 +492,13 @@ const EventContent = React.memo(function EventContent({
     ? [goalTitle, taskTitle, displayTitle].filter(Boolean).join(' → ')
     : undefined;
 
+  // Screen-reader summary: three stacked spans inside a styled div would
+  // otherwise read as a concatenated mash. The aria-label gives a clean,
+  // ordered read for workblocks; other event types fall through to title.
+  const ariaLabel = itemType === 'workblock'
+    ? [goalTitle, taskTitle, displayTitle, timeText].filter(Boolean).join(' — ')
+    : undefined;
+
   return (
     <div
       className={`relative h-full w-full overflow-hidden rounded px-1.5 text-[11px] leading-tight ${isShort ? 'py-0' : 'py-0.5'}`}
@@ -501,6 +508,7 @@ const EventContent = React.memo(function EventContent({
         color: '#ffffff',
       }}
       title={tooltip}
+      aria-label={ariaLabel}
     >
       {showWorkblockMultiLine ? (
         <div className="flex flex-col gap-0 pr-4 text-white">

@@ -9,6 +9,7 @@ import {
   deleteGoogleEvent,
   getGoogleSyncInfo,
 } from '@/lib/calendar';
+import { buildWorkBlockEventBody } from '@/lib/work-block-sync';
 
 const blockInclude = {
   task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true, dueDate: true } },
@@ -106,10 +107,10 @@ export async function PATCH(
     const effectiveObjective = block?.mainObjective ?? existing.mainObjective;
     const effectiveStart = resolvedStart;
     const effectiveEnd = resolvedEnd;
-    // Workblock title is mainObjective only — the linked task surfaces in
-    // the description. Matches the create path in work-blocks/route.ts.
-    const summary = effectiveObjective;
-    const description = `${taskTitle}\n${effectiveObjective}`;
+    const { summary, description } = buildWorkBlockEventBody({
+      taskTitle,
+      mainObjective: effectiveObjective,
+    });
     const syncToGcal = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
       const { hasGoogle, calendarId: targetCalendarId } = await getGoogleSyncInfo(auth.userId);
       if (!hasGoogle) {
@@ -136,7 +137,10 @@ export async function PATCH(
         const tz = user?.timezone ?? 'America/New_York';
         const gcalEvent = await createGoogleEvent(auth.userId, {
           summary,
-          description: effectiveObjective,
+          // Use the shared `description` (task title + objective) — the
+          // previous fallback passed `effectiveObjective` alone, leaving
+          // older blocks without their task title in Google.
+          description,
           start: effectiveStart.toISOString(),
           end: effectiveEnd.toISOString(),
           timeZone: tz,
