@@ -88,7 +88,16 @@ export async function GET(request: NextRequest) {
     select: { timezone: true },
   });
   const tz = userForTz?.timezone ?? 'America/New_York';
-  const anchor = dateParam ? parseLocalDateKey(dateParam, tz) : new Date();
+  // parseLocalDateKey returns an Invalid Date for garbage input; mirror the
+  // /api/tasks pattern and reject loudly rather than silently filtering
+  // around an Invalid anchor (would return nothing on every request).
+  let anchor = new Date();
+  if (dateParam) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      return Response.json({ error: 'Invalid date parameter' }, { status: 400 });
+    }
+    anchor = parseLocalDateKey(dateParam, tz);
+  }
   const { start: dayStart, end: dayEnd } = dayBoundariesForUser(anchor, tz);
 
   const session = await prisma.powerdownSession.findFirst({

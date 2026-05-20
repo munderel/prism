@@ -493,6 +493,13 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
       data = await res.json();
     }
 
+    if (!data) {
+      // Historical date with no session — leave session null; the empty
+      // state branch below renders from `!session && date`.
+      setLoading(false);
+      return;
+    }
+
     setSession(data);
     setCurrentStep(data.currentStep ?? 1);
     setCompleted(!!data.completedAt);
@@ -1161,8 +1168,36 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
     setDistractions(distractions.filter((_, i) => i !== index));
   };
 
+  // Step 4 "X / Y hours" progress — sum of scheduled minutes across
+  // tomorrow's work blocks (block duration, not task estimate, so partial
+  // drags are counted) against the user's daily target. Hoisted ABOVE the
+  // early returns below so the hook count stays stable across renders.
+  const tomorrowHoursProgress = useMemo(() => {
+    const scheduledMinutes = tomorrowWorkBlocks.reduce((acc, b) => {
+      const ms = new Date(b.end).getTime() - new Date(b.start).getTime();
+      return acc + Math.max(0, Math.round(ms / 60000));
+    }, 0);
+    const hasTarget = typeof dailyHoursTargetMinutes === 'number' && dailyHoursTargetMinutes > 0;
+    const formatHours = (mins: number) => (mins / 60).toFixed(1).replace(/\.0$/, '');
+    return {
+      hasTarget,
+      scheduledMinutes,
+      scheduledHours: formatHours(scheduledMinutes),
+      targetHours: hasTarget ? formatHours(dailyHoursTargetMinutes!) : null,
+      hit: hasTarget && scheduledMinutes >= dailyHoursTargetMinutes!,
+    };
+  }, [tomorrowWorkBlocks, dailyHoursTargetMinutes]);
 
   if (loading) return <div className="text-[var(--text-muted)] py-12 text-center">Loading...</div>;
+
+  if (!session && date) {
+    return (
+      <div className="glass-panel p-8 text-center space-y-3">
+        <p className="text-sm text-[var(--text-primary)]">No power down completed on this date.</p>
+        <p className="text-xs text-[var(--text-muted)]">Historical view is read-only — past sessions are never created retroactively.</p>
+      </div>
+    );
+  }
 
   if (completed) {
     return (
@@ -1186,6 +1221,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
 
   const completedTasks = todayTasks.filter((t) => t.status === 'DONE');
   const incompleteTasks = todayTasks.filter((t) => t.status !== 'DONE' && t.status !== 'DROPPED');
+
   const tomorrowDate = new Date(Date.now() + 86400000).toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
@@ -1750,13 +1786,10 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
                     {(['REACT', 'MAINTENANCE'] as const).map((kind) => {
                       const subset = upcomingReactMaintTasks.filter((t) => t.taskType === kind);
                       if (subset.length === 0) return null;
-                      const label = kind === 'REACT' ? 'React' : 'Maintenance';
-                      const colorClass = kind === 'REACT'
-                        ? 'text-amber-700 dark:text-yellow-400'
-                        : 'text-cyan-700 dark:text-cyan-400';
+                      const colors = PRISM_COLORS[kind];
                       return (
                         <div key={kind} className="space-y-1">
-                          <p className={`text-[10px] uppercase tracking-wider ${colorClass}`}>{label}</p>
+                          <p className={`text-[10px] uppercase tracking-wider ${colors.textClass}`}>{colors.label}</p>
                           {subset.map((t) => (
                             <div
                               key={t.id}
@@ -1873,34 +1906,23 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
             )}
 
             {/* Step 4/5: Tomorrow's Calendar — full-screen modal overlay */}
-            {currentStepKey === 'calendar' && (() => {
-              // Sum scheduled minutes across tomorrow's work blocks (uses block
-              // duration, not task estimates, so partial drags are counted).
-              const scheduledMinutes = tomorrowWorkBlocks.reduce((acc, b) => {
-                const ms = new Date(b.end).getTime() - new Date(b.start).getTime();
-                return acc + Math.max(0, Math.round(ms / 60000));
-              }, 0);
-              const hasTarget = typeof dailyHoursTargetMinutes === 'number' && dailyHoursTargetMinutes > 0;
-              const scheduledHours = (scheduledMinutes / 60).toFixed(1).replace(/\.0$/, '');
-              const targetHours = hasTarget ? (dailyHoursTargetMinutes! / 60).toFixed(1).replace(/\.0$/, '') : null;
-              const hit = hasTarget && scheduledMinutes >= dailyHoursTargetMinutes!;
-              return (
+            {currentStepKey === 'calendar' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2">
                     <Calendar className="h-5 w-5 text-indigo-400" />
                     <p className="text-sm text-[var(--text-primary)] font-medium">{tomorrowDate}</p>
                   </div>
-                  {hasTarget && (
+                  {tomorrowHoursProgress.hasTarget && (
                     <span
                       className={`text-xs rounded-md border px-2 py-0.5 font-medium ${
-                        hit
+                        tomorrowHoursProgress.hit
                           ? 'bg-green-500/15 border-green-500/40 text-green-300'
                           : 'bg-[var(--surface-raised)] border-[var(--border-color)] text-[var(--text-secondary)]'
                       }`}
-                      title={`${scheduledMinutes} min scheduled / ${dailyHoursTargetMinutes} min daily target`}
+                      title={`${tomorrowHoursProgress.scheduledMinutes} min scheduled / ${dailyHoursTargetMinutes} min daily target`}
                     >
-                      {scheduledHours} / {targetHours} hours
+                      {tomorrowHoursProgress.scheduledHours} / {tomorrowHoursProgress.targetHours} hours
                     </span>
                   )}
                 </div>
@@ -2060,8 +2082,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
                 </div>
 
               </div>
-              );
-            })()}
+            )}
 
             {/* ClearGoals are scoped to workBlockId so the Goal Clarity Summary
                 step and the Today's Work Blocks dashboard read through the same path. */}
@@ -2252,32 +2273,37 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
                   );
                 })}
 
-                {/* Tasks due tomorrow (no scheduled work block) — surfaces
-                    the user's deliberate due-tomorrow list separately so
-                    nothing falls out of view at summary time. */}
-                {tomorrowTasks.length > 0 && (
-                  <div className="space-y-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mt-4">
-                      Tasks due tomorrow
-                    </h3>
-                    {tomorrowTasks.map((t) => {
-                      const dueTime = t.dueDate ? new Date(t.dueDate) : null;
-                      const hasTime = dueTime && (dueTime.getUTCHours() !== 0 || dueTime.getUTCMinutes() !== 0);
-                      return (
-                        <div key={t.id} className="rounded-lg px-4 py-2 bg-[var(--surface-raised)]/50 flex items-center gap-2">
-                          <Circle className="h-3.5 w-3.5 text-[var(--text-muted)] flex-shrink-0" />
-                          <span className="text-sm text-[var(--text-primary)] flex-1 min-w-0 truncate">{t.title}</span>
-                          {hasTime && (
-                            <span className="text-xs text-[var(--text-muted)] flex items-center gap-1 flex-shrink-0">
-                              <Clock className="h-3 w-3" />
-                              {dueTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                {/* Tasks due tomorrow that aren't already shown via a
+                    workblock — dedupe against block.task.id so a task
+                    scheduled into tomorrow doesn't double-render. */}
+                {(() => {
+                  const blockedTaskIds = new Set(tomorrowWorkBlocks.map((b) => b.task.id));
+                  const unblockedTomorrowTasks = tomorrowTasks.filter((t) => !blockedTaskIds.has(t.id));
+                  if (unblockedTomorrowTasks.length === 0) return null;
+                  return (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mt-4">
+                        Tasks due tomorrow
+                      </h3>
+                      {unblockedTomorrowTasks.map((t) => {
+                        const dueTime = t.dueDate ? new Date(t.dueDate) : null;
+                        const hasTime = dueTime && (dueTime.getUTCHours() !== 0 || dueTime.getUTCMinutes() !== 0);
+                        return (
+                          <div key={t.id} className="rounded-lg px-4 py-2 bg-[var(--surface-raised)]/50 flex items-center gap-2">
+                            <Circle className="h-3.5 w-3.5 text-[var(--text-muted)] flex-shrink-0" />
+                            <span className="text-sm text-[var(--text-primary)] flex-1 min-w-0 truncate">{t.title}</span>
+                            {hasTime && (
+                              <span className="text-xs text-[var(--text-muted)] flex items-center gap-1 flex-shrink-0">
+                                <Clock className="h-3 w-3" />
+                                {dueTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {/* AIMs scheduled tomorrow — habit anchors, not tasks. */}
                 {tomorrowAimInstances.length > 0 && (
