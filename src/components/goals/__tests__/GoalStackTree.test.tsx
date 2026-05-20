@@ -153,3 +153,53 @@ describe('GoalStackTree', () => {
     expect(global.fetch).not.toHaveBeenCalledWith('/api/goals/g-1', expect.objectContaining({ method: 'DELETE' }));
   });
 });
+
+describe('GoalStackTree — mineFilter (company stack visibility)', () => {
+  const stackId = 'stack-co';
+
+  it('shows all goals when mineFilter is false', async () => {
+    const goals = [
+      createGoal({ id: 'g-mine', title: 'My Goal', level: 'HIGH_HARD', parentId: null, isAssignedToMe: true }),
+      createGoal({ id: 'g-other', title: 'Their Goal', level: 'HIGH_HARD', parentId: null, isAssignedToMe: false }),
+    ];
+    renderWithProviders(
+      <GoalStackTree stackId={stackId} isCompanyStack={true} isAdmin={false} mineFilter={false} />,
+      { swrData: { [`/api/goals?stackId=${stackId}`]: goals } },
+    );
+    await waitFor(() => {
+      expect(screen.getByText('My Goal')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Their Goal')).toBeInTheDocument();
+  });
+
+  it('shows only assigned goals when mineFilter is true', async () => {
+    const goals = [
+      createGoal({ id: 'g-mine', title: 'My Goal', level: 'HIGH_HARD', parentId: null, isAssignedToMe: true }),
+      createGoal({ id: 'g-other', title: 'Their Goal', level: 'HIGH_HARD', parentId: null, isAssignedToMe: false }),
+    ];
+    renderWithProviders(
+      <GoalStackTree stackId={stackId} isCompanyStack={true} isAdmin={false} mineFilter={true} />,
+      { swrData: { [`/api/goals?stackId=${stackId}`]: goals } },
+    );
+    await waitFor(() => {
+      expect(screen.getByText('My Goal')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Their Goal')).not.toBeInTheDocument();
+  });
+
+  it('shows a goal when a descendant has isAssignedToMe', async () => {
+    // Parent is not assigned but child is — parent should still appear in "Mine" view
+    const goals = [
+      createGoal({ id: 'g-parent', title: 'Parent Goal', level: 'HIGH_HARD', parentId: null, isAssignedToMe: false }),
+      createGoal({ id: 'g-child', title: 'Child Goal', level: 'STRATEGIC', parentId: 'g-parent', isAssignedToMe: true }),
+    ];
+    renderWithProviders(
+      <GoalStackTree stackId={stackId} isCompanyStack={true} isAdmin={false} mineFilter={true} />,
+      { swrData: { [`/api/goals?stackId=${stackId}`]: goals } },
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Parent Goal')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Child Goal')).toBeInTheDocument();
+  });
+});
