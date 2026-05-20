@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, Check, Users } from 'lucide-react';
+import { Pencil, Trash2, Check, Users, Flame } from 'lucide-react';
+import useSWR from 'swr';
 import { KpiProgressBar } from './KpiProgressBar';
 
 interface KpiOwner {
@@ -10,6 +11,37 @@ interface KpiOwner {
   name: string | null;
   email: string;
   image: string | null;
+}
+
+interface AimContribution {
+  instanceId: string;
+  completedAt: string | null;
+  aimName: string;
+  increment: number;
+}
+
+/** Shows the most-recent AIM completions that contributed to a NUMERIC KPI. */
+function AimContributions({ kpiId }: { kpiId: string }) {
+  const { data } = useSWR<{ aimContributions: AimContribution[] }>(`/api/kpis/${kpiId}`);
+  const contributions = data?.aimContributions ?? [];
+  if (contributions.length === 0) return null;
+
+  return (
+    <div className="mt-2 space-y-1">
+      <p className="text-[10px] font-medium text-[var(--text-muted)] flex items-center gap-1">
+        <Flame className="h-3 w-3 text-teal-400" />
+        Recent AIM contributions
+      </p>
+      {contributions.map((c) => (
+        <div key={c.instanceId} className="flex items-center justify-between text-[10px] text-[var(--text-secondary)]">
+          <span className="truncate">{c.aimName}</span>
+          <span className="ml-2 shrink-0 text-teal-400">
+            +{c.increment} on {c.completedAt ? new Date(c.completedAt).toLocaleDateString() : '—'}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 interface KpiCardProps {
@@ -207,6 +239,8 @@ export const KpiCard = React.memo(React.forwardRef<HTMLDivElement, KpiCardProps>
               ))}
             </div>
           )}
+
+          <AimContributions kpiId={kpi.id} />
         </>
       )}
     </m.div>

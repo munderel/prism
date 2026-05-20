@@ -748,10 +748,11 @@ model Kpi {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  goal       Goal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  owner      User? @relation("KpiOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  linkedKpi  Kpi?  @relation("KpiLink", fields: [linkedKpiId], references: [id])
-  linkedFrom Kpi[] @relation("KpiLink")
+  goal          Goal          @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  owner         User?         @relation("KpiOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  linkedKpi     Kpi?          @relation("KpiLink", fields: [linkedKpiId], references: [id])
+  linkedFrom    Kpi[]         @relation("KpiLink")
+  aimCategories AimCategory[] @relation("AimCategoryKpiLink")
 
   @@unique([goalId, name])
   @@index([goalId])
@@ -838,13 +839,17 @@ model AimCategory {
   schedulePeriod     String   @default("both") // "working" | "casual" | "both"
   createdByUserId    String?
   isUserHabit        Boolean  @default(false)
+  linkedKpiId        String?  // optional FK to Kpi (NUMERIC only)
+  kpiIncrement       Float?   // amount added per completion; null → default 1
   createdAt          DateTime @default(now())
 
   createdBy    User?         @relation("CreatedAimCategories", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  linkedKpi    Kpi?          @relation("AimCategoryKpiLink", fields: [linkedKpiId], references: [id], onDelete: SetNull)
   userAims     UserAim[]
   aimInstances AimInstance[]
 
   @@index([createdByUserId])
+  @@index([linkedKpiId])
 }
 
 model UserAim {

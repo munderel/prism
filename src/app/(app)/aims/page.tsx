@@ -22,6 +22,7 @@ import {
   RotateCcw,
   PauseCircle,
   PlayCircle,
+  Target,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 import StreakHeatmap from '@/components/aims/StreakHeatmap';
@@ -46,6 +47,27 @@ interface AimCategory {
   isDefault: boolean;
   isDaily: boolean;
   activities: string[] | null;
+  linkedKpiId: string | null;
+  kpiIncrement: number | null;
+}
+
+interface GoalStack {
+  id: string;
+  name: string;
+}
+
+interface Goal {
+  id: string;
+  title: string;
+  level: string;
+  deletedAt: string | null;
+}
+
+interface Kpi {
+  id: string;
+  name: string;
+  type: string;
+  unit: string | null;
 }
 
 interface UserAim {
@@ -159,6 +181,28 @@ export default function AimsPage() {
   const [newActivity, setNewActivity] = useState('');
   const [editActivities, setEditActivities] = useState<string[]>([]);
   const [completingId, setCompletingId] = useState<string | null>(null);
+
+  // KPI linkage state (per edit session)
+  const [editLinkedKpiId, setEditLinkedKpiId] = useState<string | null>(null);
+  const [editKpiIncrement, setEditKpiIncrement] = useState<number>(1);
+  const [kpiPickerStackId, setKpiPickerStackId] = useState<string | null>(null);
+  const [kpiPickerGoalId, setKpiPickerGoalId] = useState<string | null>(null);
+
+  // Stacks for KPI picker
+  const { data: stacks } = useSWR<GoalStack[]>('/api/stacks');
+  // Goals for selected stack — only fetch when a stack is selected
+  const { data: stackGoals } = useSWR<{ goals: Goal[] }>(
+    kpiPickerStackId ? `/api/goals?stackId=${kpiPickerStackId}` : null,
+  );
+  // KPIs for selected goal — only fetch when a goal is selected
+  const { data: goalKpisData } = useSWR<{ kpis: Kpi[] }>(
+    kpiPickerGoalId ? `/api/goals/${kpiPickerGoalId}/kpis` : null,
+  );
+  const numericKpisForGoal = (goalKpisData?.kpis ?? []).filter((k) => k.type === 'NUMERIC');
+  const hasOnlyBinaryKpis =
+    kpiPickerGoalId !== null &&
+    (goalKpisData?.kpis ?? []).length > 0 &&
+    numericKpisForGoal.length === 0;
 
   const emptyNewAim = {
     name: '',
@@ -346,6 +390,11 @@ export default function AimsPage() {
     setEditActivities(getActivities(cat));
     const ua = userAimMap.get(cat.id);
     setEditActiveWeekdays(ua?.activeWeekdays ?? 127);
+    // KPI linkage state
+    setEditLinkedKpiId(cat.linkedKpiId ?? null);
+    setEditKpiIncrement(cat.kpiIncrement ?? 1);
+    setKpiPickerStackId(null);
+    setKpiPickerGoalId(null);
   };
 
   const saveEditing = async (cat: AimCategory) => {
@@ -371,6 +420,10 @@ export default function AimsPage() {
       payload.activeWeekdays = editActiveWeekdays;
     }
 
+    // KPI linkage — always include so the user can clear it
+    payload.linkedKpiId = editLinkedKpiId ?? null;
+    payload.kpiIncrement = editLinkedKpiId ? (editKpiIncrement > 0 ? editKpiIncrement : 1) : null;
+
     await fetch('/api/aims/user', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -378,6 +431,7 @@ export default function AimsPage() {
     });
     setEditingId(null);
     mutateAims();
+    await mutate('/api/aims/categories');
   };
 
   const submitNewAim = async () => {
@@ -683,6 +737,18 @@ export default function AimsPage() {
                     onMutateAims={mutateAims}
                     aimStreakData={getAimStreakData(cat.id)}
                     onToggleAimStreak={handleToggleAimStreak}
+                    editLinkedKpiId={editingId === cat.id ? editLinkedKpiId : null}
+                    editKpiIncrement={editingId === cat.id ? editKpiIncrement : 1}
+                    kpiPickerStackId={editingId === cat.id ? kpiPickerStackId : null}
+                    kpiPickerGoalId={editingId === cat.id ? kpiPickerGoalId : null}
+                    stacks={stacks}
+                    stackGoals={editingId === cat.id ? (stackGoals?.goals ?? []) : []}
+                    numericKpisForGoal={editingId === cat.id ? numericKpisForGoal : []}
+                    hasOnlyBinaryKpis={editingId === cat.id ? hasOnlyBinaryKpis : false}
+                    onLinkedKpiChange={setEditLinkedKpiId}
+                    onKpiIncrementChange={setEditKpiIncrement}
+                    onKpiPickerStackChange={setKpiPickerStackId}
+                    onKpiPickerGoalChange={setKpiPickerGoalId}
                   />
                 ))}
               </div>
@@ -734,6 +800,18 @@ export default function AimsPage() {
                   onWorkoutSubTypesChange={(subTypes) => handleWorkoutSubTypesChange(cat.id, subTypes)}
                   aimStreakData={getAimStreakData(cat.id)}
                   onToggleAimStreak={handleToggleAimStreak}
+                  editLinkedKpiId={editingId === cat.id ? editLinkedKpiId : null}
+                  editKpiIncrement={editingId === cat.id ? editKpiIncrement : 1}
+                  kpiPickerStackId={editingId === cat.id ? kpiPickerStackId : null}
+                  kpiPickerGoalId={editingId === cat.id ? kpiPickerGoalId : null}
+                  stacks={stacks}
+                  stackGoals={editingId === cat.id ? (stackGoals?.goals ?? []) : []}
+                  numericKpisForGoal={editingId === cat.id ? numericKpisForGoal : []}
+                  hasOnlyBinaryKpis={editingId === cat.id ? hasOnlyBinaryKpis : false}
+                  onLinkedKpiChange={setEditLinkedKpiId}
+                  onKpiIncrementChange={setEditKpiIncrement}
+                  onKpiPickerStackChange={setKpiPickerStackId}
+                  onKpiPickerGoalChange={setKpiPickerGoalId}
                 />
               ))}
             </div>
@@ -931,6 +1009,19 @@ interface AimCardProps {
   onWorkoutSubTypesChange?: (subTypes: { id: string; name: string; frequencyPerWeek: number }[]) => void;
   aimStreakData?: { count: number; id: string | null; isActive: boolean };
   onToggleAimStreak?: (id: string, isActive: boolean) => void;
+  // KPI linkage
+  editLinkedKpiId: string | null;
+  editKpiIncrement: number;
+  kpiPickerStackId: string | null;
+  kpiPickerGoalId: string | null;
+  stacks: GoalStack[] | undefined;
+  stackGoals: Goal[] | undefined;
+  numericKpisForGoal: Kpi[];
+  hasOnlyBinaryKpis: boolean;
+  onLinkedKpiChange: (kpiId: string | null) => void;
+  onKpiIncrementChange: (v: number) => void;
+  onKpiPickerStackChange: (stackId: string | null) => void;
+  onKpiPickerGoalChange: (goalId: string | null) => void;
 }
 
 function AimCard({
@@ -967,6 +1058,18 @@ function AimCard({
   onWorkoutSubTypesChange,
   aimStreakData,
   onToggleAimStreak,
+  editLinkedKpiId,
+  editKpiIncrement,
+  kpiPickerStackId,
+  kpiPickerGoalId,
+  stacks,
+  stackGoals,
+  numericKpisForGoal,
+  hasOnlyBinaryKpis,
+  onLinkedKpiChange,
+  onKpiIncrementChange,
+  onKpiPickerStackChange,
+  onKpiPickerGoalChange,
 }: AimCardProps) {
   const [chartExpanded, setChartExpanded] = useState(false);
   const phase = (userAim?.currentPhase || 'SEED') as string;
@@ -1360,6 +1463,117 @@ function AimCard({
               editable
             />
           )}
+
+          {/* KPI Linkage Section */}
+          <div className="border-t border-[var(--border-color)] pt-3 space-y-2">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+              <Target className="h-3.5 w-3.5 text-indigo-400" />
+              Counts toward goal KPI (optional)
+            </label>
+
+            {/* Current linkage display */}
+            {editLinkedKpiId && (
+              <div className="flex items-center justify-between rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5">
+                <span className="text-xs text-indigo-300">KPI linked</span>
+                <button
+                  onClick={() => {
+                    onLinkedKpiChange(null);
+                    onKpiPickerStackChange(null);
+                    onKpiPickerGoalChange(null);
+                  }}
+                  className="text-[var(--text-muted)] hover:text-red-400 transition-colors"
+                  title="Remove KPI link"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Stack picker */}
+            <select
+              value={kpiPickerStackId ?? ''}
+              onChange={(e) => {
+                onKpiPickerStackChange(e.target.value || null);
+                onKpiPickerGoalChange(null);
+                onLinkedKpiChange(null);
+              }}
+              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="">Select a goal stack...</option>
+              {(stacks ?? []).map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+
+            {/* Goal picker */}
+            {kpiPickerStackId && (
+              <select
+                value={kpiPickerGoalId ?? ''}
+                onChange={(e) => {
+                  onKpiPickerGoalChange(e.target.value || null);
+                  onLinkedKpiChange(null);
+                }}
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="">Select a goal...</option>
+                {(stackGoals ?? [])
+                  .filter((g) => !g.deletedAt)
+                  .map((g) => (
+                    <option key={g.id} value={g.id}>{g.title}</option>
+                  ))}
+              </select>
+            )}
+
+            {/* Binary-only warning */}
+            {hasOnlyBinaryKpis && (
+              <p className="text-[10px] text-amber-400 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                Binary KPIs not supported — pick a goal with a numeric KPI.
+              </p>
+            )}
+
+            {/* KPI picker */}
+            {kpiPickerGoalId && numericKpisForGoal.length > 0 && (
+              <select
+                value={editLinkedKpiId ?? ''}
+                onChange={(e) => onLinkedKpiChange(e.target.value || null)}
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="">Select a KPI...</option>
+                {numericKpisForGoal.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.name}{k.unit ? ` (${k.unit})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Increment input — show when a KPI is selected */}
+            {editLinkedKpiId && (
+              <div>
+                <label className="text-xs text-[var(--text-secondary)]">
+                  Increment per completion
+                  {category.defaultDurationMin > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onKpiIncrementChange(+(category.defaultDurationMin / 60).toFixed(2))}
+                      className="ml-2 text-[10px] text-indigo-400 hover:text-indigo-300 underline"
+                    >
+                      Use {(category.defaultDurationMin / 60).toFixed(2)}h (duration-based)
+                    </button>
+                  )}
+                </label>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.1}
+                  value={editKpiIncrement}
+                  onChange={(e) => onKpiIncrementChange(parseFloat(e.target.value) || 1)}
+                  className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
 
           <div className="flex justify-between">
             {/* C2: Reset to Seed button */}
