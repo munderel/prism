@@ -81,10 +81,29 @@ export function toUtcDateOnly(d: Date): Date {
  * across timezones. Use this for editing date-only fields (Goal start/end,
  * Meeting occurDate, etc.); never use getLocalDateString(new Date(value))
  * for those — it shifts by a day in non-UTC viewer timezones.
+ *
+ * Bare 'YYYY-MM-DD' strings pass through after a calendar-validity check
+ * (so '2026-13-45' returns '' instead of being handed to <input type="date">,
+ * which would silently render empty).
  */
 export function toDateOnlyInputValue(value: Date | string | null | undefined): string {
   if (value === null || value === undefined || value === '') return '';
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    // Calendar-validity check beyond the shape regex. V8 happily rolls over
+    // '2026-02-31' to '2026-03-03'; assert the parsed components match the
+    // input so impossible dates return '' rather than silently mutating.
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) return '';
+    const [y, mo, d] = value.split('-').map(Number);
+    if (
+      parsed.getUTCFullYear() !== y ||
+      parsed.getUTCMonth() + 1 !== mo ||
+      parsed.getUTCDate() !== d
+    ) {
+      return '';
+    }
+    return value;
+  }
   const d = typeof value === 'string' ? new Date(value) : value;
   if (isNaN(d.getTime())) return '';
   const y = d.getUTCFullYear();

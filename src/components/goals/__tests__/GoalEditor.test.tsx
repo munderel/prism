@@ -168,4 +168,51 @@ describe('GoalEditor', () => {
     expect(body.startDate).toBe('2026-05-11');
     expect(body.endDate).toBe('2026-05-17');
   });
+
+  // Full end-to-end round-trip:
+  //   (1) user creates a root goal with start='2026-05-11', end='2026-05-17'
+  //   (2) POST body carries those exact strings (no TZ shift)
+  //   (3) the editor is then re-rendered as if the API echoed back UTC-midnight
+  //       ISO strings — the date inputs must show the same '2026-05-11' and
+  //       '2026-05-17' the user typed.
+  // Locks the compounding-drift bug class dead end-to-end.
+  it('round-trips create → re-render: typed dates appear unchanged in edit form', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createMockFetch({
+      '/api/goals': { id: 'new-goal-1' },
+    });
+    global.fetch = fetchMock as any;
+
+    const { unmount } = renderWithProviders(
+      <GoalEditor stackId={stackId} onSave={onSave} onClose={onClose} />,
+    );
+
+    await user.type(screen.getByPlaceholderText('What do you want to achieve?'), 'Cross-year goal');
+    const dateInputs = document.querySelectorAll('input[type="date"]');
+    fireEvent.change(dateInputs[0], { target: { value: '2026-05-11' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2026-05-17' } });
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.startDate).toBe('2026-05-11');
+    expect(body.endDate).toBe('2026-05-17');
+
+    // Simulate the API echoing those dates back as UTC-midnight ISO strings
+    // and re-mounting the editor in edit mode.
+    unmount();
+    const savedGoal = createGoal({
+      id: 'new-goal-1',
+      title: 'Cross-year goal',
+      startDate: '2026-05-11T00:00:00.000Z',
+      endDate: '2026-05-17T00:00:00.000Z',
+    });
+    renderWithProviders(
+      <GoalEditor stackId={stackId} goal={savedGoal} onSave={onSave} onClose={onClose} />,
+    );
+    const reopened = document.querySelectorAll('input[type="date"]');
+    expect(reopened[0]).toHaveValue('2026-05-11');
+    expect(reopened[1]).toHaveValue('2026-05-17');
+  });
 });
