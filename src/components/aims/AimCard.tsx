@@ -6,7 +6,7 @@ import { useTaskTypeColors } from '@/hooks/useTaskTypeColors';
 interface AimCardProps {
   aim: {
     id: string;
-    aimCategory: { name: string; description?: string };
+    aimCategory: { name: string; description?: string; isDaily?: boolean };
     isActive: boolean;
     currentPhase: string; // SEED, SPROUT, GROW, FLOW
     currentStreak: number;
@@ -129,7 +129,7 @@ export function AimCard({
         <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
           {aim.currentStreak}
         </span>
-        <span className="text-[10px] text-gray-400">{'\uD83D\uDD25'} week streak</span>
+        <span className="text-[10px] text-gray-400">{'\uD83D\uDD25'} {aim.aimCategory.isDaily ? 'day streak' : 'week streak'}</span>
       </div>
 
       {/* Expand indicator */}

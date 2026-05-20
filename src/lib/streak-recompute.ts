@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { toUserDayStamp, dstSafeDate, shiftDayStamp } from '@/lib/user-timezone';
+import { computeDailyStreak, computeWeeklyStreak } from '@/lib/aim-streak-engine';
 
 export interface StreakHistoryRow {
   completedAt: Date;
@@ -202,4 +203,78 @@ async function loadSnapshot(userId: string, streakType: string): Promise<StreakS
     select: { currentCount: true, bestCount: true, lastActiveDate: true },
   });
   return row ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// AIM streak recompute
+// ---------------------------------------------------------------------------
+
+export interface AimStreakReport {
+  userAimId: string;
+  aimCategoryId: string;
+  isDaily: boolean;
+  before: { currentStreak: number; bestStreak: number };
+  after: { currentStreak: number };
+  applied: boolean;
+}
+
+/**
+ * Recomputes `currentStreak` for every active UserAim belonging to a user
+ * using the new daily-vs-weekly logic.
+ *
+ * `bestStreak` is preserved (never lowered) — only `currentStreak` is updated.
+ * Safe to run multiple times (idempotent).
+ */
+export async function recomputeAimStreaks(
+  userId: string,
+  opts: { dryRun?: boolean; asOf?: Date } = {},
+): Promise<AimStreakReport[]> {
+  const userAims = await prisma.userAim.findMany({
+    where: { userId, isActive: true },
+    include: { aimCategory: true },
+  });
+
+  const reports: AimStreakReport[] = [];
+
+  for (const ua of userAims) {
+    const instances = await prisma.aimInstance.findMany({
+      where: { userId, aimCategoryId: ua.aimCategoryId },
+      select: { scheduledDate: true, completedAt: true },
+    });
+
+    let newStreak: number;
+
+    if (ua.aimCategory.isDaily) {
+      const result = computeDailyStreak(instances, ua.activeWeekdays, opts.asOf);
+      newStreak = result.currentStreak;
+    } else {
+      const weeklyTarget = ua.customFrequency ?? ua.aimCategory.defaultFrequency;
+      const result = computeWeeklyStreak(instances, weeklyTarget, opts.asOf);
+      newStreak = result.currentStreak;
+    }
+
+    const report: AimStreakReport = {
+      userAimId: ua.id,
+      aimCategoryId: ua.aimCategoryId,
+      isDaily: ua.aimCategory.isDaily,
+      before: { currentStreak: ua.currentStreak, bestStreak: ua.bestStreak },
+      after: { currentStreak: newStreak },
+      applied: false,
+    };
+
+    if (!opts.dryRun) {
+      await prisma.userAim.update({
+        where: { id: ua.id },
+        data: {
+          currentStreak: newStreak,
+          bestStreak: Math.max(ua.bestStreak, newStreak),
+        },
+      });
+      report.applied = true;
+    }
+
+    reports.push(report);
+  }
+
+  return reports;
 }

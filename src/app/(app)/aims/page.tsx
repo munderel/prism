@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
 import {
   Flame,
@@ -61,6 +61,7 @@ interface UserAim {
   completionCount: number;
   currentStreak: number;
   bestStreak: number;
+  activeWeekdays: number;
   aimCategory: AimCategory;
 }
 
@@ -101,10 +102,22 @@ function getStreakColorOrMuted(streak: number): string {
   return getStreakColor(streak);
 }
 
+const STREAK_BANNER_KEY = 'streak-math-banner-dismissed-v1';
+
 export default function AimsPage() {
   const toast = useToast();
   const { data: categories, isLoading: catsLoading } = useSWR<AimCategory[]>('/api/aims/categories');
   const { data: userAims, isLoading: aimsLoading, mutate: mutateAims } = useSWR<UserAim[]>('/api/aims/user');
+
+  // One-time streak-update banner (localStorage, client-only).
+  const [bannerDismissed, setBannerDismissed] = useState<boolean>(true); // default true to avoid SSR flash
+  useEffect(() => {
+    setBannerDismissed(localStorage.getItem(STREAK_BANNER_KEY) === '1');
+  }, []);
+  const dismissBanner = () => {
+    if (typeof window !== 'undefined') localStorage.setItem(STREAK_BANNER_KEY, '1');
+    setBannerDismissed(true);
+  };
 
   // Batch-fetch derail info for ALL active aims in one request (eliminates N+1 waterfall)
   const { data: derailBatch } = useSWR<DerailBatchResponse>('/api/aims/derail-batch?days=14');
@@ -142,6 +155,7 @@ export default function AimsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDuration, setEditDuration] = useState<number>(0);
   const [editFrequency, setEditFrequency] = useState<number>(0);
+  const [editActiveWeekdays, setEditActiveWeekdays] = useState<number>(127);
   const [newActivity, setNewActivity] = useState('');
   const [editActivities, setEditActivities] = useState<string[]>([]);
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -278,6 +292,7 @@ export default function AimsPage() {
             completionCount: 0,
             currentStreak: 0,
             bestStreak: 0,
+            activeWeekdays: 127,
             aimCategory: category,
           });
 
@@ -329,10 +344,12 @@ export default function AimsPage() {
     setEditDuration(getDuration(cat));
     setEditFrequency(getFrequency(cat));
     setEditActivities(getActivities(cat));
+    const ua = userAimMap.get(cat.id);
+    setEditActiveWeekdays(ua?.activeWeekdays ?? 127);
   };
 
   const saveEditing = async (cat: AimCategory) => {
-    const payload: Record<string, any> = {
+    const payload: Record<string, unknown> = {
       aimCategoryId: cat.id,
       isActive: isActive(cat.id),
       customDuration: editDuration !== cat.defaultDurationMin ? editDuration : null,
@@ -347,6 +364,11 @@ export default function AimsPage() {
       if (changed) {
         payload.customActivities = editActivities;
       }
+    }
+
+    // activeWeekdays only applies to daily aims
+    if (cat.isDaily) {
+      payload.activeWeekdays = editActiveWeekdays;
     }
 
     await fetch('/api/aims/user', {
@@ -485,7 +507,7 @@ export default function AimsPage() {
                 key={cat.id}
                 aim={{
                   id: ua?.id ?? `default-${cat.id}`,
-                  aimCategory: { name: cat.name, description: cat.description ?? undefined },
+                  aimCategory: { name: cat.name, description: cat.description ?? undefined, isDaily: cat.isDaily },
                   isActive: true,
                   currentPhase: ua?.currentPhase ?? 'SEED',
                   currentStreak: ua?.currentStreak ?? 0,
@@ -554,6 +576,22 @@ export default function AimsPage() {
 
   return (
     <div className="space-y-8">
+      {/* One-time streak-update banner */}
+      {!bannerDismissed && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-teal-500/30 bg-teal-500/10 px-4 py-3">
+          <p className="text-sm text-teal-300">
+            Streak math updated — see your AIM heatmap for the new view.
+          </p>
+          <button
+            onClick={dismissBanner}
+            className="shrink-0 p-1 rounded text-teal-400 hover:text-teal-200 hover:bg-teal-500/20 transition-colors"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold font-display text-[var(--text-primary)] flex items-center gap-2">
@@ -620,6 +658,7 @@ export default function AimsPage() {
                     isEditing={editingId === cat.id}
                     editDuration={editDuration}
                     editFrequency={editFrequency}
+                    editActiveWeekdays={editActiveWeekdays}
                     editActivities={editActivities}
                     newActivity={newActivity}
                     completedToday={completedTodaySet.has(cat.id)}
@@ -636,6 +675,7 @@ export default function AimsPage() {
                     onCancelEdit={() => setEditingId(null)}
                     onEditDurationChange={setEditDuration}
                     onEditFrequencyChange={setEditFrequency}
+                    onEditActiveWeekdaysChange={setEditActiveWeekdays}
                     onNewActivityChange={setNewActivity}
                     onAddActivity={addActivity}
                     onRemoveActivity={removeActivity}
@@ -668,6 +708,7 @@ export default function AimsPage() {
                   isEditing={editingId === cat.id}
                   editDuration={editDuration}
                   editFrequency={editFrequency}
+                  editActiveWeekdays={editActiveWeekdays}
                   editActivities={editActivities}
                   newActivity={newActivity}
                   completedToday={completedTodaySet.has(cat.id)}
@@ -684,6 +725,7 @@ export default function AimsPage() {
                   onCancelEdit={() => setEditingId(null)}
                   onEditDurationChange={setEditDuration}
                   onEditFrequencyChange={setEditFrequency}
+                  onEditActiveWeekdaysChange={setEditActiveWeekdays}
                   onNewActivityChange={setNewActivity}
                   onAddActivity={addActivity}
                   onRemoveActivity={removeActivity}
@@ -866,6 +908,7 @@ interface AimCardProps {
   isEditing: boolean;
   editDuration: number;
   editFrequency: number;
+  editActiveWeekdays: number;
   editActivities: string[];
   newActivity: string;
   completedToday: boolean;
@@ -879,6 +922,7 @@ interface AimCardProps {
   onCancelEdit: () => void;
   onEditDurationChange: (v: number) => void;
   onEditFrequencyChange: (v: number) => void;
+  onEditActiveWeekdaysChange: (v: number) => void;
   onNewActivityChange: (v: string) => void;
   onAddActivity: () => void;
   onRemoveActivity: (act: string) => void;
@@ -900,6 +944,7 @@ function AimCard({
   isEditing,
   editDuration,
   editFrequency,
+  editActiveWeekdays,
   editActivities,
   newActivity,
   completedToday,
@@ -913,6 +958,7 @@ function AimCard({
   onCancelEdit,
   onEditDurationChange,
   onEditFrequencyChange,
+  onEditActiveWeekdaysChange,
   onNewActivityChange,
   onAddActivity,
   onRemoveActivity,
@@ -1045,17 +1091,19 @@ function AimCard({
       {active && (
         <div className="mt-2 flex items-center gap-3 rounded-lg bg-[var(--surface-raised)] px-3 py-2">
           {/* C3: Tooltip on flame/streak icon */}
-          <span title={`Current streak: ${streak} days`}>
+          <span title={`Current streak: ${streak} ${category.isDaily ? 'days' : 'weeks'}`}>
             <Flame className={`h-5 w-5 shrink-0 ${getStreakColor(streak)}`} />
           </span>
           <div className="flex-1 min-w-0">
             <span
               className={`text-sm font-semibold ${getStreakColorOrMuted(streak)}`}
-              title={`Current streak: ${streak} days`}
+              title={`Current streak: ${streak} ${category.isDaily ? 'days' : 'weeks'}`}
             >
               {streak === 0
                 ? 'No streak'
-                : `${streak} day streak${streak >= 14 ? ' \u{1F525}\u{1F525}' : streak >= 7 ? ' \u{1F525}' : ''}`}
+                : category.isDaily
+                  ? `${streak} day streak${streak >= 14 ? ' \u{1F525}\u{1F525}' : streak >= 7 ? ' \u{1F525}' : ''}`
+                  : `${streak} week streak${streak >= 14 ? ' \u{1F525}\u{1F525}' : streak >= 7 ? ' \u{1F525}' : ''}`}
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -1227,6 +1275,35 @@ function AimCard({
               </div>
             )}
           </div>
+
+          {/* Active weekdays picker — only for daily aims */}
+          {category.isDaily && (
+            <div>
+              <label className="text-xs font-medium text-[var(--text-secondary)]">
+                Active days
+              </label>
+              <div className="mt-1.5 flex gap-1">
+                {(['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const).map((label, idx) => {
+                  const bit = 1 << idx; // Sun=1, Mon=2, …, Sat=64
+                  const active = (editActiveWeekdays & bit) !== 0;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => onEditActiveWeekdaysChange(active ? editActiveWeekdays & ~bit : editActiveWeekdays | bit)}
+                      className={`flex-1 rounded py-1 text-[10px] font-semibold transition-colors ${
+                        active
+                          ? 'bg-teal-600 text-white border border-teal-600'
+                          : 'bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border-color)] hover:border-teal-500'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Activities Editor (for categories that have activities) */}
           {category.activities && (
