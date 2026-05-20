@@ -49,6 +49,13 @@ export default function GoalsPage() {
     }
   }, [stacks, selectedStackId]);
 
+  // Reset the company filter to "mine" whenever the user switches stacks so
+  // each company stack opens with the default scope, not a sticky "all" from
+  // a previous stack.
+  useEffect(() => {
+    setCompanyFilter('mine');
+  }, [selectedStackId]);
+
   // Show guide on first visit if not dismissed
   useEffect(() => {
     const dismissed = localStorage.getItem('prism-goal-stack-guide-dismissed');
