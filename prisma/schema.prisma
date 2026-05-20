@@ -71,6 +71,7 @@ model User {
   googleSyncState               Json      @default("{}") // Recurring Google Calendar sync metadata and exceptions
   defaultWorkBlockMinutes       Int       @default(90) // Minutes used when dragging a task onto the calendar as a work block (matches migration default)
   alwaysPromptForBlockObjective Boolean   @default(false) // When true, always show the objective modal on drag; otherwise short tasks (remaining ≤ default) schedule immediately
+  dailyHoursTarget              Int? // Daily "Y hours" goal shown in Powerdown Step 4 header. Stored as minutes; null = no target = hide the header. Set from Settings.
   powerdownTime                 String? // "HH:mm" format, e.g. "17:30"
   weeklyReviewDayOfWeek         Int? // 0=Sun,1=Mon,...6=Sat
   weeklyReviewTime              String? // "HH:mm" format, e.g. "10:00"
