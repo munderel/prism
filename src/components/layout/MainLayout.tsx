@@ -10,6 +10,7 @@ import { TopBar } from './TopBar';
 import { FloatingIdeaButton } from './FloatingIdeaButton';
 import { CommandPalette } from '../CommandPalette';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { EnablePushPrompt } from '../notifications/EnablePushPrompt';
 
 const OnboardingTour = dynamic(
   () => import('../onboarding/OnboardingTour').then((m) => m.OnboardingTour),
@@ -87,6 +88,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           <FloatingIdeaButton />
           <CommandPalette />
           <OnboardingGate />
+          <EnablePushPrompt />
         </LazyMotion>
       </SWRProvider>
     </SessionProvider>

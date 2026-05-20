@@ -3,6 +3,7 @@ import { requireCronSecret } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 import { notifyUser } from '@/lib/notifications';
 import { formatDateOnly } from '@/lib/date-utils';
+import { NotificationType } from '@prisma/client';
 
 const NAG_LOOKBACK_DAYS = 30;
 
@@ -44,7 +45,8 @@ export async function GET(request: NextRequest) {
           review.user.id,
           'Review Overdue',
           `Your ${review.reviewType} review (due ${formatDateOnly(review.scheduledDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}) is overdue. Complete it now.`,
-          '/reviews'
+          '/reviews',
+          NotificationType.REVIEW_NAG,
         )
       );
 

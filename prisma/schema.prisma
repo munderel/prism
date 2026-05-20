@@ -97,6 +97,8 @@ model User {
   commentMentions           CommentMention[]
   pushSubscriptions         PushSubscription[]
   notificationPreference    NotificationPreference?
+  notificationChannelPrefs  NotificationChannelPref[]
+  notifications             Notification[]
   configVersions            ConfigVersion[]
   invitations               Invitation[]
   assignedProcesses         Process[]                   @relation("ProcessAssignee")
@@ -529,13 +531,34 @@ model CommentMention {
 
 // === NOTIFICATIONS ===
 
+enum NotificationType {
+  DERAILING
+  MENTION
+  REVIEW_NAG
+  MEETING_REMINDER
+  AIM_INVITE
+  WORKBLOCK_INVITE
+  GENERIC
+}
+
+enum NotificationChannel {
+  EMAIL
+  PUSH_DESKTOP
+  PUSH_MOBILE
+  IN_APP
+}
+
 model PushSubscription {
-  id        String   @id @default(cuid())
-  userId    String
-  endpoint  String
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String
+  p256dh     String
+  auth       String
+  deviceType String?  // 'mobile' | 'desktop' | 'tablet'
+  label      String?  // user-facing name e.g. "iPhone Safari"
+  userAgent  String?  @db.Text
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -553,6 +576,35 @@ model NotificationPreference {
   meetingReminders Boolean @default(true)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Per-(type × channel) notification preference — supersedes flat NotificationPreference columns.
+// NotificationPreference stays in DB during transition (Component 19b will drop it).
+model NotificationChannelPref {
+  id        String              @id @default(cuid())
+  userId    String
+  notifType NotificationType
+  channel   NotificationChannel
+  enabled   Boolean             @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, notifType, channel])
+  @@index([userId])
+}
+
+// In-app notification inbox. Populated for every send regardless of channel so Component 20 bell icon has data.
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
 }
 
 // === INVITATIONS ===

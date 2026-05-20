@@ -22,5 +22,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!login|accept-invite|api/auth|api/cron|api/health|api/invitations|_next/static|_next/image|favicon\\.ico).*)'],
+  matcher: ['/((?!login|accept-invite|api/auth|api/cron|api/health|api/invitations|api/notifications/public-key|_next/static|_next/image|favicon\\.ico).*)'],
 };

@@ -3,6 +3,7 @@ import { requireCronSecret } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 import { notifyUser } from '@/lib/notifications';
 import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
+import { NotificationType } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
@@ -87,7 +88,8 @@ export async function GET(request: NextRequest) {
           userId,
           'Meeting in 10 minutes',
           `"${meeting.title}" starts at ${meeting.timeStart}`,
-          meeting.meetLink || '/calendar'
+          meeting.meetLink || '/calendar',
+          NotificationType.MEETING_REMINDER,
         )
       );
 
