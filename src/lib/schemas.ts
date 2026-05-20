@@ -677,6 +677,9 @@ const aimInputSchema = z.object({
     .min(0, 'activeWeekdays must be >= 0')
     .max(127, 'activeWeekdays must be <= 127')
     .optional(),
+  // KPI linkage fields — live on AimCategory, not UserAim.
+  linkedKpiId: z.string().optional().nullable(),
+  kpiIncrement: z.number().gt(0, 'kpiIncrement must be > 0').optional().nullable(),
 });
 
 export const putUserAimsSchema = z.object({

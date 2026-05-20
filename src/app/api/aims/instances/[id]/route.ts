@@ -13,9 +13,15 @@ import { getAimCompletionUrl } from '@/lib/completion-token';
 import { updateSpecificStreak, maybeIncrementDailyStreakIfDayComplete } from '@/lib/streak-engine';
 import { applyBufferOnCompletion } from '@/lib/derailing-buffer';
 import { recalculateUserAimProgress } from '@/lib/aim-progress';
+import { cascadeKpiUpdate } from '@/lib/kpi-progress';
+import { KpiType } from '@prisma/client';
 
 const INSTANCE_INCLUDE = {
-  aimCategory: true,
+  aimCategory: {
+    include: {
+      linkedKpi: { select: { id: true, type: true } },
+    },
+  },
   tasks: { select: { id: true, title: true, status: true } },
 } as const;
 
@@ -164,6 +170,26 @@ export async function PATCH(
       maybeIncrementDailyStreakIfDayComplete(existing.userId).catch((err) => console.warn('[streak] daily streak update failed:', err)),
       applyBufferOnCompletion(existing.userId, existing.aimCategoryId).catch((err) => console.warn('[buffer] completion update failed:', err)),
     ]);
+
+    // KPI increment: if this AIM category is linked to a NUMERIC KPI,
+    // increment its actualValue and cascade up the parent chain.
+    // Use the category data from the updated instance (INSTANCE_INCLUDE fetches linkedKpi).
+    const category = updated.aimCategory;
+    if (
+      category.linkedKpiId &&
+      category.linkedKpi?.type === KpiType.NUMERIC
+    ) {
+      const increment = category.kpiIncrement ?? 1;
+      try {
+        await prisma.kpi.update({
+          where: { id: category.linkedKpiId },
+          data: { actualValue: { increment } },
+        });
+        await cascadeKpiUpdate(category.linkedKpiId);
+      } catch (err) {
+        console.warn('[aims] KPI increment failed:', err);
+      }
+    }
   }
 
   if (status !== undefined && status !== existing.status) {
