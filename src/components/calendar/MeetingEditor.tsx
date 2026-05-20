@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Video, X } from 'lucide-react';
+import { Video, X, Info } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
-import { getLocalDateString } from '@/lib/date-utils';
-import type { MeetingEditorMeeting } from '@/types/meeting';
+import { getLocalDateString, toDateOnlyInputValue } from '@/lib/date-utils';
+import type { Meeting, MeetingEditorMeeting } from '@/types/meeting';
 
 export type { MeetingEditorMeeting };
 
@@ -24,7 +24,7 @@ interface MeetingEditorProps {
   meeting?: MeetingEditorMeeting | null;
   /** Fires after a successful POST/PATCH with the saved meeting + any
    *  non-persistent warnings (e.g. attendee deliverability advisory). */
-  onSaved: (saved: unknown, warnings: string[]) => void;
+  onSaved: (saved: Meeting, warnings: string[]) => void;
   onCancel: () => void;
 }
 
@@ -56,15 +56,20 @@ export function MeetingEditor({ meeting, onSaved, onCancel }: MeetingEditorProps
   const [description, setDescription] = useState(meeting?.description ?? '');
   const [cadence, setCadence] = useState(meeting?.cadence ?? 'ONE_TIME');
   const [dayOfWeek, setDayOfWeek] = useState<number | null>(meeting?.dayOfWeek ?? 1);
-  // Meeting.occurDate is stored as UTC midnight; extract the YYYY-MM-DD prefix
-  // directly so the date input shows the same day the user originally chose.
+  // Meeting.occurDate is stored as UTC midnight; toDateOnlyInputValue extracts
+  // the calendar date via getUTC* components so the input shows the same day
+  // the user originally chose, independent of viewer timezone.
   const [occurDate, setOccurDate] = useState<string>(
-    meeting?.occurDate ? meeting.occurDate.slice(0, 10) : getLocalDateString(),
+    toDateOnlyInputValue(meeting?.occurDate ?? null) || getLocalDateString(),
   );
   const [timeStart, setTimeStart] = useState(meeting?.timeStart ?? '09:00');
   const [timeEnd, setTimeEnd] = useState(meeting?.timeEnd ?? '10:00');
   const [selectedAttendees, setSelectedAttendees] = useState<UserOption[]>(
-    (meeting?.attendeeIds ?? []).map((id) => ({ id, name: null, email: '', image: null })),
+    // Prisma stores attendeeIds as Json; the TS interface promises `string[]`
+    // but a malformed row could break that. Guard with Array.isArray so a bad
+    // blob renders an empty list instead of throwing on .map.
+    (Array.isArray(meeting?.attendeeIds) ? (meeting!.attendeeIds as string[]) : [])
+      .map((id) => ({ id, name: null, email: '', image: null })),
   );
   const [userSearch, setUserSearch] = useState('');
   const [userResults, setUserResults] = useState<UserOption[]>([]);
@@ -131,8 +136,12 @@ export function MeetingEditor({ meeting, onSaved, onCancel }: MeetingEditorProps
       toast.error(body?.error || 'Failed to save meeting');
       return;
     }
-    const saved = await res.json().catch(() => ({}));
-    const warnings: string[] = Array.isArray(saved?.warnings) ? saved.warnings : [];
+    const saved = (await res.json().catch(() => null)) as (Meeting & { warnings?: string[] }) | null;
+    if (!saved) {
+      toast.error('Saved, but server returned malformed JSON');
+      return;
+    }
+    const warnings: string[] = Array.isArray(saved.warnings) ? saved.warnings : [];
     onSaved(saved, warnings);
   };
 
@@ -234,23 +243,32 @@ export function MeetingEditor({ meeting, onSaved, onCancel }: MeetingEditorProps
       <div>
         <label className="block text-xs text-[var(--text-secondary)] mb-1">Attendees</label>
         {selectedAttendees.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-2">
-            {selectedAttendees.map((a) => (
-              <span
-                key={a.id}
-                className="inline-flex items-center gap-1 rounded-full bg-emerald-900/40 px-3 py-1 text-xs text-emerald-300"
-              >
-                {a.name || a.email || a.id}
-                <button
-                  type="button"
-                  onClick={() => removeAttendee(a.id)}
-                  className="hover:text-[var(--text-primary)]"
+          <>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {selectedAttendees.map((a) => (
+                <span
+                  key={a.id}
+                  className="inline-flex items-center gap-1 rounded-full bg-emerald-900/40 px-3 py-1 text-xs text-emerald-300"
                 >
-                  <X className="h-3 w-3" />
-                </button>
+                  {a.name || a.email || a.id}
+                  <button
+                    type="button"
+                    onClick={() => removeAttendee(a.id)}
+                    className="hover:text-[var(--text-primary)]"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <p className="mb-2 inline-flex items-start gap-1 text-xs text-[var(--text-muted)]">
+              <Info className="mt-0.5 h-3 w-3 shrink-0" />
+              <span>
+                Attendees without Google Calendar may need to subscribe to this
+                calendar to see the event.
               </span>
-            ))}
-          </div>
+            </p>
+          </>
         )}
         <div className="relative">
           <input
@@ -283,22 +301,27 @@ export function MeetingEditor({ meeting, onSaved, onCancel }: MeetingEditorProps
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="meetingEditorAddMeetLink"
-          checked={addMeetLink}
-          onChange={(e) => setAddMeetLink(e.target.checked)}
-          className="rounded border-[var(--border-color)] bg-[var(--surface-raised)] text-emerald-600 focus:ring-emerald-500 h-4 w-4"
-        />
-        <label
-          htmlFor="meetingEditorAddMeetLink"
-          className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]"
-        >
-          <Video className="h-3.5 w-3.5 text-emerald-400" />
-          Create Google Meet link
-        </label>
-      </div>
+      {/* The Meet link is set at create time; PATCH preserves whatever Google
+          attached to the existing event, so the checkbox would be misleading
+          on edit. Hide it. */}
+      {!editingId && (
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="meetingEditorAddMeetLink"
+            checked={addMeetLink}
+            onChange={(e) => setAddMeetLink(e.target.checked)}
+            className="rounded border-[var(--border-color)] bg-[var(--surface-raised)] text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+          />
+          <label
+            htmlFor="meetingEditorAddMeetLink"
+            className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]"
+          >
+            <Video className="h-3.5 w-3.5 text-emerald-400" />
+            Create Google Meet link
+          </label>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 pt-2">
         <button

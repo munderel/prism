@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, authError } from '@/lib/auth-guard';
+import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateMeetingSchema } from '@/lib/schemas';
 import { deleteGoogleEvent, updateGoogleEvent, createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
@@ -14,6 +14,23 @@ async function findMeetingOrFail(id: string) {
   const meeting = await prisma.meeting.findUnique({ where: { id } });
   if (!meeting) return notFoundResponse('Meeting');
   return meeting;
+}
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
+
+  const { id } = await params;
+  const meeting = await prisma.meeting.findUnique({
+    where: { id },
+    include: MEETING_INCLUDE,
+  });
+  if (!meeting) return notFoundResponse('Meeting');
+
+  return Response.json(meeting, NO_STORE);
 }
 
 export async function PATCH(
@@ -190,7 +207,27 @@ export async function PATCH(
     where: { id },
     include: MEETING_INCLUDE,
   });
-  return Response.json(finalMeeting ?? updated, NO_STORE);
+
+  // Surface the attendee-deliverability advisory whenever the PATCH actually
+  // adds at least one new attendee — Google may or may not invite non-Google
+  // domains, and the user should be told what just happened. Skip when the
+  // attendee set is unchanged so re-saves don't nag the user repeatedly.
+  const warnings: string[] = [];
+  const reference = finalMeeting ?? updated;
+  const newAttendeeIds = Array.isArray(reference.attendeeIds)
+    ? (reference.attendeeIds as string[])
+    : [];
+  const previousAttendeeIds = Array.isArray(meeting.attendeeIds)
+    ? (meeting.attendeeIds as string[])
+    : [];
+  const added = newAttendeeIds.filter((id) => !previousAttendeeIds.includes(id));
+  if (added.length > 0) {
+    warnings.push(
+      'Invites sent. Attendees without Google Calendar may need to subscribe to this calendar to see the event.',
+    );
+  }
+
+  return Response.json({ ...reference, warnings }, NO_STORE);
 }
 
 export async function DELETE(
