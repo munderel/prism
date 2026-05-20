@@ -1,6 +1,7 @@
 import webpush from 'web-push';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
+import { NotificationType, NotificationChannel } from '@prisma/client';
 import { prisma } from './prisma';
 
 // Configure web-push
@@ -132,39 +133,92 @@ async function sendEmailMessage(
 }
 
 /**
- * Notify a user (both push + email).
- * Fetches preferences once and passes them to avoid duplicate queries.
+ * Look up the enabled state for a (userId, notifType, channel) triple.
+ * Falls back to true if no row exists (opt-in by default).
+ */
+async function isChannelEnabled(
+  channelPrefs: { notifType: NotificationType; channel: NotificationChannel; enabled: boolean }[],
+  notifType: NotificationType,
+  channel: NotificationChannel,
+): Promise<boolean> {
+  const row = channelPrefs.find(
+    (p) => p.notifType === notifType && p.channel === channel,
+  );
+  return row === undefined ? true : row.enabled;
+}
+
+/**
+ * Notify a user (push + email + in-app inbox).
+ *
+ * @param userId   - Target user ID.
+ * @param title    - Notification title.
+ * @param body     - Notification body text.
+ * @param url      - Optional deep-link URL.
+ * @param notifType - Notification type for per-channel gating. Defaults to GENERIC.
  */
 export async function notifyUser(
   userId: string,
   title: string,
   body: string,
-  url?: string
+  url?: string,
+  notifType: NotificationType = NotificationType.GENERIC,
 ) {
-  const [prefs, user, subscriptions] = await Promise.all([
+  const [legacyPrefs, user, subscriptions, channelPrefs] = await Promise.all([
     prisma.notificationPreference.findUnique({ where: { userId } }),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
     prisma.pushSubscription.findMany({ where: { userId } }),
+    prisma.notificationChannelPref.findMany({ where: { userId, notifType } }),
   ]);
 
+  // Always create an in-app notification row if IN_APP is enabled
+  const inAppEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.IN_APP);
+  if (inAppEnabled) {
+    await prisma.notification.create({
+      data: {
+        userId,
+        type: notifType,
+        payload: { title, body, url: url ?? null },
+      },
+    }).catch((err: unknown) => {
+      console.error('[notifications] Failed to create in-app notification:', err);
+    });
+  }
+
   await Promise.all([
-    sendPushNotifications(prefs, subscriptions, title, body, url),
-    sendEmailNotification(prefs, user?.email, title, body),
+    sendPushNotificationsGated(legacyPrefs, channelPrefs, subscriptions, notifType, title, body, url),
+    sendEmailNotificationGated(legacyPrefs, channelPrefs, user?.email, notifType, title, body),
   ]);
 }
 
-async function sendPushNotifications(
-  prefs: { pushEnabled: boolean } | null,
-  subscriptions: { id: string; endpoint: string; p256dh: string; auth: string }[],
+async function sendPushNotificationsGated(
+  legacyPrefs: { pushEnabled: boolean } | null,
+  channelPrefs: { notifType: NotificationType; channel: NotificationChannel; enabled: boolean }[],
+  subscriptions: { id: string; endpoint: string; p256dh: string; auth: string; deviceType?: string | null }[],
+  notifType: NotificationType,
   title: string,
   body: string,
   url?: string,
 ): Promise<void> {
-  if (prefs && !prefs.pushEnabled) return;
+  // Legacy gate: if the old pushEnabled flag is explicitly false, respect it
+  if (legacyPrefs && !legacyPrefs.pushEnabled) return;
 
-  const payload = JSON.stringify({ title, body, url });
+  const desktopEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.PUSH_DESKTOP);
+  const mobileEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.PUSH_MOBILE);
+
+  // Filter subscriptions to only those whose deviceType channel is enabled
+  const eligible = subscriptions.filter((sub) => {
+    const dt = sub.deviceType;
+    if (dt === 'mobile') return mobileEnabled;
+    if (dt === 'tablet') return mobileEnabled; // treat tablet same as mobile
+    // desktop or unknown → use desktop pref
+    return desktopEnabled;
+  });
+
+  if (eligible.length === 0) return;
+
+  const payload = JSON.stringify({ title, body, url, type: notifType });
   await Promise.allSettled(
-    subscriptions.map(async (sub) => {
+    eligible.map(async (sub) => {
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
@@ -180,13 +234,19 @@ async function sendPushNotifications(
   );
 }
 
-async function sendEmailNotification(
-  prefs: { emailEnabled: boolean } | null,
+async function sendEmailNotificationGated(
+  legacyPrefs: { emailEnabled: boolean } | null,
+  channelPrefs: { notifType: NotificationType; channel: NotificationChannel; enabled: boolean }[],
   email: string | undefined,
+  notifType: NotificationType,
   title: string,
   body: string,
 ): Promise<void> {
-  if (prefs && !prefs.emailEnabled) return;
+  // Legacy gate
+  if (legacyPrefs && !legacyPrefs.emailEnabled) return;
+
+  const emailEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.EMAIL);
+  if (!emailEnabled) return;
   if (!email) return;
 
   const result = await sendEmailMessage(email, title, `<p>${escapeHtml(body)}</p>`);
