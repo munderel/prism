@@ -29,6 +29,7 @@ import {
   type ManagedRecurringSeriesState,
 } from '@/lib/google-sync-state';
 import { matchesMonthlyRule, matchesYearlyRule } from '@/lib/review-dates';
+import { parseDateOnly } from '@/lib/date-utils';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 const MAX_DAYS = 366;
@@ -1012,9 +1013,19 @@ export async function POST(request: NextRequest) {
     if (!eventStart || !eventEnd || !task.timeBlockStart || !task.timeBlockEnd) continue;
 
     if (hasTimeDrifted(eventStart, eventEnd, task.timeBlockStart.toISOString(), task.timeBlockEnd.toISOString(), `task ${task.title}`)) {
+      // dueDate is a date-only field anchored to UTC midnight at the user's
+      // local calendar date (PR #27). Use getDateKey in the user's tz to pick
+      // the day, then parseDateOnly to anchor it — otherwise a 9pm-EST event
+      // (04:00:00Z next day) would land in the wrong calendar bucket.
+      const userDateKey = getDateKey(new Date(eventStart), timezone);
+      const utcAnchoredDueDate = parseDateOnly(userDateKey) ?? new Date(eventStart);
       await prisma.task.update({
         where: { id: task.id },
-        data: { timeBlockStart: new Date(eventStart), timeBlockEnd: new Date(eventEnd), dueDate: new Date(eventStart) },
+        data: {
+          timeBlockStart: new Date(eventStart),
+          timeBlockEnd: new Date(eventEnd),
+          dueDate: utcAnchoredDueDate,
+        },
       });
       updates.push(`Pulled task move from Google: ${task.title}`);
     }

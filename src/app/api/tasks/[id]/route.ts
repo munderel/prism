@@ -8,7 +8,7 @@ import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { deleteGoogleEvent, getGoogleSyncInfo, syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { completeTask } from '@/lib/task-completion';
-import { getLocalDateString, parseDateOnly, parseTaskDueInput } from '@/lib/date-utils';
+import { parseDateOnly, parseTaskDueInput, toDateOnlyInputValue } from '@/lib/date-utils';
 import { getCurrentPeriodRange } from '@/lib/process-task-generator';
 
 export async function GET(
@@ -89,16 +89,22 @@ export async function PATCH(
   if (body.startTime !== undefined) data.startTime = body.startTime ? new Date(body.startTime) : null;
 
   // When scheduling a task into a time block (e.g. dragging onto the Power Down
-  // calendar), bump a past dueDate forward to the new block's local date. This
-  // stops the task from staying "overdue" after the user has acted on it, and
-  // keeps it visible via both the timeBlockStart AND dueDate paths in the
-  // calendar GET. Only auto-bumps when:
+  // calendar), bump a past dueDate forward to the new block's date. This stops
+  // the task from staying "overdue" after the user has acted on it, and keeps
+  // it visible via both the timeBlockStart AND dueDate paths in the calendar
+  // GET. Only auto-bumps when:
   //   - a new timeBlockStart is being set (not cleared)
   //   - the caller did not also explicitly specify dueDate (user intent wins)
   //   - the task's existing dueDate is strictly before the new block's date
+  //
+  // Both keys are derived via toDateOnlyInputValue so the comparison stays
+  // consistent with the rest of the dueDate plumbing (PR #27 — date-only
+  // fields anchor to UTC midnight; reading via getUTC* preserves the user's
+  // picked calendar date). On Vercel (server UTC) this also matches the
+  // user's local-day view for any timeBlockStart sent up by the client.
   if (dueDate === undefined && timeBlockStart) {
-    const newBlockDateKey = getLocalDateString(new Date(timeBlockStart));
-    const existingDueKey = task.dueDate ? getLocalDateString(task.dueDate) : null;
+    const newBlockDateKey = toDateOnlyInputValue(new Date(timeBlockStart));
+    const existingDueKey = task.dueDate ? toDateOnlyInputValue(task.dueDate) : null;
     if (existingDueKey && existingDueKey < newBlockDateKey) {
       data.dueDate = parseDateOnly(newBlockDateKey);
     }
