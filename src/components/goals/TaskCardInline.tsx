@@ -76,6 +76,25 @@ export const TaskCardInline = React.memo(function TaskCardInline({
           {task.status.replace('_', ' ')}
         </span>
 
+        {/* Deliverable items progress pill */}
+        {task.deliverableItems && task.deliverableItems.length > 0 && (() => {
+          const total = task.deliverableItems.length;
+          const done = task.deliverableItems.filter((it: { isDone: boolean }) => it.isDone).length;
+          const allDone = done === total;
+          return (
+            <span
+              title={`${done} of ${total} deliverable items done`}
+              className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
+                allDone
+                  ? 'border-green-500/20 bg-green-500/10 text-green-400'
+                  : 'border-white/10 bg-white/5 text-[var(--text-muted)]'
+              }`}
+            >
+              {done}/{total}
+            </span>
+          );
+        })()}
+
         {/* Assignee avatar */}
         {task.assignee && (
           <Avatar user={task.assignee} size="sm" />
