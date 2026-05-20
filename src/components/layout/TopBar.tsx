@@ -7,6 +7,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRef, useState } from 'react';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { StreakCounter } from '@/components/dopamine/StreakCounter';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 interface TopBarProps {
   onMenuToggle?: () => void;
@@ -57,6 +58,9 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
       <div className="ml-auto flex items-center gap-4">
         {session?.user && (
           <>
+            {/* Notification Bell */}
+            <NotificationBell />
+
             {/* Feedback Button */}
             <div className="relative" ref={feedbackRef}>
               <button
