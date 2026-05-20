@@ -10,9 +10,9 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft, PartyPopper, AlertCircle,
   Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock, ChevronDown,
 } from 'lucide-react';
-import { getLocalDateString, getTomorrowDateString, getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
+import { getLocalDateString, getUpcomingWeekBoundaries, getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
+import { TopNTaskSelector } from '@/components/reviews/shared/TopNTaskSelector';
 import { useToast } from '@/components/ui/ToastProvider';
-import { subtaskDoneCount } from '@/lib/task-utils';
 import { ClearGoalGuide } from './ClearGoalGuide';
 import { InlineTaskCreator } from '@/components/tasks/InlineTaskCreator';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
@@ -138,15 +138,26 @@ function InlineTaskEdit({
 
 interface PowerDownRitualProps {
   onComplete: () => void;
+  /**
+   * Anchor date for this session (YYYY-MM-DD). Defaults to today. Pass a
+   * past date to open a historical powerdown read-only-ish (every fetch +
+   * label routes through this date).
+   */
+  date?: string;
 }
 
-export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
+export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
   const { resolvedTheme, setTheme } = useTheme();
   const toast = useToast();
   const previousThemeRef = useRef<string | undefined>();
-  // Capture today/tomorrow once at mount to avoid cross-midnight drift
-  const [sessionToday] = useState(() => getLocalDateString());
-  const [sessionTomorrow] = useState(() => getTomorrowDateString());
+  // Capture once at mount so cross-midnight drift can't shift the session.
+  // Defaults to today when no `date` prop is provided.
+  const [sessionDate] = useState(() => date || getLocalDateString());
+  const [sessionTomorrow] = useState(() => {
+    const d = parseLocalDate(sessionDate);
+    d.setDate(d.getDate() + 1);
+    return getLocalDateString(d);
+  });
   const tomorrowDateRange = useMemo(() => {
     const start = parseLocalDate(sessionTomorrow);
     const end = new Date(start);
@@ -181,6 +192,10 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   // Weekly goals for Weekly Goals & Tasks step
   const [weeklyGoals, setWeeklyGoals] = useState<any[]>([]);
   const [weeklyGoalsLoading, setWeeklyGoalsLoading] = useState(false);
+  // REACT + MAINTENANCE tasks for the upcoming Mon–Sun. Sourced once Step 2
+  // is reached (lazy fetch in useEffect below). Most lack a goalId, so they
+  // render as flat-by-taskType under the weekly-goals view.
+  const [upcomingReactMaintTasks, setUpcomingReactMaintTasks] = useState<any[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState<Record<string, string>>({});
   const [newTaskExpanded, setNewTaskExpanded] = useState<Record<string, boolean>>({});
   const [newTaskDescription, setNewTaskDescription] = useState<Record<string, string>>({});
@@ -215,6 +230,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   const [aimBlockDuration, setAimBlockDuration] = useState(60);
   // Calendar IDs that count toward weekly target
   const [weeklyTargetCalendarIds, setWeeklyTargetCalendarIds] = useState<string[]>([]);
+  // Minutes; null = no target = Step 4 header hidden.
+  const [dailyHoursTargetMinutes, setDailyHoursTargetMinutes] = useState<number | null>(null);
 
   // KPI processes due today (conditional step)
   const [dueKpiProcesses, setDueKpiProcesses] = useState<Array<{ process: any; kpis: any[] }>>([]);
@@ -306,7 +323,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const fetchTodayWorkBlocks = useCallback(async () => {
     try {
-      const res = await fetch(`/api/work-blocks?date=${sessionToday}`);
+      const res = await fetch(`/api/work-blocks?date=${sessionDate}`);
       if (res.ok) {
         const blocks: PowerdownWorkBlock[] = await res.json();
         setTodayWorkBlocks(blocks);
@@ -328,7 +345,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     } catch {
       // non-critical
     }
-  }, [sessionToday]);
+  }, [sessionDate]);
 
   const toggleBlockClearGoal = async (goalId: string, isComplete: boolean) => {
     // optimistic
@@ -426,6 +443,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     fetchUnscheduledTomorrow();
     fetchAimInstances();
     fetchWeeklyGoals();
+    fetchUpcomingReactMaintTasks();
     fetchDueKpiProcesses();
     fetchTodayWorkBlocks();
     fetchTomorrowWorkBlocks();
@@ -448,20 +466,29 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       });
       setAimBlockDuration(Math.min(...durations));
     }).catch(() => {});
-    // Fetch settings for weekly target calendar IDs
+    // Fetch settings for weekly target calendar IDs + daily hours target
     fetch('/api/settings').then(r => r.ok ? r.json() : null).then((settings: any) => {
       if (settings && Array.isArray(settings.weeklyTargetCalendarIds)) {
         setWeeklyTargetCalendarIds(settings.weeklyTargetCalendarIds);
       }
+      if (settings && typeof settings.dailyHoursTarget === 'number') {
+        setDailyHoursTargetMinutes(settings.dailyHoursTarget);
+      }
     }).catch(() => {});
   }, []);
 
+  // Date-anchored URL so historical views (?date=YYYY-MM-DD) hit the
+  // right row and SWR cache keys stay consistent with mutate() calls.
+  const powerdownGetUrl = `/api/powerdown?date=${sessionDate}`;
+
   const initSession = async () => {
     // Try to resume existing session
-    let res = await fetch('/api/powerdown');
+    let res = await fetch(powerdownGetUrl);
     let data = res.ok ? await res.json() : null;
 
-    if (!data) {
+    // Only auto-create a session for today — historical views are read-only-ish
+    // (no session is created retroactively if none was completed back then).
+    if (!data && !date) {
       res = await fetch('/api/powerdown', { method: 'POST' });
       data = await res.json();
     }
@@ -483,14 +510,14 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
   };
 
   const fetchTodayTasks = async () => {
-    const todayStart = parseLocalDate(sessionToday);
+    const todayStart = parseLocalDate(sessionDate);
     const yesterday = new Date(todayStart);
     yesterday.setDate(yesterday.getDate() - 1);
     const ninetyDaysAgo = new Date(todayStart);
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
     const [todayRes, overdueRes] = await Promise.all([
-      fetch(`/api/tasks?date=${sessionToday}`),
+      fetch(`/api/tasks?date=${sessionDate}`),
       fetch(
         `/api/tasks?startDate=${getLocalDateString(ninetyDaysAgo)}&endDate=${getLocalDateString(yesterday)}` +
           `&includeUpcoming=true`
@@ -532,7 +559,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   const fetchUnscheduledTomorrow = useCallback(async () => {
     try {
-      const todayStart = parseLocalDate(sessionToday);
+      const todayStart = parseLocalDate(sessionDate);
       const yesterday = new Date(todayStart);
       yesterday.setDate(yesterday.getDate() - 1);
       const ninetyDaysAgo = new Date(todayStart);
@@ -594,7 +621,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     } catch {
       // Non-critical
     }
-  }, [sessionToday, sessionTomorrow]);
+  }, [sessionDate, sessionTomorrow]);
 
   const fetchAimInstances = useCallback(async () => {
     // Route requires start+end (see src/app/api/aims/instances/route.ts:17).
@@ -604,7 +631,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
       // Using `+ 86400000ms` would shift by 24h of absolute time, which silently
       // breaks across DST boundaries (spring forward leaks 1h; fall back loses 1h).
       // Date.setDate advances the calendar in local time and is DST-safe.
-      const start = parseLocalDate(sessionToday);
+      const start = parseLocalDate(sessionDate);
       const next = new Date(start);
       next.setDate(next.getDate() + 1);
       const startISO = start.toISOString();
@@ -614,7 +641,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     } catch {
       // Non-critical
     }
-  }, [sessionToday]);
+  }, [sessionDate]);
 
   const fetchWeeklyGoals = useCallback(async () => {
     setWeeklyGoalsLoading(true);
@@ -669,9 +696,31 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     }
   }, []);
 
+  const fetchUpcomingReactMaintTasks = useCallback(async () => {
+    try {
+      const { start, end } = getUpcomingWeekBoundaries();
+      // /api/tasks accepts a single taskType param; React + Maintenance need
+      // two calls and a merge. Each is light-weight (no joins) so the round-
+      // trip cost is acceptable at this step's frequency (once per powerdown).
+      const [reactRes, maintRes] = await Promise.all([
+        fetch(`/api/tasks?startDate=${start}&endDate=${end}&taskType=REACT`),
+        fetch(`/api/tasks?startDate=${start}&endDate=${end}&taskType=MAINTENANCE`),
+      ]);
+      const reactTasks = reactRes.ok ? await reactRes.json() : [];
+      const maintTasks = maintRes.ok ? await maintRes.json() : [];
+      const merged = [
+        ...(Array.isArray(reactTasks) ? reactTasks : []),
+        ...(Array.isArray(maintTasks) ? maintTasks : []),
+      ].filter((t: any) => t.status !== 'DONE' && t.status !== 'DROPPED');
+      setUpcomingReactMaintTasks(merged);
+    } catch {
+      // Non-critical — Step 2 still shows the weekly-goals view
+    }
+  }, []);
+
   const fetchDueKpiProcesses = useCallback(async () => {
     try {
-      const res = await fetch(`/api/processes/kpis/due?period=daily&date=${sessionToday}`);
+      const res = await fetch(`/api/processes/kpis/due?period=daily&date=${sessionDate}`);
       if (res.ok) {
         const processes = await res.json();
         setDueKpiProcesses(Array.isArray(processes) ? processes : []);
@@ -679,7 +728,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     } catch {
       // Non-critical
     }
-  }, [sessionToday]);
+  }, [sessionDate]);
 
   // Dynamic STEPS array — inserts KPI logging step if processes with KPIs are due today
   // currentStep is 1-based and indexes into this array (1 = first step, 2 = second, etc.)
@@ -953,7 +1002,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     // updates immediately instead of waiting for a manual refresh.
     if (res.ok && extra.complete) {
       void mutate('/api/streaks');
-      void mutate('/api/powerdown');
+      void mutate(powerdownGetUrl);
     }
     return { res, data } as const;
   };
@@ -998,7 +1047,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
           body: JSON.stringify({
             content: d.content,
             notes: d.notes || null,
-            logDate: sessionToday,
+            logDate: sessionDate,
             source: 'powerdown',
           }),
         }).catch(() => {
@@ -1112,13 +1161,6 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
     setDistractions(distractions.filter((_, i) => i !== index));
   };
 
-  const toggleTop3 = (taskId: string) => {
-    if (tomorrowPlan.includes(taskId)) {
-      setTomorrowPlan(tomorrowPlan.filter((id) => id !== taskId));
-    } else if (tomorrowPlan.length < 3) {
-      setTomorrowPlan([...tomorrowPlan, taskId]);
-    }
-  };
 
   if (loading) return <div className="text-[var(--text-muted)] py-12 text-center">Loading...</div>;
 
@@ -1544,7 +1586,7 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
             {/* Step 2 (conditional): Log Process KPIs */}
             {currentStepKey === 'log_kpis' && (
-              <ProcessKpiLogStep processes={dueKpiProcesses} date={sessionToday} />
+              <ProcessKpiLogStep processes={dueKpiProcesses} date={sessionDate} />
             )}
 
             {/* Step 2/3: Weekly Goals & Tasks */}
@@ -1697,6 +1739,47 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 ))}
 
                 {/* Incomplete tasks from today */}
+                {/* Upcoming-week React + Maintenance tasks — surfaces
+                    operational work that isn't tied to a weekly Improve goal
+                    so it doesn't get forgotten at planning time. */}
+                {upcomingReactMaintTasks.length > 0 && (
+                  <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                      React &amp; Maintenance — upcoming week ({upcomingReactMaintTasks.length})
+                    </p>
+                    {(['REACT', 'MAINTENANCE'] as const).map((kind) => {
+                      const subset = upcomingReactMaintTasks.filter((t) => t.taskType === kind);
+                      if (subset.length === 0) return null;
+                      const label = kind === 'REACT' ? 'React' : 'Maintenance';
+                      const colorClass = kind === 'REACT'
+                        ? 'text-amber-700 dark:text-yellow-400'
+                        : 'text-cyan-700 dark:text-cyan-400';
+                      return (
+                        <div key={kind} className="space-y-1">
+                          <p className={`text-[10px] uppercase tracking-wider ${colorClass}`}>{label}</p>
+                          {subset.map((t) => (
+                            <div
+                              key={t.id}
+                              className="rounded-lg bg-[var(--surface-raised)]/50 px-3 py-1.5 flex items-center gap-2 text-xs"
+                            >
+                              <Circle className="h-3 w-3 text-[var(--text-muted)] flex-shrink-0" />
+                              <span className="text-[var(--text-primary)] truncate flex-1">{t.title}</span>
+                              {t.goal?.title && (
+                                <span className="text-[var(--text-muted)] truncate">{t.goal.title}</span>
+                              )}
+                              {t.dueDate && (
+                                <span className="text-[var(--text-muted)] flex-shrink-0">
+                                  {new Date(t.dueDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {incompleteTasks.length > 0 && (
                   <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -1764,18 +1847,11 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 3/4: Select Top 3 for Tomorrow */}
+            {/* Step 3/4: Select Top 3 for Tomorrow — uses the shared
+                TopNTaskSelector so Powerdown and Weekly Review have one
+                ranker (same look, same semantics, same upgrades). */}
             {currentStepKey === 'top3' && (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Star className="h-5 w-5 text-indigo-400" />
-                  <p className="text-sm text-[var(--text-secondary)]">
-                    Select up to 3 most important tasks for tomorrow ({tomorrowPlan.length}/3 selected).
-                  </p>
-                </div>
-                {candidateTasks.length === 0 && (
-                  <p className="text-sm text-[var(--text-secondary)]">No tasks found. Add tasks in Step 2 first.</p>
-                )}
                 <div className="mb-2">
                   <InlineTaskCreator
                     defaultDate={tomorrowDateRange.start}
@@ -1783,51 +1859,50 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     onCreated={() => fetchTomorrowTasks()}
                   />
                 </div>
-                {candidateTasks.map((t) => {
-                  const isSelected = tomorrowPlan.includes(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => toggleTop3(t.id)}
-                      disabled={!isSelected && tomorrowPlan.length >= 3}
-                      className={`w-full text-left flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
-                        isSelected
-                          ? 'bg-indigo-600/15 border border-indigo-500/50'
-                          : 'bg-[var(--surface-raised)] border border-[var(--border-color)] hover:border-indigo-500/30'
-                      } ${!isSelected && tomorrowPlan.length >= 3 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      {isSelected ? (
-                        <Star className="h-4 w-4 text-indigo-400 fill-indigo-400 flex-shrink-0" />
-                      ) : (
-                        <Star className="h-4 w-4 text-[var(--text-muted)] flex-shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <span className={`text-sm ${isSelected ? 'text-indigo-500 dark:text-indigo-300 font-medium' : 'text-[var(--text-primary)]'}`}>
-                          {t.title}
-                        </span>
-                        {(t as any).children?.length > 0 && (
-                          <span className="ml-1.5 text-xs text-[var(--text-muted)]">
-                            ({subtaskDoneCount((t as any).children)}/{(t as any).children.length} subtasks)
-                          </span>
-                        )}
-                      </div>
-                      {isSelected && (
-                        <span className="ml-auto text-xs rounded-full bg-indigo-600/20 px-2 py-0.5 text-indigo-600 dark:text-indigo-300 font-medium flex-shrink-0">
-                          {tomorrowPlan.indexOf(t.id) === 0 ? '1st' : tomorrowPlan.indexOf(t.id) === 1 ? '2nd' : '3rd'}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                {candidateTasks.length === 0 ? (
+                  <p className="text-sm text-[var(--text-secondary)]">No tasks found. Add tasks in Step 2 first.</p>
+                ) : (
+                  <TopNTaskSelector
+                    tasks={candidateTasks}
+                    n={3}
+                    selectedIds={tomorrowPlan}
+                    onSelect={setTomorrowPlan}
+                  />
+                )}
               </div>
             )}
 
             {/* Step 4/5: Tomorrow's Calendar — full-screen modal overlay */}
-            {currentStepKey === 'calendar' && (
+            {currentStepKey === 'calendar' && (() => {
+              // Sum scheduled minutes across tomorrow's work blocks (uses block
+              // duration, not task estimates, so partial drags are counted).
+              const scheduledMinutes = tomorrowWorkBlocks.reduce((acc, b) => {
+                const ms = new Date(b.end).getTime() - new Date(b.start).getTime();
+                return acc + Math.max(0, Math.round(ms / 60000));
+              }, 0);
+              const hasTarget = typeof dailyHoursTargetMinutes === 'number' && dailyHoursTargetMinutes > 0;
+              const scheduledHours = (scheduledMinutes / 60).toFixed(1).replace(/\.0$/, '');
+              const targetHours = hasTarget ? (dailyHoursTargetMinutes! / 60).toFixed(1).replace(/\.0$/, '') : null;
+              const hit = hasTarget && scheduledMinutes >= dailyHoursTargetMinutes!;
+              return (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <Calendar className="h-5 w-5 text-indigo-400" />
-                  <p className="text-sm text-[var(--text-primary)] font-medium">{tomorrowDate}</p>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-indigo-400" />
+                    <p className="text-sm text-[var(--text-primary)] font-medium">{tomorrowDate}</p>
+                  </div>
+                  {hasTarget && (
+                    <span
+                      className={`text-xs rounded-md border px-2 py-0.5 font-medium ${
+                        hit
+                          ? 'bg-green-500/15 border-green-500/40 text-green-300'
+                          : 'bg-[var(--surface-raised)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                      }`}
+                      title={`${scheduledMinutes} min scheduled / ${dailyHoursTargetMinutes} min daily target`}
+                    >
+                      {scheduledHours} / {targetHours} hours
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-[var(--text-secondary)]">
                   Review and schedule tasks for tomorrow. Open the full calendar to drag tasks into time slots.
@@ -1985,7 +2060,8 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                 </div>
 
               </div>
-            )}
+              );
+            })()}
 
             {/* ClearGoals are scoped to workBlockId so the Goal Clarity Summary
                 step and the Today's Work Blocks dashboard read through the same path. */}
@@ -2116,13 +2192,16 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
               </div>
             )}
 
-            {/* Step 6/7: Goal Clarity Summary — read-only preview */}
+            {/* Step 6/7: Goal Clarity Summary — read-only preview of every
+                scheduled item for tomorrow (work blocks, tasks due, AIMs).
+                Keeps work-block rendering rich (mainObjective + linked task
+                sub-line + time); tasks and AIMs render as plain rows. */}
             {currentStepKey === 'goal_summary' && (
               <div className="space-y-4">
                 <p className="text-sm text-[var(--text-secondary)] mb-3">
                   Here&apos;s your plan for tomorrow. Review that each scheduled subtask has a clear goal.
                 </p>
-                {tomorrowWorkBlocks.length === 0 && (
+                {tomorrowWorkBlocks.length === 0 && tomorrowTasks.length === 0 && tomorrowAimInstances.length === 0 && (
                   <p className="text-sm text-[var(--text-secondary)]">Nothing is scheduled for tomorrow.</p>
                 )}
                 {tomorrowWorkBlocks.map((block) => {
@@ -2172,6 +2251,58 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
                     </div>
                   );
                 })}
+
+                {/* Tasks due tomorrow (no scheduled work block) — surfaces
+                    the user's deliberate due-tomorrow list separately so
+                    nothing falls out of view at summary time. */}
+                {tomorrowTasks.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mt-4">
+                      Tasks due tomorrow
+                    </h3>
+                    {tomorrowTasks.map((t) => {
+                      const dueTime = t.dueDate ? new Date(t.dueDate) : null;
+                      const hasTime = dueTime && (dueTime.getUTCHours() !== 0 || dueTime.getUTCMinutes() !== 0);
+                      return (
+                        <div key={t.id} className="rounded-lg px-4 py-2 bg-[var(--surface-raised)]/50 flex items-center gap-2">
+                          <Circle className="h-3.5 w-3.5 text-[var(--text-muted)] flex-shrink-0" />
+                          <span className="text-sm text-[var(--text-primary)] flex-1 min-w-0 truncate">{t.title}</span>
+                          {hasTime && (
+                            <span className="text-xs text-[var(--text-muted)] flex items-center gap-1 flex-shrink-0">
+                              <Clock className="h-3 w-3" />
+                              {dueTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* AIMs scheduled tomorrow — habit anchors, not tasks. */}
+                {tomorrowAimInstances.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mt-4">
+                      AIMs tomorrow
+                    </h3>
+                    {tomorrowAimInstances.map((aim) => (
+                      <div key={aim.id} className="rounded-lg px-4 py-2 bg-[var(--surface-raised)]/50 flex items-center gap-2">
+                        <Target className="h-3.5 w-3.5 text-teal-400 flex-shrink-0" />
+                        <span className="text-sm text-[var(--text-primary)] flex-1 min-w-0 truncate">
+                          {aim.aimCategory?.name ?? 'AIM'}
+                        </span>
+                        {aim.timeBlockStart && aim.timeBlockEnd && (
+                          <span className="text-xs text-[var(--text-muted)] flex items-center gap-1 flex-shrink-0">
+                            <Clock className="h-3 w-3" />
+                            {new Date(aim.timeBlockStart).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                            {'–'}
+                            {new Date(aim.timeBlockEnd).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

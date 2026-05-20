@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
   const start = searchParams.get('start');
   const end = searchParams.get('end');
   const recent = searchParams.get('recent');
+  const dateParam = searchParams.get('date');
 
   // Date-range query: return all sessions in range
   if (start && end) {
@@ -80,17 +81,20 @@ export async function GET(request: NextRequest) {
   // and any currentStep, which would otherwise be returned here.)
   // Use the user's timezone, not server-local — Vercel runs in UTC and a UTC
   // "today" misses or overwrites the wrong day's session for non-UTC users.
+  // When `date=YYYY-MM-DD` is supplied (historical view), bound on that day
+  // in the user's TZ instead.
   const userForTz = await prisma.user.findUnique({
     where: { id: auth.userId },
     select: { timezone: true },
   });
   const tz = userForTz?.timezone ?? 'America/New_York';
-  const { start: today, end: tomorrow } = dayBoundariesForUser(new Date(), tz);
+  const anchor = dateParam ? parseLocalDateKey(dateParam, tz) : new Date();
+  const { start: dayStart, end: dayEnd } = dayBoundariesForUser(anchor, tz);
 
   const session = await prisma.powerdownSession.findFirst({
     where: {
       userId: auth.userId,
-      sessionDate: { gte: today, lt: tomorrow },
+      sessionDate: { gte: dayStart, lt: dayEnd },
     },
     orderBy: { createdAt: 'desc' },
   });
