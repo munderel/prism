@@ -161,6 +161,10 @@ export default function SettingsPage() {
   // Powerdown Time
   const [powerdownTime, setPowerdownTime] = useState('17:30');
   const [defaultWorkBlockMinutes, setDefaultWorkBlockMinutes] = useState(30);
+  // Daily hours target shown in Powerdown Step 4 header. Stored as minutes;
+  // empty input = null = hide the header. Sub-hour values acceptable but the
+  // input is hours-granular so we *4 the slider's int to get minutes-of-hour.
+  const [dailyHoursTarget, setDailyHoursTarget] = useState<string>(''); // hours as decimal string
 
   // Streak preferences — daily streak now fires solely on powerdown completion;
   // the per-category opt-in flags were removed.
@@ -247,6 +251,12 @@ export default function SettingsPage() {
       }
       if (data.powerdownTime) setPowerdownTime(data.powerdownTime);
       if (typeof data.defaultWorkBlockMinutes === 'number') setDefaultWorkBlockMinutes(data.defaultWorkBlockMinutes);
+      if (typeof data.dailyHoursTarget === 'number') {
+        // Server stores minutes; the input is hours.
+        setDailyHoursTarget(String(data.dailyHoursTarget / 60));
+      } else if (data.dailyHoursTarget === null) {
+        setDailyHoursTarget('');
+      }
       if (data.streakGraceDays !== undefined) setStreakGraceDays(data.streakGraceDays);
       if (data.beeminderAuthToken) setBeeminderAuthToken(data.beeminderAuthToken);
       if (data.beeminderGoalSlug) setBeeminderGoalSlug(data.beeminderGoalSlug);
@@ -302,10 +312,19 @@ export default function SettingsPage() {
   const saveUserSettings = async () => {
     setSaving(true);
     try {
+      // Empty input → null = "no target" → header hidden. Otherwise convert
+      // the hours decimal to minutes; reject NaN to avoid corrupting the row.
+      const dailyHoursTargetMinutes = (() => {
+        const trimmed = dailyHoursTarget.trim();
+        if (!trimmed) return null;
+        const parsed = Number(trimmed);
+        if (Number.isNaN(parsed) || parsed <= 0) return null;
+        return Math.round(parsed * 60);
+      })();
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, defaultWorkBlockMinutes, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
+        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, defaultWorkBlockMinutes, dailyHoursTarget: dailyHoursTargetMinutes, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
       });
 
       if (!res.ok) {
@@ -859,6 +878,26 @@ export default function SettingsPage() {
                   className={`${inputClasses} w-32`}
                 />
                 <span className="text-sm text-[var(--text-muted)]">minutes</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--text-secondary)]">Daily hours target</label>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5 mb-2">
+                Goal for how many hours of work blocks you want to schedule tomorrow. Surfaces in the Powerdown calendar step as &quot;X / Y hours&quot;. Leave blank to hide.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  max={24}
+                  step={0.25}
+                  value={dailyHoursTarget}
+                  onChange={(e) => setDailyHoursTarget(e.target.value)}
+                  placeholder="e.g. 6"
+                  className={`${inputClasses} w-32`}
+                />
+                <span className="text-sm text-[var(--text-muted)]">hours</span>
               </div>
             </div>
 

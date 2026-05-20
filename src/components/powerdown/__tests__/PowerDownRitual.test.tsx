@@ -275,7 +275,9 @@ describe('PowerDownRitual', () => {
 
     await waitFor(() => {
       expect(mutateSpy).toHaveBeenCalledWith('/api/streaks');
-      expect(mutateSpy).toHaveBeenCalledWith('/api/powerdown');
+      // PowerDownRitual now anchors GET (and the matching mutate key) on
+      // the session date so historical views address the right cache slot.
+      expect(mutateSpy).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/powerdown\?date=\d{4}-\d{2}-\d{2}$/));
     });
   });
 

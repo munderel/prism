@@ -490,10 +490,15 @@ function ReviewsPageInner() {
                 <div className="space-y-1">
                   {recentPowerdowns.map((s) => {
                     const sessionDate = new Date(s.sessionDate);
-                    const isToday = getLocalDateString(sessionDate) === getLocalDateString();
+                    const dateKey = getLocalDateString(sessionDate);
+                    const isToday = dateKey === getLocalDateString();
                     if (isToday) return null; // Already shown above
                     return (
-                      <div key={s.id} className="flex items-center gap-2 text-xs px-1 py-1">
+                      <Link
+                        key={s.id}
+                        href={`/powerdown?date=${dateKey}`}
+                        className="flex items-center gap-2 text-xs px-1 py-1 rounded hover:bg-[var(--hover-bg)] transition-colors"
+                      >
                         <Check className="h-3 w-3 text-green-400 shrink-0" />
                         <span className="text-[var(--text-secondary)]">
                           {sessionDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
@@ -503,7 +508,7 @@ function ReviewsPageInner() {
                             {new Date(s.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                           </span>
                         )}
-                      </div>
+                      </Link>
                     );
                   })}
                 </div>

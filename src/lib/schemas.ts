@@ -106,6 +106,9 @@ export const updateSettingsSchema = z.object({
   weeklyTargetCalendarIds: z.array(z.string()).optional(),
   powerdownTime: hhmmTime,
   defaultWorkBlockMinutes: z.number().int().min(15).max(480).optional(),
+  // Daily hours target in MINUTES (UI converts hours ↔ minutes); null clears the
+  // header. Cap at 24h = 1440min so a typo can't store a nonsensical value.
+  dailyHoursTarget: z.number().int().min(1).max(1440).optional().nullable(),
   weeklyReviewDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   weeklyReviewTime: hhmmTime,
   weeklyReviewDuration: reviewDuration,
