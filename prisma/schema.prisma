@@ -989,8 +989,22 @@ model AimInstance {
   aimCategory AimCategory      @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
   tasks       Task[] // Deep Work container: nested tasks
   aimInvitations AimInvitation[]
+  dismissals     AimInstanceDismissal[]
 
   @@index([userId, scheduledDate])
+}
+
+model AimInstanceDismissal {
+  id            String   @id @default(cuid())
+  aimInstanceId String
+  userId        String
+  status        String   @default("NOT_GOING") // "NOT_GOING" | "MAYBE"
+  createdAt     DateTime @default(now())
+
+  aimInstance AimInstance @relation(fields: [aimInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([aimInstanceId, userId])
+  @@index([userId])
 }
 
 // === TRAINING ===

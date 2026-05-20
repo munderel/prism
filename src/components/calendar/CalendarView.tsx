@@ -13,6 +13,8 @@ import { type ProposedSlot } from '@/lib/scheduling-engine';
 import { Check, X, ListTodo, Save, Loader2, CheckCircle2, Pencil, CalendarX2, Trash2, RotateCcw } from 'lucide-react';
 import { ActivitySelectModal } from './ActivitySelectModal';
 import { WorkBlockObjectiveModal, type WorkBlockObjectiveInput, type WorkBlockObjectivePayload } from './WorkBlockObjectiveModal';
+import { AttendAimModal, type GroupableAimItem } from '@/components/aims/AttendAimModal';
+import { useGroupableAims } from '@/hooks/useGroupableAims';
 import { fetchTaskWorkBlockHints } from '@/lib/work-blocks-client';
 import { TaskEditor } from '@/components/tasks/TaskEditor';
 import { EventGoalsPopover } from '@/components/scheduled-item-goals/EventGoalsPopover';
@@ -203,6 +205,13 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
   const [workBlockModalInput, setWorkBlockModalInput] = useState<WorkBlockObjectiveInput | null>(null);
   const [pendingWorkBlockInfo, setPendingWorkBlockInfo] = useState<EventReceiveArg | null>(null);
 
+  // Groupable (social) AIM overlay state
+  const { items: groupableAims, refresh: refreshGroupableAims } = useGroupableAims(
+    dateRange?.start ?? null,
+    dateRange?.end ?? null,
+  );
+  const [attendModalItem, setAttendModalItem] = useState<GroupableAimItem | null>(null);
+
   // Task assignment panel state (Deep Work as task container)
   const [selectedAimInstance, setSelectedAimInstance] = useState<SelectedAimInstance | null>(null);
   const [showTaskAssignment, setShowTaskAssignment] = useState(false);
@@ -382,10 +391,38 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     }
   }, [toast, refreshEvents]);
 
+  // --- Groupable AIM attend handler ---
+  const handleAttendAim = useCallback(async (instanceId: string, status: 'GOING' | 'MAYBE' | 'NOT_GOING') => {
+    const res = await fetch(`/api/aims/instances/${instanceId}/attend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      toast.error('Failed to update attendance');
+      return;
+    }
+    setAttendModalItem(null);
+    refreshGroupableAims();
+    if (status === 'GOING') {
+      refreshEvents();
+      toast.success('Added to your AIM schedule!');
+    }
+  }, [toast, refreshGroupableAims, refreshEvents]);
+
   // --- Task assignment handlers ---
   const handleEventClick = (info: EventClickArg) => {
     const props = info.event.extendedProps || {};
     const rect = info.el.getBoundingClientRect();
+
+    // Groupable (social) AIM overlay → open AttendAimModal
+    if (props.isGroupableOverlay && props.groupableAimId) {
+      const item = groupableAims.find((g) => g.id === props.groupableAimId);
+      if (item) {
+        setAttendModalItem(item);
+      }
+      return;
+    }
 
     // Powerdown event → show popover with Start action
     if (props.link === '/powerdown' || info.event.id?.startsWith('powerdown-')) {
@@ -918,7 +955,31 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     };
   }) : [];
 
-  const allDisplayEvents = [...filteredEvents, ...ghostCalendarEvents];
+  // Build ephemeral groupable-AIM overlay events from teammates
+  const groupableAimCalendarEvents = groupableAims.map((item) => {
+    const attendBadge =
+      item.attendStatus === 'MAYBE' ? ' ?' : '';
+    return {
+      id: `groupable-aim-${item.id}`,
+      title: `${item.aimCategory.name}${attendBadge}`,
+      start: item.timeBlockStart ?? item.scheduledDate,
+      end: item.timeBlockEnd ?? undefined,
+      allDay: !item.timeBlockStart,
+      source: 'aims',
+      // Semi-transparent teal to distinguish from own aim events
+      backgroundColor: 'rgba(20, 184, 166, 0.25)',
+      borderColor: 'rgba(20, 184, 166, 0.55)',
+      textColor: '#5eead4',
+      // Custom props used by click handler
+      isGroupableOverlay: true,
+      groupableAimId: item.id,
+      groupableOwnerName: item.owner.name ?? 'Teammate',
+      attendStatus: item.attendStatus,
+      editable: false,
+    };
+  });
+
+  const allDisplayEvents = [...filteredEvents, ...ghostCalendarEvents, ...groupableAimCalendarEvents];
 
   return (
     <div className="relative">
@@ -992,6 +1053,15 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
         activities={pendingActivities}
         aimName={pendingAimName}
       />
+
+      {/* Attend AIM modal (social groupable AIM overlay) */}
+      {attendModalItem && (
+        <AttendAimModal
+          item={attendModalItem}
+          onClose={() => setAttendModalItem(null)}
+          onAttend={(status) => handleAttendAim(attendModalItem.id, status)}
+        />
+      )}
 
       {/* Work Block objective modal (fired when user drops a task on calendar) */}
       <WorkBlockObjectiveModal
@@ -1425,6 +1495,22 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
           snapDuration="00:05:00"
           eventDidMount={(info) => {
             const props = info.event.extendedProps || {};
+            // Groupable AIM overlay — semi-transparent, dashed border, cursor pointer
+            if (props.isGroupableOverlay) {
+              info.el.style.opacity = '0.65';
+              info.el.style.borderStyle = 'dashed';
+              info.el.style.cursor = 'pointer';
+              // Add small attend-status badge if MAYBE
+              if (props.attendStatus === 'MAYBE') {
+                const badge = document.createElement('span');
+                badge.textContent = '?';
+                badge.title = 'Maybe attending';
+                badge.style.cssText = 'position:absolute;top:2px;right:4px;font-size:10px;font-weight:700;color:#5eead4;';
+                info.el.style.position = 'relative';
+                info.el.appendChild(badge);
+              }
+              return;
+            }
             // Dim and strike-through DONE/DROPPED task events
             if (props.status === 'DONE' || props.status === 'DROPPED') {
               info.el.style.opacity = '0.45';
