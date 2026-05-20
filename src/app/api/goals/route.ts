@@ -140,6 +140,23 @@ export async function GET(request: NextRequest) {
     },
   });
 
+  // For company stacks, enrich each goal with isAssignedToMe so the client
+  // can render a Mine/All filter without a second round-trip.
+  if (stack.isCompany) {
+    const companyAssignment = await prisma.companyGoalAssignment.findUnique({
+      where: { goalStackId_userId: { goalStackId: stackId, userId: auth.userId } },
+      select: { id: true },
+    });
+    const isStackAssignee = Boolean(companyAssignment) || stack.ownerId === auth.userId || auth.session.user.isAdmin;
+
+    const enriched = goals.map((g) => ({
+      ...g,
+      isAssignedToMe:
+        g.assignees.some((a) => a.user.id === auth.userId) || isStackAssignee,
+    }));
+    return Response.json(enriched, NO_STORE);
+  }
+
   return Response.json(goals, NO_STORE);
 }
 

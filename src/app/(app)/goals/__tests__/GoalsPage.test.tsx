@@ -14,7 +14,11 @@ vi.mock('@/components/ui/ToastProvider', () => ({
 // Mock dynamic import of GoalStackTree
 vi.mock('@/components/goals/GoalStackTree', () => ({
   GoalStackTree: (props: any) => (
-    <div data-testid="goal-stack-tree" data-stack-id={props.stackId} />
+    <div
+      data-testid="goal-stack-tree"
+      data-stack-id={props.stackId}
+      data-mine-filter={String(props.mineFilter ?? '')}
+    />
   ),
 }));
 
@@ -110,5 +114,68 @@ describe('GoalsPage', () => {
     await waitFor(() => {
       expect(screen.queryAllByText('Goal Stack').length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('GoalsPage — Mine / All filter (company stack)', () => {
+  const companyStack = createStack({ id: 'co-stack', name: 'Company Goals', isCompany: true, visibility: 'company', _count: { goals: 2 } });
+  const personalStack = createStack({ id: 'pe-stack', name: 'Personal', isCompany: false, visibility: 'private', _count: { goals: 1 } });
+
+  it('shows the Mine/All toggle when a company stack is selected', async () => {
+    renderWithProviders(<GoalsPage />, { swrData: { '/api/stacks': [companyStack] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Company Goals')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /^Mine$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^All$/i })).toBeInTheDocument();
+  });
+
+  it('defaults to "Mine" mode (mineFilter=true) for company stacks', async () => {
+    renderWithProviders(<GoalsPage />, { swrData: { '/api/stacks': [companyStack] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('goal-stack-tree')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('goal-stack-tree')).toHaveAttribute('data-mine-filter', 'true');
+  });
+
+  it('switches to All mode when "All" is clicked', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<GoalsPage />, { swrData: { '/api/stacks': [companyStack] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^All$/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /^All$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('goal-stack-tree')).toHaveAttribute('data-mine-filter', 'false');
+    });
+  });
+
+  it('switches back to Mine mode when "Mine" is clicked after All', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<GoalsPage />, { swrData: { '/api/stacks': [companyStack] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^All$/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /^All$/i }));
+    await user.click(screen.getByRole('button', { name: /^Mine$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('goal-stack-tree')).toHaveAttribute('data-mine-filter', 'true');
+    });
+  });
+
+  it('does not show the Mine/All toggle for a personal stack', async () => {
+    renderWithProviders(<GoalsPage />, { swrData: { '/api/stacks': [personalStack] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Personal')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /^Mine$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^All$/i })).not.toBeInTheDocument();
   });
 });

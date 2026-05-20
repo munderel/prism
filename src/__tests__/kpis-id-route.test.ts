@@ -11,6 +11,8 @@ vi.mock('@/lib/auth-guard', () => ({
   ),
 }));
 
+
+
 vi.mock('@/lib/api-helpers', () => ({
   notFoundResponse: vi.fn((e: string) =>
     Response.json({ error: `${e} not found` }, { status: 404 }),
@@ -164,5 +166,111 @@ describe('KPI [id] route — GoalAssignee structural edit access', () => {
 
     expect(res.status).toBe(403);
     expect(prisma.kpi.update).not.toHaveBeenCalled();
+  });
+});
+
+// Company-stack write access paths — verifies all 4 spec-required paths
+describe('KPI [id] route — company stack access paths', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: no GoalAssignee row (structural-edit path must not accidentally grant it)
+    vi.mocked(prisma.goalAssignee.findUnique).mockResolvedValue(null);
+    mockCheckStackWriteAccess.mockResolvedValue(null);
+  });
+
+  const companyStackKpi = {
+    id: 'kpi-1',
+    name: 'ARR',
+    goalId: 'goal-co',
+    ownerId: null,
+    linkedKpiId: null,
+    goal: {
+      id: 'goal-co',
+      deletedAt: null,
+      stack: { id: 'stack-co', isCompany: true, ownerId: 'admin-user' },
+    },
+  };
+
+  // Path 1: KPI owner can log progress (actualValue only — intendedProgressOnly=true)
+  it('PUT allows KPI owner to log a progress value', async () => {
+    const kpiOwnerAuth = {
+      session: { user: { id: 'kpi-owner', isAdmin: false } },
+      userId: 'kpi-owner',
+    };
+    mockRequireAuth.mockResolvedValue(kpiOwnerAuth as any);
+    // KPI owned by the caller
+    const ownedKpi = { ...companyStackKpi, ownerId: 'kpi-owner' };
+    mockKpiFindUnique.mockResolvedValueOnce(ownedKpi as any);
+    mockParseBody.mockResolvedValue({ data: { actualValue: 99 } } as any);
+    vi.mocked(prisma.kpi.update).mockResolvedValueOnce({ id: 'kpi-1' } as any);
+
+    const res = await PUT({} as any, { params });
+
+    expect(res.status).toBe(200);
+    // The KPI-owner short-circuit returns before checkStackWriteAccess
+    expect(mockCheckStackWriteAccess).not.toHaveBeenCalled();
+  });
+
+  // Path 2: GoalAssignee (goal-level) can log progress via checkStackWriteAccess(restricted:true)
+  it('PUT allows GoalAssignee to log progress via restricted checkStackWriteAccess', async () => {
+    const assigneeAuth = {
+      session: { user: { id: 'goal-assignee', isAdmin: false } },
+      userId: 'goal-assignee',
+    };
+    mockRequireAuth.mockResolvedValue(assigneeAuth as any);
+    mockKpiFindUnique.mockResolvedValueOnce(companyStackKpi as any);
+    mockParseBody.mockResolvedValue({ data: { actualValue: 42 } } as any);
+    // Not a KPI owner — falls through to checkStackWriteAccess with restricted:true
+    mockCheckStackWriteAccess.mockResolvedValueOnce(null); // allowed
+    vi.mocked(prisma.kpi.update).mockResolvedValueOnce({ id: 'kpi-1' } as any);
+
+    const res = await PUT({} as any, { params });
+
+    expect(res.status).toBe(200);
+    expect(mockCheckStackWriteAccess).toHaveBeenCalledWith(
+      companyStackKpi.goal.stack,
+      'goal-assignee',
+      false,
+      expect.objectContaining({ restricted: true }),
+    );
+  });
+
+  // Path 3: CompanyGoalAssignment holder can log progress — covered by
+  // checkStackWriteAccess(restricted:true) which checks CompanyGoalAssignment.
+  // This test confirms the Forbidden path when they have no assignment.
+  it('PUT 403s a user with no CompanyGoalAssignment and no GoalAssignee row', async () => {
+    const strangerAuth = {
+      session: { user: { id: 'stranger', isAdmin: false } },
+      userId: 'stranger',
+    };
+    mockRequireAuth.mockResolvedValue(strangerAuth as any);
+    mockKpiFindUnique.mockResolvedValueOnce(companyStackKpi as any);
+    mockParseBody.mockResolvedValue({ data: { actualValue: 1 } } as any);
+    mockCheckStackWriteAccess.mockResolvedValueOnce(
+      Response.json({ error: 'Forbidden' }, { status: 403 }),
+    );
+
+    const res = await PUT({} as any, { params });
+
+    expect(res.status).toBe(403);
+    expect(prisma.kpi.update).not.toHaveBeenCalled();
+  });
+
+  // Path 4: Team admin has full access (isAdmin=true short-circuits in checkStackWriteAccess)
+  it('PUT allows team admin full write access', async () => {
+    const adminAuth = {
+      session: { user: { id: 'admin-user', isAdmin: true } },
+      userId: 'admin-user',
+    };
+    mockRequireAuth.mockResolvedValue(adminAuth as any);
+    mockKpiFindUnique.mockResolvedValueOnce(companyStackKpi as any);
+    mockParseBody.mockResolvedValue({ data: { actualValue: 50 } } as any);
+    mockCheckStackWriteAccess.mockResolvedValueOnce(null); // isAdmin=true → null
+    vi.mocked(prisma.kpi.update).mockResolvedValueOnce({ id: 'kpi-1' } as any);
+
+    const res = await PUT({} as any, { params });
+
+    expect(res.status).toBe(200);
+    expect(prisma.kpi.update).toHaveBeenCalled();
   });
 });
