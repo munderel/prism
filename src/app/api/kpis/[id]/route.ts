@@ -150,7 +150,7 @@ export async function DELETE(
   await prisma.kpi.delete({ where: { id } });
 
   // Recalculate the now-orphaned parent and chain the change upward so
-  // grandparents (quarterly, yearly, HHG) reflect the delete too.
+  // grandparents (strategic, HHG) reflect the delete too.
   if (kpi.linkedKpiId) {
     const linkedKpi = await prisma.kpi.findUnique({
       where: { id: kpi.linkedKpiId },
