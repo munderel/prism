@@ -65,8 +65,12 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
 
   let subLabel: { text: string; className: string } | null = null;
   if (task.taskType === 'IMPROVE' && task.goal?.parent?.title) {
+    // IMPROVE tasks show the monthly parent goal in the type color.
     subLabel = { text: task.goal.parent.title, className: PRISM_COLORS.IMPROVE.textClass };
   } else if (task.goal?.stack?.name) {
+    // Non-IMPROVE goal-linked tasks fall back to the stack name in muted text.
+    // No PRISM_COLORS entry — stacks aren't a typed item category — so the
+    // CSS var is the source of truth here, not a hardcoded color.
     subLabel = { text: task.goal.stack.name, className: 'text-[var(--text-muted)]' };
   }
 

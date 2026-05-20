@@ -5,13 +5,15 @@
  * and returns proposed time slots. No database, no API calls.
  */
 
+import { PRIORITY_RANK as SHARED_PRIORITY_RANK, type TaskPriority } from '@/lib/task-priority';
+
 // ---------- Types ----------
 
 export interface SchedulableTask {
   id: string;
   title: string;
   estimatedMinutes: number;
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  priority: TaskPriority;
   dueDate: Date | null;
   preferredTimeStart: string | null; // "HH:mm"
   preferredTimeEnd: string | null;   // "HH:mm"
@@ -41,12 +43,10 @@ export interface ScheduleSettings {
 
 // ---------- Priority ordering ----------
 
-const PRIORITY_RANK: Record<SchedulableTask['priority'], number> = {
-  URGENT: 4,
-  HIGH: 3,
-  MEDIUM: 2,
-  LOW: 1,
-};
+// Re-export under the local name so the rest of this file's call sites stay
+// untouched. Adding a new TaskPriority value is now a single-file change in
+// `src/lib/task-priority.ts`.
+const PRIORITY_RANK = SHARED_PRIORITY_RANK;
 
 // ---------- Helper functions ----------
 

@@ -2,15 +2,22 @@
  * Section-internal ordering: workBlock.start ASC NULLS LAST,
  * dueDate ASC NULLS LAST, priority DESC. A task with multiple
  * work blocks is keyed on its earliest block start.
+ *
+ * Inputs accept either full ISO strings or Date objects for time fields.
+ * Bare YYYY-MM-DD dueDate values are anchored to UTC midnight by `new Date`
+ * (matching the convention in `src/lib/date-utils.ts`); callers shouldn't
+ * need to pre-normalize.
  */
 
+import { PRIORITY_RANK, type TaskPriority } from '@/lib/task-priority';
+
 interface OrderableTask {
-  priority?: string | null;
+  // Tightened from `string | null` to the TaskPriority union so a typo
+  // ('High' lower-cased) fails at compile time instead of silently ranking 0.
+  priority?: TaskPriority | null;
   dueDate?: string | Date | null;
   workBlocks?: Array<{ start: string | Date }>;
 }
-
-const PRIORITY_RANK: Record<string, number> = { URGENT: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
 function earliestStartMs(task: OrderableTask): number | null {
   if (!task.workBlocks || task.workBlocks.length === 0) return null;
@@ -45,7 +52,7 @@ export function compareTasksByScheduledTime(a: OrderableTask, b: OrderableTask):
     return aDue - bDue;
   }
 
-  const aPri = PRIORITY_RANK[a.priority ?? ''] ?? 0;
-  const bPri = PRIORITY_RANK[b.priority ?? ''] ?? 0;
+  const aPri = a.priority ? PRIORITY_RANK[a.priority] : 0;
+  const bPri = b.priority ? PRIORITY_RANK[b.priority] : 0;
   return bPri - aPri;
 }

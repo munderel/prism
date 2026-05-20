@@ -64,6 +64,16 @@ export default function TasksPage() {
   const [editingTask, setEditingTask] = useState<any>(null);
   const [selectedTask, setSelectedTask] = useState<any>(null);
   useEffect(() => { setSelectedTask(null); }, [date, viewMode]);
+
+  // Reconcile selectedTask against the latest SWR data on every refetch.
+  // (1) If the selected task disappeared from both the range and unscheduled
+  //     lists (deleted, status flipped, reassigned away), clear the side
+  //     panel so it doesn't keep showing a phantom row.
+  // (2) If a fresher copy exists in the list (edited in another tab or by
+  //     the user's last mutation), swap in the new reference so the panel
+  //     reflects current fields instead of the snapshot taken at click time.
+  // Compares by id (the only invariant); the rest of the task fields are
+  // expected to change.
   const [showUnscheduled, setShowUnscheduled] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -128,6 +138,22 @@ export default function TasksPage() {
   // Unscheduled tasks (no date, no time block)
   const { data: unscheduledData, mutate: mutateUnscheduled } = useSWR('/api/tasks?unscheduledOnly=true');
   const unscheduledTasks = useMemo(() => (Array.isArray(unscheduledData) ? unscheduledData : []), [unscheduledData]);
+
+  // Reconcile selectedTask against the freshly-fetched lists (see comment at
+  // the useState above). Runs only when the data references change.
+  useEffect(() => {
+    if (!selectedTask) return;
+    const fresh =
+      rangeTasks.find((t: any) => t.id === selectedTask.id) ??
+      unscheduledTasks.find((t: any) => t.id === selectedTask.id) ??
+      null;
+    if (fresh !== selectedTask) {
+      // null when the task vanished; otherwise the new object reference
+      setSelectedTask(fresh);
+    }
+    // Intentional: we don't want selectedTask in deps — only the list refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeTasks, unscheduledTasks]);
 
   // Reviews due on the currently-viewed date (weekly/monthly/yearly). Surfaces
   // the review in the Tasks view so it's not only visible on the calendar.
