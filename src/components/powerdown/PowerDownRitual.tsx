@@ -760,38 +760,56 @@ export function PowerDownRitual({ onComplete }: PowerDownRitualProps) {
 
   // Refresh both sidebar and tomorrow-tasks lists after any schedule/unschedule.
   // CalendarSplitView calls this as onRefresh after the backend PATCH succeeds.
-  const refreshTomorrowLists = useCallback(() => {
-    fetchUnscheduledTomorrow();
-    fetchTomorrowTasks();
-    fetchTomorrowWorkBlocks();
-    fetchTomorrowAimInstances();
+  // Returns a promise so callers can await the fan-out and avoid race
+  // conditions with optimistic-UI commits.
+  const refreshTomorrowLists = useCallback(async () => {
+    await Promise.all([
+      fetchUnscheduledTomorrow(),
+      fetchTomorrowTasks(),
+      fetchTomorrowWorkBlocks(),
+      fetchTomorrowAimInstances(),
+    ]);
   }, [fetchUnscheduledTomorrow, fetchTomorrowTasks, fetchTomorrowWorkBlocks, fetchTomorrowAimInstances]);
 
   const handleItemUnscheduled = useCallback(async (itemId: string, itemType: string) => {
-    if (itemType === 'task') {
-      await fetch(`/api/tasks/${itemId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
-      });
-    } else if (itemType === 'aim') {
-      const instanceId = itemId.startsWith('aim-instance-')
-        ? itemId.replace('aim-instance-', '') : itemId;
-      await fetch(`/api/aims/instances/${instanceId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
-      });
-    } else if (itemType === 'food') {
-      // Food blocks have no "unscheduled" state — unschedule = delete.
-      await fetch(`/api/food-blocks/${itemId}`, { method: 'DELETE' });
-    } else if (itemType === 'workblock') {
-      // Workblocks behave like food blocks here: there's no "unscheduled"
-      // state for a workblock — dragging it off the calendar deletes it.
-      await deleteWorkBlock(itemId);
+    // Each branch checks res.ok and surfaces a toast on failure — without
+    // this a failed DELETE/PATCH (auth expired, transient 500) would silently
+    // "snap back" because refreshTomorrowLists re-fetches and re-displays the
+    // item with no feedback to the user.
+    try {
+      let res: Response | null = null;
+      if (itemType === 'task') {
+        res = await fetch(`/api/tasks/${itemId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
+        });
+      } else if (itemType === 'aim') {
+        const instanceId = itemId.startsWith('aim-instance-')
+          ? itemId.replace('aim-instance-', '') : itemId;
+        res = await fetch(`/api/aims/instances/${instanceId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timeBlockStart: null, timeBlockEnd: null }),
+        });
+      } else if (itemType === 'food') {
+        // Food blocks have no "unscheduled" state — unschedule = delete.
+        res = await fetch(`/api/food-blocks/${itemId}`, { method: 'DELETE' });
+      } else if (itemType === 'workblock') {
+        // Workblocks behave like food blocks here: there's no "unscheduled"
+        // state for a workblock — dragging it off the calendar deletes it.
+        res = await deleteWorkBlock(itemId);
+      }
+      if (res && !res.ok) {
+        throw new Error(`API returned ${res.status}`);
+      }
+    } catch {
+      toast.error('Failed to unschedule.');
     }
-    refreshTomorrowLists();
-  }, [refreshTomorrowLists]);
+    // Await the refresh so any animation/drop completion settles against
+    // fresh data (otherwise the optimistic UI commits before fetch finishes).
+    await refreshTomorrowLists();
+  }, [refreshTomorrowLists, toast]);
 
   const handleCreateWorkBlock = useCallback(async (start: Date, end: Date) => {
     try {
