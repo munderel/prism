@@ -17,8 +17,25 @@ interface ClearGoalRow {
   isComplete: boolean;
 }
 
+export interface WorkBlockShape {
+  id: string;
+  start: string;
+  end: string;
+  mainObjective: string;
+  completionStatus: 'PENDING' | 'COMPLETED' | 'PARTIAL' | 'MISSED';
+  actualMinutes: number | null;
+  notes: string | null;
+  clearGoals?: Array<{ id: string; text: string; isComplete: boolean }>;
+  task?: {
+    id: string;
+    title: string;
+    estimatedMinutes?: number | null;
+    goal?: { id: string; title: string } | null;
+  } | null;
+}
+
 export interface WorkBlockEditorProps {
-  workBlock: any;
+  workBlock: WorkBlockShape;
   fullPage?: boolean;
   onSave?: () => void;
   onClose?: () => void;
@@ -107,6 +124,10 @@ export function WorkBlockEditor({ workBlock, fullPage = false, onSave, onClose }
       prev.map((row) => (row.key === key ? { ...row, text } : row))
     );
 
+  // Note: isComplete is UI-only here. The PATCH route accepts clearGoals as
+  // a `string[]` (text-only, rewrite-on-save). Persisting per-goal completion
+  // belongs in Component 15 (completion logging) when the work-block review
+  // surface is built. The checkbox here is informational at edit time.
   const toggleClearGoalDone = (key: string) =>
     setClearGoals((prev) =>
       prev.map((row) => (row.key === key ? { ...row, isComplete: !row.isComplete } : row))
@@ -268,7 +289,7 @@ export function WorkBlockEditor({ workBlock, fullPage = false, onSave, onClose }
                 checked={row.isComplete}
                 onChange={() => toggleClearGoalDone(row.key)}
                 className="h-4 w-4 rounded accent-indigo-500 shrink-0"
-                title="Mark as done"
+                title="Reflect-time only — completion is logged in the post-block review (Powerdown / Weekly Review)"
               />
               <input
                 type="text"
