@@ -147,9 +147,10 @@ In Vercel → Project Settings → Environment Variables, add:
 | `SMTP_USER` | From Phase 4 | For email features |
 | `SMTP_PASS` | From Phase 4 | For email features |
 | `SMTP_FROM` | e.g., `noreply@upwhiten.com` | For email features |
-| `VAPID_PUBLIC_KEY` | Generated in Phase 1 | For push notifications |
-| `VAPID_PRIVATE_KEY` | Generated in Phase 1 | For push notifications |
-| `VAPID_EMAIL` | Your admin email | For push notifications |
+| `VAPID_PUBLIC_KEY` | Generated via `npx web-push generate-vapid-keys` | For web push (server-side signing) |
+| `VAPID_PRIVATE_KEY` | Generated via `npx web-push generate-vapid-keys` | For web push (server-side signing) |
+| `VAPID_EMAIL` | Your admin email, e.g. `admin@yourapp.com` | Web-push contact email (required by the standard) |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Same value as `VAPID_PUBLIC_KEY` | Exposed to the browser for `pushManager.subscribe`. Must be set as a `NEXT_PUBLIC_` var so the client bundle can read it. **Component 19 note:** the settings page and subscribe flow now fetch the key via `/api/notifications/public-key` (server-rendered), but keeping this env var set ensures the legacy `usePushNotifications` hook also works. |
 | `OPENROUTER_API_KEY` | From Phase 5 | For AI features |
 | `NEXT_PUBLIC_DEV_LOGIN` | `false` (or don't set it) | N/A |
 

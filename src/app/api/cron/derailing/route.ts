@@ -5,6 +5,7 @@ import { checkTaskDerailStatus } from '@/lib/derailing';
 import { checkAndBreakMissedStreaks } from '@/lib/streak-engine';
 import { notifyUser } from '@/lib/notifications';
 import { toZonedTime } from 'date-fns-tz';
+import { NotificationType } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
@@ -52,7 +53,8 @@ export async function GET(request: NextRequest) {
           task.owner.id,
           'Task Derailing!',
           `"${task.title}" is past 6pm and not done. Take action now.`,
-          '/tasks'
+          '/tasks',
+          NotificationType.DERAILING,
         )
       );
 
