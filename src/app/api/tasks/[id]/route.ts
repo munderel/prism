@@ -8,7 +8,7 @@ import { parseRRule, getNextOccurrence } from '@/lib/recurrence';
 import { deleteGoogleEvent, getGoogleSyncInfo, syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { completeTask } from '@/lib/task-completion';
-import { getLocalDateString, parseDateOnly, parseTaskDueInput, toDateOnlyInputValue } from '@/lib/date-utils';
+import { parseDateOnly, parseTaskDueInput, toDateOnlyInputValue } from '@/lib/date-utils';
 import { getCurrentPeriodRange } from '@/lib/process-task-generator';
 
 export async function GET(
