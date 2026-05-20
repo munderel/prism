@@ -15,8 +15,6 @@ export interface SchedulableTask {
   estimatedMinutes: number;
   priority: TaskPriority;
   dueDate: Date | null;
-  preferredTimeStart: string | null; // "HH:mm"
-  preferredTimeEnd: string | null;   // "HH:mm"
   schedulingPeriod?: 'working' | 'casual' | 'both';
 }
 
@@ -231,20 +229,9 @@ export function autoSchedule(
     const durationMs = task.estimatedMinutes * 60 * 1000;
     const days = getDaysBetween(now, horizon);
 
-    // First pass: try preferred time window
+    // Find a working-hours slot
     let slot: Date | null = null;
-    if (task.preferredTimeStart && task.preferredTimeEnd) {
-      const preferredHours: WorkingHours = {
-        start: task.preferredTimeStart,
-        end: task.preferredTimeEnd,
-      };
-      slot = findSlotAcrossDays(days, now, preferredHours, durationMs, occupied);
-    }
-
-    // Second pass: try any working-hours slot
-    if (!slot) {
-      slot = findSlotAcrossDays(days, now, workingHours, durationMs, occupied);
-    }
+    slot = findSlotAcrossDays(days, now, workingHours, durationMs, occupied);
 
     if (slot) {
       const slotEnd = new Date(slot.getTime() + durationMs);

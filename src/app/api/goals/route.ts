@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
       tasks: {
         select: {
           id: true, title: true, status: true, priority: true,
-          dueDate: true, deliverable: true, taskType: true, description: true,
+          dueDate: true, taskType: true, description: true,
           assigneeId: true,
         },
         orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
     where: { stackId, parentId: parentId ?? null, deletedAt: null },
   });
 
-  // --- Auto-generate sub-goals based on duration ---
+  // --- Auto-generate clear goals based on duration ---
   if (autoGenerate && startDate && endDate) {
     const goalStart = parseLocalDate(startDate);
     const goalEnd = parseLocalDate(endDate);

@@ -7,7 +7,6 @@ import { Settings, Shield, Bell, Globe, Compass, RotateCcw, UserPlus, Mail, Sun,
 import { useSWRConfig } from 'swr';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { TaskTypeColorsSection } from '@/components/settings/TaskTypeColorsSection';
 
 interface TeamUser {
@@ -116,20 +115,12 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const toast = useToast();
   const { mutate: globalMutate } = useSWRConfig();
-  const { isSubscribed: isPushSubscribed, isSupported: isPushSupported, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const [mounted, setMounted] = useState(false);
 
   const [displayName, setDisplayName] = useState(session?.user?.name ?? '');
   const [mtp, setMtp] = useState('');
   const [companyMtp, setCompanyMtp] = useState('');
   const [timezone, setTimezone] = useState('America/New_York');
-  const [notifPrefs, setNotifPrefs] = useState({
-    emailEnabled: true,
-    pushEnabled: true,
-    derailingAlerts: true,
-    mentionAlerts: true,
-    reviewNags: true,
-  });
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [hiddenFeatures, setHiddenFeatures] = useState<string[]>([]);
   const [workingHoursStart, setWorkingHoursStart] = useState('09:00');
@@ -233,9 +224,6 @@ export default function SettingsPage() {
       if (Array.isArray(data.hiddenFeatures)) {
         setHiddenFeatures(data.hiddenFeatures);
       }
-      if (data.notificationPreference) {
-        setNotifPrefs(data.notificationPreference);
-      }
       if (data.workingHoursStart) setWorkingHoursStart(data.workingHoursStart);
       if (data.workingHoursEnd) setWorkingHoursEnd(data.workingHoursEnd);
       if (data.casualHoursStart) setCasualHoursStart(data.casualHoursStart);
@@ -324,7 +312,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, notificationPrefs: notifPrefs, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, defaultWorkBlockMinutes, dailyHoursTarget: dailyHoursTargetMinutes, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
+        body: JSON.stringify({ name: displayName, mtp, timezone, hiddenFeatures, workingHoursStart, workingHoursEnd, casualHoursStart, casualHoursEnd, taskSchedulePeriod, selectedCalendarIds, syncTargetCalendarId: syncTargetCalendarId || null, calendarColorOverrides, weeklyTargetCalendarIds, powerdownTime, defaultWorkBlockMinutes, dailyHoursTarget: dailyHoursTargetMinutes, weeklyReviewDayOfWeek, weeklyReviewTime, weeklyReviewDuration, monthlyReviewRecurrenceRule, monthlyReviewTime, monthlyReviewDuration, yearlyReviewRecurrenceRule, yearlyReviewTime, yearlyReviewDuration, streakGraceDays, beeminderAuthToken: beeminderAuthToken || null, beeminderGoalSlug: beeminderGoalSlug || null }),
       });
 
       if (!res.ok) {
@@ -766,51 +754,16 @@ export default function SettingsPage() {
             <Bell className="h-5 w-5 text-indigo-400" />
             Notifications
           </h2>
-          <div className="space-y-3">
-            {[
-              { key: 'emailEnabled', label: 'Email notifications' },
-              { key: 'derailingAlerts', label: 'Derailing alerts' },
-              { key: 'mentionAlerts', label: '@mention alerts' },
-              { key: 'reviewNags', label: 'Review reminders' },
-            ].map(({ key, label }) => (
-              <label key={key} className="flex items-center justify-between">
-                <span className="text-sm text-[var(--text-secondary)]">{label}</span>
-                <input
-                  type="checkbox"
-                  checked={(notifPrefs as any)[key]}
-                  onChange={(e) => setNotifPrefs({ ...notifPrefs, [key]: e.target.checked })}
-                  className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
-                />
-              </label>
-            ))}
-            {isPushSupported && (
-              <label className="flex items-center justify-between">
-                <span className="text-sm text-[var(--text-secondary)]">Push notifications</span>
-                <input
-                  type="checkbox"
-                  checked={isPushSubscribed && notifPrefs.pushEnabled}
-                  onChange={async (e) => {
-                    if (e.target.checked) {
-                      const ok = await subscribePush();
-                      if (ok) {
-                        setNotifPrefs({ ...notifPrefs, pushEnabled: true });
-                        toast.success('Push notifications enabled');
-                      } else {
-                        toast.error('Could not enable push notifications. Check browser permissions.');
-                      }
-                    } else {
-                      await unsubscribePush();
-                      setNotifPrefs({ ...notifPrefs, pushEnabled: false });
-                      toast.success('Push notifications disabled');
-                    }
-                  }}
-                  className="h-4 w-4 rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-600 focus:ring-indigo-500"
-                />
-              </label>
-            )}
-          </div>
-          <div className="mt-4 flex items-center gap-3">
-            <SaveButton onClick={saveUserSettings} saving={saving} label="Save Preferences" />
+          <p className="text-sm text-[var(--text-secondary)] mb-4">
+            Manage push subscriptions and per-channel notification preferences (email, push desktop, push mobile, in-app) on the dedicated notifications page.
+          </p>
+          <div className="flex items-center gap-3">
+            <a
+              href="/settings/notifications"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+            >
+              Notification Preferences
+            </a>
             <TestEmailButton toast={toast} />
           </div>
         </section>

@@ -283,8 +283,6 @@ model Task {
   taskType           TaskType
   title              String
   description        String?      @db.Text
-  deliverable        String?      @db.Text
-  deliverableDone    Boolean      @default(false)
   successCriteria    Json?
   status             TaskStatus   @default(TODO)
   priority           TaskPriority @default(MEDIUM)
@@ -294,8 +292,6 @@ model Task {
   timeBlockStart     DateTime?
   timeBlockEnd       DateTime?
   estimatedMinutes   Int          @default(60)
-  preferredTimeStart String?
-  preferredTimeEnd   String?
   isPinned           Boolean      @default(false)
   isAutoScheduled    Boolean      @default(false)
   isWinTheDay        Boolean      @default(false)
@@ -565,15 +561,11 @@ model PushSubscription {
   @@index([userId])
 }
 
+// NotificationPreference — legacy flat-flag table. Flat columns dropped in Component 22 (19b).
+// Table retained for historical foreign key integrity; all gating now via NotificationChannelPref.
 model NotificationPreference {
-  id               String  @id @default(cuid())
-  userId           String  @unique
-  emailEnabled     Boolean @default(true)
-  pushEnabled      Boolean @default(true)
-  derailingAlerts  Boolean @default(true)
-  mentionAlerts    Boolean @default(true)
-  reviewNags       Boolean @default(true)
-  meetingReminders Boolean @default(true)
+  id     String @id @default(cuid())
+  userId String @unique
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -15,7 +15,6 @@ const USER_SETTINGS_SELECT = {
   timezone: true,
   hasCompletedOnboarding: true,
   hiddenFeatures: true,
-  notificationPreference: true,
   workingHoursStart: true,
   workingHoursEnd: true,
   casualHoursStart: true,
@@ -56,9 +55,6 @@ const USER_UPDATABLE_FIELDS = [
   'beeminderAuthToken', 'beeminderGoalSlug',
 ];
 
-const NOTIFICATION_PREF_FIELDS = [
-  'emailEnabled', 'pushEnabled', 'derailingAlerts', 'mentionAlerts', 'reviewNags',
-] as const;
 
 function buildZonedWindow(dateKey: string, time: string, duration: number, timezone: string) {
   const [hours, minutes] = time.split(':').map(Number);
@@ -387,23 +383,6 @@ export async function PATCH(request: NextRequest) {
     };
 
     cascadeReviews().catch(err => console.warn('[settings] review cascade failed:', err));
-  }
-
-  // Update notification preferences (whitelist valid boolean fields only)
-  if (body.notificationPrefs && typeof body.notificationPrefs === 'object') {
-    const sanitized: Record<string, boolean> = {};
-    for (const field of NOTIFICATION_PREF_FIELDS) {
-      if (typeof body.notificationPrefs[field] === 'boolean') {
-        sanitized[field] = body.notificationPrefs[field];
-      }
-    }
-    if (Object.keys(sanitized).length > 0) {
-      await prisma.notificationPreference.upsert({
-        where: { userId: auth.userId },
-        update: sanitized,
-        create: { userId: auth.userId, ...sanitized },
-      });
-    }
   }
 
   const updatedUser = await prisma.user.findUnique({

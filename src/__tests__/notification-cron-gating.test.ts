@@ -36,7 +36,6 @@ vi.mock('resend', () => ({
 // Mock prisma
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    notificationPreference: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
     pushSubscription: {
       findMany: vi.fn(),
@@ -59,11 +58,6 @@ describe('notifyUser — per-channel dispatcher gating', () => {
 
   function setupUser() {
     mockPrisma.user.findUnique.mockResolvedValue({ email: 'user@example.com' });
-    mockPrisma.notificationPreference.findUnique.mockResolvedValue({
-      emailEnabled: true,
-      pushEnabled: true,
-      derailingAlerts: true,
-    });
     mockPrisma.notification.create.mockResolvedValue({ id: 'notif-1' });
   }
 

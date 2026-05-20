@@ -163,8 +163,7 @@ export async function notifyUser(
   url?: string,
   notifType: NotificationType = NotificationType.GENERIC,
 ) {
-  const [legacyPrefs, user, subscriptions, channelPrefs] = await Promise.all([
-    prisma.notificationPreference.findUnique({ where: { userId } }),
+  const [user, subscriptions, channelPrefs] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
     prisma.pushSubscription.findMany({ where: { userId } }),
     prisma.notificationChannelPref.findMany({ where: { userId, notifType } }),
@@ -185,13 +184,12 @@ export async function notifyUser(
   }
 
   await Promise.all([
-    sendPushNotificationsGated(legacyPrefs, channelPrefs, subscriptions, notifType, title, body, url),
-    sendEmailNotificationGated(legacyPrefs, channelPrefs, user?.email, notifType, title, body),
+    sendPushNotificationsGated(channelPrefs, subscriptions, notifType, title, body, url),
+    sendEmailNotificationGated(channelPrefs, user?.email, notifType, title, body),
   ]);
 }
 
 async function sendPushNotificationsGated(
-  legacyPrefs: { pushEnabled: boolean } | null,
   channelPrefs: { notifType: NotificationType; channel: NotificationChannel; enabled: boolean }[],
   subscriptions: { id: string; endpoint: string; p256dh: string; auth: string; deviceType?: string | null }[],
   notifType: NotificationType,
@@ -199,9 +197,6 @@ async function sendPushNotificationsGated(
   body: string,
   url?: string,
 ): Promise<void> {
-  // Legacy gate: if the old pushEnabled flag is explicitly false, respect it
-  if (legacyPrefs && !legacyPrefs.pushEnabled) return;
-
   const desktopEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.PUSH_DESKTOP);
   const mobileEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.PUSH_MOBILE);
 
@@ -235,16 +230,12 @@ async function sendPushNotificationsGated(
 }
 
 async function sendEmailNotificationGated(
-  legacyPrefs: { emailEnabled: boolean } | null,
   channelPrefs: { notifType: NotificationType; channel: NotificationChannel; enabled: boolean }[],
   email: string | undefined,
   notifType: NotificationType,
   title: string,
   body: string,
 ): Promise<void> {
-  // Legacy gate
-  if (legacyPrefs && !legacyPrefs.emailEnabled) return;
-
   const emailEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.EMAIL);
   if (!emailEnabled) return;
   if (!email) return;

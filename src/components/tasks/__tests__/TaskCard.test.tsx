@@ -150,12 +150,6 @@ describe('TaskCard', () => {
     expect(screen.getByText('5')).toBeInTheDocument();
   });
 
-  it('shows deliverable text', () => {
-    const task = createTask({ deliverable: 'Final report' });
-    renderWithProviders(<TaskCard task={task} {...defaultProps()} />);
-    expect(screen.getByText(/→ Final report/)).toBeInTheDocument();
-  });
-
   it('IMPROVE task shows its monthly goal title as a sub-label', () => {
     // Improve tasks always link to a WEEKLY goal; its parent is MONTHLY.
     // The card should surface the monthly goal title (e.g. "Revenue (May)")

@@ -117,8 +117,6 @@ describe('autoSchedule', () => {
         estimatedMinutes: 60,
         priority: 'MEDIUM',
         dueDate: new Date('2026-03-27T23:59:59'),
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
     ];
 
@@ -142,8 +140,6 @@ describe('autoSchedule', () => {
         estimatedMinutes: 30,
         priority: 'LOW',
         dueDate: new Date('2026-03-26T00:00:00'),
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
       {
         id: 'urgent',
@@ -151,8 +147,6 @@ describe('autoSchedule', () => {
         estimatedMinutes: 30,
         priority: 'URGENT',
         dueDate: new Date('2026-03-28T00:00:00'),
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
       {
         id: 'high-late',
@@ -160,8 +154,6 @@ describe('autoSchedule', () => {
         estimatedMinutes: 30,
         priority: 'HIGH',
         dueDate: new Date('2026-03-28T00:00:00'),
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
       {
         id: 'high-early',
@@ -169,8 +161,6 @@ describe('autoSchedule', () => {
         estimatedMinutes: 30,
         priority: 'HIGH',
         dueDate: new Date('2026-03-26T00:00:00'),
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
     ];
 
@@ -188,8 +178,6 @@ describe('autoSchedule', () => {
         estimatedMinutes: 60,
         priority: 'MEDIUM',
         dueDate: new Date('2026-03-27T23:59:59'),
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
     ];
 
@@ -207,7 +195,7 @@ describe('autoSchedule', () => {
     expect(result[0].start.getHours()).toBe(8);
   });
 
-  it('respects preferred time window', () => {
+  it('schedules within working hours when no preferred time (feature removed)', () => {
     const tasks: SchedulableTask[] = [
       {
         id: 't1',
@@ -215,44 +203,12 @@ describe('autoSchedule', () => {
         estimatedMinutes: 60,
         priority: 'MEDIUM',
         dueDate: new Date('2026-03-27T23:59:59'),
-        preferredTimeStart: '14:00',
-        preferredTimeEnd: '16:00',
       },
     ];
 
     const result = autoSchedule(tasks, [], defaultWorkingHours, TODAY);
 
     expect(result).toHaveLength(1);
-    expect(result[0].start.getHours()).toBe(14);
-    expect(result[0].start.getMinutes()).toBe(0);
-  });
-
-  it('falls back to any working-hours slot if preferred time is full', () => {
-    const tasks: SchedulableTask[] = [
-      {
-        id: 't1',
-        title: 'Focus work',
-        estimatedMinutes: 60,
-        priority: 'MEDIUM',
-        dueDate: new Date('2026-03-25T23:59:59'), // only today
-        preferredTimeStart: '14:00',
-        preferredTimeEnd: '15:00',
-      },
-    ];
-
-    // Block 14:00-15:00 on March 25
-    const events: CalendarEvent[] = [
-      {
-        start: new Date('2026-03-25T14:00:00'),
-        end: new Date('2026-03-25T15:00:00'),
-      },
-    ];
-
-    const result = autoSchedule(tasks, events, defaultWorkingHours, TODAY);
-
-    expect(result).toHaveLength(1);
-    // Should NOT be at 14:00 (blocked), should be somewhere else within working hours
-    expect(result[0].start.getHours()).not.toBe(14);
     expect(result[0].start.getHours()).toBeGreaterThanOrEqual(6);
     expect(result[0].end.getHours()).toBeLessThanOrEqual(22);
   });
@@ -265,8 +221,6 @@ describe('autoSchedule', () => {
         estimatedMinutes: 30,
         priority: 'LOW',
         dueDate: null,
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
     ];
 
@@ -288,8 +242,6 @@ describe('autoSchedule', () => {
         estimatedMinutes: 960, // 16 hours — exactly fills 6:00-22:00
         priority: 'HIGH',
         dueDate: new Date('2026-03-25T23:59:59'), // only today
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
     ];
 
@@ -318,8 +270,6 @@ describe('rearrangeFlexible', () => {
         estimatedMinutes: 45,
         priority: 'HIGH',
         dueDate: new Date('2026-03-27T23:59:59'),
-        preferredTimeStart: null,
-        preferredTimeEnd: null,
       },
     ];
 

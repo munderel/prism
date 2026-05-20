@@ -249,7 +249,7 @@ export function GoalEditor({
                       className="rounded border-white/20 bg-[var(--hover-bg)] text-indigo-600 focus:ring-indigo-500"
                     />
                     <span className="text-sm text-[var(--text-secondary)]">
-                      Auto-generate sub-goals
+                      Auto-generate clear goals
                     </span>
                   </label>
                 )}

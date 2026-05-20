@@ -4,7 +4,6 @@ export interface TaskNode {
   id?: string;
   title: string;
   description?: string;
-  deliverable?: string;
   status?: string;
   priority?: string;
   dueDate?: string;
@@ -13,8 +12,6 @@ export interface TaskNode {
   timeBlockEnd?: string;
   recurrenceRule?: string;
   isWinTheDay?: boolean;
-  preferredTimeStart?: string;
-  preferredTimeEnd?: string;
   taskType?: string;
   // Round-trip additions
   parentId?: string;
@@ -22,7 +19,6 @@ export interface TaskNode {
   aimInstanceId?: string;
   calendarEventId?: string;
   assignee?: string;           // email
-  deliverableDone?: boolean;
   successCriteria?: unknown;   // JSON passthrough
   isPinned?: boolean;
   isAutoScheduled?: boolean;
@@ -151,8 +147,6 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
       if (t.id) tObj.id = t.id;
       tObj.title = t.title;
       if (t.description) tObj.description = t.description;
-      if (t.deliverable) tObj.deliverable = t.deliverable;
-      if (t.deliverableDone) tObj.deliverable_done = true;
       if (t.successCriteria !== undefined && t.successCriteria !== null) {
         tObj.success_criteria = t.successCriteria;
       }
@@ -168,8 +162,6 @@ function goalToSemanticObj(node: GoalNode): Record<string, any> {
       if (t.winTheDayRank != null) tObj.win_the_day_rank = t.winTheDayRank;
       if (t.isPinned) tObj.is_pinned = true;
       if (t.isAutoScheduled) tObj.is_auto_scheduled = true;
-      if (t.preferredTimeStart) tObj.preferred_time_start = t.preferredTimeStart;
-      if (t.preferredTimeEnd) tObj.preferred_time_end = t.preferredTimeEnd;
       if (t.startedAt) tObj.started_at = t.startedAt;
       if (t.completedAt) tObj.completed_at = t.completedAt;
       if (t.failedAt) tObj.failed_at = t.failedAt;
@@ -241,8 +233,6 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
       if (t.id) task.id = t.id;
       if (t.task_type !== undefined) task.taskType = t.task_type;
       if (t.description !== undefined) task.description = t.description;
-      if (t.deliverable !== undefined) task.deliverable = t.deliverable;
-      if (t.deliverable_done !== undefined) task.deliverableDone = Boolean(t.deliverable_done);
       if (t.success_criteria !== undefined) task.successCriteria = t.success_criteria;
       if (t.date !== undefined) task.dueDate = t.date;
       if (t.estimated_minutes !== undefined) task.estimatedMinutes = t.estimated_minutes;
@@ -253,8 +243,6 @@ function semanticObjToGoals(obj: Record<string, any>, level: string): GoalNode {
       if (t.win_the_day_rank !== undefined) task.winTheDayRank = t.win_the_day_rank;
       if (t.is_pinned !== undefined) task.isPinned = Boolean(t.is_pinned);
       if (t.is_auto_scheduled !== undefined) task.isAutoScheduled = Boolean(t.is_auto_scheduled);
-      if (t.preferred_time_start !== undefined) task.preferredTimeStart = t.preferred_time_start;
-      if (t.preferred_time_end !== undefined) task.preferredTimeEnd = t.preferred_time_end;
       if (t.started_at !== undefined) task.startedAt = t.started_at;
       if (t.completed_at !== undefined) task.completedAt = t.completed_at;
       if (t.failed_at !== undefined) task.failedAt = t.failed_at;
@@ -606,8 +594,6 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
         id: t.id,
         title: t.title,
         description: t.description ?? undefined,
-        deliverable: t.deliverable ?? undefined,
-        deliverableDone: t.deliverableDone || undefined,
         successCriteria: t.successCriteria ?? undefined,
         status: t.status,
         priority: t.priority,
@@ -620,8 +606,6 @@ export function buildGoalTree(goals: any[]): GoalNode[] {
         winTheDayRank: t.winTheDayRank ?? undefined,
         isPinned: t.isPinned || undefined,
         isAutoScheduled: t.isAutoScheduled || undefined,
-        preferredTimeStart: t.preferredTimeStart ?? undefined,
-        preferredTimeEnd: t.preferredTimeEnd ?? undefined,
         taskType: t.taskType ?? undefined,
         startedAt: toIsoString(t.startedAt),
         completedAt: toIsoString(t.completedAt),
@@ -702,8 +686,6 @@ const KPI_DIFF_FIELDS: (keyof KpiNode)[] = [
 const TASK_DIFF_FIELDS: (keyof TaskNode)[] = [
   'title',
   'description',
-  'deliverable',
-  'deliverableDone',
   'status',
   'priority',
   'taskType',
@@ -716,8 +698,6 @@ const TASK_DIFF_FIELDS: (keyof TaskNode)[] = [
   'winTheDayRank',
   'isPinned',
   'isAutoScheduled',
-  'preferredTimeStart',
-  'preferredTimeEnd',
   'startedAt',
   'completedAt',
   'failedAt',
