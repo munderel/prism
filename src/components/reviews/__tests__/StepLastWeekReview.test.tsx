@@ -142,7 +142,7 @@ describe('StepLastWeekReview', () => {
     await waitFor(() => {
       const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
       const patchCalls = fetchMock.mock.calls.filter(
-        ([url, init]: [string, RequestInit]) => init?.method === 'PATCH',
+        ([, init]: [string, RequestInit]) => init?.method === 'PATCH',
       );
       expect(patchCalls.some(([url]: [string]) => url.includes('/api/work-blocks/wb-1'))).toBe(true);
     });
