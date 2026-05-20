@@ -703,6 +703,7 @@ export const updateAimInstanceSchema = z.object({
   activityNote: z.string().max(5000).optional().nullable(),
   selectedActivity: z.string().optional().nullable(),
   taskIds: z.array(z.string()).optional(),
+  actualMinutes: z.number().int().min(0).max(1440).optional().nullable(),
 });
 
 const scheduleDaySchema = z.object({

@@ -895,6 +895,7 @@ model AimInstance {
   selectedActivity  String? // e.g., "strength", "sauna", "painting"
   phaseAtCompletion String? // snapshot of phase when completed
   pointsEarned      Int       @default(0)
+  actualMinutes     Int? // overrideable; when null, treat as scheduled duration
   calendarEventId   String? // Google Calendar event ID for sync
   createdAt         DateTime  @default(now())
 

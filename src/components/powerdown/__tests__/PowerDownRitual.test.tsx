@@ -308,3 +308,111 @@ describe('PowerDownRitual', () => {
     expect(screen.getByText(/Step 10/)).toBeInTheDocument();
   });
 });
+
+// ─── review_blocks step: WorkBlocks + AIM instances ──────────────────────────
+describe('PowerDownRitual – Review Work Blocks & AIMs step', () => {
+  const onComplete = vi.fn();
+
+  beforeEach(() => {
+    onComplete.mockReset();
+    mutateSpy.mockReset();
+  });
+
+  const MOCK_WORK_BLOCK = {
+    id: 'wb-1',
+    start: new Date().toISOString(),
+    end: new Date(Date.now() + 5400000).toISOString(), // +90min
+    mainObjective: 'Test objective',
+    completionStatus: 'PENDING',
+    actualMinutes: null,
+    notes: null,
+    task: { id: 'task-1', title: 'Deep work on review', status: 'IN_PROGRESS', taskType: 'IMPROVE', estimatedMinutes: 90, dueDate: null },
+    clearGoals: [],
+  };
+
+  const MOCK_AIM_INSTANCE = {
+    id: 'aim-1',
+    scheduledDate: new Date().toISOString(),
+    timeBlockStart: new Date().toISOString(),
+    timeBlockEnd: new Date(Date.now() + 3600000).toISOString(),
+    status: 'SCHEDULED',
+    activityNote: null,
+    selectedActivity: null,
+    aimCategory: { id: 'cat-1', name: 'Morning Run', defaultDurationMin: 60 },
+    actualMinutes: null,
+  };
+
+  function setupReviewBlocks() {
+    const routes: Record<string, any> = {
+      '/api/powerdown': (url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') return { id: 'session-1', currentStep: 1, tomorrowPlan: [] };
+        if (init?.method === 'PATCH') return { ok: true };
+        return { id: 'session-1', currentStep: 1, tomorrowPlan: [] };
+      },
+      '/api/work-blocks': [MOCK_WORK_BLOCK],
+      '/api/aims/instances': [MOCK_AIM_INSTANCE],
+      '/api/tasks': [],
+      '/api/streaks': [],
+    };
+    global.fetch = createMockFetch(routes);
+  }
+
+  it('shows "Review Work Blocks & AIMs" step when AIM instances exist', async () => {
+    setupReviewBlocks();
+    const user = userEvent.setup();
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
+
+    await waitFor(() => expect(screen.getByText(/Step 1/)).toBeInTheDocument());
+
+    // Advance to step 2 which should be review_blocks
+    await user.click(screen.getByRole('button', { name: /Next Step/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Review Work Blocks/i)).toBeInTheDocument();
+    });
+  });
+
+  it('lists today AIM instances in the review_blocks step', async () => {
+    setupReviewBlocks();
+    const user = userEvent.setup();
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
+
+    await waitFor(() => expect(screen.getByText(/Step 1/)).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Next Step/i }));
+
+    await waitFor(() => {
+      // AIM category name should appear in the review list
+      expect(screen.getByText('Morning Run')).toBeInTheDocument();
+    });
+    // AIM tag visible
+    expect(screen.getAllByText('AIM').length).toBeGreaterThan(0);
+  });
+
+  it('patches AIM instances when advancing from review_blocks step', async () => {
+    setupReviewBlocks();
+    const user = userEvent.setup();
+    renderWithProviders(<PowerDownRitual onComplete={onComplete} />);
+
+    await waitFor(() => expect(screen.getByText(/Step 1/)).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Next Step/i }));
+
+    // Should be on review_blocks step now — pick Completed for the AIM
+    await waitFor(() => expect(screen.getByText('Morning Run')).toBeInTheDocument());
+
+    // Click Completed on the AIM row (there may be multiple 'Completed' buttons; find them all)
+    const completedButtons = screen.getAllByRole('button', { name: 'Completed' });
+    await user.click(completedButtons[completedButtons.length - 1]); // last = AIM row
+
+    // Advance to next step → should fire the AIM PATCH
+    await user.click(screen.getByRole('button', { name: /Next Step/i }));
+
+    await waitFor(() => {
+      const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+      const patchCalls = fetchMock.mock.calls.filter(
+        ([url, init]: [string, RequestInit]) =>
+          url.includes('/api/aims/instances/aim-1') && init?.method === 'PATCH',
+      );
+      expect(patchCalls.length).toBeGreaterThan(0);
+    });
+  });
+});
