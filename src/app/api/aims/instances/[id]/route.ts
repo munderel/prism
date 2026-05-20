@@ -63,7 +63,7 @@ export async function PATCH(
 
   const parsed = await parseBody(request, updateAimInstanceSchema);
   if ('error' in parsed) return parsed.error;
-  const { status, timeBlockStart, timeBlockEnd, isGroupOpen, activityNote, selectedActivity, taskIds } = parsed.data;
+  const { status, timeBlockStart, timeBlockEnd, isGroupOpen, activityNote, selectedActivity, taskIds, actualMinutes } = parsed.data;
 
   // Handle task assignment (Deep Work as task container)
   if (taskIds !== undefined) {
@@ -82,7 +82,8 @@ export async function PATCH(
     // If only taskIds was sent, return early
     const hasOtherFields = status !== undefined || timeBlockStart !== undefined
       || timeBlockEnd !== undefined || isGroupOpen !== undefined
-      || activityNote !== undefined || selectedActivity !== undefined;
+      || activityNote !== undefined || selectedActivity !== undefined
+      || actualMinutes !== undefined;
 
     if (!hasOtherFields) {
       const instance = await prisma.aimInstance.findUnique({
@@ -109,6 +110,7 @@ export async function PATCH(
   if (isGroupOpen !== undefined) updateData.isGroupOpen = isGroupOpen;
   if (activityNote !== undefined) updateData.activityNote = activityNote;
   if (selectedActivity !== undefined) updateData.selectedActivity = selectedActivity;
+  if (actualMinutes !== undefined) updateData.actualMinutes = actualMinutes;
 
   const isNowCompleting = status === 'COMPLETED' && existing.status !== 'COMPLETED';
 

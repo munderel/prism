@@ -30,6 +30,7 @@ import {
 import { fetchTaskWorkBlockHints, patchWorkBlock, deleteWorkBlock } from '@/lib/work-blocks-client';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { ScheduledItemGoals } from '@/components/scheduled-item-goals/ScheduledItemGoals';
+import { CompletionReviewRow } from '@/components/shared/CompletionReviewRow';
 
 // Power Down steps — reordered per Prism overhaul spec (2026-03-28)
 // 1. Review Today → 2. [Log Process KPIs (conditional)] → 2/3. Weekly Goals & Tasks → ...
@@ -264,6 +265,9 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
   const [blockReviewPicks, setBlockReviewPicks] = useState<Record<string, 'COMPLETED' | 'PARTIAL' | 'MISSED'>>({});
   const [blockReviewNotes, setBlockReviewNotes] = useState<Record<string, string>>({});
   const [blockReviewActual, setBlockReviewActual] = useState<Record<string, number>>({});
+  // AIM instance completion picks for the review_blocks step (keyed by aim instance id)
+  const [aimReviewPicks, setAimReviewPicks] = useState<Record<string, 'COMPLETED' | 'SKIPPED' | 'MISSED'>>({});
+  const [aimReviewActual, setAimReviewActual] = useState<Record<string, number>>({});
   const [taskExtendOpen, setTaskExtendOpen] = useState<Record<string, boolean>>({});
   const [taskExtendEstimate, setTaskExtendEstimate] = useState<Record<string, number>>({});
   const [taskExtendDueDate, setTaskExtendDueDate] = useState<Record<string, string>>({});
@@ -644,7 +648,23 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
       const startISO = start.toISOString();
       const endISO = new Date(next.getTime() - 1).toISOString();
       const res = await fetch(`/api/aims/instances?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`);
-      if (res.ok) setAimInstances(await res.json());
+      if (res.ok) {
+        const instances: PowerdownAimInstance[] = await res.json();
+        setAimInstances(instances);
+        // Pre-populate review picks from persisted AIM status
+        const picks: Record<string, 'COMPLETED' | 'SKIPPED' | 'MISSED'> = {};
+        const actual: Record<string, number> = {};
+        instances.forEach((a) => {
+          if (a.status === 'COMPLETED' || a.status === 'SKIPPED' || a.status === 'MISSED') {
+            picks[a.id] = a.status as 'COMPLETED' | 'SKIPPED' | 'MISSED';
+          }
+          if ((a as any).actualMinutes != null) {
+            actual[a.id] = (a as any).actualMinutes as number;
+          }
+        });
+        setAimReviewPicks(picks);
+        setAimReviewActual(actual);
+      }
     } catch {
       // Non-critical
     }
@@ -742,8 +762,8 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
   const STEPS = useMemo(() => {
     const list = [
       { key: 'review_today', title: 'Review Today', description: 'Review today\'s completions and wins.' },
-      ...(todayWorkBlocks.length > 0
-        ? [{ key: 'review_blocks', title: 'Review Work Blocks', description: 'Mark each of today\'s scheduled work blocks as completed, partial, or missed.' }]
+      ...(todayWorkBlocks.length > 0 || aimInstances.length > 0
+        ? [{ key: 'review_blocks', title: 'Review Work Blocks & AIMs', description: 'Mark each of today\'s work blocks and AIM sessions as completed, partial/skipped, or missed.' }]
         : []),
       ...(dueKpiProcesses.length > 0
         ? [{ key: 'log_kpis', title: 'Log Process KPIs', description: 'Log KPI progress for processes scheduled today.' }]
@@ -759,7 +779,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
       { key: 'gratitude', title: 'Daily Gratitude', description: 'Spend a few minutes reflecting on what you\'re grateful for.' },
     ];
     return list.map((s, i) => ({ ...s, num: i + 1 }));
-  }, [dueKpiProcesses, todayWorkBlocks.length]);
+  }, [dueKpiProcesses, todayWorkBlocks.length, aimInstances.length]);
 
   // Get current step key for rendering
   const currentStepKey = STEPS[currentStep - 1]?.key || 'review_today';
@@ -1036,9 +1056,9 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
     if (!session || saving) return;
     const next = currentStep + 1;
 
-    // When leaving the review_blocks step, persist reviews and write the aggregated PowerdownWorkBlockReview row.
-    if (currentStepKey === 'review_blocks' && todayWorkBlocks.length > 0) {
-      const reviews = todayWorkBlocks
+    // When leaving the review_blocks step, persist reviews for WorkBlocks AND AIM instances.
+    if (currentStepKey === 'review_blocks') {
+      const workBlockReviews = todayWorkBlocks
         .filter((b) => !!blockReviewPicks[b.id])
         .map((b) => {
           const scheduledMin = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
@@ -1049,16 +1069,34 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
             notes: blockReviewNotes[b.id]?.trim() || null,
           };
         });
-      if (reviews.length > 0) {
+      if (workBlockReviews.length > 0) {
         try {
           await fetch('/api/work-blocks/review', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ powerdownSessionId: session.id, reviews }),
+            body: JSON.stringify({ powerdownSessionId: session.id, reviews: workBlockReviews }),
           });
         } catch {
           toast.error('Failed to save work block reviews');
         }
+      }
+
+      // Persist AIM instance completions in parallel
+      const aimEntries = Object.entries(aimReviewPicks);
+      if (aimEntries.length > 0) {
+        await Promise.allSettled(
+          aimEntries.map(([aimId, status]) => {
+            const body: Record<string, unknown> = { status };
+            const actual = aimReviewActual[aimId];
+            if (typeof actual === 'number') body.actualMinutes = actual;
+            return fetch(`/api/aims/instances/${aimId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+          }),
+        );
+        void mutate('/api/aims/instances');
       }
     }
 
@@ -1501,14 +1539,14 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
               );
             })()}
 
-            {/* Review Work Blocks (conditional): per-block completion confirmation */}
+            {/* Review Work Blocks & AIMs (conditional): per-item completion confirmation */}
             {currentStepKey === 'review_blocks' && (
               <div className="space-y-3">
                 <p className="text-sm text-[var(--text-secondary)]">
-                  Did you complete today&apos;s scheduled work blocks? Pick one for each — this feeds your progress history.
+                  Did you complete today&apos;s scheduled work blocks and AIM sessions? Pick one for each — this feeds your progress history.
                 </p>
-                {todayWorkBlocks.length === 0 && (
-                  <p className="text-sm text-[var(--text-muted)]">No work blocks scheduled today.</p>
+                {todayWorkBlocks.length === 0 && aimInstances.length === 0 && (
+                  <p className="text-sm text-[var(--text-muted)]">Nothing to review yet — schedule some work.</p>
                 )}
                 {todayWorkBlocks.map((b) => {
                   const scheduledMin = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
@@ -1635,6 +1673,40 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
                     </div>
                   );
                 })}
+
+                {/* AIM instances for today */}
+                {aimInstances.length > 0 && (
+                  <div className="space-y-2 border-t border-[var(--border-color)] pt-3 mt-2">
+                    <p className="text-xs font-semibold text-teal-400 uppercase tracking-widest mb-1">
+                      Today&apos;s AIM Sessions
+                    </p>
+                    {aimInstances.map((a) => {
+                      const targetMin = (a as any).aimCategory?.defaultDurationMin ?? 60;
+                      return (
+                        <CompletionReviewRow
+                          key={`aim-${a.id}`}
+                          item={{
+                            kind: 'aim',
+                            id: a.id,
+                            scheduledDate: a.scheduledDate,
+                            timeBlockStart: a.timeBlockStart,
+                            timeBlockEnd: a.timeBlockEnd,
+                            status: (aimReviewPicks[a.id] ?? a.status) as 'SCHEDULED' | 'COMPLETED' | 'SKIPPED' | 'MISSED',
+                            aimCategory: a.aimCategory,
+                            actualMinutes: (a as any).actualMinutes ?? null,
+                            targetMinutes: targetMin,
+                          }}
+                          currentStatus={aimReviewPicks[a.id]}
+                          currentActualMinutes={aimReviewActual[a.id]}
+                          onChange={(status, actualMinutes) => {
+                            setAimReviewPicks((prev) => ({ ...prev, [a.id]: status as 'COMPLETED' | 'SKIPPED' | 'MISSED' }));
+                            setAimReviewActual((prev) => ({ ...prev, [a.id]: actualMinutes }));
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
