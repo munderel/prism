@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { m } from 'framer-motion';
-import { Building2, User, Users, Target, Filter, CalendarClock, Trash2, Calendar, HelpCircle, Zap, UserCog } from 'lucide-react';
+import { Building2, User, Users, Target, Filter, CalendarClock, Trash2, Calendar, HelpCircle, Zap, UserCog, UserCheck } from 'lucide-react';
 import { CompanyStackAssignmentsModal } from '@/components/goals/CompanyStackAssignmentsModal';
 import { getLocalDateString } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -32,6 +32,8 @@ export default function GoalsPage() {
   const [showGuide, setShowGuide] = useState(false);
   const [viewTab, setViewTab] = useState<'stack' | 'daily'>('stack');
   const [assignmentsStack, setAssignmentsStack] = useState<{ id: string; name: string } | null>(null);
+  // Mine/All filter: default to "mine" on company stacks
+  const [companyFilter, setCompanyFilter] = useState<'mine' | 'all'>('mine');
 
   // Fetch today's tasks for Daily Actions view
   const today = getLocalDateString();
@@ -317,7 +319,36 @@ export default function GoalsPage() {
 
       {/* Filters */}
       {selectedStack && (
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          {/* Mine / All filter — only shown for company stacks */}
+          {(selectedStack.isCompany || selectedStack.visibility === 'company') && (
+            <div className="flex items-center rounded-lg border border-[var(--border-color)] overflow-hidden">
+              <button
+                onClick={() => setCompanyFilter('mine')}
+                aria-pressed={companyFilter === 'mine'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  companyFilter === 'mine'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                Mine
+              </button>
+              <button
+                onClick={() => setCompanyFilter('all')}
+                aria-pressed={companyFilter === 'all'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  companyFilter === 'all'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" />
+                All
+              </button>
+            </div>
+          )}
           <button
             onClick={() => { setShowInProgress(!showInProgress); if (!showInProgress) setShowDueToday(false); }}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -368,6 +399,11 @@ export default function GoalsPage() {
               isAdmin={isAdmin}
               showInProgress={showInProgress}
               showDueToday={showDueToday}
+              mineFilter={
+                (selectedStack.isCompany || selectedStack.visibility === 'company')
+                  ? companyFilter === 'mine'
+                  : undefined
+              }
             />
           </ErrorBoundary>
         </m.div>

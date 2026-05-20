@@ -41,6 +41,7 @@ interface GoalTreeItem {
   endDate: string | null;
   stackId: string;
   sortOrder: number;
+  isAssignedToMe?: boolean;
   tasks?: TaskTreeItem[];
   children?: GoalTreeItem[];
 }
@@ -62,6 +63,8 @@ interface GoalStackTreeProps {
   isAdmin: boolean;
   showInProgress?: boolean;
   showDueToday?: boolean;
+  /** When true, only show goals where isAssignedToMe is true (company stacks only). */
+  mineFilter?: boolean;
 }
 
 interface FlatItem {
@@ -164,6 +167,7 @@ export function GoalStackTree({
   isAdmin: _isAdmin,
   showInProgress,
   showDueToday,
+  mineFilter,
 }: GoalStackTreeProps) {
   const { data: goalsData, isLoading, mutate: mutateGoals } = useSWR(`/api/goals?stackId=${stackId}`);
   const { mutate: globalMutate } = useSWRConfig();
@@ -184,7 +188,19 @@ export function GoalStackTree({
         roots.push(node);
       }
     }
-    let items = flattenTree(roots);
+
+    // Filter: Mine — for company stacks, show only goals where isAssignedToMe is true.
+    // We filter roots before flattening so the whole subtree of a non-matching root is hidden.
+    // A root goal is "mine" if it or any of its descendants is assigned to me.
+    function isGoalOrDescendantMine(goal: GoalTreeItem): boolean {
+      if (goal.isAssignedToMe) return true;
+      return (goal.children ?? []).some(isGoalOrDescendantMine);
+    }
+    const filteredRoots = mineFilter
+      ? roots.filter(isGoalOrDescendantMine)
+      : roots;
+
+    let items = flattenTree(filteredRoots);
 
     // Filter: In Progress — show only goals whose status is IN_PROGRESS
     if (showInProgress) {
