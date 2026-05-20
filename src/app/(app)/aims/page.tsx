@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
 import {
   Flame,
@@ -110,13 +110,10 @@ export default function AimsPage() {
   const { data: userAims, isLoading: aimsLoading, mutate: mutateAims } = useSWR<UserAim[]>('/api/aims/user');
 
   // One-time streak-update banner (localStorage, client-only).
-  const [bannerDismissed, setBannerDismissed] = useState<boolean>(true); // default true to avoid flash
-  // Read localStorage only on the client (avoid SSR mismatch).
-  useState(() => {
-    if (typeof window !== 'undefined') {
-      setBannerDismissed(localStorage.getItem(STREAK_BANNER_KEY) === '1');
-    }
-  });
+  const [bannerDismissed, setBannerDismissed] = useState<boolean>(true); // default true to avoid SSR flash
+  useEffect(() => {
+    setBannerDismissed(localStorage.getItem(STREAK_BANNER_KEY) === '1');
+  }, []);
   const dismissBanner = () => {
     if (typeof window !== 'undefined') localStorage.setItem(STREAK_BANNER_KEY, '1');
     setBannerDismissed(true);
