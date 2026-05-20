@@ -159,8 +159,8 @@ export function MeetingsManager({ open, onClose, onUpdate, isAdmin = false }: Me
   // MeetingEditor handles submit + non-Google warnings internally and notifies
   // back here so the list refreshes. Warnings surface for both create and
   // edit — the attendee-deliverability advisory is just as relevant after a
-  // re-save (attendee set may have changed).
-  const handleEditorSaved = (_: unknown, warnings: string[]) => {
+  // re-save when attendees were added.
+  const handleEditorSaved = (_saved: Meeting, warnings: string[]) => {
     for (const w of warnings) toast.info(w);
     resetForm();
     fetchMeetings();

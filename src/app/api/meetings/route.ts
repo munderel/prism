@@ -180,13 +180,17 @@ export async function POST(request: NextRequest) {
   // — Workspace domains do receive it, free-tier non-Google domains may not).
   // We can't tell from a domain string alone, so surface a single advisory
   // when there are any attendees; better to set expectations than to risk
-  // false-positive per-address warnings.
+  // false-positive per-address warnings. Past-tense wording — by the time the
+  // user sees this, the invites have already been dispatched.
   const warnings: string[] = [];
-  const attendeeCount = Array.isArray(meeting.attendeeIds) ? (meeting.attendeeIds as string[]).length : 0;
+  const reference = finalMeeting ?? meeting;
+  const attendeeCount = Array.isArray(reference.attendeeIds)
+    ? (reference.attendeeIds as string[]).length
+    : 0;
   if (attendeeCount > 0) {
     warnings.push(
-      'Attendees without Google Calendar may need to subscribe to this calendar to see the event.',
+      'Invites sent. Attendees without Google Calendar may need to subscribe to this calendar to see the event.',
     );
   }
-  return Response.json({ ...(finalMeeting ?? meeting), warnings }, { status: 201 });
+  return Response.json({ ...reference, warnings }, { status: 201 });
 }
