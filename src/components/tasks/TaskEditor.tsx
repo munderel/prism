@@ -217,6 +217,10 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
     return users.some((u: any) => u.id === seed.id) ? users : [seed, ...users];
   }, [users, task?.assignee]);
 
+  const selectedAssignee = assigneeId
+    ? assigneeOptions.find((u: any) => u.id === assigneeId) ?? null
+    : null;
+
   return (
     <AnimatePresence>
       <m.div
@@ -244,14 +248,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
               {isEditing ? 'Edit Task' : 'New Task'}
             </h2>
             <div className="flex items-center gap-2">
-              {(() => {
-                const selectedUser = assigneeId
-                  ? assigneeOptions.find((u: any) => u.id === assigneeId)
-                  : null;
-                return selectedUser ? (
-                  <Avatar user={selectedUser} size="sm" />
-                ) : null;
-              })()}
+              {selectedAssignee && <Avatar user={selectedAssignee} size="sm" />}
               <button aria-label="Close" title="Close" onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
                 <X className="h-5 w-5" />
               </button>

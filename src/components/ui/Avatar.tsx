@@ -1,5 +1,7 @@
 'use client';
 
+import type { CSSProperties } from 'react';
+
 /** Presentational avatar component.
  *
  * Renders user.image when present; falls back to initials circle otherwise.
@@ -49,7 +51,7 @@ export function Avatar({ user, size = 'md', className = '' }: AvatarProps) {
   const initials = getInitials(user.name);
   const label = user.name ?? 'User';
 
-  const baseStyle: React.CSSProperties = {
+  const baseStyle: CSSProperties = {
     width: px,
     height: px,
     minWidth: px,
@@ -65,7 +67,7 @@ export function Avatar({ user, size = 'md', className = '' }: AvatarProps) {
         alt={label}
         title={label}
         style={baseStyle}
-        className={`object-cover flex-shrink-0 ${className}`}
+        className={`object-cover flex-shrink-0${className ? ` ${className}` : ''}`}
       />
     );
   }
@@ -75,7 +77,7 @@ export function Avatar({ user, size = 'md', className = '' }: AvatarProps) {
       title={label}
       aria-label={label}
       style={baseStyle}
-      className={`inline-flex items-center justify-center flex-shrink-0 bg-white/10 border border-white/20 font-semibold uppercase text-[var(--text-secondary)] select-none ${className}`}
+      className={`inline-flex items-center justify-center flex-shrink-0 bg-white/10 border border-white/20 font-semibold uppercase text-[var(--text-secondary)] select-none${className ? ` ${className}` : ''}`}
     >
       {initials}
     </span>

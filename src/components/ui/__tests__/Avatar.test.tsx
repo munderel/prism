@@ -101,10 +101,21 @@ describe('Avatar', () => {
   });
 
   describe('className prop', () => {
-    it('passes className to the rendered element', () => {
+    it('passes className to the initials fallback element', () => {
       render(<Avatar user={{ name: 'A', image: null }} className="my-custom-class" />);
       const el = screen.getByTitle('A');
       expect(el).toHaveClass('my-custom-class');
+    });
+
+    it('passes className to the <img> when an image is set', () => {
+      render(
+        <Avatar
+          user={{ name: 'Alice', image: 'https://example.com/alice.jpg' }}
+          className="my-custom-class"
+        />,
+      );
+      const img = screen.getByRole('img');
+      expect(img).toHaveClass('my-custom-class');
     });
   });
 });
