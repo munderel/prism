@@ -1,11 +1,64 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackWriteAccess, isStackPrivileged, verifyStackMembership } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackWriteAccess, checkStackReadAccess, isStackPrivileged, verifyStackMembership } from '@/lib/auth-guard';
 import { cascadeKpiUpdate, recalculateMonthlyNumericKpi, recalculateBinaryKpi } from '@/lib/kpi-progress';
-import { pickDefined, notFoundResponse } from '@/lib/api-helpers';
+import { pickDefined, notFoundResponse, cacheHeaders } from '@/lib/api-helpers';
 import { parseBody, updateKpiSchema } from '@/lib/schemas';
 
 const KPI_PROGRESS_FIELDS = ['actualValue', 'isComplete'] as const;
+
+const AIM_CONTRIBUTIONS_LIMIT = 5;
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const auth = await requireAuth();
+  if ('error' in auth) return authError(auth);
+
+  const kpi = await prisma.kpi.findUnique({
+    where: { id },
+    include: { goal: { include: { stack: true } } },
+  });
+  if (!kpi || kpi.goal.deletedAt !== null) return notFoundResponse('KPI');
+
+  const accessDenied = await checkStackReadAccess(
+    kpi.goal.stack,
+    auth.userId,
+    auth.session.user.isAdmin,
+    { goalId: kpi.goalId },
+  );
+  if (accessDenied) return accessDenied;
+
+  // Recent AIM contributions: AimInstance completions where the category is
+  // linked to this KPI, most recent 5, for the authenticated user.
+  const recentContributions = await prisma.aimInstance.findMany({
+    where: {
+      userId: auth.userId,
+      completedAt: { not: null },
+      aimCategory: { linkedKpiId: id },
+    },
+    orderBy: { completedAt: 'desc' },
+    take: AIM_CONTRIBUTIONS_LIMIT,
+    select: {
+      id: true,
+      completedAt: true,
+      aimCategory: {
+        select: { name: true, kpiIncrement: true },
+      },
+    },
+  });
+
+  const contributions = recentContributions.map((inst) => ({
+    instanceId: inst.id,
+    completedAt: inst.completedAt,
+    aimName: inst.aimCategory.name,
+    increment: inst.aimCategory.kpiIncrement ?? 1,
+  }));
+
+  return Response.json({ kpi, aimContributions: contributions }, { headers: cacheHeaders() });
+}
 
 /**
  * Fetch a KPI and verify the caller may modify it.
