@@ -17,6 +17,7 @@ import {
   type TaskScheduleState,
 } from '@/lib/workblock-progress';
 import { formatDateOnly } from '@/lib/date-utils';
+import { Avatar } from '@/components/ui/Avatar';
 
 const SCHEDULE_STATE_STYLES: Record<TaskScheduleState, { label: string; className: string }> = {
   UNSCHEDULED: { label: 'Unscheduled', className: 'bg-gray-500/15 text-gray-400' },
@@ -177,13 +178,8 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit, o
 
         {/* Icons */}
         <div className="flex items-center gap-2">
-          {task.assignee?.image && (
-            <img
-              src={task.assignee.image}
-              alt={task.assignee.name ?? ''}
-              title={task.assignee.name ?? ''}
-              className="h-5 w-5 rounded-full flex-shrink-0"
-            />
+          {task.assignee && (
+            <Avatar user={task.assignee} size={20} />
           )}
           {task.goal && (
             <span title={task.goal.title}>

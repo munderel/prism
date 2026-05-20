@@ -8,6 +8,7 @@ import { useUserSettings } from '@/hooks/useUserSettings';
 import { WorkBlocksSection } from './WorkBlocksSection';
 import { SplitTaskModal } from './SplitTaskModal';
 import { parseDurationToMinutes, formatMinutesCompact } from '@/lib/task-utils';
+import { Avatar } from '@/components/ui/Avatar';
 
 const DURATION_PRESET_GROUPS: Array<{ label: string; presets: Array<{ label: string; minutes: number }> }> = [
   {
@@ -216,6 +217,10 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
     return users.some((u: any) => u.id === seed.id) ? users : [seed, ...users];
   }, [users, task?.assignee]);
 
+  const selectedAssignee = assigneeId
+    ? assigneeOptions.find((u: any) => u.id === assigneeId) ?? null
+    : null;
+
   return (
     <AnimatePresence>
       <m.div
@@ -242,9 +247,12 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
             <h2 id="task-editor-title" className="text-lg font-semibold text-[var(--text-primary)]">
               {isEditing ? 'Edit Task' : 'New Task'}
             </h2>
-            <button aria-label="Close" title="Close" onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {selectedAssignee && <Avatar user={selectedAssignee} size="sm" />}
+              <button aria-label="Close" title="Close" onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
