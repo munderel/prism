@@ -1,13 +1,14 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { m } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, PlayCircle, Trash2 } from 'lucide-react';
 import { PRIORITY_DOT_COLORS, TASK_STATUS_COLORS } from '@/lib/goal-constants';
 import { isTaskOverdue } from '@/lib/task-utils';
 import { formatDateOnly } from '@/lib/date-utils';
 import { Avatar } from '@/components/ui/Avatar';
+import { StartNowPopover } from '@/components/tasks/StartNowPopover';
 
 interface TaskCardInlineProps {
   task: any;
@@ -27,6 +28,10 @@ export const TaskCardInline = React.memo(function TaskCardInline({
   const router = useRouter();
   const isDone = task.status === 'DONE';
   const isOverdue = isTaskOverdue(task);
+
+  const startNowBtnRef = useRef<HTMLButtonElement>(null);
+  const [startNowOpen, setStartNowOpen] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
 
   return (
     <m.div
@@ -112,6 +117,18 @@ export const TaskCardInline = React.memo(function TaskCardInline({
         {/* Hover actions */}
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
+            ref={startNowBtnRef}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAnchorRect(startNowBtnRef.current?.getBoundingClientRect() ?? null);
+              setStartNowOpen(true);
+            }}
+            className="rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-indigo-400"
+            title="Start Now"
+          >
+            <PlayCircle className="h-3.5 w-3.5" />
+          </button>
+          <button
             onClick={(e) => { e.stopPropagation(); router.push(`/tasks/${task.id}/edit`); }}
             className="rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
             title="Edit task"
@@ -127,6 +144,14 @@ export const TaskCardInline = React.memo(function TaskCardInline({
           </button>
         </div>
       </div>
+
+      {startNowOpen && (
+        <StartNowPopover
+          task={task}
+          anchorRect={anchorRect}
+          onClose={() => setStartNowOpen(false)}
+        />
+      )}
     </m.div>
   );
 });
