@@ -6,6 +6,23 @@ import { IdeaStatus } from '@prisma/client';
 const hhmmTime = z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:mm format').optional().nullable();
 const reviewDuration = z.number().int().min(1).max(480).optional().nullable();
 
+/** Accept bare YYYY-MM-DD or any string `new Date(...)` can parse. Rejects
+ *  garbage at the API boundary so callers get a structured 400 instead of a
+ *  Prisma 500. Empty/null short-circuit because the field is optional. */
+const dateInputString = z
+  .string()
+  .optional()
+  .nullable()
+  .refine(
+    (v) =>
+      v === null ||
+      v === undefined ||
+      v === '' ||
+      /^\d{4}-\d{2}-\d{2}$/.test(v) ||
+      !Number.isNaN(new Date(v).getTime()),
+    { message: 'Must be YYYY-MM-DD or a valid ISO datetime' },
+  );
+
 // === AUTH ===
 
 export const registerSchema = z.object({
@@ -28,7 +45,7 @@ export const createTaskSchema = z.object({
   title: z.string().min(1, 'Title is required').max(500),
   description: z.string().max(5000).optional().nullable(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-  dueDate: z.string().optional().nullable(),
+  dueDate: dateInputString,
   goalId: z.string().optional().nullable(),
   processId: z.string().optional().nullable(),
   ownerId: z.string().optional(),
@@ -50,7 +67,7 @@ export const updateTaskSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters').max(500).optional(),
   description: z.string().max(5000).optional().nullable(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-  dueDate: z.string().optional().nullable(),
+  dueDate: dateInputString,
   timeBlockStart: z.string().optional().nullable(),
   timeBlockEnd: z.string().optional().nullable(),
   startTime: z.string().optional().nullable(),

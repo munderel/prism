@@ -39,6 +39,21 @@ vi.mock('@/lib/date-utils', () => {
     if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
     return new Date(`${s}T00:00:00.000Z`);
   };
+  // Mirror the real impl: bare YYYY-MM-DD passes through, otherwise read via
+  // getUTC* components. Tests pass mid-day-UTC instants so this matches the
+  // intended calendar day under any viewer timezone (note: the real impl uses
+  // getUTC*; the test mock follows that contract, not the local-tz semantic
+  // of getLocalDateString).
+  const toDateOnlyInputValue = (value: Date | string | null | undefined): string => {
+    if (value === null || value === undefined || value === '') return '';
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const d = typeof value === 'string' ? new Date(value) : value;
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
   return {
     parseLocalDate: vi.fn((d: string) => new Date(d)),
     parseDateOnly: vi.fn(parseDateOnly),
@@ -46,13 +61,16 @@ vi.mock('@/lib/date-utils', () => {
       if (!s) return null;
       return parseDateOnly(s) ?? new Date(s);
     }),
-    // Tests pass mid-day-UTC instants so getUTC* reads the intended day.
+    // NOTE: real impl uses local TZ; tests pass mid-day-UTC dates so this is
+    // equivalent for the cases under test. If a future test passes near-midnight
+    // values it must reckon with the mismatch.
     getLocalDateString: vi.fn((d: Date) => {
       const y = d.getUTCFullYear();
       const m = String(d.getUTCMonth() + 1).padStart(2, '0');
       const day = String(d.getUTCDate()).padStart(2, '0');
       return `${y}-${m}-${day}`;
     }),
+    toDateOnlyInputValue: vi.fn(toDateOnlyInputValue),
   };
 });
 
@@ -997,3 +1015,74 @@ describe('DELETE /api/tasks/[id]', () => {
     expect(mockTaskDelete).toHaveBeenCalledWith({ where: { id: 'task-1' } });
   });
 });
+
+// ─── dueDate UTC-anchor round-trip ────────────────────────────────────────────
+//
+// PR #27 invariant: a date-only dueDate stored on a task must end up as UTC
+// midnight (.toISOString() ends with 'T00:00:00.000Z') so the dashboard groups
+// it under the same calendar day across every viewer timezone. Lock that
+// invariant in for both POST (create) and PATCH (update).
+
+describe('dueDate write-side UTC-midnight invariant', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(authedResult as any);
+    mockCheckStackWriteAccess.mockResolvedValue(null);
+    mockTaskCreate.mockResolvedValue({ id: 'task-1' } as any);
+  });
+
+  it('POST persists a bare YYYY-MM-DD dueDate as UTC midnight', async () => {
+    mockParseBody.mockResolvedValue({
+      data: { taskType: 'REACT', title: 'Task', dueDate: '2026-04-05' },
+    } as any);
+
+    const req = new Request('http://localhost/api/tasks', { method: 'POST' }) as any;
+    await POST(req);
+
+    const callArg = mockTaskCreate.mock.calls[0][0] as any;
+    const stored: Date = callArg.data.dueDate;
+    expect(stored).toBeInstanceOf(Date);
+    expect(stored.toISOString()).toBe('2026-04-05T00:00:00.000Z');
+  });
+
+  it('PATCH persists a bare YYYY-MM-DD dueDate as UTC midnight', async () => {
+    mockTaskFindUnique.mockResolvedValue({
+      id: 'task-1',
+      ownerId: 'user1',
+      assigneeId: 'user1',
+      processId: null,
+      goalId: null,
+      processExecution: null,
+    } as any);
+    mockParseBody.mockResolvedValue({
+      data: { dueDate: '2026-04-05' },
+    } as any);
+    mockTaskUpdate.mockResolvedValue({ id: 'task-1' } as any);
+
+    const req = createPatchRequest({ dueDate: '2026-04-05' });
+    await PATCH(req, { params });
+
+    const callArg = mockTaskUpdate.mock.calls[0][0] as any;
+    const stored: Date = callArg.data.dueDate;
+    expect(stored).toBeInstanceOf(Date);
+    expect(stored.toISOString()).toBe('2026-04-05T00:00:00.000Z');
+  });
+});
+
+// ─── GET /api/tasks malformed date param returns 400 ──────────────────────────
+
+describe('GET /api/tasks date validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(authedResult as any);
+    mockTaskFindMany.mockResolvedValue([] as any);
+    mockGoalStackFindMany.mockResolvedValue([] as any);
+  });
+
+  it('returns 400 when ?date= is not parseable', async () => {
+    const req = new Request('http://localhost/api/tasks?date=not-a-date') as any;
+    const res = await GET(req);
+    expect(res.status).toBe(400);
+  });
+});
+
