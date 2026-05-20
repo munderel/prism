@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
         goal: { select: GOAL_WITH_PARENT_SELECT },
         _count: { select: { comments: true, children: true } },
         children: { select: { id: true, title: true, status: true, priority: true, dueDate: true, completedAt: true } },
-        workBlocks: { select: { id: true, start: true, end: true, completionStatus: true, actualMinutes: true } },
+        workBlocks: { orderBy: { start: 'asc' }, select: { id: true, start: true, end: true, completionStatus: true, actualMinutes: true } },
         clearGoals: { select: { id: true, isComplete: true, workBlockId: true } },
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
@@ -209,6 +209,10 @@ export async function GET(request: NextRequest) {
 
   const tasks = await prisma.task.findMany({
     where,
+    // Default response ordering used by non-DailyTaskList consumers (dashboard
+    // focus view, focus mode, etc.). DailyTaskList re-sorts client-side via
+    // compareTasksByScheduledTime so its "scheduled-time-first" rule isn't
+    // applied here — see src/lib/task-ordering.ts.
     orderBy: [
       { priority: 'desc' },
       { dueDate: 'asc' },
