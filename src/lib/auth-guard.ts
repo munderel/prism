@@ -138,6 +138,17 @@ export async function checkStackReadAccess(
 }
 
 /**
+ * True when the caller is admin or the stack owner — the "structural write"
+ * privileged set used by routes that gate KPI/goal mutations.
+ */
+export function isStackPrivileged(
+  stack: { ownerId: string },
+  auth: { userId: string; session: { user: { isAdmin: boolean } } },
+): boolean {
+  return auth.session.user.isAdmin || stack.ownerId === auth.userId;
+}
+
+/**
  * Write access to a goal stack. Returns `null` if allowed, or a 403 `Response`.
  * Two modes via `opts.restricted`:
  * - `restricted: false` (default) — structural writes: admins and stack owner only.
