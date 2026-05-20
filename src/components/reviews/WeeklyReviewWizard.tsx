@@ -11,7 +11,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import {
   ChevronRight, ChevronLeft, PartyPopper,
   Target, ListTodo, AlertTriangle, Star, Calendar,
-  Wrench, BarChart3, FileText,
+  Wrench, BarChart3, FileText, Clock,
 } from 'lucide-react';
 
 import { getLocalDateString, getUpcomingWeekBoundaries } from '@/lib/date-utils';
@@ -19,6 +19,7 @@ import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 import { StepGoalsReview } from './weekly-steps/StepGoalsReview';
 import { StepTop3Tasks } from './weekly-steps/StepTop3Tasks';
 import { SuccessesAndDifficultiesStep } from './shared/SuccessesAndDifficultiesStep';
+import { StepLastWeekReview } from './weekly-steps/StepLastWeekReview';
 import { StepMaintenanceReview } from './weekly-steps/StepMaintenanceReview';
 import { StepNotesCompletion } from './weekly-steps/StepNotesCompletion';
 import { InlineTaskCreator } from './weekly-steps/InlineTaskCreator';
@@ -43,6 +44,7 @@ import { useWorkBlockNameModal } from '@/hooks/useWorkBlockNameModal';
 // 7. Notes & Completion.
 const STEPS_BASE = [
   { key: 'goals_review',           title: 'Goals & Review',                  icon: Target,         description: 'Review and edit current goals, log KPIs, tick last week’s tasks, and report on company goals.' },
+  { key: 'last_week_review',       title: 'Review Last Week',                icon: Clock,          description: "Mark last week's work blocks and AIM sessions as completed, partial/skipped, or missed." },
   { key: 'successes_difficulties', title: 'Successes & Difficulties',        icon: AlertTriangle,  description: 'Capture wins and reflect on blockers from the past week.' },
   { key: 'create_tasks',           title: 'Create & Modify Tasks',           icon: ListTodo,       description: 'Add tasks linked to goals. Default assign self or select team member.' },
   { key: 'mit',                    title: 'Rank Top 3 Most Important Tasks', icon: Star,           description: 'Select #1, then #2, then #3 most important tasks for this week.' },
@@ -207,6 +209,19 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
   const upcomingWeekStartStr = getLocalDateString(upcomingWeekStart);
 
   const nextWeekEndStr = getLocalDateString(nextWeekEnd);
+
+  // Last week boundaries: Mon-Sun of the week before the current week.
+  // Computed from upcomingWeekStart (which is this week's Monday).
+  const lastWeekStartStr = useMemo(() => {
+    const d = new Date(upcomingWeekStart);
+    d.setDate(upcomingWeekStart.getDate() - 7);
+    return getLocalDateString(d);
+  }, [upcomingWeekStart]);
+  const lastWeekEndStr = useMemo(() => {
+    const d = new Date(upcomingWeekStart);
+    d.setDate(upcomingWeekStart.getDate() - 1);
+    return getLocalDateString(d);
+  }, [upcomingWeekStart]);
 
   // Planning steps (work_blocks, schedule_tasks) anchor the calendar to the
   // actual upcoming week — the Mon–Sun *after* the current week. The review is
@@ -549,6 +564,9 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
       case 'goals_review':
         await persistAnswer('goals_review', 'goals_review', goalsReviewSummary);
         break;
+      case 'last_week_review':
+        await persistAnswer('last_week_review', 'viewed', { viewed: true });
+        break;
       case 'successes_difficulties':
         await persistAnswer('successes_difficulties', 'text_list', { successes, difficulties });
         break;
@@ -775,6 +793,12 @@ export function WeeklyReviewWizard({ reviewId, isTeamReview }: WeeklyReviewWizar
             )}
             {step.key === 'process_kpi_log' && (
               <ProcessKpiLogStep processes={dueKpiProcesses} date={getLocalDateString()} />
+            )}
+            {step.key === 'last_week_review' && (
+              <StepLastWeekReview
+                lastWeekStart={lastWeekStartStr}
+                lastWeekEnd={lastWeekEndStr}
+              />
             )}
             {step.key === 'successes_difficulties' && (
               <SuccessesAndDifficultiesStep
