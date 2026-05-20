@@ -5,6 +5,7 @@ import { requireAuth, authError, requireTaskAccess } from '@/lib/auth-guard';
 import { NO_STORE } from '@/lib/api-helpers';
 import { parseBody, createWorkBlockSchema } from '@/lib/schemas';
 import { createGoogleEvent, getGoogleSyncInfo } from '@/lib/calendar';
+import { buildWorkBlockEventBody } from '@/lib/work-block-sync';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -120,11 +121,10 @@ export async function POST(request: NextRequest) {
       select: { timezone: true },
     });
     const tz = user?.timezone ?? 'America/New_York';
-    // mainObjective is the user-authored "what must happen in this block"
-    // string; it stays the canonical title across surfaces (calendar event,
-    // Google sync). The linked task title surfaces in the description.
-    const summary = block.mainObjective;
-    const description = `${taskTitle}\n${block.mainObjective}`;
+    const { summary, description } = buildWorkBlockEventBody({
+      taskTitle,
+      mainObjective: block.mainObjective,
+    });
     try {
       const gcalEvent = await createGoogleEvent(auth.userId, {
         summary,
