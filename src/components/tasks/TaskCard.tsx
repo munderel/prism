@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { m } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Pencil, Trash2, MessageSquare, RefreshCw, Target, Star, ListChecks, Clock } from 'lucide-react';
+import { Pencil, PlayCircle, Trash2, MessageSquare, RefreshCw, Target, Star, ListChecks, Clock } from 'lucide-react';
+import { StartNowPopover } from './StartNowPopover';
 import { PRIORITY_DOT_COLORS } from '@/lib/goal-constants';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { isTaskOverdue, subtaskDoneCount } from '@/lib/task-utils';
@@ -54,6 +55,10 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit: _
   const router = useRouter();
   const isDone = task.status === 'DONE';
   const isOverdue = isTaskOverdue(task);
+
+  const startNowBtnRef = useRef<HTMLButtonElement>(null);
+  const [startNowOpen, setStartNowOpen] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
 
   const blocks: WorkBlockForProgress[] = Array.isArray(task.workBlocks) ? task.workBlocks : [];
   const estimatedMinutes: number = typeof task.estimatedMinutes === 'number' ? task.estimatedMinutes : 60;
@@ -217,6 +222,18 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit: _
         {/* Hover actions */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
+            ref={startNowBtnRef}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAnchorRect(startNowBtnRef.current?.getBoundingClientRect() ?? null);
+              setStartNowOpen(true);
+            }}
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-indigo-400"
+            title="Start Now"
+          >
+            <PlayCircle className="h-4 w-4" />
+          </button>
+          <button
             onClick={(e) => { e.stopPropagation(); router.push(`/tasks/${task.id}/edit`); }}
             className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
             title="Edit task"
@@ -269,6 +286,14 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit: _
         <div onClick={(e) => e.stopPropagation()} className="pl-12 pr-4 mt-2">
           <ClearGoalsDisplay taskId={task.id} editable={false} compact />
         </div>
+      )}
+
+      {startNowOpen && (
+        <StartNowPopover
+          task={task}
+          anchorRect={anchorRect}
+          onClose={() => setStartNowOpen(false)}
+        />
       )}
     </m.div>
   );
