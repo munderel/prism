@@ -10,6 +10,7 @@ import { SplitTaskModal } from './SplitTaskModal';
 import { parseDurationToMinutes, formatMinutesCompact } from '@/lib/task-utils';
 import { Avatar } from '@/components/ui/Avatar';
 import { mutate } from 'swr';
+import { parseLocalDate, toTaskDueDateKey } from '@/lib/date-utils';
 
 const DURATION_PRESET_GROUPS: Array<{ label: string; presets: Array<{ label: string; minutes: number }> }> = [
   {
@@ -66,8 +67,28 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
   const [priority, setPriority] = useState(task?.priority ?? 'MEDIUM');
   const [status, setStatus] = useState(task?.status ?? 'TODO');
   const [dueDate, setDueDate] = useState(
-    task?.dueDate ? task.dueDate.split('T')[0] : ''
+    task?.dueDate ? toTaskDueDateKey(task.dueDate) : ''
   );
+  // dueTime: 'HH:mm' string or empty. Initialized from existing dueDate when
+  // the stored value has a non-UTC-midnight time.
+  //
+  // Convention: date-only dueDates are stored as UTC midnight
+  // (parseDateOnly → new Date('YYYY-MM-DDT00:00:00.000Z')).  When the user
+  // previously set a specific time, the ISO carries a non-zero UTC hours or
+  // minutes. We check getUTCHours/getUTCMinutes to detect the timed case, then
+  // display the corresponding LOCAL clock values (getHours/getMinutes) so the
+  // user sees the time they originally picked.
+  const [dueTime, setDueTime] = useState<string>(() => {
+    if (!task?.dueDate) return '';
+    const d = new Date(task.dueDate);
+    if (isNaN(d.getTime())) return '';
+    // UTC midnight → treat as date-only, no time shown
+    if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0) return '';
+    // Non-UTC-midnight → user previously set a time; display local clock values
+    const h = d.getHours();
+    const m = d.getMinutes();
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  });
   const [startTime, setStartTime] = useState(
     task?.startTime ? task.startTime.slice(0, 16) : ''
   );
@@ -238,7 +259,21 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
 
     try {
       const body: any = { title, description, priority, deliverable, estimatedMinutes: effectiveMinutes };
-      if (dueDate) body.dueDate = dueDate;
+      if (dueDate) {
+        if (dueTime) {
+          // Combine date + local time: parseLocalDate anchors to local midnight,
+          // then setHours/setMinutes applies the chosen time in local TZ.
+          // Calling toISOString() converts to UTC, which round-trips correctly:
+          // reading the ISO back with new Date() and extracting local h/m gives the same values.
+          const [hh, mm] = dueTime.split(':').map(Number);
+          const d = parseLocalDate(dueDate);
+          d.setHours(hh, mm, 0, 0);
+          body.dueDate = d.toISOString();
+        } else {
+          // No time: send bare YYYY-MM-DD string; server applies parseLocalDate → local-midnight UTC
+          body.dueDate = dueDate;
+        }
+      }
       if (preferredTimeStart) body.preferredTimeStart = preferredTimeStart;
       if (preferredTimeEnd) body.preferredTimeEnd = preferredTimeEnd;
       if (startTime) body.startTime = new Date(startTime).toISOString();
@@ -559,11 +594,30 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose }: TaskEdito
                 <input
                   type="date"
                   value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
+                  onChange={(e) => {
+                    setDueDate(e.target.value);
+                    // Clear time when date is cleared
+                    if (!e.target.value) setDueTime('');
+                  }}
                   className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
                 />
               </div>
             </div>
+
+            {/* Due time — only shown when a due date is set */}
+            {dueDate && (
+              <div>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1">Time (optional)</label>
+                <input
+                  type="time"
+                  value={dueTime}
+                  onChange={(e) => setDueTime(e.target.value)}
+                  aria-label="Due time (optional)"
+                  className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
+                />
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">Leave empty for an all-day task. Set a time to display the task at a specific hour on the calendar.</p>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm text-[var(--text-secondary)] mb-1">Start date</label>
