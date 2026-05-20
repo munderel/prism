@@ -12,7 +12,18 @@ import {
 import { buildWorkBlockEventBody } from '@/lib/work-block-sync';
 
 const blockInclude = {
-  task: { select: { id: true, title: true, taskType: true, priority: true, estimatedMinutes: true, status: true, dueDate: true } },
+  task: {
+    select: {
+      id: true,
+      title: true,
+      taskType: true,
+      priority: true,
+      estimatedMinutes: true,
+      status: true,
+      dueDate: true,
+      goal: { select: { id: true, title: true } },
+    },
+  },
   clearGoals: { orderBy: { sortOrder: 'asc' as const } },
 };
 
