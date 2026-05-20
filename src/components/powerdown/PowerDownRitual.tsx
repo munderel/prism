@@ -257,7 +257,8 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
     status: string;
     activityNote: string | null;
     selectedActivity: string | null;
-    aimCategory: { id: string; name: string };
+    actualMinutes: number | null;
+    aimCategory: { id: string; name: string; defaultDurationMin?: number };
   }
   const [todayWorkBlocks, setTodayWorkBlocks] = useState<PowerdownWorkBlock[]>([]);
   const [tomorrowWorkBlocks, setTomorrowWorkBlocks] = useState<PowerdownWorkBlock[]>([]);
@@ -658,8 +659,8 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
           if (a.status === 'COMPLETED' || a.status === 'SKIPPED' || a.status === 'MISSED') {
             picks[a.id] = a.status as 'COMPLETED' | 'SKIPPED' | 'MISSED';
           }
-          if ((a as any).actualMinutes != null) {
-            actual[a.id] = (a as any).actualMinutes as number;
+          if (a.actualMinutes != null) {
+            actual[a.id] = a.actualMinutes;
           }
         });
         setAimReviewPicks(picks);
@@ -1084,7 +1085,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
       // Persist AIM instance completions in parallel
       const aimEntries = Object.entries(aimReviewPicks);
       if (aimEntries.length > 0) {
-        await Promise.allSettled(
+        const results = await Promise.allSettled(
           aimEntries.map(([aimId, status]) => {
             const body: Record<string, unknown> = { status };
             const actual = aimReviewActual[aimId];
@@ -1096,6 +1097,16 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
             });
           }),
         );
+        const failures = results.filter(
+          (r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok),
+        );
+        if (failures.length > 0) {
+          toast.error(
+            failures.length === aimEntries.length
+              ? 'Failed to save AIM reviews'
+              : `Saved ${aimEntries.length - failures.length} of ${aimEntries.length} AIM reviews; ${failures.length} failed`,
+          );
+        }
         void mutate('/api/aims/instances');
       }
     }
@@ -1681,7 +1692,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
                       Today&apos;s AIM Sessions
                     </p>
                     {aimInstances.map((a) => {
-                      const targetMin = (a as any).aimCategory?.defaultDurationMin ?? 60;
+                      const targetMin = a.aimCategory?.defaultDurationMin ?? 60;
                       return (
                         <CompletionReviewRow
                           key={`aim-${a.id}`}
@@ -1693,7 +1704,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
                             timeBlockEnd: a.timeBlockEnd,
                             status: (aimReviewPicks[a.id] ?? a.status) as 'SCHEDULED' | 'COMPLETED' | 'SKIPPED' | 'MISSED',
                             aimCategory: a.aimCategory,
-                            actualMinutes: (a as any).actualMinutes ?? null,
+                            actualMinutes: a.actualMinutes ?? null,
                             targetMinutes: targetMin,
                           }}
                           currentStatus={aimReviewPicks[a.id]}
