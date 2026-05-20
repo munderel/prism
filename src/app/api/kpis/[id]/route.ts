@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackWriteAccess, verifyStackMembership } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackWriteAccess, isStackPrivileged, verifyStackMembership } from '@/lib/auth-guard';
 import { cascadeKpiUpdate, recalculateMonthlyNumericKpi, recalculateBinaryKpi } from '@/lib/kpi-progress';
 import { pickDefined, notFoundResponse } from '@/lib/api-helpers';
 import { parseBody, updateKpiSchema } from '@/lib/schemas';
@@ -44,7 +44,7 @@ async function loadAndAuthorizeKpi(
   // goal in the user's mental model and so should manage its KPIs end-to-end.
   // This widens access beyond what checkStackWriteAccess(restricted: false)
   // would grant (admin / stack owner only).
-  if (!intendedProgressOnly && !session.user.isAdmin && stack.ownerId !== userId) {
+  if (!intendedProgressOnly && !isStackPrivileged(stack, auth)) {
     const assignee = await prisma.goalAssignee.findUnique({
       where: { goalId_userId: { goalId: kpi.goalId, userId } },
       select: { id: true },
