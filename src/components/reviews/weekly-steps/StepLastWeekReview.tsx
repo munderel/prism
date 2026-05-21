@@ -18,7 +18,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSWRConfig } from 'swr';
-import { parseLocalDate } from '@/lib/date-utils';
+import { minutesBetween, parseLocalDate } from '@/lib/date-utils';
 import { CompletionReviewRow } from '@/components/shared/CompletionReviewRow';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -137,9 +137,7 @@ export function StepLastWeekReview({
     try {
       const blockPatches = Object.entries(blockPicks).map(([id, completionStatus]) => {
         const block = workBlocks.find((b) => b.id === id);
-        const scheduledMin = block
-          ? Math.max(0, Math.round((new Date(block.end).getTime() - new Date(block.start).getTime()) / 60000))
-          : 60;
+        const scheduledMin = block ? minutesBetween(block.start, block.end) : 60;
         const body: Record<string, unknown> = { completionStatus };
         body.actualMinutes = blockActual[id] ?? scheduledMin;
         return fetch(`/api/work-blocks/${id}`, {
@@ -211,12 +209,7 @@ export function StepLastWeekReview({
             Work Blocks
           </p>
           {workBlocks.map((b) => {
-            const scheduledMin = Math.max(
-              0,
-              Math.round(
-                (new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000,
-              ),
-            );
+            const scheduledMin = minutesBetween(b.start, b.end);
             return (
               <CompletionReviewRow
                 key={`wb-${b.id}`}
