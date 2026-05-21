@@ -3,6 +3,26 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { pickDefined, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
 
+/** Load a deliverable item and gate write access to owner/assignee/admin.
+ * Returns the item on success or a 404/403 Response on failure.
+ */
+async function requireDeliverableWrite(
+  id: string,
+  userId: string,
+  isAdmin: boolean,
+): Promise<{ id: string } | Response> {
+  const item = await prisma.deliverableItem.findUnique({
+    where: { id },
+    include: { task: { select: { ownerId: true, assigneeId: true } } },
+  });
+  if (!item) return notFoundResponse('DeliverableItem');
+  const { ownerId, assigneeId } = item.task;
+  if (!isAdmin && ownerId !== userId && assigneeId !== userId) {
+    return forbiddenResponse();
+  }
+  return { id: item.id };
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -11,17 +31,8 @@ export async function PATCH(
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const item = await prisma.deliverableItem.findUnique({
-    where: { id },
-    include: { task: { select: { ownerId: true, assigneeId: true } } },
-  });
-  if (!item) return notFoundResponse('DeliverableItem');
-
-  // Owner, assignee, or admin may mutate a deliverable item
-  const { ownerId, assigneeId } = item.task;
-  const isAdmin = auth.session.user.isAdmin;
-  const canWrite = isAdmin || ownerId === auth.userId || assigneeId === auth.userId;
-  if (!canWrite) return forbiddenResponse();
+  const gate = await requireDeliverableWrite(id, auth.userId, auth.session.user.isAdmin);
+  if (gate instanceof Response) return gate;
 
   let body: unknown;
   try {
@@ -68,16 +79,8 @@ export async function DELETE(
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
-  const item = await prisma.deliverableItem.findUnique({
-    where: { id },
-    include: { task: { select: { ownerId: true, assigneeId: true } } },
-  });
-  if (!item) return notFoundResponse('DeliverableItem');
-
-  const { ownerId, assigneeId } = item.task;
-  const isAdmin = auth.session.user.isAdmin;
-  const canWrite = isAdmin || ownerId === auth.userId || assigneeId === auth.userId;
-  if (!canWrite) return forbiddenResponse();
+  const gate = await requireDeliverableWrite(id, auth.userId, auth.session.user.isAdmin);
+  if (gate instanceof Response) return gate;
 
   await prisma.deliverableItem.delete({ where: { id } });
 
