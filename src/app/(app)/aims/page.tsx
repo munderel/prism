@@ -190,8 +190,9 @@ export default function AimsPage() {
 
   // Stacks for KPI picker
   const { data: stacks } = useSWR<GoalStack[]>('/api/stacks');
-  // Goals for selected stack — only fetch when a stack is selected
-  const { data: stackGoals } = useSWR<{ goals: Goal[] }>(
+  // Goals for selected stack — only fetch when a stack is selected.
+  // /api/goals?stackId=... returns a raw array (not { goals: [...] }).
+  const { data: stackGoals } = useSWR<Goal[]>(
     kpiPickerStackId ? `/api/goals?stackId=${kpiPickerStackId}` : null,
   );
   // KPIs for selected goal — only fetch when a goal is selected
@@ -742,7 +743,7 @@ export default function AimsPage() {
                     kpiPickerStackId={editingId === cat.id ? kpiPickerStackId : null}
                     kpiPickerGoalId={editingId === cat.id ? kpiPickerGoalId : null}
                     stacks={stacks}
-                    stackGoals={editingId === cat.id ? (stackGoals?.goals ?? []) : []}
+                    stackGoals={editingId === cat.id ? (stackGoals ?? []) : []}
                     numericKpisForGoal={editingId === cat.id ? numericKpisForGoal : []}
                     hasOnlyBinaryKpis={editingId === cat.id ? hasOnlyBinaryKpis : false}
                     onLinkedKpiChange={setEditLinkedKpiId}
@@ -805,7 +806,7 @@ export default function AimsPage() {
                   kpiPickerStackId={editingId === cat.id ? kpiPickerStackId : null}
                   kpiPickerGoalId={editingId === cat.id ? kpiPickerGoalId : null}
                   stacks={stacks}
-                  stackGoals={editingId === cat.id ? (stackGoals?.goals ?? []) : []}
+                  stackGoals={editingId === cat.id ? (stackGoals ?? []) : []}
                   numericKpisForGoal={editingId === cat.id ? numericKpisForGoal : []}
                   hasOnlyBinaryKpis={editingId === cat.id ? hasOnlyBinaryKpis : false}
                   onLinkedKpiChange={setEditLinkedKpiId}
