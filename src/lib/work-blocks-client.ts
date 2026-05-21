@@ -35,7 +35,7 @@ export async function deleteWorkBlock(id: string): Promise<Response> {
 }
 
 export interface TaskWorkBlockHints {
-  /** task.deliverable free-text, used as the create-mode main-objective default. */
+  /** First deliverable item's text, used as the create-mode main-objective default. */
   deliverable: string | null;
   /** Task-level (workBlockId=null) clear goals available to carry into a new workblock. */
   clearGoals: TaskLevelClearGoal[];
@@ -47,7 +47,7 @@ export interface TaskWorkBlockHints {
 
 /**
  * Single fetch for everything the work-block naming modal needs to pre-populate
- * a sensible default — deliverable for the main-objective seed, clear goals to
+ * a sensible default — first deliverable item for the main-objective seed, clear goals to
  * carry over, and the schedule arithmetic so callers can derive a proposed
  * duration. Returns safe fallbacks rather than throwing.
  */
@@ -62,8 +62,12 @@ export async function fetchTaskWorkBlockHints(taskId: string): Promise<TaskWorkB
     const res = await fetch(`/api/tasks/${taskId}`);
     if (!res.ok) return empty;
     const task = await res.json();
-    const deliverable = typeof task.deliverable === 'string' && task.deliverable.trim().length > 0
-      ? task.deliverable
+    // Use the text of the first deliverable item (position 0) as the main-objective seed.
+    const firstItem = Array.isArray(task.deliverableItems) && task.deliverableItems.length > 0
+      ? task.deliverableItems[0]
+      : null;
+    const deliverable = firstItem && typeof firstItem.text === 'string' && firstItem.text.trim().length > 0
+      ? firstItem.text.trim()
       : null;
     const clearGoals = Array.isArray(task.clearGoals)
       ? task.clearGoals

@@ -53,10 +53,7 @@ export const createTaskSchema = z.object({
   timeBlockStart: z.string().optional().nullable(),
   timeBlockEnd: z.string().optional().nullable(),
   startTime: z.string().optional().nullable(),
-  deliverable: z.string().max(1000).optional().nullable(),
   estimatedMinutes: z.number().int().min(1).max(9600).optional().nullable(),
-  preferredTimeStart: z.string().optional().nullable(),
-  preferredTimeEnd: z.string().optional().nullable(),
   isWinTheDay: z.boolean().optional(),
   parentId: z.string().optional().nullable(),
   assigneeId: z.string().optional().nullable(),
@@ -73,10 +70,7 @@ export const updateTaskSchema = z.object({
   startTime: z.string().optional().nullable(),
   isWinTheDay: z.boolean().optional(),
   winTheDayRank: z.number().int().min(1).max(3).optional().nullable(),
-  deliverable: z.string().max(1000).optional().nullable(),
   estimatedMinutes: z.number().int().min(1).max(9600).optional().nullable(),
-  preferredTimeStart: z.string().optional().nullable(),
-  preferredTimeEnd: z.string().optional().nullable(),
   isPinned: z.boolean().optional(),
   isAutoScheduled: z.boolean().optional(),
   goalId: z.string().optional().nullable(),
@@ -140,13 +134,6 @@ export const updateSettingsSchema = z.object({
   beeminderAuthToken: z.string().max(200).optional().nullable(),
   beeminderGoalSlug: z.string().max(200).optional().nullable(),
   companyMtp: z.string().max(10000).optional(),
-  notificationPrefs: z.object({
-    emailEnabled: z.boolean().optional(),
-    pushEnabled: z.boolean().optional(),
-    derailingAlerts: z.boolean().optional(),
-    mentionAlerts: z.boolean().optional(),
-    reviewNags: z.boolean().optional(),
-  }).optional(),
 });
 
 // === ATTACHMENTS ===

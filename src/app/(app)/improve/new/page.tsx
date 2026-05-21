@@ -29,7 +29,6 @@ export default function NewImproveTaskPage() {
   const [title, setTitle] = useState('');
   const [goalId, setGoalId] = useState('');
   const [description, setDescription] = useState('');
-  const [deliverable, setDeliverable] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState<typeof PRIORITIES[number]>('MEDIUM');
   const [estimatedMinutes, setEstimatedMinutes] = useState(60);
@@ -90,7 +89,6 @@ export default function NewImproveTaskPage() {
         estimatedMinutes,
       };
       if (description) body.description = description;
-      if (deliverable) body.deliverable = deliverable;
       if (dueDate) body.dueDate = dueDate;
       if (goalId) body.goalId = goalId;
       if (assigneeId) body.assigneeId = assigneeId;
@@ -171,19 +169,6 @@ export default function NewImproveTaskPage() {
             required
             className={inputClass}
             placeholder='e.g., "Draft Q3 onboarding outline"'
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm text-[var(--text-secondary)] mb-1">
-            Deliverable <span className="text-xs text-[var(--text-muted)]">(what does &quot;done&quot; look like?)</span>
-          </label>
-          <input
-            type="text"
-            value={deliverable}
-            onChange={(e) => setDeliverable(e.target.value)}
-            className={inputClass}
-            placeholder='e.g., "Outline doc shared with team"'
           />
         </div>
 

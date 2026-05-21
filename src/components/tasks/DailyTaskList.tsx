@@ -35,9 +35,6 @@ interface DailyTask {
   estimatedMinutes: number;
   assigneeId: string | null;
   assignee?: { id: string; name: string | null; image: string | null } | null;
-  deliverable: string | null;
-  preferredTimeStart: string | null;
-  preferredTimeEnd: string | null;
   recurrenceRule: string | null;
   processId: string | null;
   processExecution?: { process?: { title?: string } } | null;
