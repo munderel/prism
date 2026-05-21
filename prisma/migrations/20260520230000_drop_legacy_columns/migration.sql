@@ -1,9 +1,14 @@
 -- Component 22 (10b + 13b + 19b): Drop legacy columns no longer used by application code.
 --
 -- PRODUCTION PREREQUISITE (19b):
---   Run scripts/backfill-notification-channel-prefs.ts before deploying this migration.
---   It converts NotificationPreference flat flags → NotificationChannelPref rows.
---   The script is idempotent and safe to run multiple times.
+--   Before deploying this migration, run the NotificationChannelPref backfill
+--   against production from a commit on or before PR #54. The script
+--   (scripts/backfill-notification-channel-prefs.ts) is removed in this PR
+--   because it references the columns being dropped — keeping it would break
+--   `tsc --noEmit`. The script was idempotent; running it once from an earlier
+--   commit is sufficient. After running the backfill, verify with
+--   `npx prisma studio` that NotificationChannelPref rows exist for every
+--   user before applying this migration in production.
 --
 -- 10b: Drop Task.deliverable and Task.deliverableDone
 --   Replaced by the DeliverableItem table (Component 10).
