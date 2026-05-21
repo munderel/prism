@@ -233,7 +233,7 @@ export function GoalStackTree({
     }
 
     return items;
-  }, [goalsData, showInProgress, showDueToday]);
+  }, [goalsData, showInProgress, showDueToday, mineFilter]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<{
