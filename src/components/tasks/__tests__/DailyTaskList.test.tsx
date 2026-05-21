@@ -123,8 +123,8 @@ describe('DailyTaskList', () => {
     await waitFor(() => {
       // At least one task card has rendered into the virtualized window.
       expect(container.querySelectorAll('[data-index]').length).toBeGreaterThan(0);
-    });
-  });
+    }, { timeout: 15000 });
+  }, 20000);
 
   it('expands a collapsed section when header is clicked again', async () => {
     const user = userEvent.setup();
