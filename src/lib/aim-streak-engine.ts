@@ -34,6 +34,34 @@ export function isDayActive(weekdayBitmask: number, dayOfWeek: 0 | 1 | 2 | 3 | 4
 export interface AimInstanceRow {
   scheduledDate: Date | string;
   completedAt: Date | string | null;
+  /**
+   * AimInstance.status — one of 'SCHEDULED' | 'COMPLETED' | 'SKIPPED' | 'MISSED'
+   * (or other string values added in the future). Optional so older callers
+   * that only select { scheduledDate, completedAt } still type-check; when
+   * absent the classifier falls back to `completedAt != null`.
+   */
+  status?: string | null;
+}
+
+/**
+ * Per-day classification used by both daily and weekly streak counters.
+ *
+ *  - 'completed': contributes to the streak (daily: 1 day; weekly: +1 count).
+ *  - 'skipped':   "vacation day" — neutral. Bridges daily streaks like an
+ *                 inactive weekday; does NOT increment weekly counts and does
+ *                 NOT disqualify the week.
+ *  - 'breaks':    active-day no-show (MISSED, past-dated SCHEDULED, or any
+ *                 other non-completed/non-skipped status). Daily streak ends;
+ *                 weekly count is unaffected (still needs to clear target).
+ */
+export type StreakDayClass = 'completed' | 'skipped' | 'breaks';
+
+export function classifyInstanceForStreak(
+  inst: { status?: string | null; completedAt: Date | string | null },
+): StreakDayClass {
+  if (inst.status === 'COMPLETED' || inst.completedAt != null) return 'completed';
+  if (inst.status === 'SKIPPED') return 'skipped';
+  return 'breaks';
 }
 
 export interface DailyStreakResult {
@@ -73,12 +101,20 @@ export function computeDailyStreak(
 ): DailyStreakResult {
   if (activeWeekdays === 0) return { currentStreak: 0 };
 
-  // Build a Set of YYYY-MM-DD keys for completed instances.
-  const completedDays = new Set<string>();
+  // Index each YYYY-MM-DD scheduledDate to its streak classification. If a
+  // day has multiple instances (rare — e.g. a one-off plus a regular row),
+  // 'completed' wins over 'skipped' wins over 'breaks' so the user gets the
+  // most generous interpretation.
+  const dayClass = new Map<string, StreakDayClass>();
+  const promote = (current: StreakDayClass | undefined, next: StreakDayClass): StreakDayClass => {
+    if (current === 'completed' || next === 'completed') return 'completed';
+    if (current === 'skipped' || next === 'skipped') return 'skipped';
+    return 'breaks';
+  };
   for (const inst of instances) {
-    if (inst.completedAt != null) {
-      completedDays.add(toLocalDateKey(inst.scheduledDate));
-    }
+    const key = toLocalDateKey(inst.scheduledDate);
+    const cls = classifyInstanceForStreak(inst);
+    dayClass.set(key, promote(dayClass.get(key), cls));
   }
 
   const today = asOf ? parseLocalDate(getLocalDateString(asOf)) : (() => {
@@ -96,10 +132,14 @@ export function computeDailyStreak(
 
     if (isDayActive(activeWeekdays, dow)) {
       const key = getLocalDateString(cursor);
-      if (completedDays.has(key)) {
+      const cls = dayClass.get(key);
+      if (cls === 'completed') {
         streak++;
+      } else if (cls === 'skipped') {
+        // Vacation day — neither increments nor breaks the streak.
       } else {
-        // Active day with no completion — streak is broken.
+        // Active day with no completion (MISSED, past-dated SCHEDULED, or
+        // simply no row) — streak is broken.
         break;
       }
     }
@@ -114,16 +154,10 @@ export function computeDailyStreak(
 // Weekly streak counter
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the ISO year+week key (e.g. "2026-W20") for a given date.
- * ISO weeks start on Monday.
- */
 function isoWeekKey(date: Date): string {
-  // Copy to avoid mutation; work in local calendar time.
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  // Adjust to nearest Thursday (ISO rule: week belongs to the year of its Thursday).
-  const dayOfWeek = d.getDay() || 7; // Mon=1 … Sun=7
-  d.setDate(d.getDate() + 4 - dayOfWeek); // shift to Thursday
+  const dayOfWeek = d.getDay() || 7;
+  d.setDate(d.getDate() + 4 - dayOfWeek);
   const yearStart = new Date(d.getFullYear(), 0, 1);
   const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return `${d.getFullYear()}-W${String(weekNo).padStart(2, '0')}`;
@@ -147,16 +181,17 @@ export function computeWeeklyStreak(
 ): WeeklyStreakResult {
   if (weeklyTarget <= 0) return { currentStreak: 0, goldWeeks: 0 };
 
-  // Count completions per ISO week.
+  // Count COMPLETED instances per ISO week. SKIPPED and MISSED (and any
+  // other status) are ignored — they neither count toward the target nor
+  // disqualify the week. A week is satisfied iff completedCount >= weeklyTarget.
   const weekCounts = new Map<string, number>();
   for (const inst of instances) {
-    if (inst.completedAt != null) {
-      const d = typeof inst.scheduledDate === 'string'
-        ? parseLocalDate(toLocalDateKey(inst.scheduledDate))
-        : new Date(inst.scheduledDate.getFullYear(), inst.scheduledDate.getMonth(), inst.scheduledDate.getDate());
-      const key = isoWeekKey(d);
-      weekCounts.set(key, (weekCounts.get(key) ?? 0) + 1);
-    }
+    if (classifyInstanceForStreak(inst) !== 'completed') continue;
+    const d = typeof inst.scheduledDate === 'string'
+      ? parseLocalDate(toLocalDateKey(inst.scheduledDate))
+      : new Date(inst.scheduledDate.getFullYear(), inst.scheduledDate.getMonth(), inst.scheduledDate.getDate());
+    const key = isoWeekKey(d);
+    weekCounts.set(key, (weekCounts.get(key) ?? 0) + 1);
   }
 
   const now = asOf ?? new Date();
