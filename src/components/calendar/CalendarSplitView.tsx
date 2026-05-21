@@ -24,6 +24,8 @@ import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
 import type { WorkBlockNameRequest, WorkBlockNameResolved } from './WorkBlockObjectiveModal';
 import { createWorkBlock } from '@/lib/work-blocks-client';
 import { EventGoalsPopover } from '@/components/scheduled-item-goals/EventGoalsPopover';
+import { AttendAimModal, type GroupableAimItem } from '@/components/aims/AttendAimModal';
+import { useGroupableAims } from '@/hooks/useGroupableAims';
 
 export type RequestNameWorkBlockFn = (input: WorkBlockNameRequest) => Promise<WorkBlockNameResolved | null>;
 
@@ -585,6 +587,7 @@ export function CalendarSplitView({
   const [completingEvent, setCompletingEvent] = useState(false);
   const [editingTask, setEditingTask] = useState<Record<string, unknown> | null>(null);
   const [visibleRange, setVisibleRange] = useState<{ start: string; end: string } | null>(null);
+  const [attendModalItem, setAttendModalItem] = useState<GroupableAimItem | null>(null);
 
   // Per-user task-type color overrides. Viewer-scoped: the logged-in user's
   // overrides apply regardless of whose data is being rendered, so an admin
@@ -594,6 +597,12 @@ export function CalendarSplitView({
   // Match the main calendar's data flow: fetch the exact visible range
   // reported by FullCalendar instead of a parent-supplied approximation.
   const { events: calendarEvents, refreshEvents: mutateEvents } = useCalendarEvents(
+    visibleRange?.start ?? null,
+    visibleRange?.end ?? null,
+  );
+
+  // Groupable (social) AIM overlay — teammates' open AIM instances the user can join
+  const { items: groupableAims, refresh: refreshGroupableAims } = useGroupableAims(
     visibleRange?.start ?? null,
     visibleRange?.end ?? null,
   );
@@ -654,8 +663,30 @@ export function CalendarSplitView({
     pendingScheduledItems.current = stillPendingScheduled;
     pendingWorkBlocks.current = stillPending;
     pendingFoodBlocks.current = stillPendingFood;
-    return [...serverEvents, ...stillPendingScheduled, ...stillPending, ...stillPendingFood];
-  }, [calendarEvents]);
+
+    // Build ephemeral groupable-AIM overlay events from teammates (same palette as CalendarView)
+    const groupableAimEvents = groupableAims.map((item) => {
+      const attendBadge = item.attendStatus === 'MAYBE' ? ' ?' : '';
+      return {
+        id: `groupable-aim-${item.id}`,
+        title: `${item.aimCategory.name}${attendBadge}`,
+        start: item.timeBlockStart ?? item.scheduledDate,
+        end: item.timeBlockEnd ?? undefined,
+        allDay: !item.timeBlockStart,
+        source: 'aims',
+        backgroundColor: 'rgba(20, 184, 166, 0.25)',
+        borderColor: 'rgba(20, 184, 166, 0.55)',
+        textColor: '#5eead4',
+        isGroupableOverlay: true,
+        groupableAimId: item.id,
+        groupableOwnerName: item.owner.name ?? 'Teammate',
+        attendStatus: item.attendStatus,
+        editable: false,
+      };
+    });
+
+    return [...serverEvents, ...stillPendingScheduled, ...stillPending, ...stillPendingFood, ...groupableAimEvents];
+  }, [calendarEvents, groupableAims]);
 
   // Initialize FullCalendar Draggable on the left panel
   useEffect(() => {
@@ -870,6 +901,13 @@ export function CalendarSplitView({
   const handleEventClick = useCallback((info: EventClickArg) => {
     const props = info.event.extendedProps || {};
     const anchorRect = info.el.getBoundingClientRect();
+
+    // Groupable (social) AIM overlay → open AttendAimModal
+    if (props.isGroupableOverlay && props.groupableAimId) {
+      const item = groupableAims.find((g) => g.id === props.groupableAimId);
+      if (item) setAttendModalItem(item);
+      return;
+    }
 
     // Powerdown event
     if (props.link === '/powerdown' || info.event.id?.startsWith('powerdown-')) {
@@ -1206,7 +1244,7 @@ export function CalendarSplitView({
           toast.error('Failed to schedule item. Please try again.');
         });
     },
-    [onAfterSchedule, onCreateWorkBlock, onRequestNameWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast, snapToNow],
+    [onAfterSchedule, onCreateWorkBlock, onRequestNameWorkBlock, mutateEvents, onRefresh, mode, displayEvents, toast, snapToNow, groupableAims],
   );
 
   // Shared handler for event resize and internal drag-move. All event types
@@ -1867,6 +1905,31 @@ export function CalendarSplitView({
             onRefresh?.();
           }}
           onClose={() => setEditingTask(null)}
+        />
+      )}
+
+      {/* Groupable AIM attend/dismiss modal (social overlay) */}
+      {attendModalItem && (
+        <AttendAimModal
+          item={attendModalItem}
+          onClose={() => setAttendModalItem(null)}
+          onAttend={async (status) => {
+            const res = await fetch(`/api/aims/instances/${attendModalItem.id}/attend`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status }),
+            });
+            if (!res.ok) {
+              toast.error('Failed to update attendance');
+              return;
+            }
+            setAttendModalItem(null);
+            refreshGroupableAims();
+            if (status === 'GOING') {
+              await mutateEvents();
+              toast.success('Added to your AIM schedule!');
+            }
+          }}
         />
       )}
     </div>

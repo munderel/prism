@@ -40,7 +40,6 @@ interface DashboardTask {
   taskType: 'IMPROVE' | 'REACT' | 'MAINTENANCE' | 'REVIEW';
   title: string;
   description: string | null;
-  deliverable: string | null;
   status: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'DROPPED';
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   dueDate: string | null;
@@ -49,8 +48,6 @@ interface DashboardTask {
   timeBlockStart: string | null;
   timeBlockEnd: string | null;
   estimatedMinutes: number;
-  preferredTimeStart: string | null;
-  preferredTimeEnd: string | null;
   isPinned: boolean;
   isAutoScheduled: boolean;
   isWinTheDay: boolean;

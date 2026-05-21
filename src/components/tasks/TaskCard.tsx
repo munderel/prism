@@ -170,9 +170,6 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit: _
           {task.taskType === 'MAINTENANCE' && task.processExecution?.process?.title && (
             <span className="text-xs text-orange-400/70">⚙ {task.processExecution.process.title}</span>
           )}
-          {task.deliverable && (
-            <p className="text-xs text-cyan-400/70 mt-1 truncate">→ {task.deliverable}</p>
-          )}
         </div>
 
         {/* Time block badge */}

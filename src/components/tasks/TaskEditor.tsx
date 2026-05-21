@@ -146,7 +146,6 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
   const [users, setUsers] = useState<any[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [assigneeId, setAssigneeId] = useState(effectiveTask?.assigneeId ?? '');
-  const [deliverable, setDeliverable] = useState(effectiveTask?.deliverable ?? '');
   const [deliverableItems, setDeliverableItems] = useState<Array<{ id: string; text: string; isDone: boolean; position: number }>>(
     effectiveTask?.deliverableItems ?? [],
   );
@@ -302,7 +301,7 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
     setError('');
 
     try {
-      const body: any = { title, description, priority, deliverable, estimatedMinutes: effectiveMinutes };
+      const body: any = { title, description, priority, estimatedMinutes: effectiveMinutes };
       if (dueDate) {
         if (dueTime) {
           // Combine date + local time: parseLocalDate anchors to local midnight,
@@ -451,17 +450,6 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
                 rows={2}
                 className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none resize-none"
                 placeholder="Optional details..."
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-[var(--text-secondary)] mb-1">Expected Deliverable</label>
-              <input
-                type="text"
-                value={deliverable}
-                onChange={(e) => setDeliverable(e.target.value)}
-                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] px-3 py-2 text-[var(--text-primary)] text-sm focus:border-indigo-500 focus:outline-none"
-                placeholder="e.g., 'Final report PDF', 'Working prototype'"
               />
             </div>
 

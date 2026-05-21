@@ -29,17 +29,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const ownerIds = Array.from(new Set(overdueReviews.map((r) => r.user.id)));
-    const prefs = await prisma.notificationPreference.findMany({
-      where: { userId: { in: ownerIds } },
-    });
-    const prefsMap = new Map(prefs.map((p) => [p.userId, p]));
-
     const notifications = overdueReviews
-      .filter((review) => {
-        const pref = prefsMap.get(review.user.id);
-        return !pref || pref.reviewNags;
-      })
       .map((review) =>
         notifyUser(
           review.user.id,

@@ -643,10 +643,7 @@ const taskFixture = {
   timeBlockStart: null,
   timeBlockEnd: null,
   processId: null,
-  deliverable: null,
   estimatedMinutes: null,
-  preferredTimeStart: null,
-  preferredTimeEnd: null,
   isWinTheDay: false,
 };
 

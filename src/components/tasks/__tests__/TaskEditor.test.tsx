@@ -145,20 +145,12 @@ describe('TaskEditor', () => {
       title: 'My Task',
       description: 'Task desc',
       priority: 'HIGH',
-      deliverable: 'Final report',
     });
     renderWithProviders(<TaskEditor task={task} onSave={onSave} onClose={onClose} />);
 
     expect(screen.getByDisplayValue('My Task')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Task desc')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Final report')).toBeInTheDocument();
     expect(screen.getByDisplayValue('High')).toBeInTheDocument();
-  });
-
-  it('shows Expected Deliverable field', () => {
-    renderWithProviders(<TaskEditor onSave={onSave} onClose={onClose} />);
-    expect(screen.getByText('Expected Deliverable')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Final report PDF/)).toBeInTheDocument();
   });
 
   it('shows the current assignee in the dropdown even when /api/users is empty', async () => {

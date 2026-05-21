@@ -36,18 +36,7 @@ export async function GET(request: NextRequest) {
       return sameLocalDay && checkTaskDerailStatus(task, timezone) === 'derailing';
     });
 
-    // Batch-fetch notification preferences for all derailing task owners
-    const ownerIds = Array.from(new Set(derailingTasks.map((t) => t.owner.id)));
-    const prefs = await prisma.notificationPreference.findMany({
-      where: { userId: { in: ownerIds } },
-    });
-    const prefsMap = new Map(prefs.map((p) => [p.userId, p]));
-
     const notifications = derailingTasks
-      .filter((task) => {
-        const pref = prefsMap.get(task.owner.id);
-        return !pref || pref.derailingAlerts;
-      })
       .map((task) =>
         notifyUser(
           task.owner.id,

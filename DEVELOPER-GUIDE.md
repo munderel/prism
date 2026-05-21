@@ -376,6 +376,34 @@ const color = getTaskTypeColor('IMPROVE'); // { color: '#818cf8', textClass: 'te
 </div>
 ```
 
+### Deliverable Items Pattern
+
+Tasks support structured deliverable items (checklist-style sub-items) via the `DeliverableItem` model. This replaced the legacy `Task.deliverable` free-text field in Component 10/13.
+
+**Model** (`prisma/schema.prisma`):
+```prisma
+model DeliverableItem {
+  id       String  @id @default(cuid())
+  taskId   String
+  text     String
+  isDone   Boolean @default(false)
+  position Int     @default(0)
+  task     Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+```
+
+**API routes** (all under `/api/deliverables/`):
+- `POST /api/tasks/[id]/deliverables` — Add a new item to a task. Body: `{ text: string }`.
+- `PATCH /api/deliverables/[id]` — Toggle `isDone` or update `text`. Body: `{ isDone?: boolean, text?: string }`.
+- `DELETE /api/deliverables/[id]` — Remove an item. Ownership verified via the parent task.
+
+**UI integration** (`src/components/tasks/TaskEditor.tsx`):
+- `deliverableItems` state is initialized from `task.deliverableItems` (included in the `/api/tasks/[id]` GET response).
+- `handleAddItem` / `handleToggleItem` / `handleDeleteItem` call the three routes above and update local state.
+- Displayed only in edit mode (when `isEditing && hydratedTask?.id`).
+
+**WorkBlock seeding**: When opening the WorkBlock naming modal, `fetchTaskWorkBlockHints` reads the first `DeliverableItem` text as the default main objective. If none exist, it falls back to `"Work on {taskTitle}"`.
+
 ---
 
 ## Common Tasks

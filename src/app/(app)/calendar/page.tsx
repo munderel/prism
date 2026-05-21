@@ -46,8 +46,6 @@ interface UnscheduledTask {
   status: string;
   dueDate: string | null;
   estimatedMinutes?: number;
-  preferredTimeStart?: string | null;
-  preferredTimeEnd?: string | null;
   goal?: { title: string; level: string; stack?: { name: string } } | null;
 }
 

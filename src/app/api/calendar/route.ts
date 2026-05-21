@@ -213,11 +213,11 @@ export async function GET(request: NextRequest) {
   // 'external' fetches only Google, meetings, reviews, processes — excludes tasks/aims/powerdown
   const fetchExternal = source === 'external';
 
-  const prefs = await prisma.notificationPreference.findUnique({
-    where: { userId: auth.userId },
-    select: { reviewNags: true },
+  // Check if REVIEW_NAG is enabled via the new per-channel prefs (default: enabled)
+  const reviewNagChannelPref = await prisma.notificationChannelPref.findFirst({
+    where: { userId: auth.userId, notifType: 'REVIEW_NAG', channel: 'IN_APP' },
   });
-  const reviewsEnabled = !prefs || prefs.reviewNags;
+  const reviewsEnabled = !reviewNagChannelPref || reviewNagChannelPref.enabled;
   const shouldFetchReviews = (fetchAll || fetchExternal || source === 'reviews') && reviewsEnabled;
 
   let googleStatus: 'ok' | 'error' | 'not_connected' = 'ok';

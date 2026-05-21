@@ -46,19 +46,13 @@ export async function GET(request: NextRequest) {
       allUserIds.add(meeting.createdById);
     }
 
-    // Batch-fetch user timezones and notification preferences
-    const [users, prefs] = await Promise.all([
-      prisma.user.findMany({
-        where: { id: { in: Array.from(allUserIds) } },
-        select: { id: true, timezone: true },
-      }),
-      prisma.notificationPreference.findMany({
-        where: { userId: { in: Array.from(allUserIds) } },
-      }),
-    ]);
+    // Batch-fetch user timezones
+    const users = await prisma.user.findMany({
+      where: { id: { in: Array.from(allUserIds) } },
+      select: { id: true, timezone: true },
+    });
 
     const tzMap = new Map(users.map((u) => [u.id, u.timezone ?? 'America/New_York']));
-    const prefsMap = new Map(prefs.map((p) => [p.userId, p]));
 
     let checked = 0;
     let notified = 0;
@@ -72,13 +66,8 @@ export async function GET(request: NextRequest) {
       if (instances.length === 0) continue;
       checked++;
 
-      // Collect attendees who should be notified
-      const attendeeIds = Array.from(allUserIds).filter((uid) => {
-        if (!isUserInMeeting(meeting, uid)) return false;
-        const pref = prefsMap.get(uid);
-        if (pref && !pref.meetingReminders) return false;
-        return true;
-      });
+      // Collect attendees who should be notified (per-channel gating handled inside notifyUser)
+      const attendeeIds = Array.from(allUserIds).filter((uid) => isUserInMeeting(meeting, uid));
 
       if (attendeeIds.length === 0) continue;
 

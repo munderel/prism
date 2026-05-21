@@ -89,8 +89,8 @@ export async function PATCH(
   const { status, dueDate, timeBlockStart, timeBlockEnd, isWinTheDay } = body;
 
   const data: Record<string, unknown> = pickDefined(body, [
-    'title', 'description', 'priority', 'deliverable', 'estimatedMinutes',
-    'preferredTimeStart', 'preferredTimeEnd', 'isPinned', 'isAutoScheduled', 'isWinTheDay', 'winTheDayRank',
+    'title', 'description', 'priority', 'estimatedMinutes',
+    'isPinned', 'isAutoScheduled', 'isWinTheDay', 'winTheDayRank',
     'assigneeId',
   ]);
   if (dueDate !== undefined) data.dueDate = parseTaskDueInput(dueDate);
@@ -179,10 +179,7 @@ export async function PATCH(
               goalId: task.goalId,
               recurrenceRule: task.recurrenceRule,
               assigneeId: task.assigneeId,
-              deliverable: task.deliverable,
               estimatedMinutes: task.estimatedMinutes,
-              preferredTimeStart: task.preferredTimeStart,
-              preferredTimeEnd: task.preferredTimeEnd,
               processId: task.processId,
             },
           });

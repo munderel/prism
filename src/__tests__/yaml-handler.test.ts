@@ -165,7 +165,6 @@ describe('buildGoalTree', () => {
             id: 't1',
             title: 'Do the thing',
             description: 'the desc',
-            deliverable: 'the deliverable',
             status: 'IN_PROGRESS',
             priority: 'HIGH',
             dueDate: new Date('2026-04-10T00:00:00Z'),
@@ -174,8 +173,6 @@ describe('buildGoalTree', () => {
             timeBlockEnd: new Date('2026-04-08T15:30:00Z'),
             recurrenceRule: 'FREQ=WEEKLY;BYDAY=MO',
             isWinTheDay: true,
-            preferredTimeStart: '09:00',
-            preferredTimeEnd: '11:00',
           },
         ],
       },
@@ -184,15 +181,12 @@ describe('buildGoalTree', () => {
     expect(tree[0].tasks).toHaveLength(1);
     const task = tree[0].tasks![0];
     expect(task.id).toBe('t1');
-    expect(task.deliverable).toBe('the deliverable');
     expect(task.priority).toBe('HIGH');
     expect(task.estimatedMinutes).toBe(90);
     expect(task.timeBlockStart).toBe('2026-04-08T14:00:00.000Z');
     expect(task.timeBlockEnd).toBe('2026-04-08T15:30:00.000Z');
     expect(task.recurrenceRule).toBe('FREQ=WEEKLY;BYDAY=MO');
     expect(task.isWinTheDay).toBe(true);
-    expect(task.preferredTimeStart).toBe('09:00');
-    expect(task.preferredTimeEnd).toBe('11:00');
   });
 
   it('populates goal startDate and endDate from DB input', () => {
@@ -251,7 +245,6 @@ describe('round-trip full fidelity', () => {
                       id: 't1',
                       title: 'Full task',
                       description: 'task desc',
-                      deliverable: 'deliverable',
                       status: 'IN_PROGRESS',
                       priority: 'HIGH',
                       dueDate: '2026-04-10T00:00:00.000Z',
@@ -260,8 +253,6 @@ describe('round-trip full fidelity', () => {
                       timeBlockEnd: '2026-04-08T15:30:00.000Z',
                       recurrenceRule: 'FREQ=WEEKLY;BYDAY=MO',
                       isWinTheDay: true,
-                      preferredTimeStart: '09:00',
-                      preferredTimeEnd: '11:00',
                     },
                   ],
                   kpis: [
@@ -290,7 +281,6 @@ describe('round-trip full fidelity', () => {
     expect(task.id).toBe('t1');
     expect(task.title).toBe('Full task');
     expect(task.description).toBe('task desc');
-    expect(task.deliverable).toBe('deliverable');
     expect(task.status).toBe('IN_PROGRESS');
     expect(task.priority).toBe('HIGH');
     expect(task.dueDate).toBe('2026-04-10T00:00:00.000Z');
@@ -299,8 +289,6 @@ describe('round-trip full fidelity', () => {
     expect(task.timeBlockEnd).toBe('2026-04-08T15:30:00.000Z');
     expect(task.recurrenceRule).toBe('FREQ=WEEKLY;BYDAY=MO');
     expect(task.isWinTheDay).toBe(true);
-    expect(task.preferredTimeStart).toBe('09:00');
-    expect(task.preferredTimeEnd).toBe('11:00');
   });
 
   it('preserves goal startDate and endDate', () => {
@@ -663,9 +651,8 @@ describe('round-trip full fidelity — all new fields', () => {
     expect(task.rescheduledTo).toBe('2025-12-02T00:00:00.000Z');
   });
 
-  it('preserves task deliverableDone, isPinned, isAutoScheduled, winTheDayRank', () => {
+  it('preserves task isPinned, isAutoScheduled, winTheDayRank', () => {
     const tree = buildWeeklyTree({
-      deliverableDone: true,
       isPinned: true,
       isAutoScheduled: true,
       winTheDayRank: 2,
@@ -673,7 +660,6 @@ describe('round-trip full fidelity — all new fields', () => {
     const yaml = exportGoalsToYaml(tree, sampleMeta);
     const { goals } = parseYamlToGoals(yaml);
     const task = getTask(goals);
-    expect(task.deliverableDone).toBe(true);
     expect(task.isPinned).toBe(true);
     expect(task.isAutoScheduled).toBe(true);
     expect(task.winTheDayRank).toBe(2);
@@ -892,7 +878,7 @@ describe('diffGoals — new diff categories', () => {
 });
 
 describe('buildGoalTree — new fields surface from DB rows', () => {
-  it('emits task completedAt, startedAt, failedAt, rescheduledTo, deliverableDone, successCriteria', () => {
+  it('emits task completedAt, startedAt, failedAt, rescheduledTo, successCriteria', () => {
     const criteria = [{ id: 'a', done: false }];
     const flat = [
       {
@@ -906,7 +892,6 @@ describe('buildGoalTree — new fields surface from DB rows', () => {
             completedAt: new Date('2025-12-01T11:00:00Z'),
             failedAt: null,
             rescheduledTo: null,
-            deliverableDone: true,
             successCriteria: criteria,
             isPinned: true,
             isAutoScheduled: true,
@@ -925,7 +910,6 @@ describe('buildGoalTree — new fields surface from DB rows', () => {
     const task = tree[0].tasks![0];
     expect(task.startedAt).toBe('2025-12-01T10:00:00.000Z');
     expect(task.completedAt).toBe('2025-12-01T11:00:00.000Z');
-    expect(task.deliverableDone).toBe(true);
     expect(task.successCriteria).toEqual(criteria);
     expect(task.isPinned).toBe(true);
     expect(task.isAutoScheduled).toBe(true);
