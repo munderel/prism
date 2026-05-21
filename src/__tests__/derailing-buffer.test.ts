@@ -73,17 +73,19 @@ describe('projectBuffer', () => {
 
 describe('computeBufferDerailInfo', () => {
   it('emits on_track when buffer ≥ 1', () => {
-    const ua = aim({ safetyBufferDays: 5, safetyBufferUpdatedAt: new Date() });
-    const info = computeBufferDerailInfo(ua);
+    const now = new Date();
+    const ua = aim({ safetyBufferDays: 5, safetyBufferUpdatedAt: now });
+    const info = computeBufferDerailInfo(ua, now);
     expect(info.status).toBe('on_track');
   });
 
   it('emits caution when 0 < buffer < 1', () => {
+    const now = new Date();
     const ua = aim({
       safetyBufferDays: 1.0,
-      safetyBufferUpdatedAt: new Date(Date.now() - 12 * HOUR),
+      safetyBufferUpdatedAt: new Date(now.getTime() - 12 * HOUR),
     });
-    const info = computeBufferDerailInfo(ua);
+    const info = computeBufferDerailInfo(ua, now);
     expect(info.status).toBe('caution');
     expect(info.safetyBufferDays).toBeGreaterThan(0);
     expect(info.safetyBufferDays).toBeLessThan(1);
@@ -115,8 +117,12 @@ describe('computeBufferDerailInfo', () => {
   });
 
   it('handles exactly buffer === 1 as on_track (not caution)', () => {
-    const ua = aim({ safetyBufferDays: 1, safetyBufferUpdatedAt: new Date() });
-    const info = computeBufferDerailInfo(ua, new Date());
+    // Lock now to a single Date so the millisecond gap between constructing
+    // safetyBufferUpdatedAt and the implicit `now` inside the function can't
+    // decay the buffer below 1 under parallel test load.
+    const now = new Date();
+    const ua = aim({ safetyBufferDays: 1, safetyBufferUpdatedAt: now });
+    const info = computeBufferDerailInfo(ua, now);
     expect(info.status).toBe('on_track');
   });
 });
