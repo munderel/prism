@@ -5,6 +5,7 @@ import { m } from 'framer-motion';
 import { Pencil, Trash2, Check, Users, Flame } from 'lucide-react';
 import useSWR from 'swr';
 import { KpiProgressBar } from './KpiProgressBar';
+import { getInitials } from '@/components/ui/Avatar';
 
 interface KpiOwner {
   id: string;
@@ -64,11 +65,7 @@ function OwnerBadge({ owner }: { owner?: KpiOwner | null }) {
     );
   }
   const label = owner.name ?? owner.email;
-  const initials = label
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('') || label[0]?.toUpperCase() || '?';
+  const initials = getInitials(label);
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-medium text-indigo-300 border border-indigo-500/20"
