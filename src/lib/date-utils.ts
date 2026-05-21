@@ -19,6 +19,24 @@ export function minutesBetween(start: Date | string, end: Date | string): number
 }
 
 /**
+ * True when half-open ranges [aStart, aEnd) and [bStart, bEnd) intersect.
+ * Touching endpoints (aEnd === bStart) do NOT count as overlap, matching the
+ * convention used by the scheduling engine.
+ */
+export function rangesOverlap(
+  aStart: Date | string,
+  aEnd: Date | string,
+  bStart: Date | string,
+  bEnd: Date | string,
+): boolean {
+  const aS = (aStart instanceof Date ? aStart : new Date(aStart)).getTime();
+  const aE = (aEnd instanceof Date ? aEnd : new Date(aEnd)).getTime();
+  const bS = (bStart instanceof Date ? bStart : new Date(bStart)).getTime();
+  const bE = (bEnd instanceof Date ? bEnd : new Date(bEnd)).getTime();
+  return aS < bE && bS < aE;
+}
+
+/**
  * Returns a 'YYYY-MM-DD' string in the user's local timezone.
  * With no argument, returns today's date.
  * Use this instead of `new Date().toISOString().split('T')[0]`.
