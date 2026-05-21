@@ -22,7 +22,12 @@ interface AimContribution {
 
 /** Shows the most-recent AIM completions that contributed to a NUMERIC KPI. */
 function AimContributions({ kpiId }: { kpiId: string }) {
-  const { data } = useSWR<{ aimContributions: AimContribution[] }>(`/api/kpis/${kpiId}`);
+  // Contributions are cosmetic; a 60s dedupe + no focus revalidation keeps a
+  // goal page with N KPIs from fanning out N requests on every window focus.
+  const { data } = useSWR<{ aimContributions: AimContribution[] }>(
+    `/api/kpis/${kpiId}`,
+    { revalidateOnFocus: false, dedupingInterval: 60_000 },
+  );
   const contributions = data?.aimContributions ?? [];
   if (contributions.length === 0) return null;
 
