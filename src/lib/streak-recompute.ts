@@ -239,7 +239,9 @@ export async function recomputeAimStreaks(
   for (const ua of userAims) {
     const instances = await prisma.aimInstance.findMany({
       where: { userId, aimCategoryId: ua.aimCategoryId },
-      select: { scheduledDate: true, completedAt: true },
+      // `status` must be selected so the streak engine can distinguish
+      // SKIPPED (bridge / neutral) from MISSED (breaks). See Partial 6.
+      select: { scheduledDate: true, completedAt: true, status: true },
     });
 
     let newStreak: number;

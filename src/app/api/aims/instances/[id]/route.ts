@@ -11,6 +11,7 @@ import {
 import { createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleSyncInfo, buildEventTimes } from '@/lib/calendar';
 import { getAimCompletionUrl } from '@/lib/completion-token';
 import { updateSpecificStreak, maybeIncrementDailyStreakIfDayComplete } from '@/lib/streak-engine';
+import { recomputeAimStreaks } from '@/lib/streak-recompute';
 import { applyBufferOnCompletion } from '@/lib/derailing-buffer';
 import { recalculateUserAimProgress } from '@/lib/aim-progress';
 import { cascadeKpiUpdate } from '@/lib/kpi-progress';
@@ -196,6 +197,14 @@ export async function PATCH(
 
   if (status !== undefined && status !== existing.status) {
     await recalculateUserAimProgress(existing.userId, existing.aimCategoryId);
+    // Recompute UserAim.currentStreak / bestStreak whenever an instance's
+    // status changes (COMPLETED → SKIPPED, SKIPPED → MISSED, etc). The
+    // engine treats SKIPPED as a bridge day and MISSED as a break, so a
+    // status flip without recompute would leave UserAim.currentStreak
+    // stale. Fire-and-forget — never block the response on streak math.
+    recomputeAimStreaks(existing.userId).catch((err) =>
+      console.warn('[streak] aim streak recompute failed:', err),
+    );
   }
 
   // Google Calendar sync — fire-and-forget.

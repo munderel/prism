@@ -47,12 +47,22 @@ describe('isDayActive', () => {
 
 /** Build a completed instance row with the given YYYY-MM-DD scheduledDate. */
 function completed(scheduledDate: string): AimInstanceRow {
-  return { scheduledDate, completedAt: new Date() };
+  return { scheduledDate, completedAt: new Date(), status: 'COMPLETED' };
 }
 
 /** Build an uncompleted instance row. */
 function scheduled(scheduledDate: string): AimInstanceRow {
-  return { scheduledDate, completedAt: null };
+  return { scheduledDate, completedAt: null, status: 'SCHEDULED' };
+}
+
+/** Build a SKIPPED instance row (vacation day — bridges but doesn't increment). */
+function skipped(scheduledDate: string): AimInstanceRow {
+  return { scheduledDate, completedAt: null, status: 'SKIPPED' };
+}
+
+/** Build a MISSED instance row (breaks the streak). */
+function missed(scheduledDate: string): AimInstanceRow {
+  return { scheduledDate, completedAt: null, status: 'MISSED' };
 }
 
 describe('computeDailyStreak', () => {
@@ -140,6 +150,64 @@ describe('computeDailyStreak', () => {
     const result = computeDailyStreak(instances, 127, asOf);
     // Wed ✓, Tue × (active, no completion) → streak breaks at Tue = 1
     expect(result.currentStreak).toBe(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // SKIPPED vs MISSED semantics (vacation-day rule) — Partial 6
+  // -------------------------------------------------------------------------
+
+  it('SKIPPED on an active day bridges the streak like an inactive day', () => {
+    // asOf = Wednesday May 20; M-F aim, Tue=SKIPPED, Mon+Wed=COMPLETED
+    const asOf = new Date(2026, 4, 20); // Wednesday
+    const instances = [
+      completed('2026-05-18'), // Mon ✓
+      skipped('2026-05-19'),   // Tue — vacation day, bridges
+      completed('2026-05-20'), // Wed ✓
+    ];
+    const MF_MASK = 2 | 4 | 8 | 16 | 32; // 62
+    const result = computeDailyStreak(instances, MF_MASK, asOf);
+    // Wed ✓ (streak=1), Tue skipped (bridge), Mon ✓ (streak=2)
+    expect(result.currentStreak).toBe(2);
+  });
+
+  it('MISSED on an active day breaks the streak', () => {
+    // asOf = Wednesday May 20; M-F aim, Tue=MISSED, Mon+Wed=COMPLETED
+    const asOf = new Date(2026, 4, 20); // Wednesday
+    const instances = [
+      completed('2026-05-18'), // Mon ✓ (won't be reached — break before)
+      missed('2026-05-19'),    // Tue ✗ — breaks the streak
+      completed('2026-05-20'), // Wed ✓
+    ];
+    const MF_MASK = 2 | 4 | 8 | 16 | 32; // 62
+    const result = computeDailyStreak(instances, MF_MASK, asOf);
+    // Wed ✓ (streak=1), Tue MISSED → break. Streak=1.
+    expect(result.currentStreak).toBe(1);
+  });
+
+  it('three consecutive COMPLETED days → streak = 3', () => {
+    const asOf = new Date(2026, 4, 20); // Wednesday
+    const instances = [
+      completed('2026-05-18'), // Mon
+      completed('2026-05-19'), // Tue
+      completed('2026-05-20'), // Wed
+    ];
+    const MF_MASK = 2 | 4 | 8 | 16 | 32; // 62
+    const result = computeDailyStreak(instances, MF_MASK, asOf);
+    expect(result.currentStreak).toBe(3);
+  });
+
+  it('today=SKIPPED bridges but does not itself count: streak = 2 from prior 2 COMPLETED', () => {
+    // asOf = Wednesday; Wed=SKIPPED (today), Mon+Tue=COMPLETED
+    const asOf = new Date(2026, 4, 20); // Wednesday
+    const instances = [
+      completed('2026-05-18'), // Mon ✓
+      completed('2026-05-19'), // Tue ✓
+      skipped('2026-05-20'),   // Wed — bridges (doesn't itself count)
+    ];
+    const MF_MASK = 2 | 4 | 8 | 16 | 32; // 62
+    const result = computeDailyStreak(instances, MF_MASK, asOf);
+    // Wed skipped (bridge, no increment), Tue ✓ (1), Mon ✓ (2)
+    expect(result.currentStreak).toBe(2);
   });
 });
 
@@ -236,6 +304,48 @@ describe('computeWeeklyStreak', () => {
     const result = computeWeeklyStreak(instances, 3, asOf);
     // Walking back: current week hit (streak=1), last week miss → stops
     expect(result.currentStreak).toBe(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // SKIPPED vs MISSED semantics (vacation-day rule) — Partial 6
+  // -------------------------------------------------------------------------
+
+  it('target=3: 3 COMPLETED + 1 SKIPPED → week satisfied (streak=1)', () => {
+    const asOf = new Date(2026, 4, 20); // Wed May 20
+    const instances = [
+      completed('2026-05-18'), // Mon
+      completed('2026-05-19'), // Tue
+      skipped('2026-05-20'),   // Wed — neutral
+      completed('2026-05-21'), // Thu — third completion
+    ];
+    const result = computeWeeklyStreak(instances, 3, asOf);
+    expect(result.currentStreak).toBe(1);
+    expect(result.goldWeeks).toBe(0);
+  });
+
+  it('target=3: 2 COMPLETED + 1 SKIPPED + 1 MISSED → week NOT satisfied (streak=0)', () => {
+    const asOf = new Date(2026, 4, 20);
+    const instances = [
+      completed('2026-05-18'), // Mon
+      completed('2026-05-19'), // Tue — only 2 completions
+      skipped('2026-05-20'),   // Wed — neutral, does not count
+      missed('2026-05-21'),    // Thu — does not count
+    ];
+    const result = computeWeeklyStreak(instances, 3, asOf);
+    expect(result.currentStreak).toBe(0);
+    expect(result.goldWeeks).toBe(0);
+  });
+
+  it('target=3: exactly 3 COMPLETED and no SKIPPED/MISSED → satisfied (streak=1)', () => {
+    const asOf = new Date(2026, 4, 20);
+    const instances = [
+      completed('2026-05-18'), // Mon
+      completed('2026-05-19'), // Tue
+      completed('2026-05-20'), // Wed
+    ];
+    const result = computeWeeklyStreak(instances, 3, asOf);
+    expect(result.currentStreak).toBe(1);
+    expect(result.goldWeeks).toBe(0);
   });
 
   it('gold weeks count correctly across multiple weeks', () => {
