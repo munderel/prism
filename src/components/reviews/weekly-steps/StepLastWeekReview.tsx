@@ -229,6 +229,7 @@ export function StepLastWeekReview({
                 onChange={(status, actualMinutes) => {
                   setBlockPicks((prev) => ({ ...prev, [b.id]: status }));
                   setBlockActual((prev) => ({ ...prev, [b.id]: actualMinutes }));
+                  if (saved) setSaved(false);
                 }}
               />
             );
@@ -263,6 +264,7 @@ export function StepLastWeekReview({
                 onChange={(status, actualMinutes) => {
                   setAimPicks((prev) => ({ ...prev, [a.id]: status }));
                   setAimActual((prev) => ({ ...prev, [a.id]: actualMinutes }));
+                  if (saved) setSaved(false);
                 }}
               />
             );
