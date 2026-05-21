@@ -19,6 +19,7 @@
 import { useState, useEffect } from 'react';
 import { useSWRConfig } from 'swr';
 import { minutesBetween, parseLocalDate } from '@/lib/date-utils';
+import { matchPrefix } from '@/lib/swr-helpers';
 import { CompletionReviewRow } from '@/components/shared/CompletionReviewRow';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -165,8 +166,9 @@ export function StepLastWeekReview({
         toast.error(`${failures.length} item(s) failed to save. Please try again.`);
       } else {
         setSaved(true);
-        void mutate('/api/work-blocks');
-        void mutate('/api/aims/instances');
+        // Parameterised SWR keys (e.g. /api/work-blocks?date=…) — predicate form.
+        void mutate(matchPrefix('/api/work-blocks'));
+        void mutate(matchPrefix('/api/aims/instances'));
       }
     } catch {
       toast.error('Failed to save reviews. Please try again.');

@@ -161,8 +161,16 @@ describe('StepLastWeekReview', () => {
     await user.click(screen.getByRole('button', { name: /Save Reviews/i }));
 
     await waitFor(() => {
-      expect(mutateSpy).toHaveBeenCalledWith('/api/work-blocks');
-      expect(mutateSpy).toHaveBeenCalledWith('/api/aims/instances');
+      // Predicate-form mutate matches every parameterised key under the prefix.
+      const invalidatedPrefixes = new Set<string>();
+      for (const call of mutateSpy.mock.calls) {
+        const predicate = call[0];
+        if (typeof predicate !== 'function') continue;
+        if (predicate('/api/work-blocks?date=2026-05-12')) invalidatedPrefixes.add('/api/work-blocks');
+        if (predicate('/api/aims/instances?start=x&end=y')) invalidatedPrefixes.add('/api/aims/instances');
+      }
+      expect(invalidatedPrefixes.has('/api/work-blocks')).toBe(true);
+      expect(invalidatedPrefixes.has('/api/aims/instances')).toBe(true);
     });
   });
 

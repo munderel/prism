@@ -11,6 +11,7 @@ import {
   Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock, ChevronDown,
 } from 'lucide-react';
 import { getLocalDateString, getUpcomingWeekBoundaries, getWeekBoundaries, minutesBetween, parseLocalDate } from '@/lib/date-utils';
+import { matchPrefix } from '@/lib/swr-helpers';
 import { TopNTaskSelector } from '@/components/reviews/shared/TopNTaskSelector';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ClearGoalGuide } from './ClearGoalGuide';
@@ -1107,7 +1108,8 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
               : `Saved ${aimEntries.length - failures.length} of ${aimEntries.length} AIM reviews; ${failures.length} failed`,
           );
         }
-        void mutate('/api/aims/instances');
+        // Parameterised SWR keys — predicate form.
+        void mutate(matchPrefix('/api/aims/instances'));
       }
     }
 

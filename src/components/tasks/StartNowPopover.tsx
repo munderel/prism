@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/Popover';
 import { useToast } from '@/components/ui/ToastProvider';
 import { getLocalDateString, rangesOverlap } from '@/lib/date-utils';
+import { matchPrefix } from '@/lib/swr-helpers';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -129,20 +130,12 @@ export function StartNowPopover({
           return;
         }
 
-        // Invalidate relevant SWR caches. Calendar keys are parameterised
-        // (e.g. `/api/calendar?start=…&end=…`), so a bare-string mutate would
-        // miss them — match by prefix instead. Same for /api/work-blocks (the
-        // overlap check uses /api/work-blocks?date=…).
+        // SWR keys here are parameterised (`/api/calendar?start=…`,
+        // `/api/work-blocks?date=…`), so a bare-string mutate would miss them.
         await Promise.all([
-          mutate(
-            (key) => typeof key === 'string' && key.startsWith('/api/calendar'),
-          ),
-          mutate(
-            (key) => typeof key === 'string' && key.startsWith('/api/work-blocks'),
-          ),
-          mutate(
-            (key) => typeof key === 'string' && key.startsWith('/api/tasks'),
-          ),
+          mutate(matchPrefix('/api/calendar')),
+          mutate(matchPrefix('/api/work-blocks')),
+          mutate(matchPrefix('/api/tasks')),
         ]);
 
         toast.success('Work block started!');
