@@ -11,7 +11,7 @@ import {
   PopoverHeader,
 } from '@/components/ui/Popover';
 import { useToast } from '@/components/ui/ToastProvider';
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, rangesOverlap } from '@/lib/date-utils';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -99,11 +99,7 @@ export function StartNowPopover({
   const detectOverlap = useCallback(
     (start: Date, end: Date): boolean => {
       if (!Array.isArray(todayBlocks)) return false;
-      return todayBlocks.some((b) => {
-        const bStart = new Date(b.start);
-        const bEnd = new Date(b.end);
-        return bStart < end && bEnd > start;
-      });
+      return todayBlocks.some((b) => rangesOverlap(b.start, b.end, start, end));
     },
     [todayBlocks],
   );
