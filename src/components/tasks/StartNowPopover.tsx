@@ -39,14 +39,19 @@ export interface StartNowPopoverProps {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function incompleteItems(task: Task): DeliverableItem[] {
+  return task.deliverableItems?.filter((d) => !d.isDone) ?? [];
+}
+
 function defaultMainObjective(task: Task): string {
-  return task.deliverableItems?.[0]?.text ?? task.title;
+  return incompleteItems(task)[0]?.text ?? task.title;
 }
 
 function defaultClearGoals(task: Task): string[] {
-  if (!task.deliverableItems || task.deliverableItems.length === 0) return [];
-  // Skip the first item — it's used as mainObjective when present.
-  return task.deliverableItems.slice(1).map((d) => d.text);
+  // First incomplete item becomes the mainObjective; remaining incomplete
+  // items become clear goals. Already-checked items are skipped so the user
+  // isn't pre-filled with work they've already finished.
+  return incompleteItems(task).slice(1).map((d) => d.text);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
