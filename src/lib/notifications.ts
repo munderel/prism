@@ -2,6 +2,7 @@ import webpush from 'web-push';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { NotificationType, NotificationChannel } from '@prisma/client';
+import { toZonedTime } from 'date-fns-tz';
 import { prisma } from './prisma';
 
 // Configure web-push
@@ -133,11 +134,24 @@ async function sendEmailMessage(
 }
 
 /**
+ * Subset of NotificationChannelPref fields we read in this module.
+ * Avoids requiring callers to construct a full Prisma row.
+ */
+type ChannelPrefRow = {
+  notifType: NotificationType;
+  channel: NotificationChannel;
+  enabled: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: number | null;
+  quietHoursEnd: number | null;
+};
+
+/**
  * Look up the enabled state for a (userId, notifType, channel) triple.
  * Falls back to true if no row exists (opt-in by default).
  */
 async function isChannelEnabled(
-  channelPrefs: { notifType: NotificationType; channel: NotificationChannel; enabled: boolean }[],
+  channelPrefs: ChannelPrefRow[],
   notifType: NotificationType,
   channel: NotificationChannel,
 ): Promise<boolean> {
@@ -145,6 +159,54 @@ async function isChannelEnabled(
     (p) => p.notifType === notifType && p.channel === channel,
   );
   return row === undefined ? true : row.enabled;
+}
+
+/**
+ * Returns true if the current local time falls inside the channel's quiet-hours
+ * window. Defensive: a misconfigured pref (enabled=true but missing bounds)
+ * returns false so notifications still flow.
+ *
+ * Supports wrap-around windows where start > end (e.g. 22:00 → 07:00):
+ *   if (start > end) suppress = nowMin >= start || nowMin < end;
+ *   else             suppress = nowMin >= start && nowMin < end;
+ */
+export function isInQuietHours(
+  pref: {
+    quietHoursEnabled: boolean;
+    quietHoursStart: number | null;
+    quietHoursEnd: number | null;
+  },
+  userTimezone: string,
+  now: Date = new Date(),
+): boolean {
+  if (!pref.quietHoursEnabled) return false;
+  const start = pref.quietHoursStart;
+  const end = pref.quietHoursEnd;
+  if (start === null || end === null) return false;
+
+  // Compute minutes-past-midnight in the user's local timezone.
+  const local = toZonedTime(now, userTimezone);
+  const nowMin = local.getHours() * 60 + local.getMinutes();
+
+  if (start === end) return false; // zero-length window = no suppression
+  if (start > end) {
+    return nowMin >= start || nowMin < end;
+  }
+  return nowMin >= start && nowMin < end;
+}
+
+/**
+ * Resolve the quiet-hours window for a given (notifType, channel) tuple.
+ * Returns null if there's no row (i.e. no quiet-hours configured).
+ */
+function getChannelPref(
+  channelPrefs: ChannelPrefRow[],
+  notifType: NotificationType,
+  channel: NotificationChannel,
+): ChannelPrefRow | null {
+  return (
+    channelPrefs.find((p) => p.notifType === notifType && p.channel === channel) ?? null
+  );
 }
 
 /**
@@ -164,14 +226,28 @@ export async function notifyUser(
   notifType: NotificationType = NotificationType.GENERIC,
 ) {
   const [user, subscriptions, channelPrefs] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, timezone: true },
+    }),
     prisma.pushSubscription.findMany({ where: { userId } }),
     prisma.notificationChannelPref.findMany({ where: { userId, notifType } }),
   ]);
 
+  const timezone = user?.timezone || 'America/New_York';
+  const now = new Date();
+
+  // Quiet-hours suppression is per-channel: a quiet-hours window on PUSH does
+  // not silence EMAIL or IN_APP. This matches the per-channel UI.
+  const isQuiet = (channel: NotificationChannel): boolean => {
+    const row = getChannelPref(channelPrefs, notifType, channel);
+    if (!row) return false;
+    return isInQuietHours(row, timezone, now);
+  };
+
   // Always create an in-app notification row if IN_APP is enabled
   const inAppEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.IN_APP);
-  if (inAppEnabled) {
+  if (inAppEnabled && !isQuiet(NotificationChannel.IN_APP)) {
     await prisma.notification.create({
       data: {
         userId,
@@ -184,29 +260,38 @@ export async function notifyUser(
   }
 
   await Promise.all([
-    sendPushNotificationsGated(channelPrefs, subscriptions, notifType, title, body, url),
-    sendEmailNotificationGated(channelPrefs, user?.email, notifType, title, body),
+    sendPushNotificationsGated(channelPrefs, subscriptions, notifType, title, body, timezone, now, url),
+    sendEmailNotificationGated(channelPrefs, user?.email, notifType, title, body, timezone, now),
   ]);
 }
 
 async function sendPushNotificationsGated(
-  channelPrefs: { notifType: NotificationType; channel: NotificationChannel; enabled: boolean }[],
+  channelPrefs: ChannelPrefRow[],
   subscriptions: { id: string; endpoint: string; p256dh: string; auth: string; deviceType?: string | null }[],
   notifType: NotificationType,
   title: string,
   body: string,
+  timezone: string,
+  now: Date,
   url?: string,
 ): Promise<void> {
   const desktopEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.PUSH_DESKTOP);
   const mobileEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.PUSH_MOBILE);
 
+  const desktopRow = getChannelPref(channelPrefs, notifType, NotificationChannel.PUSH_DESKTOP);
+  const mobileRow = getChannelPref(channelPrefs, notifType, NotificationChannel.PUSH_MOBILE);
+  const desktopQuiet = desktopRow ? isInQuietHours(desktopRow, timezone, now) : false;
+  const mobileQuiet = mobileRow ? isInQuietHours(mobileRow, timezone, now) : false;
+
   // Filter subscriptions to only those whose deviceType channel is enabled
+  // AND not currently in its quiet-hours window.
   const eligible = subscriptions.filter((sub) => {
     const dt = sub.deviceType;
-    if (dt === 'mobile') return mobileEnabled;
-    if (dt === 'tablet') return mobileEnabled; // treat tablet same as mobile
+    if (dt === 'mobile' || dt === 'tablet') {
+      return mobileEnabled && !mobileQuiet;
+    }
     // desktop or unknown → use desktop pref
-    return desktopEnabled;
+    return desktopEnabled && !desktopQuiet;
   });
 
   if (eligible.length === 0) return;
@@ -230,15 +315,20 @@ async function sendPushNotificationsGated(
 }
 
 async function sendEmailNotificationGated(
-  channelPrefs: { notifType: NotificationType; channel: NotificationChannel; enabled: boolean }[],
+  channelPrefs: ChannelPrefRow[],
   email: string | undefined,
   notifType: NotificationType,
   title: string,
   body: string,
+  timezone: string,
+  now: Date,
 ): Promise<void> {
   const emailEnabled = await isChannelEnabled(channelPrefs, notifType, NotificationChannel.EMAIL);
   if (!emailEnabled) return;
   if (!email) return;
+
+  const emailRow = getChannelPref(channelPrefs, notifType, NotificationChannel.EMAIL);
+  if (emailRow && isInQuietHours(emailRow, timezone, now)) return;
 
   const result = await sendEmailMessage(email, title, `<p>${escapeHtml(body)}</p>`);
   if (!result.sent && result.configured) {

@@ -579,6 +579,14 @@ model NotificationChannelPref {
   channel   NotificationChannel
   enabled   Boolean             @default(true)
 
+  // Per-(notifType × channel) quiet-hours window. When enabled is true, both
+  // start and end must be non-null. Values are minutes-past-midnight in the
+  // user's local timezone (0-1439). A wrap-around window (start > end) like
+  // 22:00 → 07:00 covers the overnight range.
+  quietHoursEnabled Boolean @default(false)
+  quietHoursStart   Int?
+  quietHoursEnd     Int?
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, notifType, channel])
