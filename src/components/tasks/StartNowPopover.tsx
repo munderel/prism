@@ -11,7 +11,8 @@ import {
   PopoverHeader,
 } from '@/components/ui/Popover';
 import { useToast } from '@/components/ui/ToastProvider';
-import { getLocalDateString } from '@/lib/date-utils';
+import { getLocalDateString, rangesOverlap } from '@/lib/date-utils';
+import { matchPrefix } from '@/lib/swr-helpers';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -39,14 +40,19 @@ export interface StartNowPopoverProps {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function incompleteItems(task: Task): DeliverableItem[] {
+  return task.deliverableItems?.filter((d) => !d.isDone) ?? [];
+}
+
 function defaultMainObjective(task: Task): string {
-  return task.deliverableItems?.[0]?.text ?? task.title;
+  return incompleteItems(task)[0]?.text ?? task.title;
 }
 
 function defaultClearGoals(task: Task): string[] {
-  if (!task.deliverableItems || task.deliverableItems.length === 0) return [];
-  // Skip the first item — it's used as mainObjective when present.
-  return task.deliverableItems.slice(1).map((d) => d.text);
+  // First incomplete item becomes the mainObjective; remaining incomplete items
+  // become clear goals. Already-checked-off items are skipped so the user isn't
+  // pre-filled with work they've already finished.
+  return incompleteItems(task).slice(1).map((d) => d.text);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -94,11 +100,7 @@ export function StartNowPopover({
   const detectOverlap = useCallback(
     (start: Date, end: Date): boolean => {
       if (!Array.isArray(todayBlocks)) return false;
-      return todayBlocks.some((b) => {
-        const bStart = new Date(b.start);
-        const bEnd = new Date(b.end);
-        return bStart < end && bEnd > start;
-      });
+      return todayBlocks.some((b) => rangesOverlap(b.start, b.end, start, end));
     },
     [todayBlocks],
   );
@@ -128,20 +130,12 @@ export function StartNowPopover({
           return;
         }
 
-        // Invalidate relevant SWR caches. Calendar keys are parameterised
-        // (e.g. `/api/calendar?start=…&end=…`), so a bare-string mutate would
-        // miss them — match by prefix instead. Same for /api/work-blocks (the
-        // overlap check uses /api/work-blocks?date=…).
+        // SWR keys here are parameterised (`/api/calendar?start=…`,
+        // `/api/work-blocks?date=…`), so a bare-string mutate would miss them.
         await Promise.all([
-          mutate(
-            (key) => typeof key === 'string' && key.startsWith('/api/calendar'),
-          ),
-          mutate(
-            (key) => typeof key === 'string' && key.startsWith('/api/work-blocks'),
-          ),
-          mutate(
-            (key) => typeof key === 'string' && key.startsWith('/api/tasks'),
-          ),
+          mutate(matchPrefix('/api/calendar')),
+          mutate(matchPrefix('/api/work-blocks')),
+          mutate(matchPrefix('/api/tasks')),
         ]);
 
         toast.success('Work block started!');

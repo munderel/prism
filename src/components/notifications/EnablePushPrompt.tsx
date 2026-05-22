@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Bell, Smartphone, X } from 'lucide-react';
 import { subscribeForPush, isIosNonStandalone } from '@/lib/push-client';
+import { useToast } from '@/components/ui/ToastProvider';
 
 const DISMISS_KEY = 'push-prompt-dismissed-v1';
 
@@ -18,6 +19,7 @@ export function EnablePushPrompt() {
   const [visible, setVisible] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [loading, setLoading] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     // SSR guard — none of these APIs exist server-side
@@ -46,11 +48,19 @@ export function EnablePushPrompt() {
     setLoading(true);
     const result = await subscribeForPush();
     setLoading(false);
-    if (result === 'subscribed' || result === 'denied') {
-      // Either way, don't show prompt again this session
+    if (result === 'subscribed') {
+      toast.success('Push notifications enabled');
       dismiss();
+    } else if (result === 'denied') {
+      toast.error('Notification permission denied. Enable it in browser settings.');
+      dismiss();
+    } else if (result === 'unsupported') {
+      toast.error('Push notifications are not supported in this browser');
+      dismiss();
+    } else {
+      toast.error('Could not enable push notifications. Try again.');
+      // Keep visible so user can retry
     }
-    // On error we keep visible so user can retry
   }
 
   if (!visible) return null;

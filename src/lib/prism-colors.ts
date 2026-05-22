@@ -170,3 +170,38 @@ export function getTaskTypeColor(taskType: string): ColorDef {
 /** Weekly hour targets */
 export const WEEKLY_HOUR_TARGET = 35;
 export const WEEKLY_HOUR_WARNING = 20;
+
+// ── Heatmap palette ─────────────────────────────────────────────────────────
+
+export type HeatmapState =
+  | 'completed'
+  | 'missed'
+  | 'inactive'
+  | 'future'
+  | 'empty'
+  | 'met'
+  | 'exceeded'
+  | 'gold';
+
+/**
+ * `gold` and `exceeded` share the standout treatment: a true-gold fill, soft
+ * outer glow, and a thin amber ring. Two state names exist because the data
+ * layer distinguishes them (weekly "exceeded the target" vs daily "milestone /
+ * week-crossing"), but visually they read as one signal.
+ */
+const GOLD_CLASS = 'bg-[#FFD700] shadow-[0_0_6px_rgba(255,215,0,0.55)] ring-1 ring-amber-200/60';
+
+export const HEATMAP_COLORS: Record<HeatmapState, string> = {
+  completed: 'bg-emerald-500',
+  met:       'bg-emerald-500',
+  missed:    'bg-red-500/40',
+  inactive:  'bg-white/5',
+  future:    'bg-white/10',
+  empty:     'bg-transparent',
+  exceeded:  GOLD_CLASS,
+  gold:      GOLD_CLASS,
+};
+
+export function getHeatmapStateColor(state: HeatmapState): string {
+  return HEATMAP_COLORS[state];
+}

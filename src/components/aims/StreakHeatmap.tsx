@@ -2,8 +2,18 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { formatDateOnly } from '@/lib/date-utils';
+import {
+  addDays,
+  formatDateOnly,
+  getLocalDateString,
+  isoWeekKey,
+  mondayOfWeek,
+  parseLocalDate,
+  startOfToday,
+} from '@/lib/date-utils';
 import { isDayActive } from '@/lib/aim-streak-engine';
+import { HEATMAP_COLORS } from '@/lib/prism-colors';
+import { isStreakMilestoneDay, isWeekCrossingDay } from '@/lib/heatmap-utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,61 +40,19 @@ const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
 /** Number of weeks rendered in one "page" */
 const PAGE_WEEKS = 8;
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function todayLocalMidnight(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function dateFromKey(key: string): Date {
-  return new Date(key + 'T00:00:00');
-}
-
-function isInPast(dateKey: string): boolean {
-  return dateFromKey(dateKey) < todayLocalMidnight();
-}
-
-/** ISO year+week string, e.g. "2026-W20" — ISO weeks start Monday */
-function isoWeekKey(date: Date): string {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const dow = d.getDay() || 7;
-  d.setDate(d.getDate() + 4 - dow);
-  const yearStart = new Date(d.getFullYear(), 0, 1);
-  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${d.getFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-}
-
-/** Monday of a date's ISO week */
-function mondayOfWeek(date: Date): Date {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const dow = d.getDay() || 7;
-  d.setDate(d.getDate() - (dow - 1));
-  return d;
-}
-
-/** Add days to a date, returns new Date */
-function addDays(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
-}
-
-function localKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 // ── Daily-mode grid builder ──────────────────────────────────────────────────
 
 export interface DailyCell {
   dateKey: string;
-  state: 'completed' | 'missed' | 'inactive' | 'future' | 'empty';
+  state: 'completed' | 'gold' | 'missed' | 'inactive' | 'future' | 'empty';
 }
 
 /**
  * Build a 7-column grid of weeks.
  * weekOffset=0 → most recent 8 weeks; weekOffset=8 → the 8 weeks before that.
+ *
+ * If `isGoldDay` is provided, completed cells for which it returns true are
+ * promoted to the 'gold' state (visually distinctive standout marker).
  *
  * @internal Exported for unit tests only.
  */
@@ -92,33 +60,31 @@ export function buildDailyGrid(
   history: DayEntry[],
   activeWeekdays: number,
   weekOffset: number,
+  isGoldDay?: (dateKey: string) => boolean,
 ): DailyCell[][] {
-  const today = todayLocalMidnight();
+  const today = startOfToday();
   const completedSet = new Set(history.filter((e) => e.completed).map((e) => e.date));
 
-  // Find the Sunday that starts the most-recent week shown
-  const latestSunday = new Date(today);
-  latestSunday.setDate(today.getDate() - today.getDay() - weekOffset * 7);
+  // Sunday that starts the most-recent week shown
+  const latestSunday = addDays(today, -today.getDay() - weekOffset * 7);
 
   const weeks: DailyCell[][] = [];
   for (let w = PAGE_WEEKS - 1; w >= 0; w--) {
     const week: DailyCell[] = [];
     for (let d = 0; d < 7; d++) {
       const cellDate = addDays(latestSunday, -(w * 7) + d);
-      const key = localKey(cellDate);
+      const key = getLocalDateString(cellDate);
       const dow = cellDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
       const active = isDayActive(activeWeekdays, dow);
       const isFuture = cellDate > today;
 
       let state: DailyCell['state'];
       if (!active) {
-        // Inactive days are always dim — regardless of whether they are future.
         state = 'inactive';
       } else if (isFuture) {
-        // Active but in the future → neutral, not missed.
         state = 'future';
       } else if (completedSet.has(key)) {
-        state = 'completed';
+        state = isGoldDay?.(key) ? 'gold' : 'completed';
       } else {
         state = 'missed';
       }
@@ -146,22 +112,22 @@ export function buildWeeklyGrid(
   weeklyTarget: number,
   weekOffset: number,
 ): WeekCell[] {
-  const today = todayLocalMidnight();
+  const today = startOfToday();
   const thisWeekMonday = mondayOfWeek(today);
 
   // Count completions per ISO week
   const weekCounts = new Map<string, number>();
   for (const entry of history) {
     if (entry.completed) {
-      const key = isoWeekKey(dateFromKey(entry.date));
+      const key = isoWeekKey(parseLocalDate(entry.date));
       weekCounts.set(key, (weekCounts.get(key) ?? 0) + 1);
     }
   }
 
   const cells: WeekCell[] = [];
   for (let w = 0; w < PAGE_WEEKS; w++) {
-    // Most recent week first (w=0) → subtract weekOffset pages
-    const weekStart = addDays(thisWeekMonday, -(w + weekOffset * PAGE_WEEKS) * 7);
+    // One week per "Older" click, matching daily-mode pagination.
+    const weekStart = addDays(thisWeekMonday, -(w + weekOffset) * 7);
     const key = isoWeekKey(weekStart);
     const completions = weekCounts.get(key) ?? 0;
     const effectiveTarget = Math.max(weeklyTarget, 1);
@@ -192,23 +158,6 @@ export function buildWeeklyGrid(
   return cells.reverse();
 }
 
-// ── Color maps ───────────────────────────────────────────────────────────────
-
-const DAILY_COLORS: Record<DailyCell['state'], string> = {
-  completed: 'bg-emerald-500',
-  missed:    'bg-red-500/40',
-  inactive:  'bg-white/5',
-  future:    'bg-white/10',
-  empty:     'bg-transparent',
-};
-
-const WEEKLY_COLORS: Record<WeekCell['state'], string> = {
-  met:      'bg-emerald-500',
-  exceeded: 'bg-amber-400',
-  missed:   'bg-red-500/40',
-  future:   'bg-white/5',
-};
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function StreakHeatmap({
@@ -234,21 +183,24 @@ export default function StreakHeatmap({
   // ── Daily mode ──────────────────────────────────────────────────────────────
 
   if (isDaily) {
-    const grid = buildDailyGrid(history, activeWeekdays, weekOffset);
+    const isGoldDay = (dateKey: string) =>
+      isStreakMilestoneDay(history, activeWeekdays, dateKey) ||
+      isWeekCrossingDay(history, weeklyTarget, dateKey);
+
+    const grid = buildDailyGrid(history, activeWeekdays, weekOffset, isGoldDay);
 
     const handleMouseEnterDaily = (e: React.MouseEvent<HTMLDivElement>, cell: DailyCell) => {
       if (cell.state === 'empty') return;
       const label = (() => {
         switch (cell.state) {
           case 'completed': return 'Completed';
+          case 'gold':      return 'Milestone day';
           case 'missed':    return 'Missed';
           case 'inactive':  return 'Not active';
           case 'future':    return 'Future';
         }
       })();
-      const formatted = isInPast(cell.dateKey)
-        ? formatDateOnly(cell.dateKey, { weekday: 'short', month: 'short', day: 'numeric', year: undefined })
-        : formatDateOnly(cell.dateKey, { weekday: 'short', month: 'short', day: 'numeric', year: undefined });
+      const formatted = formatDateOnly(cell.dateKey, { weekday: 'short', month: 'short', day: 'numeric', year: undefined });
       const rect = e.currentTarget.getBoundingClientRect();
       setTooltip({ text: `${formatted} — ${label}`, x: rect.left + rect.width / 2, y: rect.top - 4 });
     };
@@ -273,7 +225,7 @@ export default function StreakHeatmap({
               {week.map((cell, dIdx) => (
                 <div
                   key={dIdx}
-                  className={`w-3 h-3 rounded-[2px] cursor-default transition-colors ${DAILY_COLORS[cell.state]}`}
+                  className={`w-3 h-3 rounded-[2px] cursor-default transition-colors ${HEATMAP_COLORS[cell.state]}`}
                   onMouseEnter={(e) => handleMouseEnterDaily(e, cell)}
                   onMouseLeave={() => setTooltip(null)}
                 />
@@ -305,15 +257,19 @@ export default function StreakHeatmap({
         {/* Legend */}
         <div className="flex items-center gap-2 mt-1 text-[9px] text-[var(--text-muted)]">
           <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-[1px] bg-emerald-500" />
+            <div className={`w-2 h-2 rounded-[1px] ${HEATMAP_COLORS.completed}`} />
             <span>Done</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-[1px] bg-red-500/40" />
+            <div className={`w-2 h-2 rounded-[1px] ${HEATMAP_COLORS.gold}`} />
+            <span>Gold</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-[1px] ${HEATMAP_COLORS.missed}`} />
             <span>Missed</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-[1px] bg-white/5 border border-white/10" />
+            <div className={`w-2 h-2 rounded-[1px] ${HEATMAP_COLORS.inactive} border border-white/10`} />
             <span>Off</span>
           </div>
         </div>
@@ -354,7 +310,7 @@ export default function StreakHeatmap({
         {cells.map((cell) => (
           <div
             key={cell.weekKey}
-            className={`flex items-center gap-1.5 h-4 rounded-[3px] px-1.5 cursor-default transition-colors ${WEEKLY_COLORS[cell.state]}`}
+            className={`flex items-center gap-1.5 h-4 rounded-[3px] px-1.5 cursor-default transition-colors ${HEATMAP_COLORS[cell.state]}`}
             onMouseEnter={(e) => handleMouseEnterWeekly(e, cell)}
             onMouseLeave={() => setTooltip(null)}
           >
@@ -393,15 +349,15 @@ export default function StreakHeatmap({
       {/* Legend */}
       <div className="flex items-center gap-2 mt-1 text-[9px] text-[var(--text-muted)]">
         <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-[1px] bg-emerald-500" />
+          <div className={`w-2 h-2 rounded-[1px] ${HEATMAP_COLORS.met}`} />
           <span>Met</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-[1px] bg-amber-400" />
+          <div className={`w-2 h-2 rounded-[1px] ${HEATMAP_COLORS.exceeded}`} />
           <span>Exceeded</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-[1px] bg-red-500/40" />
+          <div className={`w-2 h-2 rounded-[1px] ${HEATMAP_COLORS.missed}`} />
           <span>Missed</span>
         </div>
       </div>

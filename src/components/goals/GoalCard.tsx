@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import NextLink from 'next/link';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3, UserPlus } from 'lucide-react';
+import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3, UserPlus, ExternalLink } from 'lucide-react';
 import { GoalAssigneesModal } from './GoalAssigneesModal';
 import { GoalProgressBar } from './GoalProgressBar';
 import { TimeUrgencyBadge } from './TimeUrgencyBadge';
@@ -244,6 +245,14 @@ export const GoalCard = React.memo(function GoalCard({
               <ListTodo className="h-4 w-4" />
             </button>
           )}
+          <NextLink
+            href={`/goals/${goal.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-indigo-300"
+            title="Open goal detail"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </NextLink>
           <button
             onClick={() => onEdit(goal)}
             className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"
