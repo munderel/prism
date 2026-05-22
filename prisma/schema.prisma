@@ -640,17 +640,21 @@ model Invitation {
 }
 
 model AimInvitation {
-  id            String       @id @default(cuid())
-  aimInstanceId String
-  aimInstance   AimInstance  @relation(fields: [aimInstanceId], references: [id], onDelete: Cascade)
-  inviterId     String
-  inviteeId     String
-  status        InviteStatus @default(PENDING)
-  createdAt     DateTime     @default(now())
-  respondedAt   DateTime?
+  id              String       @id @default(cuid())
+  aimInstanceId   String
+  aimInstance     AimInstance  @relation(fields: [aimInstanceId], references: [id], onDelete: Cascade)
+  inviterId       String
+  inviteeId       String
+  status          InviteStatus @default(PENDING)
+  linkedUserAimId String?
+  linkedUserAim   UserAim?     @relation("InvitationsLinkedToUserAim", fields: [linkedUserAimId], references: [id], onDelete: SetNull)
+  isOneOff        Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  respondedAt     DateTime?
 
   @@unique([aimInstanceId, inviteeId])
   @@index([inviteeId])
+  @@index([linkedUserAimId])
 }
 
 model WorkBlockInvitation {
@@ -963,6 +967,7 @@ model UserAim {
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   aimCategory AimCategory @relation(fields: [aimCategoryId], references: [id], onDelete: Cascade)
+  linkedInvitations AimInvitation[] @relation("InvitationsLinkedToUserAim")
 
   @@unique([userId, aimCategoryId])
 }
