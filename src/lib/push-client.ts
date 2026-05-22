@@ -58,35 +58,52 @@ export function isIosNonStandalone(): boolean {
  */
 export async function subscribeForPush(): Promise<'subscribed' | 'denied' | 'unsupported' | 'error'> {
   if (typeof window === 'undefined') return 'unsupported';
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported';
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.warn('[push] serviceWorker or PushManager not supported by this browser');
+    return 'unsupported';
+  }
 
   // 1. Fetch the VAPID public key from the server
   let vapidPublicKey: string;
   try {
     const res = await fetch('/api/notifications/public-key');
-    if (!res.ok) return 'error';
+    if (!res.ok) {
+      console.error('[push] VAPID key fetch returned non-OK', res.status, await res.text().catch(() => ''));
+      return 'error';
+    }
     const json = (await res.json()) as { key?: string };
-    if (!json.key) return 'unsupported'; // VAPID not configured yet
+    if (!json.key) {
+      console.warn('[push] VAPID public key is empty — VAPID_PUBLIC_KEY env var likely unset on server');
+      return 'unsupported';
+    }
     vapidPublicKey = json.key;
-  } catch {
+  } catch (err) {
+    console.error('[push] VAPID key fetch threw', err);
     return 'error';
   }
+  console.debug('[push] fetched VAPID key, requesting permission');
 
   // 2. Request browser permission
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return 'denied';
+  if (permission !== 'granted') {
+    console.warn('[push] permission not granted:', permission);
+    return 'denied';
+  }
+  console.debug('[push] permission granted, registering SW');
 
   try {
     // 3. Register / get service worker
     const reg = await navigator.serviceWorker.register('/sw.js');
     // Wait for it to be active
     await navigator.serviceWorker.ready;
+    console.debug('[push] SW ready, subscribing', { active: !!reg.active, scope: reg.scope });
 
     // 4. Subscribe
     const subscription = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
+    console.debug('[push] subscribed, POSTing to API');
 
     const json = subscription.toJSON();
     const ua = navigator.userAgent;
@@ -107,8 +124,13 @@ export async function subscribeForPush(): Promise<'subscribed' | 'denied' | 'uns
       }),
     });
 
-    return res.ok ? 'subscribed' : 'error';
-  } catch {
+    if (!res.ok) {
+      console.error('[push] subscribe POST failed', res.status, await res.text().catch(() => ''));
+      return 'error';
+    }
+    return 'subscribed';
+  } catch (err) {
+    console.error('[push] subscribe failed during SW register / pushManager.subscribe', err);
     return 'error';
   }
 }

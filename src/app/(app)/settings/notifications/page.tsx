@@ -513,6 +513,7 @@ export default function NotificationsSettingsPage() {
   // Add this device
   const [addingDevice, setAddingDevice] = useState(false);
   const handleAddDevice = useCallback(async () => {
+    console.debug('[push] handleAddDevice clicked', { showIosHint });
     if (showIosHint) {
       toast.info('Install Prism to your home screen on iOS to enable push notifications');
       return;

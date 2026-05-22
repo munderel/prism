@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
+import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatDateOnly } from '@/lib/date-utils';
 import { isDayActive } from '@/lib/aim-streak-engine';
 
@@ -40,10 +41,6 @@ function todayLocalMidnight(): Date {
 
 function dateFromKey(key: string): Date {
   return new Date(key + 'T00:00:00');
-}
-
-function isInPast(dateKey: string): boolean {
-  return dateFromKey(dateKey) < todayLocalMidnight();
 }
 
 /** ISO year+week string, e.g. "2026-W20" — ISO weeks start Monday */
@@ -127,6 +124,47 @@ export function buildDailyGrid(
     weeks.push(week);
   }
   return weeks;
+}
+
+/**
+ * Build a rolling 7-day strip ending today.
+ * Returns 7 cells ordered oldest → newest (today is index 6).
+ *
+ * @internal Exported for unit tests only.
+ */
+export function buildLast7Days(
+  history: DayEntry[],
+  activeWeekdays: number,
+): DailyCell[] {
+  const today = todayLocalMidnight();
+  const completedSet = new Set(history.filter((e) => e.completed).map((e) => e.date));
+
+  const cells: DailyCell[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const cellDate = addDays(today, -i);
+    const key = localKey(cellDate);
+    const dow = cellDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+    const active = isDayActive(activeWeekdays, dow);
+
+    let state: DailyCell['state'];
+    if (!active) {
+      state = 'inactive';
+    } else if (completedSet.has(key)) {
+      state = 'completed';
+    } else {
+      state = 'missed';
+    }
+    cells.push({ dateKey: key, state });
+  }
+  return cells;
+}
+
+/**
+ * Single-letter weekday labels rotated so today is at index 6.
+ * @internal Exported for unit tests only.
+ */
+export function rotatedDayLabels(todayDow: number): string[] {
+  return Array.from({ length: 7 }, (_, i) => DAY_LABELS[(todayDow + i + 1) % 7]);
 }
 
 // ── Weekly-mode grid builder ─────────────────────────────────────────────────
@@ -219,6 +257,7 @@ export default function StreakHeatmap({
 }: StreakHeatmapProps) {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
   // Fetch enough days to cover the current page + scrollback buffer.
   // For the daily grid: PAGE_WEEKS * 7 days per page.
@@ -234,7 +273,8 @@ export default function StreakHeatmap({
   // ── Daily mode ──────────────────────────────────────────────────────────────
 
   if (isDaily) {
-    const grid = buildDailyGrid(history, activeWeekdays, weekOffset);
+    const stripCells = buildLast7Days(history, activeWeekdays);
+    const stripLabels = rotatedDayLabels(todayLocalMidnight().getDay());
 
     const handleMouseEnterDaily = (e: React.MouseEvent<HTMLDivElement>, cell: DailyCell) => {
       if (cell.state === 'empty') return;
@@ -246,77 +286,124 @@ export default function StreakHeatmap({
           case 'future':    return 'Future';
         }
       })();
-      const formatted = isInPast(cell.dateKey)
-        ? formatDateOnly(cell.dateKey, { weekday: 'short', month: 'short', day: 'numeric', year: undefined })
-        : formatDateOnly(cell.dateKey, { weekday: 'short', month: 'short', day: 'numeric', year: undefined });
+      const formatted = formatDateOnly(cell.dateKey, { weekday: 'short', month: 'short', day: 'numeric', year: undefined });
       const rect = e.currentTarget.getBoundingClientRect();
       setTooltip({ text: `${formatted} — ${label}`, x: rect.left + rect.width / 2, y: rect.top - 4 });
     };
 
     return (
       <div className="relative">
-        {/* Column headers */}
-        <div className="flex gap-[3px] mb-[2px] ml-[calc(0.75rem+2px)]">
-          {DAY_LABELS.map((label, i) => (
-            <div key={i} className="w-3 flex items-center justify-center text-[8px] text-[var(--text-muted)] leading-none">
-              {i % 2 === 1 ? label : ''}
-            </div>
-          ))}
-        </div>
+        {/* Last-7-days strip — today on the right */}
+        <div className="flex gap-1.5 justify-between">
+          {stripCells.map((cell, i) => {
+            const dayNum = dateFromKey(cell.dateKey).getDate();
+            const isToday = i === 6;
+            const isCompleted = cell.state === 'completed';
+            const isInactive = cell.state === 'inactive';
 
-        {/* Grid rows: each row is one week */}
-        <div className="flex flex-col gap-[3px]">
-          {grid.map((week, wIdx) => (
-            <div key={wIdx} className="flex items-center gap-[3px]">
-              {/* Week row — no label needed */}
-              <div className="w-3 shrink-0" />
-              {week.map((cell, dIdx) => (
+            const boxBase = 'w-7 h-7 rounded-md flex items-center justify-center cursor-default transition-colors';
+            const boxState = isInactive
+              ? 'bg-white/5 border border-dashed border-white/10'
+              : DAILY_COLORS[cell.state];
+            const ringClass = isToday && !isCompleted ? 'ring-2 ring-emerald-400/50' : '';
+
+            return (
+              <div key={cell.dateKey} className="flex flex-col items-center gap-0.5">
+                <div className={`text-[10px] leading-none ${isToday ? 'text-[var(--text-secondary)] font-semibold' : 'text-[var(--text-muted)]'}`}>
+                  {stripLabels[i]}
+                </div>
+                <div className={`text-[9px] leading-none ${isToday ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`}>
+                  {dayNum}
+                </div>
                 <div
-                  key={dIdx}
-                  className={`w-3 h-3 rounded-[2px] cursor-default transition-colors ${DAILY_COLORS[cell.state]}`}
+                  className={`${boxBase} ${boxState} ${ringClass}`}
                   onMouseEnter={(e) => handleMouseEnterDaily(e, cell)}
                   onMouseLeave={() => setTooltip(null)}
-                />
-              ))}
+                >
+                  {isCompleted && <Check className="h-4 w-4 text-white" strokeWidth={3} />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* History toggle */}
+        <button
+          onClick={() => setHistoryExpanded((v) => !v)}
+          className="mt-2 flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+        >
+          {historyExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          <span>{historyExpanded ? 'Hide history' : 'Show history'}</span>
+        </button>
+
+        {historyExpanded && (() => {
+          const grid = buildDailyGrid(history, activeWeekdays, weekOffset);
+          return (
+            <div className="mt-2">
+              {/* Column headers */}
+              <div className="flex gap-[3px] mb-[2px] ml-[calc(0.75rem+2px)]">
+                {DAY_LABELS.map((label, i) => (
+                  <div key={i} className="w-3 flex items-center justify-center text-[8px] text-[var(--text-muted)] leading-none">
+                    {i % 2 === 1 ? label : ''}
+                  </div>
+                ))}
+              </div>
+
+              {/* Grid rows: each row is one week */}
+              <div className="flex flex-col gap-[3px]">
+                {grid.map((week, wIdx) => (
+                  <div key={wIdx} className="flex items-center gap-[3px]">
+                    <div className="w-3 shrink-0" />
+                    {week.map((cell, dIdx) => (
+                      <div
+                        key={dIdx}
+                        className={`w-3 h-3 rounded-[2px] cursor-default transition-colors ${DAILY_COLORS[cell.state]}`}
+                        onMouseEnter={(e) => handleMouseEnterDaily(e, cell)}
+                        onMouseLeave={() => setTooltip(null)}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              <div className="flex items-center gap-2 mt-1.5">
+                {weekOffset > 0 && (
+                  <button
+                    onClick={() => setWeekOffset((o) => o - 1)}
+                    className="text-[9px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                  >
+                    ← Newer
+                  </button>
+                )}
+                {history.length >= fetchDays - 7 && (
+                  <button
+                    onClick={() => setWeekOffset((o) => o + 1)}
+                    className="text-[9px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors ml-auto"
+                  >
+                    Older →
+                  </button>
+                )}
+              </div>
+
+              {/* Legend */}
+              <div className="flex items-center gap-2 mt-1 text-[9px] text-[var(--text-muted)]">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-[1px] bg-emerald-500" />
+                  <span>Done</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-[1px] bg-red-500/40" />
+                  <span>Missed</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-[1px] bg-white/5 border border-white/10" />
+                  <span>Off</span>
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
-
-        {/* Pagination */}
-        <div className="flex items-center gap-2 mt-1.5">
-          {weekOffset > 0 && (
-            <button
-              onClick={() => setWeekOffset((o) => o - 1)}
-              className="text-[9px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-            >
-              ← Newer
-            </button>
-          )}
-          {history.length >= fetchDays - 7 && (
-            <button
-              onClick={() => setWeekOffset((o) => o + 1)}
-              className="text-[9px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors ml-auto"
-            >
-              Older →
-            </button>
-          )}
-        </div>
-
-        {/* Legend */}
-        <div className="flex items-center gap-2 mt-1 text-[9px] text-[var(--text-muted)]">
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-[1px] bg-emerald-500" />
-            <span>Done</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-[1px] bg-red-500/40" />
-            <span>Missed</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-[1px] bg-white/5 border border-white/10" />
-            <span>Off</span>
-          </div>
-        </div>
+          );
+        })()}
 
         {tooltip && (
           <div
