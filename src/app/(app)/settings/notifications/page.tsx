@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import useSWR, { mutate } from 'swr';
-import { Bell, Monitor, Smartphone, Mail, AppWindow, Pencil, Trash2, Check, X } from 'lucide-react';
+import { Bell, Monitor, Smartphone, Mail, AppWindow, Pencil, Trash2, Check, X, Moon } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 import { subscribeForPush, isIosNonStandalone } from '@/lib/push-client';
 
@@ -26,6 +26,9 @@ interface ChannelPref {
   notifType: NotifType;
   channel: Channel;
   enabled: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: number | null;
+  quietHoursEnd: number | null;
 }
 
 interface PushDevice {
@@ -77,6 +80,29 @@ const ALL_TYPES: NotifType[] = [
 const ALL_CHANNELS: Channel[] = ['EMAIL', 'PUSH_DESKTOP', 'PUSH_MOBILE', 'IN_APP'];
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+// ---------------------------------------------------------------------------
+// Quiet-hours helpers
+// ---------------------------------------------------------------------------
+
+/** Convert minutes-past-midnight to "HH:mm". */
+function minutesToHHMM(min: number | null): string {
+  if (min === null || min === undefined) return '';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Convert "HH:mm" to minutes-past-midnight, or null if invalid/empty. */
+function hhmmToMinutes(s: string): number | null {
+  if (!s) return null;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (!match) return null;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
 
 // ---------------------------------------------------------------------------
 // Device list component
@@ -158,6 +184,154 @@ function DeviceRow({ device, onRemove, onRename }: {
 // Toggle cell
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Per-channel quiet-hours modal
+// ---------------------------------------------------------------------------
+//
+// Design choice (per plan recommendation): quiet hours are configured per
+// channel (not per (notifType, channel) pair). When the user sets quiet
+// hours on "Push (Desktop)", the same window is applied to every notifType
+// row for that channel via a single PATCH that omits `notifType`. This keeps
+// the UI to ~4 settings instead of 4×7 = 28, while still using the same
+// underlying schema (the window lives on each row).
+
+function QuietHoursModal({
+  channel,
+  initialEnabled,
+  initialStart,
+  initialEnd,
+  onSave,
+  onClose,
+}: {
+  channel: Channel;
+  initialEnabled: boolean;
+  initialStart: number | null;
+  initialEnd: number | null;
+  onSave: (enabled: boolean, start: number | null, end: number | null) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [enabled, setEnabled] = useState(initialEnabled);
+  const [startStr, setStartStr] = useState(minutesToHHMM(initialStart) || '22:00');
+  const [endStr, setEndStr] = useState(minutesToHHMM(initialEnd) || '07:00');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setError(null);
+    const startMin = hhmmToMinutes(startStr);
+    const endMin = hhmmToMinutes(endStr);
+    if (enabled && (startMin === null || endMin === null)) {
+      setError('Both start and end times are required when quiet hours are enabled.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(enabled, enabled ? startMin : null, enabled ? endMin : null);
+      onClose();
+    } catch {
+      setError('Could not save quiet hours. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="quiet-hours-title"
+      onClick={onClose}
+    >
+      <div
+        className="bg-[var(--bg-secondary,#1a1a2e)] border border-white/10 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 id="quiet-hours-title" className="text-base font-semibold text-[var(--text-primary)] flex items-center gap-2">
+            <Moon size={16} className="text-indigo-400" />
+            Quiet hours · {CHANNEL_LABELS[channel]}
+          </h3>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <p className="text-xs text-[var(--text-secondary)] mb-4">
+          Suppress {CHANNEL_LABELS[channel]} delivery during this window. Applies to every notification type for this channel.
+        </p>
+
+        <label className="flex items-center justify-between gap-3 py-2 mb-3">
+          <span className="text-sm text-[var(--text-primary)]">Enable quiet hours</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            onClick={() => setEnabled((v) => !v)}
+            className={`w-9 h-5 rounded-full transition-colors relative ${enabled ? 'bg-indigo-600' : 'bg-white/10'}`}
+          >
+            <span
+              className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+            />
+          </button>
+        </label>
+
+        <div className={`grid grid-cols-2 gap-3 mb-2 transition-opacity ${enabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+          <label className="text-xs text-[var(--text-secondary)] flex flex-col gap-1">
+            Start
+            <input
+              type="time"
+              value={startStr}
+              onChange={(e) => setStartStr(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-indigo-500"
+            />
+          </label>
+          <label className="text-xs text-[var(--text-secondary)] flex flex-col gap-1">
+            End
+            <input
+              type="time"
+              value={endStr}
+              onChange={(e) => setEndStr(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-indigo-500"
+            />
+          </label>
+        </div>
+
+        <p className="text-xs text-[var(--text-secondary)] mb-4">
+          A window like 22:00 – 07:00 covers overnight (wraps past midnight).
+        </p>
+
+        {error && (
+          <p className="text-xs text-red-400 mb-3">{error}</p>
+        )}
+
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[var(--text-primary)] border border-white/10 disabled:opacity-60 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-60 transition-colors"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToggleCell({
   enabled,
   onChange,
@@ -219,6 +393,69 @@ export default function NotificationsSettingsPage() {
       (p) => p.notifType === notifType && p.channel === channel,
     )?.enabled ?? true;
   }
+
+  // Quiet-hours window per channel, derived from localPrefs. We take the
+  // first row for the channel; the bulk-update PATCH keeps all rows in sync.
+  const quietHoursByChannel = useMemo(() => {
+    const out: Record<Channel, { enabled: boolean; start: number | null; end: number | null }> = {
+      EMAIL: { enabled: false, start: null, end: null },
+      PUSH_DESKTOP: { enabled: false, start: null, end: null },
+      PUSH_MOBILE: { enabled: false, start: null, end: null },
+      IN_APP: { enabled: false, start: null, end: null },
+    };
+    for (const ch of ALL_CHANNELS) {
+      const row = localPrefs.find((p) => p.channel === ch);
+      if (row) {
+        out[ch] = {
+          enabled: row.quietHoursEnabled,
+          start: row.quietHoursStart,
+          end: row.quietHoursEnd,
+        };
+      }
+    }
+    return out;
+  }, [localPrefs]);
+
+  // Modal state — which channel's picker is open, if any.
+  const [quietHoursModalChannel, setQuietHoursModalChannel] = useState<Channel | null>(null);
+
+  // Apply a quiet-hours change to every (notifType, channel) row for the
+  // selected channel via the bulk-update PATCH mode.
+  const handleSaveQuietHours = useCallback(async (
+    channel: Channel,
+    enabled: boolean,
+    start: number | null,
+    end: number | null,
+  ) => {
+    // Optimistic update
+    setLocalPrefs((prev) =>
+      prev.map((p) =>
+        p.channel === channel
+          ? { ...p, quietHoursEnabled: enabled, quietHoursStart: start, quietHoursEnd: end }
+          : p,
+      ),
+    );
+
+    const res = await fetch('/api/notifications/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel,
+        quietHoursEnabled: enabled,
+        quietHoursStart: start,
+        quietHoursEnd: end,
+      }),
+    });
+
+    if (!res.ok) {
+      toast.error('Failed to update quiet hours');
+      await mutate('/api/notifications/preferences');
+      throw new Error('Failed');
+    }
+
+    toast.success(enabled ? 'Quiet hours saved' : 'Quiet hours disabled');
+    await mutate('/api/notifications/preferences');
+  }, [toast]);
 
   // Patch a preference
   const handleToggle = useCallback(async (notifType: NotifType, channel: Channel, enabled: boolean) => {
@@ -395,13 +632,59 @@ export default function NotificationsSettingsPage() {
         )}
       </section>
 
-      {/* Quiet hours – deferred to Component 19b */}
-      <section className="glass-panel p-4 sm:p-6 opacity-60">
-        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-1">Quiet Hours</h2>
-        <p className="text-xs text-[var(--text-secondary)]">
-          Do-not-disturb time window — coming in a future update (Component 19b).
+      {/* Quiet hours — per channel */}
+      <section className="glass-panel p-4 sm:p-6">
+        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-1 flex items-center gap-2">
+          <Moon size={16} className="text-indigo-400" />
+          Quiet Hours
+        </h2>
+        <p className="text-xs text-[var(--text-secondary)] mb-4">
+          Suppress delivery during a daily do-not-disturb window. Configured per channel — the same window applies to every notification type on that channel.
         </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {ALL_CHANNELS.map((ch) => {
+            const qh = quietHoursByChannel[ch];
+            const summary = qh.enabled && qh.start !== null && qh.end !== null
+              ? `Quiet ${minutesToHHMM(qh.start)} – ${minutesToHHMM(qh.end)}`
+              : 'Quiet hours: off';
+            return (
+              <div
+                key={ch}
+                className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/5 border border-white/10"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[var(--text-secondary)] shrink-0">{CHANNEL_ICONS[ch]}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">{CHANNEL_LABELS[ch]}</p>
+                    <p className={`text-xs truncate ${qh.enabled ? 'text-indigo-300' : 'text-[var(--text-secondary)]'}`}>
+                      {summary}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuietHoursModalChannel(ch)}
+                  className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition-colors"
+                >
+                  {qh.enabled ? 'Edit' : 'Enable'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </section>
+
+      {quietHoursModalChannel && (
+        <QuietHoursModal
+          channel={quietHoursModalChannel}
+          initialEnabled={quietHoursByChannel[quietHoursModalChannel].enabled}
+          initialStart={quietHoursByChannel[quietHoursModalChannel].start}
+          initialEnd={quietHoursByChannel[quietHoursModalChannel].end}
+          onSave={(enabled, start, end) => handleSaveQuietHours(quietHoursModalChannel, enabled, start, end)}
+          onClose={() => setQuietHoursModalChannel(null)}
+        />
+      )}
     </div>
   );
 }
