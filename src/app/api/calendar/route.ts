@@ -244,7 +244,10 @@ export async function GET(request: NextRequest) {
               { processId: null },
             ],
           },
-          include: { goal: { select: { title: true } } },
+          include: {
+            goal: { select: { title: true } },
+            assignee: { select: { id: true, name: true, image: true } },
+          },
         })
       : Promise.resolve([]),
     shouldFetchReviews
@@ -375,7 +378,18 @@ export async function GET(request: NextRequest) {
             end: { gt: rangeStart },
           },
           include: {
-            task: { select: { id: true, title: true, description: true, taskType: true, priority: true, status: true, goal: { select: { title: true } } } },
+            task: {
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                taskType: true,
+                priority: true,
+                status: true,
+                goal: { select: { title: true } },
+                assignee: { select: { id: true, name: true, image: true } },
+              },
+            },
           },
         })
       : Promise.resolve([]),
@@ -437,6 +451,9 @@ export async function GET(request: NextRequest) {
       taskType: task.taskType,
       priority: task.priority,
       goalTitle: task.goal?.title,
+      assignee: task.assignee
+        ? { id: task.assignee.id, name: task.assignee.name, image: task.assignee.image }
+        : null,
       color: getTaskTypeColor(task.taskType).color,
     });
   }
@@ -464,6 +481,9 @@ export async function GET(request: NextRequest) {
       goalTitle: block.task.goal?.title,
       mainObjective: block.mainObjective,
       completionStatus: block.completionStatus,
+      assignee: block.task.assignee
+        ? { id: block.task.assignee.id, name: block.task.assignee.name, image: block.task.assignee.image }
+        : null,
       color: getTaskTypeColor(block.task.taskType).color,
     });
   }
@@ -523,10 +543,37 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Collect all attendee IDs across visible meetings in one batched user lookup
+  // to attach avatar-friendly attendee data to meeting extendedProps.
+  const meetingAttendeeIdSet = new Set<string>();
+  for (const meeting of meetings) {
+    if (!isUserInMeeting(meeting, auth.userId)) continue;
+    if (Array.isArray(meeting.attendeeIds)) {
+      for (const id of meeting.attendeeIds as unknown[]) {
+        if (typeof id === 'string' && id) meetingAttendeeIdSet.add(id);
+      }
+    }
+  }
+  const meetingAttendeeUsers = meetingAttendeeIdSet.size > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: Array.from(meetingAttendeeIdSet) } },
+        select: { id: true, name: true, image: true },
+      })
+    : [];
+  const meetingAttendeeById = new Map(meetingAttendeeUsers.map((u) => [u.id, u]));
+
   for (const meeting of meetings) {
     if (!isUserInMeeting(meeting, auth.userId)) {
       console.warn(`[calendar] Meeting "${meeting.title}" skipped — user ${auth.userId} not in attendeeIds:`, meeting.attendeeIds, 'createdById:', meeting.createdById);
       continue;
+    }
+    const resolvedAttendees: Array<{ id: string; name: string | null; image: string | null }> = [];
+    if (Array.isArray(meeting.attendeeIds)) {
+      for (const id of meeting.attendeeIds as unknown[]) {
+        if (typeof id !== 'string' || !id) continue;
+        const u = meetingAttendeeById.get(id);
+        if (u) resolvedAttendees.push({ id: u.id, name: u.name, image: u.image });
+      }
     }
     for (const instance of generateMeetingInstances(meeting, rangeStart, rangeEnd, userTz)) {
       events.push({
@@ -543,6 +590,7 @@ export async function GET(request: NextRequest) {
         occurDate: meeting.occurDate?.toISOString() ?? null,
         createdBy: meeting.createdBy.name,
         meetLink: meeting.meetLink,
+        attendees: resolvedAttendees,
         color: '#f97316',
       });
     }
