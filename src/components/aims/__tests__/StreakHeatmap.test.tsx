@@ -18,7 +18,7 @@
  */
 
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { buildDailyGrid, buildWeeklyGrid } from '../StreakHeatmap';
+import { buildDailyGrid, buildLast7Days, buildWeeklyGrid, rotatedDayLabels } from '../StreakHeatmap';
 import type { DayEntry } from '../StreakHeatmap';
 
 // ── Fixed clock ───────────────────────────────────────────────────────────────
@@ -210,5 +210,85 @@ describe('buildWeeklyGrid — weekly mode', () => {
     const newest0 = cells0[cells0.length - 1].weekKey;
     const newest1 = cells1[cells1.length - 1].weekKey;
     expect(newest1 < newest0).toBe(true);
+  });
+});
+
+// ── buildLast7Days tests ─────────────────────────────────────────────────────
+
+describe('buildLast7Days — rolling 7-day strip', () => {
+  it('returns exactly 7 cells, oldest first', () => {
+    const cells = buildLast7Days([], 127);
+    expect(cells).toHaveLength(7);
+    // Today (Wed 2026-05-20) is the rightmost cell.
+    expect(cells[6].dateKey).toBe('2026-05-20');
+    // First cell is today − 6 days.
+    expect(cells[0].dateKey).toBe('2026-05-14');
+  });
+
+  it('inactive days (off-bitmask) render "inactive" regardless of completion', () => {
+    // M-F bitmask (62) → Sun 05-17 and Sat (none in window) are inactive.
+    // Add a completion for Sun 05-17 — should still render inactive.
+    const history = [entry('2026-05-17', true)];
+    const cells = buildLast7Days(history, 62);
+    const sun = cells.find((c) => c.dateKey === '2026-05-17');
+    expect(sun?.state).toBe('inactive');
+  });
+
+  it('completed active days render "completed"', () => {
+    // Mon 05-18 is active (M-F=62) and completed.
+    const history = [entry('2026-05-18', true)];
+    const cells = buildLast7Days(history, 62);
+    const mon = cells.find((c) => c.dateKey === '2026-05-18');
+    expect(mon?.state).toBe('completed');
+  });
+
+  it('missed active days (uncompleted) render "missed"', () => {
+    // Tue 05-19 is active and not completed.
+    const cells = buildLast7Days([], 62);
+    const tue = cells.find((c) => c.dateKey === '2026-05-19');
+    expect(tue?.state).toBe('missed');
+  });
+
+  it('today (Wed 05-20), active but not completed, is "missed"', () => {
+    const cells = buildLast7Days([], 62);
+    expect(cells[6].dateKey).toBe('2026-05-20');
+    expect(cells[6].state).toBe('missed');
+  });
+
+  it('today completed → "completed"', () => {
+    const cells = buildLast7Days([entry('2026-05-20', true)], 62);
+    expect(cells[6].state).toBe('completed');
+  });
+
+  it('activeWeekdays=0: every cell is inactive', () => {
+    const cells = buildLast7Days([], 0);
+    cells.forEach((c) => expect(c.state).toBe('inactive'));
+  });
+});
+
+// ── rotatedDayLabels tests ───────────────────────────────────────────────────
+
+describe('rotatedDayLabels — today on the right', () => {
+  it('today=Wed (3) → ends with W', () => {
+    const labels = rotatedDayLabels(3);
+    expect(labels).toHaveLength(7);
+    // Today (Wed) is index 6.
+    expect(labels[6]).toBe('W');
+    // 6 days back from Wed is Thu (T).
+    expect(labels[0]).toBe('T');
+  });
+
+  it('today=Sun (0) → ends with S', () => {
+    const labels = rotatedDayLabels(0);
+    expect(labels[6]).toBe('S');
+    // 6 days back from Sun is Mon (M).
+    expect(labels[0]).toBe('M');
+  });
+
+  it('today=Sat (6) → ends with S, starts with S (next Sun)', () => {
+    const labels = rotatedDayLabels(6);
+    expect(labels[6]).toBe('S');
+    // 6 days back from Sat is Sun (S).
+    expect(labels[0]).toBe('S');
   });
 });
