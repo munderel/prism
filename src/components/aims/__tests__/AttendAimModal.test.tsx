@@ -1,7 +1,7 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen } from '@testing-library/react';
-import { render, userEvent } from '@/test/utils';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
+import { render, renderWithProviders, userEvent } from '@/test/utils';
 import { AttendAimModal, type GroupableAimItem } from '../AttendAimModal';
 
 const baseItem: GroupableAimItem = {
@@ -83,5 +83,102 @@ describe('AttendAimModal', () => {
     };
     render(<AttendAimModal item={item} onClose={onClose} onAttend={onAttend} />);
     expect(screen.getByText('A teammate')).toBeInTheDocument();
+  });
+
+  describe('custom AIM branch (isDaily=false)', () => {
+    const customItem: GroupableAimItem = {
+      ...baseItem,
+      aimCategory: { id: 'cat-1', name: 'Pottery class', isDaily: false },
+    };
+
+    it('renders the legacy "visit the AIMs page" text when no invitationId is provided', () => {
+      render(<AttendAimModal item={customItem} onClose={onClose} onAttend={onAttend} />);
+      expect(
+        screen.getByText(/visit the AIMs page after attending/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/Link to similar AIM/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Add as one-off/i)).not.toBeInTheDocument();
+    });
+
+    it('renders both link/one-off buttons when an invitationId is provided', () => {
+      const withInvite: GroupableAimItem = { ...customItem, invitationId: 'inv-99' };
+      render(<AttendAimModal item={withInvite} onClose={onClose} onAttend={onAttend} />);
+      expect(screen.getByText(/Link to similar AIM/i)).toBeInTheDocument();
+      expect(screen.getByText(/Add as one-off/i)).toBeInTheDocument();
+      // legacy text replaced
+      expect(
+        screen.queryByText(/visit the AIMs page after attending/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it('does NOT render the link/one-off branch when isDaily=true', () => {
+      render(<AttendAimModal item={baseItem} onClose={onClose} onAttend={onAttend} />);
+      expect(screen.queryByText(/Link to similar AIM/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Add as one-off/i)).not.toBeInTheDocument();
+    });
+
+    describe('with invitationId — fetch behaviour', () => {
+      const originalFetch = global.fetch;
+      const fetchMock = vi.fn();
+
+      beforeEach(() => {
+        fetchMock.mockReset();
+        global.fetch = fetchMock as unknown as typeof global.fetch;
+      });
+
+      afterEach(() => {
+        global.fetch = originalFetch;
+      });
+
+      it('POSTs to /one-off when "Add as one-off" is clicked, then closes', async () => {
+        fetchMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
+        const withInvite: GroupableAimItem = { ...customItem, invitationId: 'inv-99' };
+        render(<AttendAimModal item={withInvite} onClose={onClose} onAttend={onAttend} />);
+
+        await userEvent.click(screen.getByText(/Add as one-off/i));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(url).toContain('/api/aims/invitations/inv-99/one-off');
+        expect((init as RequestInit).method).toBe('POST');
+        await waitFor(() => expect(onClose).toHaveBeenCalled());
+      });
+
+      it('opens the similar-AIM picker on "Link to similar AIM" click and lists results', async () => {
+        // The picker view fetches via SWR — provide the matching data
+        const swrData = {
+          '/api/aims/similar': {
+            target: { id: 'cat-1', name: 'Pottery class' },
+            results: [
+              {
+                id: 'ua-1',
+                aimCategoryId: 'cat-pot',
+                name: 'Ceramics',
+                isDaily: false,
+                currentPhase: 'GROW',
+                currentStreak: 3,
+                distance: 4,
+              },
+            ],
+          },
+        };
+        const withInvite: GroupableAimItem = { ...customItem, invitationId: 'inv-99' };
+        renderWithProviders(
+          <AttendAimModal item={withInvite} onClose={onClose} onAttend={onAttend} />,
+          { swrData },
+        );
+
+        await userEvent.click(screen.getByText(/Link to similar AIM/i));
+
+        // Sub-view heading shows up
+        await waitFor(() =>
+          expect(
+            screen.getByRole('heading', { name: /Link to similar AIM/i }),
+          ).toBeInTheDocument(),
+        );
+        // Result row renders
+        await waitFor(() => expect(screen.getByText('Ceramics')).toBeInTheDocument());
+      });
+    });
   });
 });
