@@ -26,6 +26,7 @@ import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { PRISM_COLORS } from '@/lib/prism-colors';
 import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
+import { buildTooltipEl, positionTooltip, hasHoverCapability } from './EventTooltip';
 
 interface SelectedEventPopover {
   eventId: string;
@@ -1549,6 +1550,32 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               info.el.style.position = 'relative';
               info.el.appendChild(badge);
             }
+
+            // Rich hover tooltip with avatar + assignee/attendees (Partial 1).
+            if (!hasHoverCapability()) return;
+            let tooltipEl: HTMLElement | null = null;
+            const onEnter = () => {
+              if (tooltipEl) return;
+              tooltipEl = buildTooltipEl(info.event);
+              if (!tooltipEl) return;
+              document.body.appendChild(tooltipEl);
+              positionTooltip(tooltipEl, info.el);
+            };
+            const onLeave = () => {
+              if (tooltipEl && tooltipEl.parentNode) tooltipEl.parentNode.removeChild(tooltipEl);
+              tooltipEl = null;
+            };
+            info.el.addEventListener('mouseenter', onEnter);
+            info.el.addEventListener('mouseleave', onLeave);
+            (info.el as HTMLElement & { __prismTooltipCleanup?: () => void }).__prismTooltipCleanup = () => {
+              info.el.removeEventListener('mouseenter', onEnter);
+              info.el.removeEventListener('mouseleave', onLeave);
+              onLeave();
+            };
+          }}
+          eventWillUnmount={(info) => {
+            const cleanup = (info.el as HTMLElement & { __prismTooltipCleanup?: () => void }).__prismTooltipCleanup;
+            if (cleanup) cleanup();
           }}
         />
       </div>

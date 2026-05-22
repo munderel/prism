@@ -20,6 +20,7 @@ import { PRISM_COLORS, WEEKLY_HOUR_TARGET, WEEKLY_HOUR_WARNING, taskTypeToColorK
 import type { ColorDef, ItemType } from '@/lib/prism-colors';
 import { useTaskTypeColors } from '@/hooks/useTaskTypeColors';
 import { getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
+import { buildTooltipEl, positionTooltip, hasHoverCapability } from './EventTooltip';
 import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
 import type { WorkBlockNameRequest, WorkBlockNameResolved } from './WorkBlockObjectiveModal';
 import { createWorkBlock } from '@/lib/work-blocks-client';
@@ -1548,6 +1549,32 @@ export function CalendarSplitView({
                 info.el.style.position = 'relative';
                 info.el.appendChild(badge);
               }
+
+              // Rich hover tooltip with avatar + assignee/attendees (Partial 1).
+              if (!hasHoverCapability()) return;
+              let tooltipEl: HTMLElement | null = null;
+              const onEnter = () => {
+                if (tooltipEl) return;
+                tooltipEl = buildTooltipEl(info.event);
+                if (!tooltipEl) return;
+                document.body.appendChild(tooltipEl);
+                positionTooltip(tooltipEl, info.el);
+              };
+              const onLeave = () => {
+                if (tooltipEl && tooltipEl.parentNode) tooltipEl.parentNode.removeChild(tooltipEl);
+                tooltipEl = null;
+              };
+              info.el.addEventListener('mouseenter', onEnter);
+              info.el.addEventListener('mouseleave', onLeave);
+              (info.el as HTMLElement & { __prismTooltipCleanup?: () => void }).__prismTooltipCleanup = () => {
+                info.el.removeEventListener('mouseenter', onEnter);
+                info.el.removeEventListener('mouseleave', onLeave);
+                onLeave();
+              };
+            }}
+            eventWillUnmount={(info) => {
+              const cleanup = (info.el as HTMLElement & { __prismTooltipCleanup?: () => void }).__prismTooltipCleanup;
+              if (cleanup) cleanup();
             }}
             slotMinTime="00:00:00"
             slotMaxTime="24:00:00"

@@ -10,6 +10,7 @@ import type { EventClickArg } from '@fullcalendar/core';
 import { GripVertical, Clock, Loader2 } from 'lucide-react';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { scheduleCalendarEvent, scheduleItemById } from './scheduleEvent';
+import { buildTooltipEl, positionTooltip, hasHoverCapability } from './EventTooltip';
 
 export interface UnscheduledItem {
   id: string;
@@ -269,6 +270,33 @@ export function InlineCalendar({
             eventDrop={handleEventDrop}
             eventReceive={handleEventReceive}
             eventClick={handleEventClick}
+            eventDidMount={(info) => {
+              // Rich hover tooltip with avatar + assignee/attendees (Partial 1).
+              if (!hasHoverCapability()) return;
+              let tooltipEl: HTMLElement | null = null;
+              const onEnter = () => {
+                if (tooltipEl) return;
+                tooltipEl = buildTooltipEl(info.event);
+                if (!tooltipEl) return;
+                document.body.appendChild(tooltipEl);
+                positionTooltip(tooltipEl, info.el);
+              };
+              const onLeave = () => {
+                if (tooltipEl && tooltipEl.parentNode) tooltipEl.parentNode.removeChild(tooltipEl);
+                tooltipEl = null;
+              };
+              info.el.addEventListener('mouseenter', onEnter);
+              info.el.addEventListener('mouseleave', onLeave);
+              (info.el as HTMLElement & { __prismTooltipCleanup?: () => void }).__prismTooltipCleanup = () => {
+                info.el.removeEventListener('mouseenter', onEnter);
+                info.el.removeEventListener('mouseleave', onLeave);
+                onLeave();
+              };
+            }}
+            eventWillUnmount={(info) => {
+              const cleanup = (info.el as HTMLElement & { __prismTooltipCleanup?: () => void }).__prismTooltipCleanup;
+              if (cleanup) cleanup();
+            }}
             height="auto"
             nowIndicator={true}
             slotMinTime={workingHoursStart + ':00'}
