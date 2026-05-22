@@ -48,6 +48,7 @@ vi.mock('@/lib/prisma', () => ({
 vi.mock('@/lib/auth-guard', () => ({
   requireAuth: vi.fn(),
   authError: (a: any) => Response.json({ error: a.error }, { status: 401 }),
+  checkStackReadAccess: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('@/lib/schemas', () => ({
@@ -101,12 +102,30 @@ import { PUT } from '@/app/api/aims/user/route';
 const mockFindUnique = vi.mocked(prisma.aimInstance.findUnique);
 const mockUpdate = vi.mocked(prisma.aimInstance.update);
 const mockKpiUpdate = vi.mocked(prisma.kpi.update);
-const mockKpiFindUnique = vi.mocked(prisma.kpi.findUnique);
+const mockKpiFindMany = vi.mocked(prisma.kpi.findMany);
 const mockAimCategoryFindMany = vi.mocked(prisma.aimCategory.findMany);
-const mockAimCategoryFindUnique = vi.mocked(prisma.aimCategory.findUnique);
 const mockUserAimFindUnique = vi.mocked(prisma.userAim.findUnique);
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockParseBody = vi.mocked(parseBody);
+
+const mockStack = {
+  id: 'stack-1',
+  isCompany: false,
+  ownerId: 'user-1',
+} as const;
+
+function kpiFixture(id: string, type: 'NUMERIC' | 'BINARY') {
+  return {
+    id,
+    type,
+    goalId: 'goal-1',
+    goal: { id: 'goal-1', stack: mockStack, deletedAt: null },
+  } as any;
+}
+
+function ownedCategory(id: string) {
+  return { id, createdByUserId: 'user-1', isDefault: false };
+}
 
 function makePatchRequest() {
   return { json: async () => ({ status: 'COMPLETED' }) } as any;
@@ -266,8 +285,8 @@ describe('PUT /api/aims/user — KPI linkage validation', () => {
         aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-binary' }],
       },
     } as any);
-    mockAimCategoryFindMany.mockResolvedValue([{ id: 'cat-1' }] as any);
-    mockKpiFindUnique.mockResolvedValue({ id: 'kpi-binary', type: 'BINARY' } as any);
+    mockAimCategoryFindMany.mockResolvedValue([ownedCategory('cat-1')] as any);
+    mockKpiFindMany.mockResolvedValue([kpiFixture('kpi-binary', 'BINARY')]);
 
     const res = await PUT(makePutRequest({ aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-binary' }] }));
     const body = await res.json();
@@ -282,8 +301,8 @@ describe('PUT /api/aims/user — KPI linkage validation', () => {
         aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-missing' }],
       },
     } as any);
-    mockAimCategoryFindMany.mockResolvedValue([{ id: 'cat-1' }] as any);
-    mockKpiFindUnique.mockResolvedValue(null);
+    mockAimCategoryFindMany.mockResolvedValue([ownedCategory('cat-1')] as any);
+    mockKpiFindMany.mockResolvedValue([]);
 
     const res = await PUT(makePutRequest({ aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-missing' }] }));
     const body = await res.json();
@@ -298,7 +317,7 @@ describe('PUT /api/aims/user — KPI linkage validation', () => {
         aims: [{ aimCategoryId: 'cat-1', kpiIncrement: -1 }],
       },
     } as any);
-    mockAimCategoryFindMany.mockResolvedValue([{ id: 'cat-1' }] as any);
+    mockAimCategoryFindMany.mockResolvedValue([ownedCategory('cat-1')] as any);
 
     const res = await PUT(makePutRequest({ aims: [{ aimCategoryId: 'cat-1', kpiIncrement: -1 }] }));
     const body = await res.json();
@@ -313,11 +332,10 @@ describe('PUT /api/aims/user — KPI linkage validation', () => {
         aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-numeric', kpiIncrement: 0.5 }],
       },
     } as any);
-    mockAimCategoryFindMany.mockResolvedValue([{ id: 'cat-1' }] as any);
-    mockKpiFindUnique.mockResolvedValue({ id: 'kpi-numeric', type: 'NUMERIC' } as any);
-    mockAimCategoryFindUnique.mockResolvedValue({ createdByUserId: 'user-1', isDefault: false } as any);
+    mockAimCategoryFindMany.mockResolvedValue([ownedCategory('cat-1')] as any);
+    mockKpiFindMany.mockResolvedValue([kpiFixture('kpi-numeric', 'NUMERIC')]);
 
-    vi.mocked(prisma.$transaction).mockResolvedValue([{ id: 'ua-1', aimCategory: {} }] as any);
+    vi.mocked(prisma.$transaction).mockResolvedValue([{ id: 'ua-1', aimCategory: {} }, {}] as any);
 
     const mockAimCategoryUpdate = vi.mocked(prisma.aimCategory.update);
     mockAimCategoryUpdate.mockResolvedValue({} as any);
@@ -339,16 +357,53 @@ describe('PUT /api/aims/user — KPI linkage validation', () => {
         aims: [{ aimCategoryId: 'cat-1', linkedKpiId: null }],
       },
     } as any);
-    mockAimCategoryFindMany.mockResolvedValue([{ id: 'cat-1' }] as any);
-    mockAimCategoryFindUnique.mockResolvedValue({ createdByUserId: 'user-1', isDefault: false } as any);
+    mockAimCategoryFindMany.mockResolvedValue([ownedCategory('cat-1')] as any);
 
-    vi.mocked(prisma.$transaction).mockResolvedValue([{ id: 'ua-1', aimCategory: {} }] as any);
+    vi.mocked(prisma.$transaction).mockResolvedValue([{ id: 'ua-1', aimCategory: {} }, {}] as any);
     vi.mocked(prisma.aimCategory.update).mockResolvedValue({} as any);
 
     const res = await PUT(makePutRequest({ aims: [{ aimCategoryId: 'cat-1', linkedKpiId: null }] }));
 
     expect(res.status).toBe(200);
-    // KPI update (increment) should NOT be called — unlinking doesn't roll back
     expect(mockKpiUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects cross-user writes to another user\'s AIM category (403)', async () => {
+    mockParseBody.mockResolvedValue({
+      data: {
+        aims: [{ aimCategoryId: 'cat-other', linkedKpiId: 'kpi-numeric' }],
+      },
+    } as any);
+    mockAimCategoryFindMany.mockResolvedValue([
+      { id: 'cat-other', createdByUserId: 'user-2', isDefault: false },
+    ] as any);
+
+    const res = await PUT(makePutRequest({ aims: [{ aimCategoryId: 'cat-other', linkedKpiId: 'kpi-numeric' }] }));
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe('Not allowed to modify this AIM category');
+    expect(mockKpiFindMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects linking to a KPI on a stack the user can\'t read (403)', async () => {
+    const { checkStackReadAccess } = await import('@/lib/auth-guard');
+    vi.mocked(checkStackReadAccess).mockResolvedValueOnce(
+      Response.json({ error: 'Forbidden' }, { status: 403 }),
+    );
+
+    mockParseBody.mockResolvedValue({
+      data: {
+        aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-private' }],
+      },
+    } as any);
+    mockAimCategoryFindMany.mockResolvedValue([ownedCategory('cat-1')] as any);
+    mockKpiFindMany.mockResolvedValue([kpiFixture('kpi-private', 'NUMERIC')]);
+
+    const res = await PUT(makePutRequest({ aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-private' }] }));
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe('Not allowed to link to this KPI');
   });
 });

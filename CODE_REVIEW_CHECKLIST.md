@@ -531,7 +531,6 @@
 - [ ] `src/hooks/useClickOutside.ts` — Event listener cleanup, ref typing
 - [ ] `src/hooks/useKpiCompletionPrompt.ts` — State management, edge cases
 - [ ] `src/hooks/useMediaQuery.ts` — SSR compatibility (window check), listener cleanup
-- [ ] `src/hooks/usePushNotifications.ts` — Service worker lifecycle, error handling
 - [ ] `src/hooks/useUserSettings.ts` — Cache invalidation, default values
 
 ### 7.2 Core Utilities

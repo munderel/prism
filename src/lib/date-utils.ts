@@ -19,6 +19,24 @@ export function minutesBetween(start: Date | string, end: Date | string): number
 }
 
 /**
+ * True when half-open ranges [aStart, aEnd) and [bStart, bEnd) intersect.
+ * Touching endpoints (aEnd === bStart) do NOT count as overlap, matching the
+ * convention used by the scheduling engine.
+ */
+export function rangesOverlap(
+  aStart: Date | string,
+  aEnd: Date | string,
+  bStart: Date | string,
+  bEnd: Date | string,
+): boolean {
+  const aS = (aStart instanceof Date ? aStart : new Date(aStart)).getTime();
+  const aE = (aEnd instanceof Date ? aEnd : new Date(aEnd)).getTime();
+  const bS = (bStart instanceof Date ? bStart : new Date(bStart)).getTime();
+  const bE = (bEnd instanceof Date ? bEnd : new Date(bEnd)).getTime();
+  return aS < bE && bS < aE;
+}
+
+/**
  * Returns a 'YYYY-MM-DD' string in the user's local timezone.
  * With no argument, returns today's date.
  * Use this instead of `new Date().toISOString().split('T')[0]`.
@@ -386,4 +404,44 @@ export function getMonthsInYear(year: number): LabeledDateBoundary[] {
     start: getLocalDateString(new Date(year, i, 1)),
     end: getLocalDateString(new Date(year, i + 1, 0)),
   }));
+}
+
+/**
+ * Returns a new Date `n` days after `date` in local time (negative for past).
+ * Uses `setDate(getDate() + n)` on a clone so month rollovers and DST shifts
+ * behave correctly. Does not mutate the input.
+ */
+export function addDays(date: Date, n: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+/**
+ * Returns the Monday of the ISO week containing `date`, at local midnight.
+ * Uses the same `(getDay() + 6) % 7` shift as `getWeekBoundaries()` so the
+ * two helpers agree on week boundaries. Does not mutate the input.
+ */
+export function mondayOfWeek(date: Date): Date {
+  const d = new Date(date);
+  const dayOfWeek = (d.getDay() + 6) % 7; // Monday = 0, Sunday = 6
+  d.setDate(d.getDate() - dayOfWeek);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Returns the ISO 8601 week key for `date` as `YYYY-Www` (e.g. `2026-W21`).
+ * The year component is the ISO *week year* — for dates near Jan 1 / Dec 31
+ * this may differ from the calendar year (e.g. 2026-01-01 is in 2025-W53).
+ * ISO week 1 is the week containing the year's first Thursday.
+ */
+export function isoWeekKey(date: Date): string {
+  // Use UTC clone so DST never affects the Thursday-shift math.
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7; // Sun=7 instead of 0
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // shift to nearest Thursday
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }

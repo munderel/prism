@@ -150,7 +150,7 @@ In Vercel → Project Settings → Environment Variables, add:
 | `VAPID_PUBLIC_KEY` | Generated via `npx web-push generate-vapid-keys` | For web push (server-side signing) |
 | `VAPID_PRIVATE_KEY` | Generated via `npx web-push generate-vapid-keys` | For web push (server-side signing) |
 | `VAPID_EMAIL` | Your admin email, e.g. `admin@yourapp.com` | Web-push contact email (required by the standard) |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Same value as `VAPID_PUBLIC_KEY` | Exposed to the browser for `pushManager.subscribe`. Must be set as a `NEXT_PUBLIC_` var so the client bundle can read it. **Component 19 note:** the settings page and subscribe flow now fetch the key via `/api/notifications/public-key` (server-rendered), but keeping this env var set ensures the legacy `usePushNotifications` hook also works. |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Same value as `VAPID_PUBLIC_KEY` | Historically exposed to the browser for `pushManager.subscribe`. The settings page and subscribe flow now fetch the key via `/api/notifications/public-key` (server-rendered), so this var is no longer strictly required, but set it for parity with the example file. |
 | `OPENROUTER_API_KEY` | From Phase 5 | For AI features |
 | `NEXT_PUBLIC_DEV_LOGIN` | `false` (or don't set it) | N/A |
 

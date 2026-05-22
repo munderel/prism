@@ -18,7 +18,8 @@
 
 import { useState, useEffect } from 'react';
 import { useSWRConfig } from 'swr';
-import { parseLocalDate } from '@/lib/date-utils';
+import { minutesBetween, parseLocalDate } from '@/lib/date-utils';
+import { matchPrefix } from '@/lib/swr-helpers';
 import { CompletionReviewRow } from '@/components/shared/CompletionReviewRow';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -137,9 +138,7 @@ export function StepLastWeekReview({
     try {
       const blockPatches = Object.entries(blockPicks).map(([id, completionStatus]) => {
         const block = workBlocks.find((b) => b.id === id);
-        const scheduledMin = block
-          ? Math.max(0, Math.round((new Date(block.end).getTime() - new Date(block.start).getTime()) / 60000))
-          : 60;
+        const scheduledMin = block ? minutesBetween(block.start, block.end) : 60;
         const body: Record<string, unknown> = { completionStatus };
         body.actualMinutes = blockActual[id] ?? scheduledMin;
         return fetch(`/api/work-blocks/${id}`, {
@@ -167,8 +166,9 @@ export function StepLastWeekReview({
         toast.error(`${failures.length} item(s) failed to save. Please try again.`);
       } else {
         setSaved(true);
-        void mutate('/api/work-blocks');
-        void mutate('/api/aims/instances');
+        // Parameterised SWR keys (e.g. /api/work-blocks?date=…) — predicate form.
+        void mutate(matchPrefix('/api/work-blocks'));
+        void mutate(matchPrefix('/api/aims/instances'));
       }
     } catch {
       toast.error('Failed to save reviews. Please try again.');
@@ -211,12 +211,7 @@ export function StepLastWeekReview({
             Work Blocks
           </p>
           {workBlocks.map((b) => {
-            const scheduledMin = Math.max(
-              0,
-              Math.round(
-                (new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000,
-              ),
-            );
+            const scheduledMin = minutesBetween(b.start, b.end);
             return (
               <CompletionReviewRow
                 key={`wb-${b.id}`}
@@ -236,6 +231,7 @@ export function StepLastWeekReview({
                 onChange={(status, actualMinutes) => {
                   setBlockPicks((prev) => ({ ...prev, [b.id]: status }));
                   setBlockActual((prev) => ({ ...prev, [b.id]: actualMinutes }));
+                  if (saved) setSaved(false);
                 }}
               />
             );
@@ -270,6 +266,7 @@ export function StepLastWeekReview({
                 onChange={(status, actualMinutes) => {
                   setAimPicks((prev) => ({ ...prev, [a.id]: status }));
                   setAimActual((prev) => ({ ...prev, [a.id]: actualMinutes }));
+                  if (saved) setSaved(false);
                 }}
               />
             );
