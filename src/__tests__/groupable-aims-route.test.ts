@@ -123,7 +123,7 @@ describe('GET /api/calendar/groupable-aims', () => {
     expect(json[0].attendStatus).toBe('MAYBE');
   });
 
-  it('excludes instance already attended (own instance same category+date)', async () => {
+  it('returns attendStatus=GOING when own instance exists for same category+date', async () => {
     vi.mocked(prisma.aimInstance.findMany)
       .mockResolvedValueOnce([teammateInstance] as any) // teammate instances
       .mockResolvedValueOnce([{ // own instance same category+date
@@ -135,8 +135,30 @@ describe('GET /api/calendar/groupable-aims', () => {
     const req = new Request('http://localhost/api/calendar/groupable-aims?date=2026-05-20');
     const res = await GET(req as any);
     const json = await res.json();
-    // Should be filtered out since own instance exists for same category+date
-    expect(json).toHaveLength(0);
+    // Tile stays visible so the ✓ badge can render; status reflects user is GOING
+    expect(json).toHaveLength(1);
+    expect(json[0].id).toBe('inst-t1');
+    expect(json[0].attendStatus).toBe('GOING');
+  });
+
+  it('prefers GOING over MAYBE when user has both an own instance and a MAYBE dismissal', async () => {
+    const maybed = {
+      ...teammateInstance,
+      dismissals: [{ id: 'dis-1', status: 'MAYBE' }],
+    };
+    vi.mocked(prisma.aimInstance.findMany)
+      .mockResolvedValueOnce([maybed] as any)
+      .mockResolvedValueOnce([{
+        aimCategoryId: 'cat-1',
+        scheduledDate: new Date('2026-05-20T00:00:00.000Z'),
+        timeBlockStart: null,
+      }] as any);
+
+    const req = new Request('http://localhost/api/calendar/groupable-aims?date=2026-05-20');
+    const res = await GET(req as any);
+    const json = await res.json();
+    expect(json).toHaveLength(1);
+    expect(json[0].attendStatus).toBe('GOING');
   });
 
   it('accepts start+end range parameters', async () => {
