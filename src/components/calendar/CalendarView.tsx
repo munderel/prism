@@ -1501,11 +1501,18 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               info.el.style.opacity = '0.65';
               info.el.style.borderStyle = 'dashed';
               info.el.style.cursor = 'pointer';
-              // Add small attend-status badge if MAYBE
+              // Add small attend-status badge if MAYBE or GOING
               if (props.attendStatus === 'MAYBE') {
                 const badge = document.createElement('span');
                 badge.textContent = '?';
                 badge.title = 'Maybe attending';
+                badge.style.cssText = 'position:absolute;top:2px;right:4px;font-size:10px;font-weight:700;color:#5eead4;';
+                info.el.style.position = 'relative';
+                info.el.appendChild(badge);
+              } else if (props.attendStatus === 'GOING') {
+                const badge = document.createElement('span');
+                badge.textContent = '✓';
+                badge.title = 'Attending';
                 badge.style.cssText = 'position:absolute;top:2px;right:4px;font-size:10px;font-weight:700;color:#5eead4;';
                 info.el.style.position = 'relative';
                 info.el.appendChild(badge);

@@ -667,7 +667,10 @@ export function CalendarSplitView({
 
     // Build ephemeral groupable-AIM overlay events from teammates (same palette as CalendarView)
     const groupableAimEvents = groupableAims.map((item) => {
-      const attendBadge = item.attendStatus === 'MAYBE' ? ' ?' : '';
+      const attendBadge =
+        item.attendStatus === 'MAYBE' ? ' ?' :
+        item.attendStatus === 'GOING' ? ' ✓' :
+        '';
       return {
         id: `groupable-aim-${item.id}`,
         title: `${item.aimCategory.name}${attendBadge}`,
