@@ -1,3 +1,3 @@
 {
-  "buildCommand": "prisma migrate deploy && next build"
+  "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then prisma migrate deploy && next build; else next build; fi"
 }
