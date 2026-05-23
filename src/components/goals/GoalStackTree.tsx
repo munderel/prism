@@ -27,6 +27,7 @@ import { GoalEditor } from './GoalEditor';
 import { KpiSidebar } from './KpiSidebar';
 import { TaskCardInline } from './TaskCardInline';
 import { TaskEditor } from '../tasks/TaskEditor';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 /** Lightweight Goal shape matching the API response used in this tree */
 interface GoalTreeItem {
@@ -247,6 +248,11 @@ export function GoalStackTree({
     task?: TaskTreeItem;
   }>({ open: false });
   const [selectedGoalForKpi, setSelectedGoalForKpi] = useState<GoalTreeItem | null>(null);
+  const [confirmState, setConfirmState] = useState<
+    | { kind: 'goal'; goalId: string }
+    | { kind: 'task'; taskId: string }
+    | null
+  >(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -283,8 +289,11 @@ export function GoalStackTree({
     }
   }, [flatItems, mutateGoals]);
 
-  const handleDelete = useCallback(async (goalId: string) => {
-    if (!confirm('Delete this goal and all its children?')) return;
+  const handleDelete = useCallback((goalId: string) => {
+    setConfirmState({ kind: 'goal', goalId });
+  }, []);
+
+  const performGoalDelete = useCallback(async (goalId: string) => {
     await fetch(`/api/goals/${goalId}`, { method: 'DELETE' });
     mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
     globalMutate('/api/stacks');
@@ -333,8 +342,11 @@ export function GoalStackTree({
     setTaskEditorState({ open: true, task });
   }, []);
 
-  const handleTaskDelete = useCallback(async (taskId: string) => {
-    if (!confirm('Delete this task?')) return;
+  const handleTaskDelete = useCallback((taskId: string) => {
+    setConfirmState({ kind: 'task', taskId });
+  }, []);
+
+  const performTaskDelete = useCallback(async (taskId: string) => {
     await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     mutateGoals(freshFetcher(`/api/goals?stackId=${stackId}`), { revalidate: false });
   }, [mutateGoals, stackId]);
@@ -491,6 +503,26 @@ export function GoalStackTree({
           />
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={confirmState !== null}
+        variant="danger"
+        title={confirmState?.kind === 'task' ? 'Delete task?' : 'Delete goal?'}
+        message={
+          confirmState?.kind === 'task'
+            ? 'This task will be removed.'
+            : 'This goal and all of its children will be deleted.'
+        }
+        confirmLabel="Delete"
+        onCancel={() => setConfirmState(null)}
+        onConfirm={async () => {
+          const pending = confirmState;
+          setConfirmState(null);
+          if (!pending) return;
+          if (pending.kind === 'goal') await performGoalDelete(pending.goalId);
+          else await performTaskDelete(pending.taskId);
+        }}
+      />
     </div>
   );
 }

@@ -111,9 +111,8 @@ describe('GoalStackTree', () => {
     });
   });
 
-  it('calls confirm and DELETE when delete button is clicked', async () => {
+  it('opens confirm dialog and calls DELETE when confirmed', async () => {
     const user = userEvent.setup();
-    window.confirm = vi.fn(() => true);
     global.fetch = createMockFetch({}) as any;
 
     const goals = [createGoal({ id: 'g-1', title: 'My Goal', level: 'HIGH_HARD', parentId: null })];
@@ -127,15 +126,16 @@ describe('GoalStackTree', () => {
     const deleteBtn = screen.getByTitle('Delete goal');
     await user.click(deleteBtn);
 
-    expect(window.confirm).toHaveBeenCalledWith('Delete this goal and all its children?');
+    const confirmBtn = await screen.findByRole('button', { name: 'Delete' });
+    await user.click(confirmBtn);
+
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith('/api/goals/g-1', expect.objectContaining({ method: 'DELETE' }));
     });
   });
 
-  it('does not delete when confirm is cancelled', async () => {
+  it('does not delete when confirm dialog is cancelled', async () => {
     const user = userEvent.setup();
-    window.confirm = vi.fn(() => false);
     global.fetch = createMockFetch({}) as any;
 
     const goals = [createGoal({ id: 'g-1', title: 'My Goal', level: 'HIGH_HARD', parentId: null })];
@@ -149,7 +149,9 @@ describe('GoalStackTree', () => {
     const deleteBtn = screen.getByTitle('Delete goal');
     await user.click(deleteBtn);
 
-    expect(window.confirm).toHaveBeenCalled();
+    const cancelBtn = await screen.findByRole('button', { name: 'Cancel' });
+    await user.click(cancelBtn);
+
     expect(global.fetch).not.toHaveBeenCalledWith('/api/goals/g-1', expect.objectContaining({ method: 'DELETE' }));
   });
 });

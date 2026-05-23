@@ -207,6 +207,33 @@ function ReviewsPageInner() {
     mutateTeamConfigs();
   };
 
+  const [startingReview, setStartingReview] = useState<string | null>(null);
+
+  const startSelfReview = async (reviewType: 'WEEKLY' | 'MONTHLY' | 'YEARLY') => {
+    setStartingReview(reviewType);
+    try {
+      const scheduledDate = `${getLocalDateString()}T00:00:00.000Z`;
+      const res = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewType, scheduledDate }),
+      });
+      if (res.status === 409) {
+        const conflict = await res.json().catch(() => null);
+        if (conflict?.existingId) {
+          router.push(`/reviews/${conflict.existingId}/complete`);
+          return;
+        }
+      }
+      if (res.ok) {
+        const review = await res.json();
+        router.push(`/reviews/${review.id}/complete`);
+      }
+    } finally {
+      setStartingReview(null);
+    }
+  };
+
   const handleExportCsv = async () => {
     setExporting(true);
     try {
@@ -258,6 +285,26 @@ function ReviewsPageInner() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
+
+          {/* Self-serve review triggers */}
+          <div className="glass-panel p-4">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
+              <PlayCircle className="h-4 w-4 text-indigo-400" />
+              Start Review
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              {REVIEW_TYPES.map((type) => (
+                <button
+                  key={type}
+                  onClick={() => startSelfReview(type)}
+                  disabled={startingReview !== null}
+                  className="rounded-lg border border-indigo-600/30 bg-indigo-600/10 px-3 py-2 text-xs font-medium text-indigo-300 hover:bg-indigo-600/20 transition-colors disabled:opacity-50"
+                >
+                  {startingReview === type ? '…' : type}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Active Team Review Schedules */}
           {Array.isArray(teamReviewConfigs) && teamReviewConfigs.length > 0 && (

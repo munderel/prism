@@ -15,6 +15,18 @@ import {
 } from 'lucide-react';
 
 import { getLocalDateString, formatDisplayDate } from '@/lib/date-utils';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { PRISM_COLORS } from '@/lib/prism-colors';
 
 type Tab = 'reviews' | 'tasks' | 'work_blocks' | 'aims' | 'goals' | 'ideas' | 'distractions' | 'gratitudes';
 
@@ -536,6 +548,22 @@ function TasksTab({ from, to }: { from: string; to: string }) {
   const completed = tasks.filter((t) => t.status === 'DONE');
   const completionRate = tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0;
 
+  const typeBreakdown = useMemo(() => {
+    const counts = new Map<string, { type: string; total: number; done: number }>();
+    for (const t of tasks) {
+      const row = counts.get(t.taskType) ?? { type: t.taskType, total: 0, done: 0 };
+      row.total += 1;
+      if (t.status === 'DONE') row.done += 1;
+      counts.set(t.taskType, row);
+    }
+    return Array.from(counts.values());
+  }, [tasks]);
+
+  const typeColor = (type: string): string => {
+    const key = type === 'GOAL_STACK' ? 'IMPROVE' : (type as keyof typeof PRISM_COLORS);
+    return PRISM_COLORS[key]?.color ?? PRISM_COLORS.IMPROVE.color;
+  };
+
   const handleExportCSV = () => {
     const headers = ['Title', 'Type', 'Status', 'Priority', 'Completed At'];
     const rows = tasks.map((t) => [
@@ -569,6 +597,40 @@ function TasksTab({ from, to }: { from: string; to: string }) {
           <p className="text-lg font-semibold text-indigo-400">{completionRate}%</p>
         </div>
       </div>
+
+      {typeBreakdown.length > 0 && (
+        <div className="mb-6 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] p-4">
+          <h3 className="mb-3 text-sm font-medium text-[var(--text-secondary)]">Tasks by type</h3>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={typeBreakdown} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                <XAxis dataKey="type" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <YAxis allowDecimals={false} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--card-bg)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    fontSize: 12,
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="total" name="Total" fill="var(--text-muted)" radius={[4, 4, 0, 0]}>
+                  {typeBreakdown.map((row) => (
+                    <Cell key={`t-${row.type}`} fill={typeColor(row.type)} fillOpacity={0.35} />
+                  ))}
+                </Bar>
+                <Bar dataKey="done" name="Done" fill="var(--text-primary)" radius={[4, 4, 0, 0]}>
+                  {typeBreakdown.map((row) => (
+                    <Cell key={`d-${row.type}`} fill={typeColor(row.type)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-lg border border-[var(--border-color)]">
         <table className="min-w-full divide-y divide-[var(--border-color)]">
@@ -776,8 +838,42 @@ function WorkBlocksTab({ from, to }: { from: string; to: string }) {
     );
   };
 
+  const dailyChart = pdReviews
+    .slice()
+    .sort((a, b) => a.reviewDate.localeCompare(b.reviewDate))
+    .map((r) => ({
+      date: r.reviewDate.split('T')[0],
+      scheduled: r.totalScheduledMinutes,
+      completed: r.totalCompletedMinutes,
+    }));
+
   return (
     <div className="space-y-8">
+      {dailyChart.length > 0 && (
+        <div className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] p-4">
+          <h3 className="mb-3 text-sm font-medium text-[var(--text-secondary)]">Scheduled vs. completed minutes per day</h3>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dailyChart} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--card-bg)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    fontSize: 12,
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="scheduled" name="Scheduled" fill={PRISM_COLORS.IMPROVE.color} fillOpacity={0.35} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="completed" name="Completed" fill={PRISM_COLORS.IMPROVE.color} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
       <section>
         <h2 className="mb-3 text-lg font-semibold text-[var(--text-primary)]">Daily Work-Block Reviews</h2>
         <p className="mb-3 text-xs text-[var(--text-muted)]">
