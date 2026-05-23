@@ -43,3 +43,11 @@ next-env.d.ts
 
 # Playwright MCP browser session artifacts (console logs, page snapshots)
 .playwright-mcp/
+
+# Local audit dumps + the dedicated env file used to produce them.
+# These can contain DB rows and secrets; never commit.
+.env.audit
+.audit-*
+
+# Local tool output (tsc, vitest, lint logs)
+*.log
