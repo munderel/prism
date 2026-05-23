@@ -1,0 +1,5 @@
+auth/storageState.json
+test-results/
+playwright-report/
+.last-run.json
+auth/profile/
