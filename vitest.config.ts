@@ -14,7 +14,7 @@ export default defineConfig({
     // scans it anyway — worktree copies have their own node_modules with a
     // mismatched React, blowing up every test there. Excluding stops the
     // pre-push hook from blocking on local-only cruft that CI never sees.
-    exclude: ['**/node_modules/**', '**/.git/**', '.claude/**'],
+    exclude: ['**/node_modules/**', '**/.git/**', '.claude/**', 'e2e/**'],
     // Pin a non-UTC timezone so date-only regression tests catch local-TZ
     // shifts. CI runs on ubuntu-latest with no TZ override (defaults to UTC),
     // which silently green-lights the getLocalDateString(new Date(<UTC-Z>))
