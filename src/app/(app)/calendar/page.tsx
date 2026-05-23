@@ -56,7 +56,8 @@ interface UnscheduledAim {
   aimCategoryId: string;
   aimInstanceId?: string;
   duration: number;
-  remaining: number;
+  slotIndex: number;
+  slotTotal: number;
   source: 'aims';
   activities: string[] | null;
 }
@@ -76,7 +77,8 @@ type UnscheduledItem = {
   aimCategoryId?: string;
   aimInstanceId?: string;
   activities?: string[] | null;
-  remaining?: number;
+  slotIndex?: number;
+  slotTotal?: number;
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -235,15 +237,19 @@ function UnscheduledItemCard({
       );
     }
 
-    const remaining = item.itemType === 'aim' ? item.remaining : undefined;
+    const hasSlot =
+      item.itemType === 'aim' &&
+      typeof item.slotIndex === 'number' &&
+      typeof item.slotTotal === 'number' &&
+      item.slotTotal > 1;
     return (
       <div className="flex items-center gap-2 mt-1">
         {cfg.icon}
         <span className={`text-xs ${cfg.labelColor}`}>{cfg.label}</span>
         <span className="text-xs text-[var(--text-muted)]">{item.duration}min</span>
-        {remaining && remaining > 0 && (
+        {hasSlot && (
           <span className="text-xs text-[var(--text-muted)]">
-            · {remaining} left this week
+            · slot {item.slotIndex}/{item.slotTotal}
           </span>
         )}
       </div>
@@ -377,7 +383,7 @@ export default function CalendarPage() {
       });
     }
 
-    // Aims
+    // Aims — one item per remaining slot this week
     if (Array.isArray(aimsData)) {
       for (const aim of aimsData) {
         items.push({
@@ -388,7 +394,8 @@ export default function CalendarPage() {
           aimCategoryId: aim.aimCategoryId,
           aimInstanceId: aim.aimInstanceId,
           activities: aim.activities,
-          remaining: aim.remaining,
+          slotIndex: aim.slotIndex,
+          slotTotal: aim.slotTotal,
         });
       }
     }
