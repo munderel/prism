@@ -347,10 +347,10 @@ function ToggleCell({
       aria-checked={enabled}
       aria-label={label}
       onClick={() => onChange(!enabled)}
-      className={`w-8 h-4 rounded-full transition-colors relative mx-auto block ${enabled ? 'bg-indigo-600' : 'bg-white/10'}`}
+      className={`w-9 h-5 rounded-full transition-colors relative mx-auto block ${enabled ? 'bg-indigo-600' : 'bg-white/10'}`}
     >
       <span
-        className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0'}`}
       />
     </button>
   );

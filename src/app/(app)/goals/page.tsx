@@ -11,6 +11,7 @@ import { getLocalDateString } from '@/lib/date-utils';
 import { useToast } from '@/components/ui/ToastProvider';
 import { GoalStackGuide } from '@/components/goals/GoalStackGuide';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 const GoalStackTree = dynamic(
   () => import('@/components/goals/GoalStackTree').then((mod) => ({ default: mod.GoalStackTree })),
@@ -28,6 +29,9 @@ export default function GoalsPage() {
   const [newStackName, setNewStackName] = useState('');
   const [newStackVisibility, setNewStackVisibility] = useState<'private' | 'group' | 'company'>('private');
   const [showInProgress, setShowInProgress] = useState(false);
+  const [pendingStackDelete, setPendingStackDelete] = useState<
+    { id: string; name: string } | null
+  >(null);
   const [showDueToday, setShowDueToday] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [viewTab, setViewTab] = useState<'stack' | 'daily'>('stack');
@@ -89,12 +93,11 @@ export default function GoalsPage() {
     }
   };
 
-  const handleDeleteStack = async (stackId: string, stackName: string) => {
-    const confirmed = window.confirm(
-      `Delete stack '${stackName}'? This will remove all goals in this stack.`
-    );
-    if (!confirmed) return;
+  const handleDeleteStack = (stackId: string, stackName: string) => {
+    setPendingStackDelete({ id: stackId, name: stackName });
+  };
 
+  const performStackDelete = async (stackId: string, stackName: string) => {
     const remaining = stacks.filter((s) => s.id !== stackId);
     const prevSelectedId = selectedStackId;
 
@@ -440,6 +443,24 @@ export default function GoalsPage() {
           onClose={() => setAssignmentsStack(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingStackDelete !== null}
+        variant="danger"
+        title="Delete stack?"
+        message={
+          pendingStackDelete
+            ? `Delete stack '${pendingStackDelete.name}'? This will remove all goals in this stack.`
+            : ''
+        }
+        confirmLabel="Delete"
+        onCancel={() => setPendingStackDelete(null)}
+        onConfirm={() => {
+          const pending = pendingStackDelete;
+          setPendingStackDelete(null);
+          if (pending) void performStackDelete(pending.id, pending.name);
+        }}
+      />
     </div>
   );
 }

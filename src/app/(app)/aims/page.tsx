@@ -15,7 +15,6 @@ import {
   Check,
   CheckCircle2,
   Loader2,
-  Trophy,
   ChevronDown,
   ChevronUp,
   AlertTriangle,
@@ -28,6 +27,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import StreakHeatmap from '@/components/aims/StreakHeatmap';
 import { AimProgressChart } from '@/components/aims/AimProgressChart';
 import { AimCard as AimCardSimplified } from '@/components/aims/AimCard';
+import AimStatHero from '@/components/aims/AimStatHero';
 import { WorkoutSubTypes } from '@/components/aims/WorkoutSubTypes';
 import type { BufferDerailInfo } from '@/lib/derailing-buffer';
 type DerailInfo = BufferDerailInfo;
@@ -110,18 +110,6 @@ interface DerailBatchResponse {
     history: { date: string; completed: boolean; status: string }[];
     expectedPerDay: number;
   };
-}
-
-function getStreakColor(streak: number): string {
-  if (streak === 0) return 'text-gray-400';
-  if (streak < 7) return 'text-orange-400';
-  if (streak < 14) return 'text-orange-500';
-  return 'text-red-500';
-}
-
-function getStreakColorOrMuted(streak: number): string {
-  if (streak === 0) return 'text-[var(--text-muted)]';
-  return getStreakColor(streak);
 }
 
 const STREAK_BANNER_KEY = 'streak-math-banner-dismissed-v1';
@@ -1028,7 +1016,7 @@ function AimCard({
   category,
   active,
   duration,
-  frequency,
+  frequency: _frequency,
   activities,
   userAim,
   derailInfo,
@@ -1125,13 +1113,11 @@ function AimCard({
 
   const effectiveDuration = aimLike ? getEffectiveDuration(aimLike) : duration;
   const effectiveFreq = aimLike ? getEffectiveFrequency(aimLike) : category.defaultFrequency;
-  const isReduced = effectiveDuration < duration;
 
   // Format frequency display using effective frequency
   const effectiveFreqDisplay = category.isDaily
     ? 'Daily'
     : `${effectiveFreq}x / week`;
-  const baseFreqDisplay = frequency; // original (target) frequency from parent
 
   return (
     <div
@@ -1142,7 +1128,7 @@ function AimCard({
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-[var(--text-primary)] truncate">
+            <h3 className="font-semibold text-[var(--text-primary)] break-words line-clamp-2">
               {category.name}
             </h3>
             {/* Derail status indicator */}
@@ -1222,55 +1208,39 @@ function AimCard({
         </div>
       )}
 
-      {/* Streak display - prominent and always visible */}
-      {active && (
-        <div className="mt-2 flex items-center gap-3 rounded-lg bg-[var(--surface-raised)] px-3 py-2">
-          {/* C3: Tooltip on flame/streak icon */}
-          <span title={`Current streak: ${streak} ${category.isDaily ? 'days' : 'weeks'}`}>
-            <Flame className={`h-5 w-5 shrink-0 ${getStreakColor(streak)}`} />
-          </span>
-          <div className="flex-1 min-w-0">
-            <span
-              className={`text-sm font-semibold ${getStreakColorOrMuted(streak)}`}
-              title={`Current streak: ${streak} ${category.isDaily ? 'days' : 'weeks'}`}
+      {/* Stat Hero — ring + flame anchors the card */}
+      {active && !isEditing && (
+        <AimStatHero
+          aimCategoryId={category.id}
+          isDaily={category.isDaily}
+          activeWeekdays={userAim?.activeWeekdays ?? 127}
+          target={effectiveFreq}
+          streak={streak}
+          bestStreak={userAim?.bestStreak ?? 0}
+          bufferDays={derailInfo?.safetyBufferDays ?? null}
+          phaseLabel={PHASE_LABELS[phase] ?? phase}
+        />
+      )}
+
+      {/* Secondary streak metadata: total completions + pause/resume control */}
+      {active && !isEditing && (completionCount > 0 || (aimStreakData?.id && onToggleAimStreak)) && (
+        <div className="mt-2 flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
+          {completionCount > 0 && (
+            <span title={`Total completions: ${completionCount}`}>{completionCount} done all-time</span>
+          )}
+          {aimStreakData?.id && onToggleAimStreak && (
+            <button
+              onClick={() => onToggleAimStreak(aimStreakData.id!, !aimStreakData.isActive)}
+              className="ml-auto inline-flex items-center gap-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+              title={aimStreakData.isActive ? 'Pause streak tracking' : 'Resume streak tracking'}
             >
-              {streak === 0
-                ? 'No streak'
-                : category.isDaily
-                  ? `${streak} day streak${streak >= 14 ? ' \u{1F525}\u{1F525}' : streak >= 7 ? ' \u{1F525}' : ''}`
-                  : `${streak} week streak${streak >= 14 ? ' \u{1F525}\u{1F525}' : streak >= 7 ? ' \u{1F525}' : ''}`}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {(userAim?.bestStreak ?? 0) > 0 && (
-              <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]" title="Best streak">
-                <Trophy className="h-3.5 w-3.5 text-amber-400" />
-                Best: {userAim?.bestStreak}
-              </span>
-            )}
-            {/* C3: Tooltip on completion count */}
-            {completionCount > 0 && (
-              <span
-                className="text-xs text-[var(--text-muted)] ml-1"
-                title={`Total completions: ${completionCount}`}
-              >
-                {completionCount} done
-              </span>
-            )}
-            {aimStreakData?.id && onToggleAimStreak && (
-              <button
-                onClick={() => onToggleAimStreak(aimStreakData.id!, !aimStreakData.isActive)}
-                className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-                title={aimStreakData.isActive ? 'Pause streak tracking' : 'Resume streak tracking'}
-              >
-                {aimStreakData.isActive ? (
-                  <PauseCircle className="h-4 w-4" />
-                ) : (
-                  <PlayCircle className="h-4 w-4" />
-                )}
-              </button>
-            )}
-          </div>
+              {aimStreakData.isActive ? (
+                <><PauseCircle className="h-3.5 w-3.5" /> Pause</>
+              ) : (
+                <><PlayCircle className="h-3.5 w-3.5" /> Resume</>
+              )}
+            </button>
+          )}
         </div>
       )}
 
@@ -1286,44 +1256,38 @@ function AimCard({
         </div>
       )}
 
-      {/* Progress chart toggle */}
+      {/* Progress chart — collapsible */}
       {active && !isEditing && (
-        <button
-          onClick={() => setChartExpanded(!chartExpanded)}
-          className="mt-2 flex w-full items-center justify-between rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors"
-        >
-          <span>Progress Chart</span>
-          {chartExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
-      )}
-      {active && chartExpanded && !isEditing && (
-        <div className="mt-2">
-          <AimProgressChart aimCategoryId={category.id} days={30} />
-        </div>
+        <details className="mt-2 group" open={chartExpanded}>
+          <summary
+            onClick={(e) => { e.preventDefault(); setChartExpanded(!chartExpanded); }}
+            className="flex w-full cursor-pointer items-center justify-between rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors list-none"
+          >
+            <span>Progress Chart</span>
+            {chartExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </summary>
+          {chartExpanded && (
+            <div className="mt-2">
+              <AimProgressChart aimCategoryId={category.id} days={30} />
+            </div>
+          )}
+        </details>
       )}
 
-      {/* Stats Row — uses effective (phase-aware) duration and frequency */}
-      <div className="flex items-center gap-3 mt-2 text-xs text-[var(--text-secondary)]">
-        <span className="flex items-center gap-1">
-          <Clock className="h-3.5 w-3.5" />
-          {isReduced ? (
-            <><span>{effectiveDuration} min</span><span className="text-[var(--text-muted)] line-through ml-1">{duration}</span></>
-          ) : (
-            <>{duration} min</>
-          )}
+      {/* Stats Row — effective (phase-aware) duration and frequency, shown as pills */}
+      <div className="flex items-center gap-2 mt-3 text-[11px]">
+        <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/25 bg-teal-500/8 px-2 py-0.5 text-teal-300">
+          <Clock className="h-3 w-3" />
+          {effectiveDuration} min
         </span>
-        <span className="flex items-center gap-1">
-          <Repeat className="h-3.5 w-3.5" />
-          {effectiveFreqDisplay !== baseFreqDisplay ? (
-            <><span>{effectiveFreqDisplay}</span><span className="text-[var(--text-muted)] line-through ml-1">{baseFreqDisplay}</span></>
-          ) : (
-            <>{effectiveFreqDisplay}</>
-          )}
+        <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/25 bg-teal-500/8 px-2 py-0.5 text-teal-300">
+          <Repeat className="h-3 w-3" />
+          {effectiveFreqDisplay}
         </span>
         {category.isGroupable && (
           <span
-            className="flex items-center gap-1 text-teal-500 bg-teal-500/10 px-1.5 py-0.5 rounded-full cursor-help"
-            title="Team members can see and join this AIM session. Toggle in settings below."
+            className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 px-2 py-0.5 text-teal-500 cursor-help"
+            title="Team members can see and join this AIM session."
           >
             <Users className="h-3 w-3" />
             Groupable
@@ -1368,17 +1332,16 @@ function AimCard({
       )}
 
 
-      {/* Invite teammates to today's session */}
+      {/* Invite teammates to today's session — collapsible */}
       {active && !isEditing && todayInstanceId && (
-        <div className="mt-2">
-          <button
-            type="button"
-            onClick={() => setInviteOpen((v) => !v)}
-            className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+        <details className="mt-3" open={inviteOpen}>
+          <summary
+            onClick={(e) => { e.preventDefault(); setInviteOpen((v) => !v); }}
+            className="flex w-full cursor-pointer items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors list-none"
           >
             <Users className="h-3.5 w-3.5" />
             Invite teammates
-          </button>
+          </summary>
           {inviteOpen && (
             <div className="mt-2 space-y-2 rounded-lg border border-[var(--border-color)] bg-[var(--surface-raised)] p-3">
               <select
@@ -1414,21 +1377,26 @@ function AimCard({
               </div>
             </div>
           )}
-        </div>
+        </details>
       )}
 
-      {/* Activities (non-editing) */}
+      {/* Activities (non-editing) — collapsible */}
       {!isEditing && activities.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          {activities.map((act) => (
-            <span
-              key={act}
-              className="text-xs px-2 py-0.5 rounded-full bg-[var(--surface-raised)] text-[var(--text-secondary)] border border-[var(--border-color)]"
-            >
-              {act}
-            </span>
-          ))}
-        </div>
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors list-none">
+            Activities ({activities.length})
+          </summary>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {activities.map((act) => (
+              <span
+                key={act}
+                className="text-xs px-2 py-0.5 rounded-full bg-[var(--surface-raised)] text-[var(--text-secondary)] border border-[var(--border-color)]"
+              >
+                {act}
+              </span>
+            ))}
+          </div>
+        </details>
       )}
 
       {/* Editing Mode */}

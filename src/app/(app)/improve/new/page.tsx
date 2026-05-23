@@ -19,6 +19,8 @@ type Goal = {
   title: string;
   level: string;
   assignees?: GoalAssignee[];
+  isAssignedToMe?: boolean;
+  stack?: { id: string; name: string; isCompany: boolean };
 };
 
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
@@ -53,11 +55,21 @@ export default function NewImproveTaskPage() {
     }
     async function fetchGoals() {
       try {
-        const res = await fetch('/api/goals?isCompany=true');
-        if (res.ok) {
-          const data = await res.json();
-          setGoals(Array.isArray(data) ? data : []);
-        }
+        // IMPROVE tasks must hang off WEEKLY goals (enforced by POST /api/tasks).
+        // Pull personal-scope (owned + assigned) and company-scope WEEKLY goals
+        // in parallel; keep only company goals the user is actually assigned to,
+        // otherwise checkStackWriteAccess will 403 on submit.
+        const [personalRes, companyRes] = await Promise.all([
+          fetch('/api/goals?level=WEEKLY'),
+          fetch('/api/goals?isCompany=true&level=WEEKLY'),
+        ]);
+        const personal: Goal[] = personalRes.ok ? await personalRes.json() : [];
+        const companyAll: Goal[] = companyRes.ok ? await companyRes.json() : [];
+        const company = companyAll.filter((g) => g.isAssignedToMe);
+        const merged = [...personal, ...company].filter(
+          (g, i, arr) => arr.findIndex((x) => x.id === g.id) === i,
+        );
+        setGoals(merged);
       } catch {
         // optional
       } finally {
@@ -148,11 +160,15 @@ export default function NewImproveTaskPage() {
             className={selectClass}
           >
             <option value="">
-              {goalsLoading ? 'Loading goals…' : '-- Select a goal --'}
+              {goalsLoading
+                ? 'Loading goals…'
+                : goals.length === 0
+                  ? 'No weekly goals available — create one first'
+                  : '-- Select a weekly goal --'}
             </option>
             {goals.map((goal) => (
               <option key={goal.id} value={goal.id}>
-                {goal.title}
+                {goal.stack?.name ? `${goal.stack.name} · ${goal.title}` : goal.title}
               </option>
             ))}
           </select>
