@@ -140,7 +140,9 @@ describe('GET /api/aims/streak-history', () => {
   });
 
   it('returns correct response shape for a completed instance', async () => {
-    const scheduledDate = new Date('2026-05-18T00:00:00.000Z');
+    const today = new Date();
+    const scheduledDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    const dateKey = scheduledDate.toISOString().slice(0, 10);
     mockFindMany.mockResolvedValue([
       { scheduledDate, status: 'COMPLETED', completedAt: new Date() } as any,
     ]);
@@ -149,7 +151,7 @@ describe('GET /api/aims/streak-history', () => {
     const body: { date: string; scheduled: boolean; completed: boolean }[] = await res.json();
     expect(Array.isArray(body)).toBe(true);
     expect(body.length).toBe(7);
-    const entry = body.find((e) => e.date === '2026-05-18');
+    const entry = body.find((e) => e.date === dateKey);
     expect(entry).toBeDefined();
     expect(entry!.scheduled).toBe(true);
     expect(entry!.completed).toBe(true);
