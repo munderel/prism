@@ -228,12 +228,17 @@ export const KpiCard = React.memo(React.forwardRef<HTMLDivElement, KpiCardProps>
             <div className="mt-2 grid grid-cols-4 gap-1">
               {kpi.linkedWeeklyActuals.map((week: any, i: number) => (
                 <div
-                  key={week.id ?? i}
+                  key={week.goalId ?? i}
                   className="rounded bg-[var(--surface)] px-1.5 py-1 text-center"
+                  title={week.hasLinkedKpi
+                    ? week.goalTitle
+                    : `${week.goalTitle} — no KPI linked to this parent yet`}
                 >
                   <span className="text-[10px] text-[var(--text-muted)] block">W{i + 1}</span>
-                  <span className="text-xs text-[var(--text-secondary)]">
-                    {kpi.unit === '$' ? '$' : ''}{week.actual ?? 0}
+                  <span className={`text-xs ${week.hasLinkedKpi ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`}>
+                    {week.hasLinkedKpi
+                      ? `${kpi.unit === '$' ? '$' : ''}${week.actual ?? 0}`
+                      : '—'}
                   </span>
                 </div>
               ))}

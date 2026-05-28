@@ -57,6 +57,10 @@ export const createTaskSchema = z.object({
   isWinTheDay: z.boolean().optional(),
   parentId: z.string().optional().nullable(),
   assigneeId: z.string().optional().nullable(),
+  deliverableItems: z
+    .array(z.object({ text: z.string().min(1).max(1000) }))
+    .max(100)
+    .optional(),
 });
 
 export const updateTaskSchema = z.object({

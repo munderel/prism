@@ -7,6 +7,7 @@ import { ChevronRight, ChevronLeft, PartyPopper, Target, Plus, Star } from 'luci
 import { useToast } from '@/components/ui/ToastProvider';
 
 import type { Goal, Kpi, ReviewAnswer, StepConfig, HhgGroup } from './shared/review-types';
+import type { CascadedKpi } from '@/types/kpi';
 import { ProcessKpiLogStep } from '@/components/shared/ProcessKpiLogStep';
 import { getLocalDateString } from '@/lib/date-utils';
 import { DifficultiesStep } from './shared/DifficultiesStep';
@@ -878,11 +879,27 @@ export function PeriodReviewWizard(config: PeriodReviewConfig) {
   /* ---- KPI update ---- */
   const updateKpiActual = async (kpiId: string, value: number) => {
     setKpis((prev) => prev.map((k) => k.id === kpiId ? { ...k, actualValue: value } : k));
-    await fetch(`/api/kpis/${kpiId}`, {
+    const res = await fetch(`/api/kpis/${kpiId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ actualValue: value }),
     });
+    if (!res.ok) return;
+    // Patch parent KPIs in the same view from the cascade chain — otherwise
+    // a yearly's KPI summing monthly KPIs would stay stale until reload.
+    const body = (await res.json().catch(() => ({}))) as {
+      updatedLinkedKpis?: CascadedKpi[];
+    };
+    const cascaded = body.updatedLinkedKpis ?? [];
+    if (cascaded.length > 0) {
+      const cascadeById = new Map(cascaded.map((c) => [c.id, c]));
+      setKpis((prev) =>
+        prev.map((k) => {
+          const c = cascadeById.get(k.id);
+          return c ? { ...k, actualValue: c.actualValue, isComplete: c.isComplete } : k;
+        }),
+      );
+    }
   };
 
   /* ---- Goal editing ---- */

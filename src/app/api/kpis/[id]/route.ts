@@ -185,14 +185,31 @@ export async function PUT(
     },
   });
 
-  // Cascade to linked monthly KPI if applicable
-  let updatedLinkedKpi = null;
-  if (kpi.linkedKpiId && (actualValue !== undefined || isComplete !== undefined)) {
-    await cascadeKpiUpdate(id);
-    updatedLinkedKpi = await prisma.kpi.findUnique({ where: { id: kpi.linkedKpiId } });
-  }
+  // Cascade up the link chain (weekly → monthly → strategic → HHG). The
+  // returned chain lets the client refresh every visible parent KPI in one
+  // round-trip — otherwise the immediate parent's displayed value gets
+  // refreshed but grandparents stay stale.
+  const shouldCascade =
+    kpi.linkedKpiId && (actualValue !== undefined || isComplete !== undefined);
+  const cascadeChain = shouldCascade ? await cascadeKpiUpdate(id) : [];
+  const fetchedCascade = cascadeChain.length > 0
+    ? await prisma.kpi.findMany({
+        where: { id: { in: cascadeChain } },
+        include: {
+          owner: { select: { id: true, name: true, email: true, image: true } },
+        },
+      })
+    : [];
+  const cascadeById = new Map(fetchedCascade.map((k) => [k.id, k]));
+  const updatedLinkedKpis = cascadeChain
+    .map((id) => cascadeById.get(id))
+    .filter((k): k is (typeof fetchedCascade)[number] => !!k);
 
-  return Response.json({ kpi: updated, updatedLinkedKpi });
+  return Response.json({
+    kpi: updated,
+    updatedLinkedKpi: updatedLinkedKpis[0] ?? null,
+    updatedLinkedKpis,
+  });
 }
 
 export async function DELETE(
@@ -217,7 +234,11 @@ export async function DELETE(
   await prisma.kpi.delete({ where: { id } });
 
   // Recalculate the now-orphaned parent and chain the change upward so
-  // grandparents (strategic, HHG) reflect the delete too.
+  // grandparents (strategic, HHG) reflect the delete too. Collect the full
+  // chain of affected parents (immediate parent + everything above) so the
+  // client can refresh every level in one shot.
+  type CascadedRow = Awaited<ReturnType<typeof prisma.kpi.findMany>>[number];
+  const updatedLinkedKpis: CascadedRow[] = [];
   if (kpi.linkedKpiId) {
     const linkedKpi = await prisma.kpi.findUnique({
       where: { id: kpi.linkedKpiId },
@@ -229,9 +250,21 @@ export async function DELETE(
       } else {
         await recalculateBinaryKpi(kpi.linkedKpiId, false);
       }
-      await cascadeKpiUpdate(kpi.linkedKpiId);
+      const ancestors = await cascadeKpiUpdate(kpi.linkedKpiId);
+      const chain = [kpi.linkedKpiId, ...ancestors];
+      const fetched = await prisma.kpi.findMany({
+        where: { id: { in: chain } },
+        include: {
+          owner: { select: { id: true, name: true, email: true, image: true } },
+        },
+      });
+      const byId = new Map(fetched.map((k) => [k.id, k]));
+      for (const id of chain) {
+        const row = byId.get(id);
+        if (row) updatedLinkedKpis.push(row);
+      }
     }
   }
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, updatedLinkedKpis });
 }

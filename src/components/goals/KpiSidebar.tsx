@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { X, Plus, BarChart3 } from 'lucide-react';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { KpiCard } from './KpiCard';
 import { KpiEditor } from './KpiEditor';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
@@ -29,7 +29,20 @@ export function KpiSidebar({
   const { data, mutate } = useSWR<{ kpis: any[] }>(
     `/api/goals/${goalId}/kpis`
   );
+  const { mutate: globalMutate } = useSWRConfig();
   const kpis = data?.kpis;
+
+  // Any KPI write can cascade up the link chain (weekly → monthly → strategic
+  // → HHG), so refresh every cached `/api/goals/*/kpis` and `/api/kpis/*`
+  // response, not just this sidebar's. Without this, a parent KPI's sidebar
+  // or its AIM-contributions panel shows a stale value until the cache
+  // expires or a re-render forces a refetch.
+  const refreshAllKpiViews = () =>
+    globalMutate(
+      (key) => typeof key === 'string' && key.includes('/kpi'),
+      undefined,
+      { revalidate: true },
+    );
 
   const handleUpdate = async (id: string, updatePayload: any) => {
     const res = await fetch(`/api/kpis/${id}`, {
@@ -38,13 +51,13 @@ export function KpiSidebar({
       body: JSON.stringify(updatePayload),
     });
     if (!res.ok) throw new Error('Failed to update KPI');
-    mutate();
+    await refreshAllKpiViews();
   };
 
   const handleDelete = async (id: string) => {
     const res = await fetch(`/api/kpis/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to delete KPI');
-    mutate();
+    await refreshAllKpiViews();
   };
 
   const closeEditor = () => {

@@ -18,12 +18,21 @@ export interface KpiData {
 
 export interface WeeklyActual {
   weekLabel: string;
-  actual: number | null;
+  goalId: string;
   goalTitle: string;
+  actual: number | null;
+  isComplete: boolean;
+  hasLinkedKpi: boolean;
 }
 
 export interface KpiWithWeeklyActuals extends KpiData {
   linkedWeeklyActuals: WeeklyActual[];
+}
+
+export interface CascadedKpi {
+  id: string;
+  actualValue: number | null;
+  isComplete: boolean;
 }
 
 export interface KpiCreateInput {
