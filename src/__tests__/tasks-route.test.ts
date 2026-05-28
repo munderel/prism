@@ -7,11 +7,12 @@ vi.mock('@/lib/auth-guard', () => ({
   checkStackWriteAccess: vi.fn(),
 }));
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+vi.mock('@/lib/prisma', () => {
+  const prisma: any = {
     task: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -20,8 +21,14 @@ vi.mock('@/lib/prisma', () => ({
     goal: { findUnique: vi.fn(), findMany: vi.fn() },
     goalStack: { findMany: vi.fn() },
     process: { findUnique: vi.fn(), update: vi.fn() },
-  },
-}));
+    deliverableItem: { createMany: vi.fn(), aggregate: vi.fn() },
+    // The real $transaction passes a tx-scoped client to the callback. The mock
+    // routes back to `prisma` so the same vi.fn instances (task.create etc.)
+    // record calls — existing assertions on mockTaskCreate keep working.
+    $transaction: vi.fn((cb: (tx: any) => Promise<any>) => cb(prisma)),
+  };
+  return { prisma };
+});
 
 vi.mock('@/lib/schemas', () => ({
   parseBody: vi.fn(),
@@ -136,6 +143,7 @@ const mockParseBody = vi.mocked(parseBody);
 const mockTaskCreate = vi.mocked(prisma.task.create);
 const mockTaskFindMany = vi.mocked(prisma.task.findMany);
 const mockTaskFindUnique = vi.mocked(prisma.task.findUnique);
+const mockTaskFindUniqueOrThrow = vi.mocked((prisma.task as any).findUniqueOrThrow);
 const mockTaskUpdate = vi.mocked(prisma.task.update);
 const mockTaskDelete = vi.mocked(prisma.task.delete);
 const mockGoalFindUnique = vi.mocked(prisma.goal.findUnique);
@@ -432,6 +440,10 @@ describe('POST /api/tasks', () => {
     mockRequireAuth.mockResolvedValue(authedResult as any);
     mockCheckStackWriteAccess.mockResolvedValue(null);
     mockTaskCreate.mockResolvedValue({ id: 'task-1', title: 'Test' } as any);
+    // The POST handler now re-reads the task via findUniqueOrThrow inside the
+    // $transaction (to include relations like deliverableItems in the response).
+    // Mirror task.create's default return so existing assertions keep working.
+    mockTaskFindUniqueOrThrow.mockResolvedValue({ id: 'task-1', title: 'Test' } as any);
   });
 
   it('creates IMPROVE task with valid goalId', async () => {

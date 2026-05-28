@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 import { getLocalDateString } from '@/lib/date-utils';
+import type { CascadedKpi } from '@/types/kpi';
 import { getStatusBadgeClass, getPriorityBadgeClass } from '../shared/review-types';
 
 /* =============================================================== */
@@ -372,14 +373,26 @@ export function StepGoalsReview({ reviewId, isTeamReview, isAdmin, onSummaryChan
         body: JSON.stringify({ actualValue }),
       });
       if (!res.ok) throw new Error(`PUT kpi ${res.status}`);
-      const setter = goal.isCompany ? setCompanyGoals : setPersonalGoals;
-      setter((prev) =>
-        prev.map((g) =>
-          g.id === goal.id
-            ? { ...g, kpis: g.kpis.map((k) => (k.id === kpi.id ? { ...k, actualValue } : k)) }
-            : g,
-        ),
-      );
+      const body = (await res.json().catch(() => ({}))) as {
+        updatedLinkedKpis?: CascadedKpi[];
+      };
+      // The server cascades up the link chain (weekly → monthly → strategic
+      // → HHG). Patch every affected KPI in local state so the higher goals
+      // visible in the same view reflect the new total without a refetch.
+      const cascaded = body.updatedLinkedKpis ?? [];
+      const cascadeById = new Map(cascaded.map((c) => [c.id, c]));
+      const patch = (g: Goal): Goal => ({
+        ...g,
+        kpis: g.kpis.map((k) => {
+          if (k.id === kpi.id) return { ...k, actualValue };
+          const c = cascadeById.get(k.id);
+          return c
+            ? { ...k, actualValue: c.actualValue, isComplete: c.isComplete }
+            : k;
+        }),
+      });
+      setPersonalGoals((prev) => prev.map(patch));
+      setCompanyGoals((prev) => prev.map(patch));
       setKpiUpdateCount((c) => c + 1);
     } catch (err) {
       console.error('[StepGoalsReview] update KPI failed:', err);

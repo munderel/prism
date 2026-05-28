@@ -49,10 +49,93 @@ describe('TaskEditor — Deliverable Items section', () => {
     mockMutate.mockReset();
   });
 
-  it('does not show Deliverable Items section in create mode', () => {
+  it('shows Deliverable Items section in create mode', () => {
     global.fetch = createMockFetch(baseRoutes()) as any;
     renderWithProviders(<TaskEditor onSave={onSave} onClose={onClose} />);
-    expect(screen.queryByText('Deliverable Items')).not.toBeInTheDocument();
+    expect(screen.getByText('Deliverable Items')).toBeInTheDocument();
+    expect(screen.getByText('Add item')).toBeInTheDocument();
+  });
+
+  it('buffers items locally in create mode and flushes them in POST /api/tasks', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.fn(async (url: string, opts?: RequestInit) => {
+      if (url.startsWith('/api/users')) return new Response(JSON.stringify([]), { status: 200 });
+      if (url.startsWith('/api/stacks')) return new Response(JSON.stringify([]), { status: 200 });
+      if (url.startsWith('/api/goals')) return new Response(JSON.stringify([]), { status: 200 });
+      if (url === '/api/tasks' && opts?.method === 'POST') {
+        return new Response(JSON.stringify({ id: 'task-new' }), { status: 201 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    global.fetch = fetchSpy as any;
+
+    renderWithProviders(<TaskEditor onSave={onSave} onClose={onClose} />);
+
+    // Switch to REACT to avoid the goal-selection requirement
+    await user.click(screen.getByRole('button', { name: 'React' }));
+
+    // Buffer two deliverables locally
+    await user.click(screen.getByText('Add item'));
+    await user.type(screen.getByPlaceholderText('Deliverable item text…'), 'First');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await user.click(screen.getByText('Add item'));
+    await user.type(screen.getByPlaceholderText('Deliverable item text…'), 'Second');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    // No deliverables-endpoint call yet (still in create mode)
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('/deliverables'),
+      expect.anything(),
+    );
+
+    expect(screen.getByText('First')).toBeInTheDocument();
+    expect(screen.getByText('Second')).toBeInTheDocument();
+
+    // Fill required fields and submit
+    await user.type(screen.getByPlaceholderText('What needs to be done?'), 'My new task');
+    await user.click(screen.getByRole('button', { name: /Create/i }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/tasks',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    const createCall = fetchSpy.mock.calls.find(
+      ([url, opts]) => url === '/api/tasks' && (opts as RequestInit | undefined)?.method === 'POST',
+    );
+    expect(createCall).toBeDefined();
+    const body = JSON.parse((createCall![1] as RequestInit).body as string);
+    expect(body.deliverableItems).toEqual([{ text: 'First' }, { text: 'Second' }]);
+  });
+
+  it('removes a buffered item locally in create mode without calling the API', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.fn(async (url: string) => {
+      if (url.startsWith('/api/users')) return new Response(JSON.stringify([]), { status: 200 });
+      if (url.startsWith('/api/goals')) return new Response(JSON.stringify([]), { status: 200 });
+      if (url.startsWith('/api/stacks')) return new Response(JSON.stringify([]), { status: 200 });
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    global.fetch = fetchSpy as any;
+
+    renderWithProviders(<TaskEditor onSave={onSave} onClose={onClose} />);
+
+    await user.click(screen.getByText('Add item'));
+    await user.type(screen.getByPlaceholderText('Deliverable item text…'), 'Temp');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(screen.getByText('Temp')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Delete item'));
+
+    expect(screen.queryByText('Temp')).not.toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('/deliverables'),
+      expect.anything(),
+    );
   });
 
   it('shows Deliverable Items section in edit mode', () => {

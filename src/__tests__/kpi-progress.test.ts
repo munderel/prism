@@ -68,11 +68,14 @@ describe('cascadeKpiUpdate', () => {
     });
     mockUpdate.mockResolvedValue({} as any);
 
-    await cascadeKpiUpdate('W');
+    const chain = await cascadeKpiUpdate('W');
 
     const updatedIds = mockUpdate.mock.calls.map((c) => (c[0] as any).where.id);
     expect(updatedIds).toContain('M');
     expect(updatedIds).toContain('S');
+    // Returned chain reflects the recalculated parents in order, so the
+    // client can patch local state for monthly + strategic in one shot.
+    expect(chain).toEqual(['M', 'S']);
   });
 
   it('does NOT loop forever if the linkedKpiId chain has a cycle, and visits each at most once', async () => {
@@ -97,9 +100,10 @@ describe('cascadeKpiUpdate', () => {
   it('stops cleanly when the chain ends with no linkedKpiId', async () => {
     mockFindUnique.mockResolvedValueOnce(kpiNode({ linkedKpiId: null }));
 
-    await cascadeKpiUpdate('leaf');
+    const chain = await cascadeKpiUpdate('leaf');
 
     expect(mockUpdate).not.toHaveBeenCalled();
+    expect(chain).toEqual([]);
   });
 
   it('skips the recalc when the parent KPI lives on a soft-deleted goal, but keeps walking up', async () => {
@@ -116,11 +120,14 @@ describe('cascadeKpiUpdate', () => {
     mockFindMany.mockResolvedValue([] as any);
     mockUpdate.mockResolvedValue({} as any);
 
-    await cascadeKpiUpdate('W');
+    const chain = await cascadeKpiUpdate('W');
 
     const updatedIds = mockUpdate.mock.calls.map((c) => (c[0] as any).where.id);
     expect(updatedIds).not.toContain('M');
     expect(updatedIds).toContain('S');
+    // Chain only lists parents that were actually recalculated. M was
+    // skipped (trashed) and is excluded; S was recomputed and is included.
+    expect(chain).toEqual(['S']);
   });
 });
 

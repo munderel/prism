@@ -24,6 +24,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     kpi: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
       updateMany: vi.fn(),
@@ -39,7 +40,7 @@ vi.mock('@/lib/schemas', () => ({
 }));
 
 vi.mock('@/lib/kpi-progress', () => ({
-  cascadeKpiUpdate: vi.fn(),
+  cascadeKpiUpdate: vi.fn().mockResolvedValue([]),
   recalculateMonthlyNumericKpi: vi.fn(),
   recalculateBinaryKpi: vi.fn(),
 }));
@@ -47,6 +48,7 @@ vi.mock('@/lib/kpi-progress', () => ({
 import { requireAuth, checkStackWriteAccess } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
 import { prisma } from '@/lib/prisma';
+import { cascadeKpiUpdate } from '@/lib/kpi-progress';
 import { PUT, DELETE } from '@/app/api/kpis/[id]/route';
 
 const mockRequireAuth = vi.mocked(requireAuth);
@@ -272,5 +274,68 @@ describe('KPI [id] route — company stack access paths', () => {
 
     expect(res.status).toBe(200);
     expect(prisma.kpi.update).toHaveBeenCalled();
+  });
+});
+
+// Cascade chain response — verifies the client receives every parent KPI
+// the server cascaded into, not just the immediate parent. Without this,
+// strategic/HHG-level KPIs displayed in the same view stay stale.
+describe('KPI [id] route — updatedLinkedKpis response chain', () => {
+  const linkedKpi = {
+    id: 'kpi-weekly',
+    name: 'Weekly revenue',
+    goalId: 'goal-weekly',
+    ownerId: null,
+    // Weekly links up to a monthly KPI — the cascade walks weekly → monthly → strategic.
+    linkedKpiId: 'kpi-monthly',
+    goal: {
+      id: 'goal-weekly',
+      deletedAt: null,
+      stack: { id: 'stack-1' },
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(authed as any);
+    mockCheckStackWriteAccess.mockResolvedValue(null);
+    mockParseBody.mockResolvedValue({ data: { actualValue: 7 } } as any);
+  });
+
+  it('PUT returns updatedLinkedKpis populated from the cascade chain', async () => {
+    mockKpiFindUnique.mockResolvedValueOnce(linkedKpi as any);
+    vi.mocked(prisma.kpi.update).mockResolvedValueOnce({ id: 'kpi-weekly' } as any);
+    // Two-level cascade: monthly + strategic both got recomputed.
+    vi.mocked(cascadeKpiUpdate).mockResolvedValueOnce(['kpi-monthly', 'kpi-strategic']);
+    vi.mocked(prisma.kpi.findMany).mockResolvedValueOnce([
+      { id: 'kpi-strategic', actualValue: 70, isComplete: false } as any,
+      { id: 'kpi-monthly', actualValue: 14, isComplete: false } as any,
+    ]);
+
+    const res = await PUT({} as any, { params });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Chain order is preserved: immediate parent first, then up.
+    expect(body.updatedLinkedKpis.map((k: any) => k.id)).toEqual([
+      'kpi-monthly',
+      'kpi-strategic',
+    ]);
+    // Backwards-compatible single-parent field still set to the immediate parent.
+    expect(body.updatedLinkedKpi.id).toBe('kpi-monthly');
+  });
+
+  it('PUT returns empty updatedLinkedKpis when KPI has no linked parent', async () => {
+    const unlinked = { ...linkedKpi, linkedKpiId: null };
+    mockKpiFindUnique.mockResolvedValueOnce(unlinked as any);
+    vi.mocked(prisma.kpi.update).mockResolvedValueOnce({ id: 'kpi-weekly' } as any);
+
+    const res = await PUT({} as any, { params });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.updatedLinkedKpis).toEqual([]);
+    expect(body.updatedLinkedKpi).toBeNull();
+    // Skipping the cascade also means no extra round-trips were issued.
+    expect(cascadeKpiUpdate).not.toHaveBeenCalled();
+    expect(prisma.kpi.findMany).not.toHaveBeenCalled();
   });
 });

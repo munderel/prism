@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, createTaskSchema);
   if ('error' in parsed) return parsed.error;
-  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, startTime, estimatedMinutes, isWinTheDay, parentId, assigneeId } = parsed.data;
+  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, startTime, estimatedMinutes, isWinTheDay, parentId, assigneeId, deliverableItems } = parsed.data;
 
   // IMPROVE tasks require a goalId
   if (taskType === 'IMPROVE' && !goalId) {
@@ -297,28 +297,50 @@ export async function POST(request: NextRequest) {
     await unflagOtherWinTheDay(auth.userId, dueDate);
   }
 
-  const task = await prisma.task.create({
-    data: {
-      ownerId: effectiveOwnerId,
-      taskType,
-      title,
-      description: description ?? null,
-      priority: priority ?? 'MEDIUM',
-      dueDate: parseTaskDueInput(dueDate),
-      goalId: goalId ?? null,
-      processId: processId ?? null,
-      recurrenceRule: recurrenceRule ?? null,
-      timeBlockStart: timeBlockStart ? new Date(timeBlockStart) : null,
-      timeBlockEnd: timeBlockEnd ? new Date(timeBlockEnd) : null,
-      startTime: startTime ? new Date(startTime) : null,
-      estimatedMinutes: estimatedMinutes ?? undefined,
-      isWinTheDay: isWinTheDay ?? false,
-      parentId: parentId ?? null,
-      assigneeId: assigneeId ?? null,
-    },
-    include: {
-      goal: { select: { id: true, title: true, level: true } },
-    },
+  const trimmedItems = deliverableItems
+    ?.map((it) => ({ text: it.text.trim() }))
+    .filter((it) => it.text.length > 0) ?? [];
+
+  const task = await prisma.$transaction(async (tx) => {
+    const created = await tx.task.create({
+      data: {
+        ownerId: effectiveOwnerId,
+        taskType,
+        title,
+        description: description ?? null,
+        priority: priority ?? 'MEDIUM',
+        dueDate: parseTaskDueInput(dueDate),
+        goalId: goalId ?? null,
+        processId: processId ?? null,
+        recurrenceRule: recurrenceRule ?? null,
+        timeBlockStart: timeBlockStart ? new Date(timeBlockStart) : null,
+        timeBlockEnd: timeBlockEnd ? new Date(timeBlockEnd) : null,
+        startTime: startTime ? new Date(startTime) : null,
+        estimatedMinutes: estimatedMinutes ?? undefined,
+        isWinTheDay: isWinTheDay ?? false,
+        parentId: parentId ?? null,
+        assigneeId: assigneeId ?? null,
+      },
+    });
+
+    if (trimmedItems.length > 0) {
+      await tx.deliverableItem.createMany({
+        data: trimmedItems.map((it, i) => ({
+          taskId: created.id,
+          text: it.text,
+          isDone: false,
+          position: i,
+        })),
+      });
+    }
+
+    return tx.task.findUniqueOrThrow({
+      where: { id: created.id },
+      include: {
+        goal: { select: { id: true, title: true, level: true } },
+        deliverableItems: { orderBy: { position: 'asc' } },
+      },
+    });
   });
 
   // Sync to Google Calendar if the task has time blocks

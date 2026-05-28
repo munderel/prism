@@ -66,9 +66,15 @@ export async function recalculateBinaryKpi(
  *
  * Each walk step pulls the parent's goal.deletedAt via the `linkedKpi`
  * relation in the same findUnique, avoiding an extra round-trip per level.
+ *
+ * Returns the ordered list of parent KPI ids that were actually recalculated
+ * (immediate parent first, then up). Trashed-parent levels are not included
+ * because their value didn't change. Clients use this to refresh the
+ * displayed values of every parent in the chain in one round-trip.
  */
-export async function cascadeKpiUpdate(kpiId: string): Promise<void> {
+export async function cascadeKpiUpdate(kpiId: string): Promise<string[]> {
   const visited = new Set<string>();
+  const chain: string[] = [];
 
   async function walk(id: string): Promise<void> {
     if (visited.has(id)) return;
@@ -96,10 +102,12 @@ export async function cascadeKpiUpdate(kpiId: string): Promise<void> {
       } else if (kpi.type === 'BINARY') {
         await recalculateBinaryKpi(kpi.linkedKpiId, kpi.isComplete);
       }
+      chain.push(kpi.linkedKpiId);
     }
 
     await walk(kpi.linkedKpiId);
   }
 
   await walk(kpiId);
+  return chain;
 }

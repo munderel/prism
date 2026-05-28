@@ -36,37 +36,40 @@ export async function GET(
     },
   });
 
-  // Enrich KPIs with linked child actuals (monthly<-weekly, yearly<-monthly, HHG<-yearly)
+  // Enrich KPIs with rollup tiles, one per child goal (monthly<-weekly,
+  // yearly<-monthly, HHG<-yearly). Tiles are driven by child *goals*, not by
+  // linked KPI rows — that way the count matches the number of children in
+  // the goal stack even when some children don't have an explicitly linked
+  // KPI yet (those tiles render with `hasLinkedKpi: false` and a dash).
   const LEVELS_WITH_CHILDREN = ['HIGH_HARD', 'STRATEGIC', 'MONTHLY'];
   if (LEVELS_WITH_CHILDREN.includes(goal.level)) {
     const kpiIds = kpis.map((k) => k.id);
-    const allLinkedChildren = await prisma.kpi.findMany({
-      // Skip KPIs whose parent goal is in the trash — they'd otherwise
-      // inflate the parent KPI's "linked weekly actuals" display.
-      where: { linkedKpiId: { in: kpiIds }, goal: { deletedAt: null } },
-      include: {
-        goal: { select: { title: true, sortOrder: true, dueDate: true } },
+    const childGoals = await prisma.goal.findMany({
+      where: { parentId: goalId, deletedAt: null },
+      orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true,
+        title: true,
+        kpis: {
+          where: { linkedKpiId: { in: kpiIds } },
+          select: { id: true, linkedKpiId: true, type: true, actualValue: true, isComplete: true },
+        },
       },
-      orderBy: { goal: { sortOrder: 'asc' } },
     });
 
-    const childrenByParent = new Map<string, typeof allLinkedChildren>();
-    for (const child of allLinkedChildren) {
-      const key = child.linkedKpiId!;
-      const list = childrenByParent.get(key) ?? [];
-      list.push(child);
-      childrenByParent.set(key, list);
-    }
-
-    const enriched = kpis.map((kpi) => {
-      const linkedChildren = childrenByParent.get(kpi.id) ?? [];
-      const linkedWeeklyActuals = linkedChildren.map((child, idx) => ({
-        weekLabel: `W${idx + 1}`,
-        actual: child.type === 'NUMERIC' ? child.actualValue : null,
-        isComplete: child.isComplete,
-        goalTitle: child.goal.title,
-      }));
-      return { ...kpi, linkedWeeklyActuals };
+    const enriched = kpis.map((parent) => {
+      const linkedWeeklyActuals = childGoals.map((child, idx) => {
+        const childKpi = child.kpis.find((k) => k.linkedKpiId === parent.id) ?? null;
+        return {
+          weekLabel: `W${idx + 1}`,
+          goalId: child.id,
+          goalTitle: child.title,
+          actual: childKpi && childKpi.type === 'NUMERIC' ? childKpi.actualValue : null,
+          isComplete: childKpi?.isComplete ?? false,
+          hasLinkedKpi: !!childKpi,
+        };
+      });
+      return { ...parent, linkedWeeklyActuals };
     });
 
     return Response.json({ kpis: enriched });

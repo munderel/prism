@@ -214,9 +214,28 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
     }
   };
 
+  // `draft:` prefix marks items buffered in create mode; they're flushed
+  // inside the POST /api/tasks call in handleSubmit.
+  const isDraftItem = (id: string) => id.startsWith('draft:');
+
   const handleAddItem = async () => {
     const text = newItemText.trim();
-    if (!text || !hydratedTask?.id) return;
+    if (!text) return;
+
+    if (!hydratedTask?.id) {
+      // Create mode: buffer locally
+      const draft = {
+        id: `draft:${crypto.randomUUID()}`,
+        text,
+        isDone: false,
+        position: deliverableItems.length,
+      };
+      setDeliverableItems((prev) => [...prev, draft]);
+      setNewItemText('');
+      setAddingItem(false);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/tasks/${hydratedTask.id}/deliverables`, {
         method: 'POST',
@@ -238,6 +257,12 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
   };
 
   const handleToggleItem = async (itemId: string, current: boolean) => {
+    if (isDraftItem(itemId)) {
+      setDeliverableItems((prev) =>
+        prev.map((it) => (it.id === itemId ? { ...it, isDone: !current } : it)),
+      );
+      return;
+    }
     if (!hydratedTask?.id) return;
     try {
       const res = await fetch(`/api/deliverables/${itemId}`, {
@@ -258,6 +283,10 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
   };
 
   const handleDeleteItem = async (itemId: string) => {
+    if (isDraftItem(itemId)) {
+      setDeliverableItems((prev) => prev.filter((it) => it.id !== itemId));
+      return;
+    }
     if (!hydratedTask?.id) return;
     try {
       const res = await fetch(`/api/deliverables/${itemId}`, { method: 'DELETE' });
@@ -338,6 +367,9 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
         if (taskType === 'IMPROVE' && goalId) body.goalId = goalId;
         if (taskType === 'MAINTENANCE') {
           body.recurrenceRule = `FREQ=${recurrenceFreq};INTERVAL=${recurrenceInterval}`;
+        }
+        if (deliverableItems.length > 0) {
+          body.deliverableItems = deliverableItems.map((it) => ({ text: it.text }));
         }
         const res = await fetch('/api/tasks', {
           method: 'POST',
@@ -453,9 +485,10 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
               />
             </div>
 
-            {/* Deliverable Items — only shown when editing a saved task */}
-            {isEditing && hydratedTask?.id && (
-              <div>
+            {/* Deliverable Items — available in both create and edit modes.
+                In create mode, items are buffered locally (handlers detect
+                `draft:`-prefixed ids) and flushed in the POST /api/tasks call. */}
+            <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-2">Deliverable Items</label>
                 <div className="space-y-1.5">
                   {deliverableItems.map((item) => (
@@ -535,7 +568,6 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
                   </button>
                 )}
               </div>
-            )}
 
             {/* Estimated Duration */}
             <div>
