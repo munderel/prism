@@ -541,23 +541,25 @@ function TasksTab({ from, to }: { from: string; to: string }) {
     `/api/tasks?startDate=${from}&endDate=${to}`,
   );
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error) return <ErrorMessage message="Failed to load tasks." />;
-
   const tasks = data ?? [];
-  const completed = tasks.filter((t) => t.status === 'DONE');
-  const completionRate = tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0;
 
+  // Hooks must run on every render — keep this above the early returns below.
   const typeBreakdown = useMemo(() => {
     const counts = new Map<string, { type: string; total: number; done: number }>();
-    for (const t of tasks) {
+    for (const t of data ?? []) {
       const row = counts.get(t.taskType) ?? { type: t.taskType, total: 0, done: 0 };
       row.total += 1;
       if (t.status === 'DONE') row.done += 1;
       counts.set(t.taskType, row);
     }
     return Array.from(counts.values());
-  }, [tasks]);
+  }, [data]);
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message="Failed to load tasks." />;
+
+  const completed = tasks.filter((t) => t.status === 'DONE');
+  const completionRate = tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0;
 
   const typeColor = (type: string): string => {
     const key = type === 'GOAL_STACK' ? 'IMPROVE' : (type as keyof typeof PRISM_COLORS);

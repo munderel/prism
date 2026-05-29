@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
+import { syncFoodBlockCalendarEvent } from '@/lib/calendar';
 
 const createFoodBlockSchema = z.object({
   title: z.string().min(1).max(120),
@@ -52,5 +53,16 @@ export async function POST(request: NextRequest) {
       notes: notes ?? null,
     },
   });
+
+  // Push to Google Calendar immediately (degrades gracefully if not linked).
+  const eventId = await syncFoodBlockCalendarEvent(auth.userId, block, 'create');
+  if (eventId && eventId !== block.calendarEventId) {
+    await prisma.foodBlock.update({
+      where: { id: block.id },
+      data: { calendarEventId: eventId, syncedAt: new Date(), syncError: null },
+    });
+    block.calendarEventId = eventId;
+  }
+
   return Response.json(block, { status: 201 });
 }

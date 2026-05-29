@@ -67,9 +67,9 @@ export default function LeaderboardPage() {
                     <Flame className="h-3 w-3 text-yellow-400" />
                     {user.streak} day streak
                   </span>
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1" title="Only tasks of 60 minutes or more count toward the score">
                     <CheckCircle2 className="h-3 w-3 text-green-400" />
-                    {user.tasksCompleted} tasks
+                    {user.tasksCompleted} tasks (60m+)
                   </span>
                   <span className="flex items-center gap-1">
                     <Star className="h-3 w-3 text-purple-400" />

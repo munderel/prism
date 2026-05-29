@@ -133,6 +133,7 @@ export default function SettingsPage() {
   const [seedAimResult, setSeedAimResult] = useState('');
   const [enforce2FA, setEnforce2FA] = useState(false);
   const [enforce2FALoaded, setEnforce2FALoaded] = useState(false);
+  const [disableSeedAims, setDisableSeedAims] = useState(false);
   const [pendingUserAction, setPendingUserAction] = useState<{
     action: AdminUserAction;
     userId: string;
@@ -410,6 +411,7 @@ export default function SettingsPage() {
     if (res.ok) {
       const data = await res.json();
       setEnforce2FA(Boolean(data?.enforce2FA));
+      setDisableSeedAims(Boolean(data?.disableSeedAims));
       setEnforce2FALoaded(true);
     }
   };
@@ -426,6 +428,21 @@ export default function SettingsPage() {
       toast.error('Failed to update 2FA enforcement');
     } else {
       toast.success(next ? '2FA enforcement enabled.' : '2FA enforcement disabled.');
+    }
+  };
+
+  const toggleDisableSeedAims = async (next: boolean) => {
+    setDisableSeedAims(next); // optimistic
+    const res = await fetch('/api/settings/auth', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disableSeedAims: next }),
+    });
+    if (!res.ok) {
+      setDisableSeedAims(!next);
+      toast.error('Failed to update seeding setting');
+    } else {
+      toast.success(next ? 'Default AIM seeding disabled.' : 'Default AIM seeding enabled.');
     }
   };
 
@@ -1375,6 +1392,28 @@ export default function SettingsPage() {
 
             {/* AIM Categories */}
             <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+              <div className="mb-3 flex items-center justify-between rounded-lg border border-[var(--border-color)] bg-[var(--surface)] px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">Disable default AIM seeding</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                    When enabled, the &quot;Seed Default AIMs&quot; action below is blocked org-wide.
+                  </p>
+                </div>
+                <button
+                  onClick={() => toggleDisableSeedAims(!disableSeedAims)}
+                  disabled={!enforce2FALoaded}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                    disableSeedAims ? 'bg-red-600' : 'bg-[var(--hover-bg)]'
+                  }`}
+                  aria-pressed={disableSeedAims}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      disableSeedAims ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-[var(--text-primary)]">AIM Categories</p>
@@ -1396,7 +1435,8 @@ export default function SettingsPage() {
                       setSeedingAims(false);
                     }
                   }}
-                  disabled={seedingAims}
+                  disabled={seedingAims || disableSeedAims}
+                  title={disableSeedAims ? 'Seeding is disabled org-wide' : undefined}
                   className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50 transition-colors"
                 >
                   {seedingAims ? 'Seeding...' : 'Seed Default AIMs'}

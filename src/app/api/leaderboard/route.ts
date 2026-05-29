@@ -4,22 +4,72 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { cacheHeaders } from '@/lib/api-helpers';
 
 /**
- * Score formula:
- *   streak*10 + powerdownCount*5 + tasks + reviews*5 + aimPoints + processCompletions*3
+ * Leaderboard scoring — rebuilt to reward *using the app* rather than raw
+ * completion counts (Issue 10):
  *
- * All non-streak counts are windowed to items completed after the user's
- * `leaderboardResetAt` marker so resetting the leaderboard is actually visible.
- * The streak is a live counter; reset zeroes it separately.
+ *   score = streakPoints            // ALL streak types (daily, powerdown,
+ *                                   //   review_*, aim_*, process_*), each
+ *                                   //   currentCount weighted by type
+ *         + reviews        * 5
+ *         + qualifyingTasks * 3     // only tasks of MIN_MINUTES+ effort count
+ *         + aimScore                // pointsEarned for aims of MIN_MINUTES+
+ *         + powerdownCount * 5
+ *         + processCompletions * 3
+ *
+ * Tasks and aims must clear MIN_MINUTES of effort to score, so a flurry of
+ * 5-minute checkboxes can't out-rank sustained, focused work. Non-streak
+ * counts are windowed to items completed after the user's `leaderboardResetAt`.
  */
-function computeScore(
-  streak: number,
-  powerdownCount: number,
-  tasks: number,
-  reviews: number,
-  aimPoints: number,
-  processCompletions: number,
-): number {
-  return streak * 10 + powerdownCount * 5 + tasks + reviews * 5 + aimPoints + processCompletions * 3;
+const MIN_MINUTES = 60; // a task/aim must be at least this long to score
+
+const WEIGHT_TASK = 3;
+const WEIGHT_REVIEW = 5;
+const WEIGHT_POWERDOWN = 5;
+const WEIGHT_PROCESS = 3;
+
+/** Per-type weight applied to each streak's currentCount. Daily ranks highest. */
+function streakWeight(streakType: string | null | undefined): number {
+  if (!streakType) return 4;
+  if (streakType === 'daily') return 10;
+  if (streakType === 'powerdown') return 8;
+  if (streakType.startsWith('review')) return 6;
+  if (streakType.startsWith('aim')) return 4;
+  if (streakType.startsWith('process')) return 4;
+  return 4;
+}
+
+interface AimDurationFields {
+  actualMinutes: number | null;
+  timeBlockStart: Date | null;
+  timeBlockEnd: Date | null;
+  aimCategory: { defaultDurationMin: number } | null;
+}
+
+/** Effective minutes for an aim instance: actual, else scheduled block, else category default. */
+function aimEffectiveMinutes(a: AimDurationFields): number {
+  if (a.actualMinutes != null) return a.actualMinutes;
+  if (a.timeBlockStart && a.timeBlockEnd) {
+    return Math.max(0, Math.round((a.timeBlockEnd.getTime() - a.timeBlockStart.getTime()) / 60000));
+  }
+  return a.aimCategory?.defaultDurationMin ?? 0;
+}
+
+function computeScore(args: {
+  streakPoints: number;
+  reviews: number;
+  qualifyingTasks: number;
+  aimScore: number;
+  powerdownCount: number;
+  processCompletions: number;
+}): number {
+  return (
+    args.streakPoints +
+    args.reviews * WEIGHT_REVIEW +
+    args.qualifyingTasks * WEIGHT_TASK +
+    args.aimScore +
+    args.powerdownCount * WEIGHT_POWERDOWN +
+    args.processCompletions * WEIGHT_PROCESS
+  );
 }
 
 // Leaderboard query cap. At this size, the app-side resetAt reconciliation
@@ -35,10 +85,9 @@ export async function GET(_request: NextRequest) {
   if ('error' in auth) return authError(auth);
 
   // Bound the outer user set up-front; score + reset reconciliation only
-  // runs for users who could plausibly be on the leaderboard. Ordered by
-  // best streak + name as a stable proxy for engagement — the full score
-  // can't be known before the per-table counts fire, but best streak is
-  // cheap and strongly correlated with activity.
+  // runs for users who could plausibly be on the leaderboard. We now fetch
+  // ALL of each user's streaks (not just 'daily') so every active streak
+  // contributes to the score.
   const users = await prisma.user.findMany({
     where: { isPublicOnLeaderboard: true },
     take: MAX_PUBLIC_USERS,
@@ -48,8 +97,7 @@ export async function GET(_request: NextRequest) {
       image: true,
       leaderboardResetAt: true,
       streaks: {
-        where: { streakType: 'daily' },
-        select: { currentCount: true, bestCount: true },
+        select: { streakType: true, currentCount: true, bestCount: true },
       },
     },
     orderBy: [
@@ -60,15 +108,21 @@ export async function GET(_request: NextRequest) {
 
   const publicUserIds = users.map((u) => u.id);
 
-  // Each per-table findMany is scoped to the capped public-user set so a
-  // huge non-public or locked-out cohort can't inflate the fetch. The
-  // take: MAX_ROWS_PER_TABLE is a defence-in-depth bound — exceeding it
-  // means a single user has 50k+ completions of one kind; score
-  // saturation is acceptable at that point and far preferable to OOM.
+  // Each per-table findMany is scoped to the capped public-user set. Tasks are
+  // pre-filtered to the MIN_MINUTES effort gate at the DB level; aims carry the
+  // fields needed to compute effective duration and are gated in app code.
   const [aimInstances, processExecutions, powerdownSessions, taskCounts, reviewCounts, publicWins] = await Promise.all([
     prisma.aimInstance.findMany({
       where: { userId: { in: publicUserIds }, status: 'COMPLETED', completedAt: { not: null } },
-      select: { userId: true, completedAt: true, pointsEarned: true },
+      select: {
+        userId: true,
+        completedAt: true,
+        pointsEarned: true,
+        actualMinutes: true,
+        timeBlockStart: true,
+        timeBlockEnd: true,
+        aimCategory: { select: { defaultDurationMin: true } },
+      },
       take: MAX_ROWS_PER_TABLE,
       orderBy: { completedAt: 'desc' },
     }),
@@ -85,7 +139,12 @@ export async function GET(_request: NextRequest) {
       orderBy: { completedAt: 'desc' },
     }),
     prisma.task.findMany({
-      where: { ownerId: { in: publicUserIds }, status: 'DONE', completedAt: { not: null } },
+      where: {
+        ownerId: { in: publicUserIds },
+        status: 'DONE',
+        completedAt: { not: null },
+        estimatedMinutes: { gte: MIN_MINUTES },
+      },
       select: { ownerId: true, completedAt: true },
       take: MAX_ROWS_PER_TABLE,
       orderBy: { completedAt: 'desc' },
@@ -113,9 +172,11 @@ export async function GET(_request: NextRequest) {
     return !resetAt || completedAt >= resetAt;
   };
 
+  // Aim points — only aims that clear the MIN_MINUTES effort gate count.
   const aimPointsByUser = new Map<string, { points: number; count: number }>();
   for (const a of aimInstances) {
     if (!passes(a.userId, a.completedAt)) continue;
+    if (aimEffectiveMinutes(a) < MIN_MINUTES) continue;
     const entry = aimPointsByUser.get(a.userId) ?? { points: 0, count: 0 };
     entry.points += a.pointsEarned ?? 0;
     entry.count += 1;
@@ -148,7 +209,12 @@ export async function GET(_request: NextRequest) {
 
   const leaderboard = users
     .map((u) => {
-      const streak = u.streaks[0]?.currentCount ?? 0;
+      // Headline "streak" stays the daily streak; score sums ALL streak types.
+      const dailyStreak = u.streaks.find((s) => s.streakType === 'daily');
+      const streakPoints = u.streaks.reduce(
+        (sum, s) => sum + s.currentCount * streakWeight(s.streakType),
+        0,
+      );
       const aimData = aimPointsByUser.get(u.id) ?? { points: 0, count: 0 };
       const processCompletions = processCountByUser.get(u.id) ?? 0;
       const powerdownCount = powerdownCountByUser.get(u.id) ?? 0;
@@ -158,15 +224,22 @@ export async function GET(_request: NextRequest) {
         id: u.id,
         name: u.name ?? 'Unknown',
         image: u.image,
-        streak,
-        bestStreak: u.streaks[0]?.bestCount ?? 0,
+        streak: dailyStreak?.currentCount ?? 0,
+        bestStreak: dailyStreak?.bestCount ?? 0,
         tasksCompleted,
         reviewsCompleted,
         aimsCompleted: aimData.count,
         aimScore: aimData.points,
         processCompletions,
         powerdownCount,
-        score: computeScore(streak, powerdownCount, tasksCompleted, reviewsCompleted, aimData.points, processCompletions),
+        score: computeScore({
+          streakPoints,
+          reviews: reviewsCompleted,
+          qualifyingTasks: tasksCompleted,
+          aimScore: aimData.points,
+          powerdownCount,
+          processCompletions,
+        }),
       };
     })
     .sort((a, b) => b.score - a.score)

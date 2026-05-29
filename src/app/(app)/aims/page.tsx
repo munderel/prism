@@ -24,6 +24,7 @@ import {
   Target,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
+import { invalidateAfterAimChange } from '@/lib/swr-mutations';
 import StreakHeatmap from '@/components/aims/StreakHeatmap';
 import { AimProgressChart } from '@/components/aims/AimProgressChart';
 import { AimCard as AimCardSimplified } from '@/components/aims/AimCard';
@@ -84,6 +85,7 @@ interface UserAim {
   currentStreak: number;
   bestStreak: number;
   activeWeekdays: number;
+  skipSeedPhase: boolean;
   aimCategory: AimCategory;
 }
 
@@ -166,6 +168,7 @@ export default function AimsPage() {
   const [editDuration, setEditDuration] = useState<number>(0);
   const [editFrequency, setEditFrequency] = useState<number>(0);
   const [editActiveWeekdays, setEditActiveWeekdays] = useState<number>(127);
+  const [editSkipSeedPhase, setEditSkipSeedPhase] = useState<boolean>(false);
   const [newActivity, setNewActivity] = useState('');
   const [editActivities, setEditActivities] = useState<string[]>([]);
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -262,8 +265,8 @@ export default function AimsPage() {
           if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
         }
 
-        // Refresh data
-        await Promise.all([mutateAims(), mutateTodayInstances()]);
+        // Refresh data — local aim views plus cross-area (leaderboard, calendar, streaks).
+        await Promise.all([mutateAims(), mutateTodayInstances(), invalidateAfterAimChange()]);
       } finally {
         setCompletingId(null);
       }
@@ -325,6 +328,7 @@ export default function AimsPage() {
             currentStreak: 0,
             bestStreak: 0,
             activeWeekdays: 127,
+            skipSeedPhase: false,
             aimCategory: category,
           });
 
@@ -333,15 +337,17 @@ export default function AimsPage() {
         { revalidate: false },
       );
       try {
-        await fetch('/api/aims/user', {
+        const res = await fetch('/api/aims/user', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             aims: [{ aimCategoryId: catId, isActive: !currentlyActive }],
           }),
         });
+        if (!res.ok) toast.error('Failed to update aim');
         mutateAims();
       } catch {
+        toast.error('Failed to update aim');
         mutateAims(); // Revert on error
       }
     },
@@ -352,7 +358,7 @@ export default function AimsPage() {
   const resetToSeed = useCallback(
     async (catId: string) => {
       if (!confirm('Reset this aim to Seed phase? This will clear your streak and completion count.')) return;
-      await fetch('/api/aims/user', {
+      const res = await fetch('/api/aims/user', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -365,6 +371,7 @@ export default function AimsPage() {
           }],
         }),
       });
+      if (!res.ok) toast.error('Failed to reset aim');
       mutateAims();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -378,6 +385,7 @@ export default function AimsPage() {
     setEditActivities(getActivities(cat));
     const ua = userAimMap.get(cat.id);
     setEditActiveWeekdays(ua?.activeWeekdays ?? 127);
+    setEditSkipSeedPhase(ua?.skipSeedPhase ?? false);
     // KPI linkage state
     setEditLinkedKpiId(cat.linkedKpiId ?? null);
     setEditKpiIncrement(cat.kpiIncrement ?? 1);
@@ -408,15 +416,36 @@ export default function AimsPage() {
       payload.activeWeekdays = editActiveWeekdays;
     }
 
-    // KPI linkage — always include so the user can clear it
-    payload.linkedKpiId = editLinkedKpiId ?? null;
-    payload.kpiIncrement = editLinkedKpiId ? (editKpiIncrement > 0 ? editKpiIncrement : 1) : null;
+    // Per-aim SEED skip — only send when it changed from the stored value.
+    if (editSkipSeedPhase !== (cat.id ? (userAimMap.get(cat.id)?.skipSeedPhase ?? false) : false)) {
+      payload.skipSeedPhase = editSkipSeedPhase;
+    }
 
-    await fetch('/api/aims/user', {
+    // KPI linkage lives on the shared AimCategory and is guarded server-side.
+    // Only send it when the user actually changed it, otherwise editing a
+    // per-user field (active days, duration) on a shared default AIM would be
+    // rejected with 403 and silently drop the whole save.
+    const currentLinkedKpiId = cat.linkedKpiId ?? null;
+    const currentKpiIncrement = cat.kpiIncrement ?? 1;
+    const nextLinkedKpiId = editLinkedKpiId ?? null;
+    const nextKpiIncrement = editLinkedKpiId ? (editKpiIncrement > 0 ? editKpiIncrement : 1) : null;
+    const kpiLinkageChanged =
+      nextLinkedKpiId !== currentLinkedKpiId ||
+      (nextLinkedKpiId !== null && nextKpiIncrement !== currentKpiIncrement);
+    if (kpiLinkageChanged) {
+      payload.linkedKpiId = nextLinkedKpiId;
+      payload.kpiIncrement = nextKpiIncrement;
+    }
+
+    const res = await fetch('/api/aims/user', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ aims: [payload] }),
     });
+    if (!res.ok) {
+      toast.error('Failed to save aim settings');
+      return;
+    }
     setEditingId(null);
     mutateAims();
     await mutate('/api/aims/categories');
@@ -701,6 +730,7 @@ export default function AimsPage() {
                     editDuration={editDuration}
                     editFrequency={editFrequency}
                     editActiveWeekdays={editActiveWeekdays}
+                    editSkipSeedPhase={editSkipSeedPhase}
                     editActivities={editActivities}
                     newActivity={newActivity}
                     completedToday={completedTodaySet.has(cat.id)}
@@ -718,6 +748,7 @@ export default function AimsPage() {
                     onEditDurationChange={setEditDuration}
                     onEditFrequencyChange={setEditFrequency}
                     onEditActiveWeekdaysChange={setEditActiveWeekdays}
+                    onEditSkipSeedPhaseChange={setEditSkipSeedPhase}
                     onNewActivityChange={setNewActivity}
                     onAddActivity={addActivity}
                     onRemoveActivity={removeActivity}
@@ -763,6 +794,7 @@ export default function AimsPage() {
                   editDuration={editDuration}
                   editFrequency={editFrequency}
                   editActiveWeekdays={editActiveWeekdays}
+                  editSkipSeedPhase={editSkipSeedPhase}
                   editActivities={editActivities}
                   newActivity={newActivity}
                   completedToday={completedTodaySet.has(cat.id)}
@@ -780,6 +812,7 @@ export default function AimsPage() {
                   onEditDurationChange={setEditDuration}
                   onEditFrequencyChange={setEditFrequency}
                   onEditActiveWeekdaysChange={setEditActiveWeekdays}
+                  onEditSkipSeedPhaseChange={setEditSkipSeedPhase}
                   onNewActivityChange={setNewActivity}
                   onAddActivity={addActivity}
                   onRemoveActivity={removeActivity}
@@ -975,6 +1008,7 @@ interface AimCardProps {
   editDuration: number;
   editFrequency: number;
   editActiveWeekdays: number;
+  editSkipSeedPhase: boolean;
   editActivities: string[];
   newActivity: string;
   completedToday: boolean;
@@ -989,6 +1023,7 @@ interface AimCardProps {
   onEditDurationChange: (v: number) => void;
   onEditFrequencyChange: (v: number) => void;
   onEditActiveWeekdaysChange: (v: number) => void;
+  onEditSkipSeedPhaseChange: (v: boolean) => void;
   onNewActivityChange: (v: string) => void;
   onAddActivity: () => void;
   onRemoveActivity: (act: string) => void;
@@ -1024,6 +1059,7 @@ function AimCard({
   editDuration,
   editFrequency,
   editActiveWeekdays,
+  editSkipSeedPhase,
   editActivities,
   newActivity,
   completedToday,
@@ -1038,6 +1074,7 @@ function AimCard({
   onEditDurationChange,
   onEditFrequencyChange,
   onEditActiveWeekdaysChange,
+  onEditSkipSeedPhaseChange,
   onNewActivityChange,
   onAddActivity,
   onRemoveActivity,
@@ -1461,6 +1498,22 @@ function AimCard({
               </div>
             </div>
           )}
+
+          {/* Skip Seed phase — opt out of the SEED ramp-up for this aim */}
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={editSkipSeedPhase}
+              onChange={(e) => onEditSkipSeedPhaseChange(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-[var(--border-color)] text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-xs text-[var(--text-secondary)]">
+              Skip Seed phase
+              <span className="block text-[10px] text-[var(--text-muted)]">
+                Start at Sprout instead of the gradual Seed ramp-up.
+              </span>
+            </span>
+          </label>
 
           {/* Activities Editor (for categories that have activities) */}
           {category.activities && (

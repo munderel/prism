@@ -80,8 +80,12 @@ export async function PATCH(
 
   const task = await prisma.task.findUnique({ where: { id } });
   if (!task) return notFoundResponse('Task');
-  const canAccess = hasAccess(task.ownerId, auth.userId, auth.session.user.isAdmin) || task.assigneeId === auth.userId;
-  if (!canAccess) return forbiddenResponse();
+  const owns = hasAccess(task.ownerId, auth.userId, auth.session.user.isAdmin) || task.assigneeId === auth.userId;
+  // REACT tasks are a shared team pool: any teammate may claim/reassign and
+  // work a non-private REACT task. Structural edits (title, description, etc.)
+  // still require ownership — enforced by the field allow-list below.
+  const isTeamReact = task.taskType === 'REACT' && !task.isPrivate;
+  if (!owns && !isTeamReact) return forbiddenResponse();
 
   const parsed = await parseBody(request, updateTaskSchema);
   if ('error' in parsed) return parsed.error;
@@ -90,7 +94,7 @@ export async function PATCH(
 
   const data: Record<string, unknown> = pickDefined(body, [
     'title', 'description', 'priority', 'estimatedMinutes',
-    'isPinned', 'isAutoScheduled', 'isWinTheDay', 'winTheDayRank',
+    'isPinned', 'isPrivate', 'isAutoScheduled', 'isWinTheDay', 'winTheDayRank',
     'assigneeId',
   ]);
   if (dueDate !== undefined) data.dueDate = parseTaskDueInput(dueDate);
@@ -137,6 +141,15 @@ export async function PATCH(
       case 'DROPPED':
         data.failedAt = new Date();
         break;
+    }
+  }
+
+  // A teammate acting on a shared public REACT task (not the owner/assignee)
+  // may only claim/reassign it and move its status — never edit its content.
+  if (!owns) {
+    const TEAM_REACT_FIELDS = new Set(['assigneeId', 'status', 'startedAt', 'failedAt']);
+    for (const key of Object.keys(data)) {
+      if (!TEAM_REACT_FIELDS.has(key)) delete data[key];
     }
   }
 

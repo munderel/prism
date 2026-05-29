@@ -45,10 +45,12 @@ export async function GET(request: NextRequest) {
     : { OR: [{ startTime: null }, { startTime: { lte: new Date() } }] };
 
   const isAdmin = !!auth.session.user.isAdmin;
-  // Admin-only opt-ins. Future "view as user X" overrides should slot in here
-  // and stay admin-gated.
+  // Admin-only opt-in: view tasks the admin owns even after assigning them away.
   const includeOwned = searchParams.get('includeOwned') === 'true' && isAdmin;
-  const delegatedByMe = searchParams.get('delegatedByMe') === 'true' && isAdmin;
+  // Available to everyone — scoped to ownerId = caller below, so a non-admin
+  // only ever sees the tasks THEY created and routed to someone else (e.g. a
+  // REACT task they assigned to a teammate). Safe regardless of role.
+  const delegatedByMe = searchParams.get('delegatedByMe') === 'true';
 
   // Process page bypass: when a processId is supplied AND the requester owns
   // the process (assignee, active delegate, or admin), the processId itself
@@ -88,6 +90,10 @@ export async function GET(request: NextRequest) {
       { goalId: { in: companyGoals.map((g) => g.id) }, assigneeId: auth.userId },
       { taskType: { in: ['REACT', 'MAINTENANCE'] }, assigneeId: null },
       { taskType: { in: ['REACT', 'MAINTENANCE'] }, assigneeId: auth.userId },
+      // REACT tasks are team-visible by default: everyone sees non-private REACT
+      // regardless of who it's assigned to. Private REACT stays owner-only.
+      { taskType: 'REACT', isPrivate: false },
+      { taskType: 'REACT', ownerId: auth.userId },
     ];
   } else if (delegatedByMe) {
     // Admin opt-in: tasks I created but routed to someone else.
@@ -103,8 +109,8 @@ export async function GET(request: NextRequest) {
     // plus your own unassigned tasks. Once a task is assigned away, it
     // disappears from your personal dashboard/reviews/calendar lists.
     // Admins can opt back in via `includeOwned=true` (returns tasks the admin
-    // owns, even if assigned away) or `delegatedByMe=true` (only assigned-away
-    // tasks). Both flags are silently ignored for non-admins.
+    // owns, even if assigned away). Any user can use `delegatedByMe=true` (only
+    // tasks they own that are assigned away). `includeOwned` is admin-only.
     accessFilter.OR = [
       { assigneeId: auth.userId },
       { ownerId: auth.userId, assigneeId: null },
@@ -242,7 +248,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, createTaskSchema);
   if ('error' in parsed) return parsed.error;
-  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, startTime, estimatedMinutes, isWinTheDay, parentId, assigneeId, deliverableItems } = parsed.data;
+  const { taskType, title, description, priority, dueDate, goalId, processId, ownerId, recurrenceRule, timeBlockStart, timeBlockEnd, startTime, estimatedMinutes, isWinTheDay, isPrivate, parentId, assigneeId, deliverableItems } = parsed.data;
 
   // IMPROVE tasks require a goalId
   if (taskType === 'IMPROVE' && !goalId) {
@@ -318,6 +324,7 @@ export async function POST(request: NextRequest) {
         startTime: startTime ? new Date(startTime) : null,
         estimatedMinutes: estimatedMinutes ?? undefined,
         isWinTheDay: isWinTheDay ?? false,
+        isPrivate: isPrivate ?? false,
         parentId: parentId ?? null,
         assigneeId: assigneeId ?? null,
       },

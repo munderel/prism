@@ -70,7 +70,9 @@ function formatRelativeDate(dateStr: string): string {
 }
 
 export default function ReactiveTasksPage() {
-  const { data: tasks, mutate } = useSWR<Task[]>('/api/tasks?taskType=REACT');
+  // scope=company surfaces the whole team's public REACT tasks (plus the
+  // viewer's own private REACT). REACT is a shared, team-wide work pool.
+  const { data: tasks, mutate } = useSWR<Task[]>('/api/tasks?taskType=REACT&scope=company');
   const [search, setSearch] = useState('');
   const [filterPriority, setFilterPriority] = useState<FilterPriority>('ALL');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('ACTIVE');

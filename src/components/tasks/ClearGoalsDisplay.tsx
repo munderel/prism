@@ -1,8 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import useSWR from 'swr';
+import useSWR, { mutate as globalMutate } from 'swr';
 import { Check, Plus, Trash2, Pencil, X, ChevronDown, ChevronRight } from 'lucide-react';
+
+// Revalidate every task-list SWR key so any clear-goals progress bar rendered
+// from task data (e.g. TaskCard) reflects a toggle immediately, not just the
+// local /api/tasks/[id]/clear-goals key this component owns.
+function revalidateTaskLists() {
+  void globalMutate(
+    (key) => typeof key === 'string' && (key === '/api/tasks' || key.startsWith('/api/tasks?')),
+    undefined,
+    { revalidate: true },
+  );
+}
 
 interface ClearGoal {
   id: string;
@@ -67,6 +78,7 @@ export function ClearGoalsDisplay({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ goals: [{ id: goalId, isComplete: !isComplete }] }),
         });
+        revalidateTaskLists();
         return optimisticGoals;
       },
       { optimisticData: optimisticGoals, rollbackOnError: true, revalidate: true }
@@ -83,6 +95,7 @@ export function ClearGoalsDisplay({
     });
     setNewGoalText('');
     mutate();
+    revalidateTaskLists();
   };
 
   const saveEdit = async (goalId: string) => {
@@ -101,6 +114,7 @@ export function ClearGoalsDisplay({
   const deleteGoal = async (goalId: string) => {
     await fetch(`${apiUrl}?goalId=${goalId}`, { method: 'DELETE' });
     mutate();
+    revalidateTaskLists();
   };
 
   const startEdit = (goal: ClearGoal) => {

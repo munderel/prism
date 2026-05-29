@@ -956,8 +956,12 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
     };
   }) : [];
 
-  // Build ephemeral groupable-AIM overlay events from teammates
-  const groupableAimCalendarEvents = groupableAims.map((item) => {
+  // Build ephemeral groupable-AIM overlay events from teammates.
+  // Once the user is GOING they have their own AimInstance (rendered as a
+  // group-flagged event), so the teammate overlay would be a duplicate — drop it.
+  const groupableAimCalendarEvents = groupableAims
+    .filter((item) => item.attendStatus !== 'GOING')
+    .map((item) => {
     const attendBadge =
       item.attendStatus === 'MAYBE' ? ' ?' : '';
     return {
@@ -1519,8 +1523,17 @@ export function CalendarView({ onEventClick, onDateSelect, onExternalDrop, unsch
               }
               return;
             }
-            // Dim and strike-through DONE/DROPPED task events
-            if (props.status === 'DONE' || props.status === 'DROPPED') {
+            // Dim and strike-through any completed item, for ALL types.
+            // Tasks report DONE/DROPPED; aims/reviews/powerdown/processes report
+            // COMPLETED or a completedAt timestamp. Work blocks have their own
+            // outcome styling below (completionStatus), so they're excluded here.
+            const isCompletedItem =
+              props.status === 'DONE' ||
+              props.status === 'DROPPED' ||
+              props.status === 'COMPLETED' ||
+              props.completed === true ||
+              (!!props.completedAt && props.itemType !== 'workblock');
+            if (isCompletedItem) {
               info.el.style.opacity = '0.45';
               const titleEl = info.el.querySelector('.fc-event-title') as HTMLElement | null;
               if (titleEl) titleEl.style.textDecoration = 'line-through';
