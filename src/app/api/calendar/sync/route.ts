@@ -859,7 +859,7 @@ export async function POST(request: NextRequest) {
   const writableCalendarIds = await listWritableCalendarIds(auth.userId);
   const sweepCalendarIds = Array.from(new Set([...calendarIds, ...writableCalendarIds]));
 
-  const [gcalEvents, allTaggedMasters, tasks, aimInstances, processes, reviews, powerdownSessions] = await Promise.all([
+  const [gcalEvents, allTaggedMasters, tasks, aimInstances, processes, reviews, powerdownSessions, foodBlocks] = await Promise.all([
     listGoogleEvents(auth.userId, start, end, calendarIds, { showDeleted: true }),
     // Window-independent inventory of Prism-tagged masters and one-offs across
     // every writable calendar — wider than `calendarIds` so the sweep catches
@@ -938,6 +938,14 @@ export async function POST(request: NextRequest) {
         sessionDate: { gte: new Date(rangeStart.getTime() - 86400000), lte: new Date(rangeEnd.getTime() + 86400000) },
       },
       select: { id: true, calendarEventId: true, sessionDate: true },
+    }),
+    // Food blocks (meals) — one-off events, synced 2-way like tasks/aims.
+    prisma.foodBlock.findMany({
+      where: {
+        userId: auth.userId,
+        startAt: { gte: rangeStart, lte: rangeEnd },
+      },
+      select: { id: true, title: true, startAt: true, endAt: true, calendarEventId: true },
     }),
   ]);
 
@@ -1140,6 +1148,61 @@ export async function POST(request: NextRequest) {
   }));
   for (const u of aimPushUpdates) if (u) updates.push(u);
 
+  // Pull one-off food block (meal) changes from Google.
+  for (const meal of foodBlocks.filter((m) => m.calendarEventId)) {
+    const event = meal.calendarEventId ? gcalById.get(meal.calendarEventId) : null;
+    if (event?.status === 'cancelled') {
+      // The user deleted the meal in Google — remove the link (and the block).
+      await prisma.foodBlock.delete({ where: { id: meal.id } }).catch(() => {});
+      updates.push(`Removed meal from Google deletion: ${meal.title}`);
+      continue;
+    }
+    const eventStart = event ? getEventStartString(event) : null;
+    const eventEnd = event ? getEventEndString(event) : null;
+    if (!eventStart || !eventEnd) continue;
+    if (hasTimeDrifted(eventStart, eventEnd, meal.startAt.toISOString(), meal.endAt.toISOString(), `meal ${meal.title}`)) {
+      await prisma.foodBlock.update({
+        where: { id: meal.id },
+        data: { startAt: new Date(eventStart), endAt: new Date(eventEnd) },
+      });
+      updates.push(`Pulled meal move from Google: ${meal.title}`);
+    }
+  }
+
+  // Push one-off unsynced food blocks. Same shape as tasks/aims above.
+  const unsyncedMeals = foodBlocks.filter((m) => !m.calendarEventId);
+  const mealPushUpdates = await Promise.all(unsyncedMeals.map(async (meal) => {
+    const summary = `🍽️ ${meal.title}`;
+    const existing = byPrismRecordId.get(meal.id);
+    if (existing?.id) {
+      const updated = await updateGoogleEvent(auth.userId, existing.id, {
+        summary,
+        start: meal.startAt.toISOString(),
+        end: meal.endAt.toISOString(),
+        timeZone: timezone,
+      }, targetCalendarId);
+      if (updated?.id) {
+        await prisma.foodBlock.update({ where: { id: meal.id }, data: { calendarEventId: updated.id, syncedAt: new Date(), syncError: null } });
+        return `Reattached meal to existing Google event: ${meal.title}`;
+      }
+    }
+
+    const event = await createGoogleEvent(auth.userId, {
+      summary,
+      start: meal.startAt.toISOString(),
+      end: meal.endAt.toISOString(),
+      prismType: 'food',
+      prismRecordId: meal.id,
+    }, targetCalendarId);
+
+    if (event?.id) {
+      await prisma.foodBlock.update({ where: { id: meal.id }, data: { calendarEventId: event.id, syncedAt: new Date(), syncError: null } });
+      return `Pushed meal to Google: ${meal.title}`;
+    }
+    return null;
+  }));
+  for (const u of mealPushUpdates) if (u) updates.push(u);
+
   // Remove legacy one-off review events now that reviews are managed as recurring series.
   const activeRecurringReviewTypes = new Set<('WEEKLY' | 'MONTHLY' | 'YEARLY')>();
   if (user.weeklyReviewDayOfWeek != null && user.weeklyReviewTime) activeRecurringReviewTypes.add('WEEKLY');
@@ -1290,7 +1353,7 @@ export async function POST(request: NextRequest) {
       if (s?.eventId) known.add(s.eventId);
     }
 
-    const [taskRows, aimRows, revRows, mtgRows] = await Promise.all([
+    const [taskRows, aimRows, revRows, mtgRows, foodRows] = await Promise.all([
       prisma.task.findMany({
         where: {
           OR: [{ assigneeId: auth.userId }, { ownerId: auth.userId, assigneeId: null }],
@@ -1310,8 +1373,12 @@ export async function POST(request: NextRequest) {
         where: { createdById: auth.userId, calendarEventId: { not: null } },
         select: { calendarEventId: true },
       }),
+      prisma.foodBlock.findMany({
+        where: { userId: auth.userId, calendarEventId: { not: null } },
+        select: { calendarEventId: true },
+      }),
     ]);
-    for (const r of [...taskRows, ...aimRows, ...revRows, ...mtgRows]) {
+    for (const r of [...taskRows, ...aimRows, ...revRows, ...mtgRows, ...foodRows]) {
       if (r.calendarEventId) known.add(r.calendarEventId);
     }
 

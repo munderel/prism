@@ -85,6 +85,15 @@ export async function POST() {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
+  // Org-wide kill switch: admins can disable seeding from Settings.
+  const settings = await prisma.companyAuthSettings.findFirst({ select: { disableSeedAims: true } });
+  if (settings?.disableSeedAims) {
+    return Response.json(
+      { error: 'Seeding default AIMs is disabled for this organization.' },
+      { status: 403 },
+    );
+  }
+
   let count = 0;
   for (const cat of DEFAULT_AIM_CATEGORIES) {
     const id = cat.name.toLowerCase().replace(/\s+/g, '-');

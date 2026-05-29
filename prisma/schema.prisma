@@ -69,6 +69,7 @@ model User {
   calendarColorOverrides        Json      @default("{}") // Record<calendarId, hexColor> overrides
   weeklyTargetCalendarIds       Json      @default("[]") // String[] of Google Calendar IDs that count toward weekly hour target
   googleSyncState               Json      @default("{}") // Recurring Google Calendar sync metadata and exceptions
+  googleSyncTokenByCalendar     Json      @default("{}") // { [calendarId]: nextSyncToken } for incremental Google pulls (Issue 8)
   defaultWorkBlockMinutes       Int       @default(90) // Minutes used when dragging a task onto the calendar as a work block (matches migration default)
   alwaysPromptForBlockObjective Boolean   @default(false) // When true, always show the objective modal on drag; otherwise short tasks (remaining ≤ default) schedule immediately
   dailyHoursTarget              Int? // Daily "Y hours" goal shown in Powerdown Step 4 header. Stored as minutes; null = no target = hide the header. Set from Settings.
@@ -293,6 +294,7 @@ model Task {
   timeBlockEnd       DateTime?
   estimatedMinutes   Int          @default(60)
   isPinned           Boolean      @default(false)
+  isPrivate          Boolean      @default(false) // REACT tasks default public (team-visible); true keeps them owner-only
   isAutoScheduled    Boolean      @default(false)
   isWinTheDay        Boolean      @default(false)
   winTheDayRank      Int?
@@ -339,6 +341,7 @@ model Task {
   @@index([parentId])
   @@index([ownerId, isWinTheDay, winTheDayRank])
   @@index([ownerId, startTime])
+  @@index([taskType, isPrivate])
 }
 
 model DeliverableItem {
@@ -453,14 +456,17 @@ model PowerdownSession {
 }
 
 model FoodBlock {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String
-  startAt   DateTime
-  endAt     DateTime
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(cuid())
+  userId          String
+  title           String
+  startAt         DateTime
+  endAt           DateTime
+  notes           String?
+  calendarEventId String? // Google Calendar event ID for 2-way sync
+  syncedAt        DateTime? // last successful push to Google Calendar
+  syncError       String? // last Google Calendar error message; null on success
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -963,6 +969,7 @@ model UserAim {
   safetyBufferUpdatedAt DateTime? // last recompute timestamp for buffer
   derailedAt            DateTime? // set when buffer hits 0; cleared by "back on track"
   activeWeekdays        Int       @default(127) // bitmask: Sun=1, Mon=2, Tue=4, Wed=8, Thu=16, Fri=32, Sat=64; 127 = all 7 days
+  skipSeedPhase         Boolean   @default(false) // when true, this aim starts at SPROUT instead of the SEED phase
   createdAt             DateTime  @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1157,10 +1164,11 @@ model Feedback {
 // === COMPANY AUTH SETTINGS ===
 
 model CompanyAuthSettings {
-  id         String   @id @default(cuid())
-  enforce2FA Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             String   @id @default(cuid())
+  enforce2FA     Boolean  @default(false)
+  disableSeedAims Boolean @default(false) // when true, the admin "Seed Default AIMs" action is blocked org-wide
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 // === LOGIN ATTEMPT TRACKING ===

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
 import { notFoundResponse } from '@/lib/api-helpers';
+import { syncFoodBlockCalendarEvent } from '@/lib/calendar';
 
 const updateFoodBlockSchema = z.object({
   title: z.string().min(1).max(120).optional(),
@@ -34,6 +35,19 @@ export async function PATCH(
   if (body.notes !== undefined) data.notes = body.notes;
 
   const updated = await prisma.foodBlock.update({ where: { id }, data });
+
+  // Reflect the change in Google Calendar. If the meal wasn't synced yet
+  // (no calendarEventId), create the event now; otherwise update it.
+  const action = updated.calendarEventId ? 'update' : 'create';
+  const eventId = await syncFoodBlockCalendarEvent(auth.userId, updated, action);
+  if (eventId && eventId !== updated.calendarEventId) {
+    await prisma.foodBlock.update({
+      where: { id },
+      data: { calendarEventId: eventId, syncedAt: new Date(), syncError: null },
+    });
+    updated.calendarEventId = eventId;
+  }
+
   return Response.json(updated);
 }
 
@@ -47,6 +61,11 @@ export async function DELETE(
 
   const block = await prisma.foodBlock.findUnique({ where: { id } });
   if (!block || block.userId !== auth.userId) return notFoundResponse('FoodBlock');
+
+  // Remove the Google Calendar event before deleting the row.
+  if (block.calendarEventId) {
+    await syncFoodBlockCalendarEvent(auth.userId, block, 'delete');
+  }
 
   await prisma.foodBlock.delete({ where: { id } });
   return Response.json({ success: true });

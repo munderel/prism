@@ -273,8 +273,17 @@ export const TaskCard = React.memo(function TaskCard({ task, onToggle, onEdit: _
             </div>
           )}
           {goals.goalsDefined > 0 && (
-            <div className="text-[11px] text-[var(--text-muted)]">
-              {goals.goalsHit} of {goals.goalsDefined} goals hit
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                <span>{goals.goalsHit} of {goals.goalsDefined} goals hit</span>
+                <span>{goals.percent}%</span>
+              </div>
+              <div
+                className="h-1.5 rounded-full bg-[var(--surface-raised)] overflow-hidden"
+                title={`${goals.goalsHit} of ${goals.goalsDefined} clear goals complete`}
+              >
+                <div className="h-full bg-teal-500 transition-all" style={{ width: `${goals.percent}%` }} />
+              </div>
             </div>
           )}
         </div>

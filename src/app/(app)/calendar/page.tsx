@@ -831,23 +831,8 @@ export default function CalendarPage() {
                 <Briefcase className="h-4 w-4 text-indigo-400" />
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Work Blocks</h3>
               </div>
-              <p className="text-xs text-[var(--text-muted)] mb-2">Drag onto calendar to create blocks.</p>
+              <p className="text-xs text-[var(--text-muted)] mb-2">Drag onto calendar to create blocks. Drag as many Deep Work blocks as you like.</p>
               <div className="space-y-2">
-                <div
-                  className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-indigo-500/30 border-l-4 border-l-indigo-500 bg-indigo-500/10 p-3 hover:bg-indigo-500/20 transition-colors"
-                  data-item-type="work_block"
-                  data-item-id="__work_block_template__"
-                  data-item-title="Work Block"
-                  data-duration="60"
-                >
-                  <div className="flex items-start gap-2">
-                    <Briefcase className="h-4 w-4 text-indigo-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-[var(--text-primary)] font-medium">Normal Work Block</p>
-                      <p className="text-xs text-[var(--text-muted)] mt-0.5">60min</p>
-                    </div>
-                  </div>
-                </div>
                 {deepWorkDuration != null && (
                   <div
                     className="fc-unscheduled-task cursor-grab active:cursor-grabbing rounded-lg border border-teal-500/30 border-l-4 border-l-teal-500 bg-teal-500/10 p-3 hover:bg-teal-500/20 transition-colors"
@@ -1051,20 +1036,6 @@ export default function CalendarPage() {
                       <h3 className="text-sm font-semibold text-[var(--text-primary)]">Work Blocks</h3>
                     </div>
                     <div className="space-y-2">
-                      <div
-                        onClick={() => handleMobileItemTap({ id: '__work_block_template__', itemType: 'work_block', title: 'Work Block', duration: 60 } as UnscheduledItem)}
-                        className={`cursor-pointer rounded-lg border border-indigo-500/30 border-l-4 border-l-indigo-500 bg-indigo-500/10 p-3 hover:bg-indigo-500/20 transition-colors min-h-[44px] ${
-                          scheduleModalItem?.id === '__work_block_template__' ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-[var(--background)]' : ''
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <Briefcase className="h-4 w-4 text-indigo-400 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <p className="text-sm text-[var(--text-primary)] font-medium">Normal Work Block</p>
-                            <p className="text-xs text-[var(--text-muted)] mt-0.5">60min</p>
-                          </div>
-                        </div>
-                      </div>
                       {deepWorkDuration != null && (
                         <div
                           onClick={() => handleMobileItemTap({ id: '__deep_work_template__', itemType: 'aim', title: 'Deep Work Block', duration: deepWorkDuration, aimCategoryId: 'deep-work' } as UnscheduledItem)}

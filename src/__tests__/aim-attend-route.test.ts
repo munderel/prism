@@ -8,6 +8,7 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
     aimInstanceDismissal: {
       deleteMany: vi.fn(),
@@ -63,6 +64,7 @@ describe('POST /api/aims/instances/[id]/attend', () => {
     vi.mocked(prisma.aimInstance.findUnique).mockResolvedValue(baseInstance as any);
     vi.mocked(prisma.aimInstance.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.aimInstance.create).mockResolvedValue({ id: 'own-inst-1' } as any);
+    vi.mocked(prisma.aimInstance.update).mockResolvedValue({ id: 'existing-inst' } as any);
     vi.mocked(prisma.aimInstanceDismissal.deleteMany).mockResolvedValue({ count: 0 } as any);
     vi.mocked(prisma.aimInstanceDismissal.upsert).mockResolvedValue({} as any);
   });

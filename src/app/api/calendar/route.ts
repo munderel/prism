@@ -503,12 +503,24 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  // Fetch food blocks up-front (when in scope) so their synced Google event IDs
+  // can be deduped against the raw Google events below — otherwise a meal that
+  // has been pushed to Google renders twice (once as `food`, once as `google`).
+  const foodBlocks = (fetchAll || source === 'food' || fetchExternal)
+    ? await prisma.foodBlock.findMany({
+        where: { userId: auth.userId, startAt: { gte: rangeStart, lte: rangeEnd } },
+      })
+    : [];
+
   // Build set of synced calendar event IDs for dedup against Google Calendar.
   // Any Prism item (task, aim, review, meeting) that has a calendarEventId should
   // suppress the corresponding Google event to prevent duplicates.
   const syncedCalendarEventIds = new Set<string>();
   for (const task of tasks) {
     if (task.calendarEventId) syncedCalendarEventIds.add(task.calendarEventId);
+  }
+  for (const food of foodBlocks) {
+    if (food.calendarEventId) syncedCalendarEventIds.add(food.calendarEventId);
   }
   for (const aim of aimInstances) {
     if (aim.calendarEventId) syncedCalendarEventIds.add(aim.calendarEventId);
@@ -959,14 +971,9 @@ export async function GET(request: NextRequest) {
   }
 
   // Food blocks render on the dashboard timeline alongside meetings/reviews/google,
-  // so they ride the same `source=external` fetch.
+  // so they ride the same `source=external` fetch. (Fetched up-front above for
+  // Google dedup.)
   if (fetchAll || source === 'food' || fetchExternal) {
-    const foodBlocks = await prisma.foodBlock.findMany({
-      where: {
-        userId: auth.userId,
-        startAt: { gte: rangeStart, lte: rangeEnd },
-      },
-    });
     for (const f of foodBlocks) {
       events.push({
         id: `food-${f.id}`,

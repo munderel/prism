@@ -40,6 +40,7 @@ export type PrismEventType =
   | 'process'
   | 'meeting'
   | 'workblock'
+  | 'food'
   | 'unknown';
 
 /**
@@ -854,6 +855,68 @@ export async function syncTaskCalendarEvent(
     const info = classifyGoogleError(err);
     console.warn(`[calendar] syncTaskCalendarEvent failed`, { userId, taskId: task.id, action, ...info });
     return task.calendarEventId ?? null;
+  }
+}
+
+/**
+ * Push a food block (meal) to Google Calendar. Mirrors syncTaskCalendarEvent:
+ * one-off event, deduped by prismType='food' + prismRecordId. All Google I/O is
+ * wrapped in try/catch so a missing/broken Google link degrades gracefully.
+ */
+export async function syncFoodBlockCalendarEvent(
+  userId: string,
+  meal: { id?: string; calendarEventId?: string | null; title: string; startAt?: Date | string | null; endAt?: Date | string | null },
+  action: 'create' | 'update' | 'delete'
+): Promise<string | null> {
+  try {
+    const { calendarId: targetCalendarId, timezone } = await getGoogleSyncInfo(userId);
+    const summary = `🍽️ ${meal.title}`;
+
+    if (action === 'delete' && meal.calendarEventId) {
+      await deleteGoogleEvent(userId, meal.calendarEventId, targetCalendarId);
+      return null;
+    }
+
+    if (action === 'update' && meal.calendarEventId) {
+      await updateGoogleEvent(userId, meal.calendarEventId, {
+        summary,
+        start: meal.startAt ? new Date(meal.startAt).toISOString() : undefined,
+        end: meal.endAt ? new Date(meal.endAt).toISOString() : undefined,
+        timeZone: timezone,
+      }, targetCalendarId);
+      return meal.calendarEventId;
+    }
+
+    if (action === 'create' && meal.startAt && meal.endAt) {
+      if (meal.id) {
+        const existing = await findExistingPrismEvent(userId, targetCalendarId, meal.id, 'food');
+        if (existing) {
+          await updateGoogleEvent(userId, existing, {
+            summary,
+            start: new Date(meal.startAt).toISOString(),
+            end: new Date(meal.endAt).toISOString(),
+            timeZone: timezone,
+          }, targetCalendarId);
+          return existing;
+        }
+      }
+
+      const gcalEvent = await createGoogleEvent(userId, {
+        summary,
+        start: new Date(meal.startAt).toISOString(),
+        end: new Date(meal.endAt).toISOString(),
+        timeZone: timezone,
+        prismType: 'food',
+        prismRecordId: meal.id,
+      }, targetCalendarId);
+      return gcalEvent?.id ?? null;
+    }
+
+    return meal.calendarEventId ?? null;
+  } catch (err) {
+    const info = classifyGoogleError(err);
+    console.warn(`[calendar] syncFoodBlockCalendarEvent failed`, { userId, mealId: meal.id, action, ...info });
+    return meal.calendarEventId ?? null;
   }
 }
 

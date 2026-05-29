@@ -89,8 +89,16 @@ export async function POST(
       select: { id: true },
     });
 
+    // Mark the joined instance as a group activity (isGroupOpen) so it renders
+    // with the group indicator. The teammate's ephemeral overlay tile is then
+    // suppressed client-side once attendStatus is GOING, leaving exactly one
+    // calendar entry that's clearly flagged as a group task.
     let ownInstanceId: string;
     if (existing) {
+      await prisma.aimInstance.update({
+        where: { id: existing.id },
+        data: { isGroupOpen: true },
+      });
       ownInstanceId = existing.id;
     } else {
       const newInstance = await prisma.aimInstance.create({
@@ -101,6 +109,7 @@ export async function POST(
           timeBlockStart: sourceInstance.timeBlockStart,
           timeBlockEnd: sourceInstance.timeBlockEnd,
           status: 'SCHEDULED',
+          isGroupOpen: true,
         },
         select: { id: true },
       });

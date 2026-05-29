@@ -182,8 +182,6 @@ const ITEM_GROUPS: {
   },
 ];
 
-const WORK_BLOCK_TEMPLATE_ID = '__work_block_template__';
-
 const DEEP_WORK_TEMPLATE_ID = '__deep_work_template__';
 
 const FOOD_BLOCK_TEMPLATE_ID = '__food_block_template__';
@@ -202,24 +200,6 @@ function FoodBlockTemplateCard() {
     >
       <span className="text-sm font-medium text-[var(--text-primary)]">🍽️ Meal</span>
       <div className="mt-1 text-xs text-[var(--text-secondary)]">30m · reusable</div>
-    </div>
-  );
-}
-
-function WorkBlockTemplateCard() {
-  return (
-    <div
-      className="fc-event cursor-grab rounded-lg border px-3 py-2 mb-1.5 hover:shadow-md transition-shadow"
-      style={{ backgroundColor: 'rgba(99,102,241,0.15)', borderColor: '#818cf8', borderWidth: '1px' }}
-      data-event={JSON.stringify({
-        id: WORK_BLOCK_TEMPLATE_ID,
-        title: 'Normal Work Block',
-        duration: { minutes: 60 },
-        extendedProps: { itemId: WORK_BLOCK_TEMPLATE_ID, itemType: 'work_block_template' },
-      })}
-    >
-      <span className="text-sm font-medium text-[var(--text-primary)]">Normal Work Block</span>
-      <div className="mt-1 text-xs text-[var(--text-secondary)]">60m · reusable</div>
     </div>
   );
 }
@@ -665,11 +645,14 @@ export function CalendarSplitView({
     pendingWorkBlocks.current = stillPending;
     pendingFoodBlocks.current = stillPendingFood;
 
-    // Build ephemeral groupable-AIM overlay events from teammates (same palette as CalendarView)
-    const groupableAimEvents = groupableAims.map((item) => {
+    // Build ephemeral groupable-AIM overlay events from teammates (same palette as CalendarView).
+    // GOING items already render as the user's own group-flagged AimInstance, so
+    // skip them here to avoid showing the activity twice.
+    const groupableAimEvents = groupableAims
+      .filter((item) => item.attendStatus !== 'GOING')
+      .map((item) => {
       const attendBadge =
         item.attendStatus === 'MAYBE' ? ' ?' :
-        item.attendStatus === 'GOING' ? ' ✓' :
         '';
       return {
         id: `groupable-aim-${item.id}`,
@@ -1412,16 +1395,6 @@ export function CalendarSplitView({
                 )}
               </div>
 
-              {/* Normal Work Block template — always shown, reusable */}
-              <div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-indigo-400">
-                    Normal Work Block
-                  </span>
-                </div>
-                <WorkBlockTemplateCard />
-              </div>
-
               {/* Food block — drag a meal onto the calendar. */}
               <div>
                 <div className="flex items-center gap-1.5 mb-2">
@@ -1467,12 +1440,11 @@ export function CalendarSplitView({
               {showWorkBlockTemplates && (
                 <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
                   <div className="flex items-center gap-1.5 mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-indigo-400">
-                      Work Blocks
+                    <span className="text-sm">{'💪'}</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-teal-500">
+                      Deep Work (AIM Block)
                     </span>
                   </div>
-                  <WorkBlockTemplateCard />
-                  <div className="mt-2" />
                   <DeepWorkTemplateCard duration={aimBlockDuration} />
                 </div>
               )}
@@ -1519,8 +1491,16 @@ export function CalendarSplitView({
             datesSet={handleDatesSet}
             eventDidMount={(info) => {
               const props = info.event.extendedProps || {};
-              // Dim and strike-through DONE/DROPPED task events
-              if (props.status === 'DONE' || props.status === 'DROPPED') {
+              // Dim and strike-through any completed item, for ALL types
+              // (tasks: DONE/DROPPED, aims: COMPLETED, reviews/processes: completed).
+              // Work blocks keep their own outcome styling below.
+              const isCompletedItem =
+                props.status === 'DONE' ||
+                props.status === 'DROPPED' ||
+                props.status === 'COMPLETED' ||
+                props.completed === true ||
+                (!!props.completedAt && props.itemType !== 'workblock');
+              if (isCompletedItem) {
                 info.el.style.opacity = '0.45';
                 info.el.style.textDecoration = 'line-through';
               }

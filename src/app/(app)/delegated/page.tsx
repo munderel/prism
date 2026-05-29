@@ -1,9 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { useSession } from 'next-auth/react';
-import { UserCog, AlertTriangle } from 'lucide-react';
+import { UserCog } from 'lucide-react';
 import { formatDisplayDate } from '@/lib/date-utils';
 
 interface DelegatedTask {
@@ -14,6 +13,8 @@ interface DelegatedTask {
   taskType: string | null;
   dueDate: string | null;
   timeBlockStart: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
   assigneeId: string | null;
   assignee: { id: string; name: string | null; email: string; image: string | null } | null;
   goal: { id: string; title: string; level: string; stack?: { name: string } } | null;
@@ -33,53 +34,81 @@ const STATUS_TONE: Record<string, string> = {
   DROPPED: 'text-red-400',
 };
 
-export default function DelegatedPage() {
-  const { data: session, status: sessionStatus } = useSession();
-  const isAdmin = session?.user?.isAdmin ?? false;
+type CompletionFilter = 'ALL' | 'ACTIVE' | 'COMPLETED';
+type SortKey = 'PRIORITY' | 'DUE_DATE' | 'CREATED_DATE';
 
+const PRIORITY_RANK: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+function isCompleted(task: DelegatedTask): boolean {
+  return task.status === 'DONE' || task.status === 'DROPPED' || !!task.completedAt;
+}
+
+export default function DelegatedPage() {
+  // Any user can see the tasks THEY delegated (assigned away). The API scopes
+  // `delegatedByMe` to ownerId = caller, so this is per-user and safe for all
+  // roles — non-admins now see e.g. REACT tasks they routed to a teammate.
   const { data, isLoading } = useSWR<DelegatedTask[]>(
-    isAdmin ? '/api/tasks?delegatedByMe=true&includeUpcoming=true' : null,
+    '/api/tasks?delegatedByMe=true&includeUpcoming=true',
   );
+
+  const [completionFilter, setCompletionFilter] = useState<CompletionFilter>('ALL');
+  const [sortKey, setSortKey] = useState<SortKey>('PRIORITY');
 
   const groups = useMemo<AssigneeGroup[]>(() => {
     if (!Array.isArray(data)) return [];
+
+    const filtered = data.filter((task) => {
+      if (!task.assignee || !task.assigneeId) return false;
+      if (completionFilter === 'COMPLETED') return isCompleted(task);
+      if (completionFilter === 'ACTIVE') return !isCompleted(task);
+      return true;
+    });
+
+    const compare = (a: DelegatedTask, b: DelegatedTask): number => {
+      switch (sortKey) {
+        case 'DUE_DATE': {
+          // Tasks without a due date sort last.
+          const av = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+          const bv = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+          return av - bv;
+        }
+        case 'CREATED_DATE': {
+          // Newest first.
+          const av = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const bv = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return bv - av;
+        }
+        case 'PRIORITY':
+        default: {
+          const ar = PRIORITY_RANK[a.priority ?? 'MEDIUM'] ?? 2;
+          const br = PRIORITY_RANK[b.priority ?? 'MEDIUM'] ?? 2;
+          if (ar !== br) return ar - br;
+          // Tie-break by due date ascending.
+          const ad = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+          const bd = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+          return ad - bd;
+        }
+      }
+    };
+
     const byAssignee = new Map<string, AssigneeGroup>();
-    for (const task of data) {
-      if (!task.assignee || !task.assigneeId) continue;
-      const key = task.assigneeId;
+    for (const task of filtered) {
+      const key = task.assigneeId as string;
+      const name = task.assignee!.name ?? task.assignee!.email;
       const existing = byAssignee.get(key);
-      const name = task.assignee.name ?? task.assignee.email;
       if (existing) {
         existing.tasks.push(task);
       } else {
-        byAssignee.set(key, {
-          assigneeId: key,
-          name,
-          email: task.assignee.email,
-          tasks: [task],
-        });
+        byAssignee.set(key, { assigneeId: key, name, email: task.assignee!.email, tasks: [task] });
       }
     }
-    return Array.from(byAssignee.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [data]);
+    const result = Array.from(byAssignee.values());
+    for (const group of result) group.tasks.sort(compare);
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }, [data, completionFilter, sortKey]);
 
-  if (sessionStatus === 'loading') {
-    return <div className="text-[var(--text-muted)] py-8 text-center">Loading…</div>;
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="max-w-xl mx-auto mt-12 rounded-xl border border-[var(--border-color)] bg-[var(--surface)] p-6 flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
-        <div>
-          <h1 className="font-display text-lg font-semibold text-[var(--text-primary)]">Admins only</h1>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">
-            The Delegated view shows tasks you created and routed to other assignees. Ask an admin if you need access.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const selectClass =
+    'rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30';
 
   return (
     <div>
@@ -87,15 +116,44 @@ export default function DelegatedPage() {
         <UserCog className="h-6 w-6 text-prism-indigo" />
         <h1 className="font-display text-2xl font-bold text-[var(--text-primary)]">Delegated</h1>
       </div>
-      <p className="text-sm text-[var(--text-secondary)] mb-6 max-w-2xl">
+      <p className="text-sm text-[var(--text-secondary)] mb-4 max-w-2xl">
         Tasks you created and assigned to someone else. They no longer appear on your daily calendar — track them here.
       </p>
+
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          Show
+          <select
+            value={completionFilter}
+            onChange={(e) => setCompletionFilter(e.target.value as CompletionFilter)}
+            className={selectClass}
+          >
+            <option value="ALL">All</option>
+            <option value="ACTIVE">Active (not completed)</option>
+            <option value="COMPLETED">Completed</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          Sort by
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            className={selectClass}
+          >
+            <option value="PRIORITY">Priority</option>
+            <option value="DUE_DATE">Due date</option>
+            <option value="CREATED_DATE">Date created (newest)</option>
+          </select>
+        </label>
+      </div>
 
       {isLoading && <div className="text-[var(--text-muted)] py-8 text-center">Loading delegated tasks…</div>}
 
       {!isLoading && groups.length === 0 && (
         <div className="rounded-xl border border-[var(--border-color)] bg-[var(--surface)] p-8 text-center text-[var(--text-muted)]">
-          You haven&apos;t delegated any tasks yet.
+          {completionFilter === 'ALL'
+            ? "You haven't delegated any tasks yet."
+            : 'No delegated tasks match this filter.'}
         </div>
       )}
 
@@ -125,6 +183,7 @@ export default function DelegatedPage() {
                       </span>
                       {task.priority && <span>{task.priority.toLowerCase()}</span>}
                       {task.goal && <span className="text-indigo-400 truncate">{task.goal.title}</span>}
+                      {task.createdAt && <span>created {formatDisplayDate(task.createdAt)}</span>}
                     </div>
                   </div>
                   <div className="text-xs text-[var(--text-muted)] text-right flex-shrink-0">

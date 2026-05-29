@@ -10,6 +10,7 @@ import { TaskCompletionKpiModal } from './TaskCompletionKpiModal';
 import { useKpiCompletionPrompt } from '@/hooks/useKpiCompletionPrompt';
 import { playCompletionFeedback } from '@/lib/completion-feedback';
 import { compareTasksByScheduledTime } from '@/lib/task-ordering';
+import { invalidateAfterTaskChange } from '@/lib/swr-mutations';
 
 // REVIEW is intentionally omitted here: weekly/monthly/yearly reviews are
 // Review rows (not Task rows) and surface via the pink banner on the Tasks
@@ -87,6 +88,8 @@ export function DailyTaskList({ date, prefetchedTasks, onEdit, onDelete, onClick
             body: JSON.stringify(patch),
           });
           onStatusChange?.();
+          // Reflect the change across calendar, leaderboard, streaks & goals.
+          void invalidateAfterTaskChange();
           return (Array.isArray(currentData) ? currentData : []).map((t: DailyTask) =>
             t.id === taskId ? optimisticUpdate(t) : t
           );

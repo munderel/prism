@@ -57,21 +57,22 @@ describe('GET /api/leaderboard', () => {
         name: 'Sarah',
         image: null,
         leaderboardResetAt: null,
-        streaks: [{ currentCount: 3, bestCount: 6 }],
+        streaks: [{ streakType: 'daily', currentCount: 3, bestCount: 6 }],
       },
       {
         id: 'user-2',
         name: 'James',
         image: null,
         leaderboardResetAt: null,
-        streaks: [{ currentCount: 1, bestCount: 4 }],
+        streaks: [{ streakType: 'daily', currentCount: 1, bestCount: 4 }],
       },
     ] as any);
     // Counts are aggregated in app code from raw completion rows; the route
     // windows by each user's leaderboardResetAt (null = no reset, include all).
+    // Aims must clear the 60-minute effort gate to score (actualMinutes >= 60).
     mockAimInstanceFindMany.mockResolvedValue([
-      { userId: 'user-1', completedAt: now, pointsEarned: 5 },
-      { userId: 'user-1', completedAt: now, pointsEarned: 3 },
+      { userId: 'user-1', completedAt: now, pointsEarned: 5, actualMinutes: 90, timeBlockStart: null, timeBlockEnd: null, aimCategory: { defaultDurationMin: 90 } },
+      { userId: 'user-1', completedAt: now, pointsEarned: 3, actualMinutes: 90, timeBlockStart: null, timeBlockEnd: null, aimCategory: { defaultDurationMin: 90 } },
     ] as any);
     mockTaskFindMany.mockResolvedValue([
       ...Array(10).fill({ ownerId: 'user-1', completedAt: now }),
@@ -94,16 +95,19 @@ describe('GET /api/leaderboard', () => {
         where: { isPublicOnLeaderboard: true },
       })
     );
+    // New scoring (Issue 10):
+    //   user-1: streak 3*10 + reviews 2*5 + tasks 10*3 + aimScore 8 = 78
+    //   user-2: streak 1*10 + reviews 1*5 + tasks 20*3            = 75
     expect(body.leaderboard).toHaveLength(2);
     expect(body.leaderboard[0]).toMatchObject({
       id: 'user-1',
-      score: 58,
+      score: 78,
       aimsCompleted: 2,
       aimScore: 8,
     });
     expect(body.leaderboard[1]).toMatchObject({
       id: 'user-2',
-      score: 35,
+      score: 75,
     });
   });
 

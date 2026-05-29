@@ -38,6 +38,7 @@ export default function NewReactiveTaskPage() {
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState<string>('HIGH');
   const [estimatedMinutes, setEstimatedMinutes] = useState(60);
+  const [isPrivate, setIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -57,6 +58,7 @@ export default function NewReactiveTaskPage() {
         priority,
         dueDate,
         estimatedMinutes,
+        isPrivate,
       };
 
       if (selectedProcess) body.processId = selectedProcess.id;
@@ -278,6 +280,22 @@ export default function NewReactiveTaskPage() {
             ))}
           </div>
         </div>
+
+        {/* Privacy */}
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isPrivate}
+            onChange={(e) => setIsPrivate(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-[var(--border-color)] text-indigo-600 focus:ring-indigo-500"
+          />
+          <span className="text-sm text-[var(--text-secondary)]">
+            Private
+            <span className="block text-xs text-[var(--text-muted)]">
+              By default, reactive tasks are visible to the whole team and anyone can pick them up. Check this to keep it visible only to you.
+            </span>
+          </span>
+        </label>
 
         {/* Submit */}
         <div className="flex justify-end gap-3 pt-2">

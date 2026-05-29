@@ -28,6 +28,7 @@ interface AimInput {
   completionCount?: number;
   currentStreak?: number;
   activeWeekdays?: number;
+  skipSeedPhase?: boolean;
   // KPI linkage — stored on AimCategory, not UserAim
   linkedKpiId?: string | null;
   kpiIncrement?: number | null;
@@ -55,6 +56,15 @@ function buildAimData(aim: AimInput, userId?: string): Record<string, unknown> {
 
   // activeWeekdays bitmask (0–127); only update when explicitly provided.
   if (aim.activeWeekdays !== undefined) data.activeWeekdays = aim.activeWeekdays;
+
+  // Per-aim SEED skip. When creating an aim with the flag set and no explicit
+  // phase, start it at SPROUT so it never sits in the SEED ramp-up. (Existing
+  // SEED aims are bumped to SPROUT post-upsert below to avoid knocking a
+  // GROW/FLOW aim backwards.)
+  if (aim.skipSeedPhase !== undefined) data.skipSeedPhase = aim.skipSeedPhase;
+  if (userId && aim.skipSeedPhase === true && aim.currentPhase === undefined) {
+    data.currentPhase = 'SPROUT';
+  }
 
   return data;
 }
@@ -116,9 +126,17 @@ export async function PUT(request: NextRequest) {
     if (!category) continue; // already verified above
     const fullCat = await prisma.aimCategory.findUnique({
       where: { id: aim.aimCategoryId },
-      select: { createdByUserId: true, isDefault: true },
+      select: { createdByUserId: true, isDefault: true, linkedKpiId: true, kpiIncrement: true },
     });
     if (!fullCat) continue;
+    // Only a genuine change to the shared category's KPI linkage requires
+    // ownership. A no-op resend (e.g. saving active-days on a shared default
+    // AIM) must not be rejected — that silently dropped per-user edits.
+    const linkedChanged =
+      aim.linkedKpiId !== undefined && (aim.linkedKpiId ?? null) !== (fullCat.linkedKpiId ?? null);
+    const incrementChanged =
+      aim.kpiIncrement !== undefined && (aim.kpiIncrement ?? null) !== (fullCat.kpiIncrement ?? null);
+    if (!linkedChanged && !incrementChanged) continue;
     if (fullCat.isDefault && fullCat.createdByUserId !== auth.userId && !auth.session.user.isAdmin) {
       return Response.json(
         { error: 'Cannot modify KPI linkage on a shared default AIM category' },
@@ -142,6 +160,23 @@ export async function PUT(request: NextRequest) {
       })
     )
   );
+
+  // Per-aim SEED skip: for any aim the caller just flagged skipSeedPhase=true
+  // that's still sitting in SEED, advance it to SPROUT now. Scoped to SEED so a
+  // GROW/FLOW aim is never knocked backwards.
+  const skipSeedCategoryIds = (aims as AimInput[])
+    .filter((a) => a.skipSeedPhase === true && a.currentPhase === undefined)
+    .map((a) => a.aimCategoryId);
+  if (skipSeedCategoryIds.length > 0) {
+    await prisma.userAim.updateMany({
+      where: {
+        userId: auth.userId,
+        aimCategoryId: { in: skipSeedCategoryIds },
+        currentPhase: 'SEED',
+      },
+      data: { currentPhase: 'SPROUT', phaseStartedAt: new Date() },
+    });
+  }
 
   // Apply KPI linkage changes to AimCategory (outside the upsert transaction —
   // these are structural edits to the shared category row, not per-user data).

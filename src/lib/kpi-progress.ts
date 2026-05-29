@@ -1,15 +1,37 @@
 import { prisma } from '@/lib/prisma';
+import { getChildLevel } from '@/lib/goal-validation';
+
+/**
+ * Resolve the goal level that a parent KPI's rollup should aggregate from:
+ * exactly one hierarchy level below the parent KPI's own goal
+ * (HIGH_HARD←STRATEGIC, STRATEGIC←MONTHLY, MONTHLY←WEEKLY). Returns null when
+ * the parent has no goal/level, in which case callers fall back to no level
+ * constraint. This keeps a rollup from picking up grandchildren or skip-level
+ * links — each KPI sums only the goals directly below it.
+ */
+async function expectedChildLevel(parentKpiId: string) {
+  const parent = await prisma.kpi.findUnique({
+    where: { id: parentKpiId },
+    select: { goal: { select: { level: true } } },
+  });
+  return parent?.goal?.level ? getChildLevel(parent.goal.level) : null;
+}
 
 /**
  * Recalculate a monthly numeric KPI's actualValue from all linked weekly KPIs
- * whose parent goal is still live. actualValue = SUM of linked weekly KPIs'
- * actualValue (null treated as 0). Trashed-goal children are excluded so a
- * deleted weekly doesn't continue inflating the live monthly's rollup
- * (ADR 11 — soft delete is Goal-only).
+ * whose parent goal is still live AND exactly one hierarchy level below.
+ * actualValue = SUM of linked weekly KPIs' actualValue (null treated as 0).
+ * Trashed-goal children are excluded so a deleted weekly doesn't continue
+ * inflating the live monthly's rollup (ADR 11 — soft delete is Goal-only).
  */
 export async function recalculateMonthlyNumericKpi(monthlyKpiId: string): Promise<void> {
+  const childLevel = await expectedChildLevel(monthlyKpiId);
+
   const weeklyKpis = await prisma.kpi.findMany({
-    where: { linkedKpiId: monthlyKpiId, goal: { deletedAt: null } },
+    where: {
+      linkedKpiId: monthlyKpiId,
+      goal: { deletedAt: null, ...(childLevel ? { level: childLevel } : {}) },
+    },
     select: { actualValue: true },
   });
 
@@ -39,11 +61,12 @@ export async function recalculateBinaryKpi(
       data: { isComplete: true, completedAt: new Date() },
     });
   } else {
+    const childLevel = await expectedChildLevel(monthlyKpiId);
     const anyStillComplete = await prisma.kpi.findFirst({
       where: {
         linkedKpiId: monthlyKpiId,
         isComplete: true,
-        goal: { deletedAt: null },
+        goal: { deletedAt: null, ...(childLevel ? { level: childLevel } : {}) },
       },
     });
 

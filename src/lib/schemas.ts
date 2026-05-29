@@ -55,6 +55,7 @@ export const createTaskSchema = z.object({
   startTime: z.string().optional().nullable(),
   estimatedMinutes: z.number().int().min(1).max(9600).optional().nullable(),
   isWinTheDay: z.boolean().optional(),
+  isPrivate: z.boolean().optional(),
   parentId: z.string().optional().nullable(),
   assigneeId: z.string().optional().nullable(),
   deliverableItems: z
@@ -76,6 +77,7 @@ export const updateTaskSchema = z.object({
   winTheDayRank: z.number().int().min(1).max(3).optional().nullable(),
   estimatedMinutes: z.number().int().min(1).max(9600).optional().nullable(),
   isPinned: z.boolean().optional(),
+  isPrivate: z.boolean().optional(),
   isAutoScheduled: z.boolean().optional(),
   goalId: z.string().optional().nullable(),
   assigneeId: z.string().optional().nullable(),
@@ -248,7 +250,8 @@ export const adminUserActionSchema = z.object({
 // === AUTH SETTINGS ===
 
 export const authSettingsSchema = z.object({
-  enforce2FA: z.boolean(),
+  enforce2FA: z.boolean().optional(),
+  disableSeedAims: z.boolean().optional(),
 });
 
 // === FEEDBACK ===
@@ -668,6 +671,7 @@ const aimInputSchema = z.object({
     .min(0, 'activeWeekdays must be >= 0')
     .max(127, 'activeWeekdays must be <= 127')
     .optional(),
+  skipSeedPhase: z.boolean().optional(),
   // KPI linkage fields — live on AimCategory, not UserAim.
   linkedKpiId: z.string().optional().nullable(),
   kpiIncrement: z.number().gt(0, 'kpiIncrement must be > 0').optional().nullable(),

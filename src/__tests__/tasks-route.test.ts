@@ -375,18 +375,21 @@ describe('GET /api/tasks', () => {
     );
   });
 
-  it('silently ignores delegatedByMe=true for non-admins (falls back to default scope)', async () => {
+  it('applies the delegated-by-me filter for any user (delegatedByMe=true)', async () => {
+    // Issue 12 / 7a: delegatedByMe is no longer admin-only. Scoped to ownerId =
+    // caller, so a non-admin only ever sees tasks THEY delegated away.
     const req = new Request('http://localhost/api/tasks?delegatedByMe=true') as any;
     await GET(req);
 
     const findManyArg = mockTaskFindMany.mock.calls[0][0] as any;
     const conditions = findManyArg.where.AND ?? [findManyArg.where];
     const accessClause = conditions.find(
-      (c: any) => Array.isArray(c.OR) && c.OR.some((o: any) => 'assigneeId' in o || 'ownerId' in o),
+      (c: any) => Array.isArray(c.AND) && c.AND.some((o: any) => 'ownerId' in o),
     );
-    expect(accessClause.OR).toEqual([
-      { assigneeId: 'user1' },
-      { ownerId: 'user1', assigneeId: null },
+    expect(accessClause.AND).toEqual([
+      { ownerId: 'user1' },
+      { assigneeId: { not: null } },
+      { assigneeId: { not: 'user1' } },
     ]);
   });
 
@@ -682,11 +685,20 @@ describe('PATCH /api/tasks/[id]', () => {
     expect(res.status).toBe(200);
   });
 
-  it('returns 403 for non-owner non-assignee', async () => {
-    mockTaskFindUnique.mockResolvedValue({ ...taskFixture, ownerId: 'other', assigneeId: 'someone-else' } as any);
+  it('returns 403 for non-owner non-assignee on a PRIVATE task', async () => {
+    // Private REACT (and any non-REACT) tasks stay owner/assignee-gated.
+    mockTaskFindUnique.mockResolvedValue({ ...taskFixture, ownerId: 'other', assigneeId: 'someone-else', isPrivate: true } as any);
     mockParseBody.mockResolvedValue({ data: { status: 'IN_PROGRESS' } } as any);
     const res = await PATCH(createPatchRequest({ status: 'IN_PROGRESS' }), { params });
     expect(res.status).toBe(403);
+  });
+
+  it('lets any teammate move a public REACT task (Issue 7a)', async () => {
+    // REACT tasks are a shared pool: a non-owner/non-assignee may claim/work them.
+    mockTaskFindUnique.mockResolvedValue({ ...taskFixture, taskType: 'REACT', isPrivate: false, ownerId: 'other', assigneeId: 'someone-else' } as any);
+    mockParseBody.mockResolvedValue({ data: { status: 'IN_PROGRESS' } } as any);
+    const res = await PATCH(createPatchRequest({ status: 'IN_PROGRESS' }), { params });
+    expect(res.status).toBe(200);
   });
 
   it('returns 404 when task not found', async () => {

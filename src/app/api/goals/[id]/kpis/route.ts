@@ -26,7 +26,17 @@ export async function GET(
     auth.session.user.isAdmin,
     { goalId }
   );
-  if (accessDenied) return accessDenied;
+  if (accessDenied) {
+    // Listing KPIs is also needed when linking from a sibling/child goal (e.g.
+    // a WEEKLY-goal assignee linking up to the MONTHLY KPI). Grant read when the
+    // user is assigned to ANY goal in the same stack — they already have
+    // stack-level visibility. Mutations stay gated by the POST/PATCH handlers.
+    const stackAssignee = await prisma.goalAssignee.findFirst({
+      where: { userId: auth.userId, goal: { stackId: goal.stackId, deletedAt: null } },
+      select: { id: true },
+    });
+    if (!stackAssignee) return accessDenied;
+  }
 
   const kpis = await prisma.kpi.findMany({
     where: { goalId },

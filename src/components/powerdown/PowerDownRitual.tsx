@@ -11,6 +11,7 @@ import {
   Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock, ChevronDown,
 } from 'lucide-react';
 import { getLocalDateString, getUpcomingWeekBoundaries, getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
+import { invalidateAfterRitualChange } from '@/lib/swr-mutations';
 import { TopNTaskSelector } from '@/components/reviews/shared/TopNTaskSelector';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ClearGoalGuide } from './ClearGoalGuide';
@@ -1049,6 +1050,9 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
     if (res.ok && extra.complete) {
       void mutate('/api/streaks');
       void mutate(powerdownGetUrl);
+      // Powerdown completion drives the daily streak, which feeds the
+      // leaderboard and calendar — refresh those live too.
+      void invalidateAfterRitualChange();
     }
     return { res, data } as const;
   };
