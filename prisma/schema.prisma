@@ -70,6 +70,8 @@ model User {
   weeklyTargetCalendarIds       Json      @default("[]") // String[] of Google Calendar IDs that count toward weekly hour target
   googleSyncState               Json      @default("{}") // Recurring Google Calendar sync metadata and exceptions
   googleSyncTokenByCalendar     Json      @default("{}") // { [calendarId]: nextSyncToken } for incremental Google pulls (Issue 8)
+  lastGoogleSyncAt              DateTime? // last time the background sync cron processed this user (oldest-first rotation)
+  googleSyncLockedAt            DateTime? // self-expiring claim lock; serializes background vs manual sync per user (Issue 8)
   defaultWorkBlockMinutes       Int       @default(90) // Minutes used when dragging a task onto the calendar as a work block (matches migration default)
   alwaysPromptForBlockObjective Boolean   @default(false) // When true, always show the objective modal on drag; otherwise short tasks (remaining ≤ default) schedule immediately
   dailyHoursTarget              Int? // Daily "Y hours" goal shown in Powerdown Step 4 header. Stored as minutes; null = no target = hide the header. Set from Settings.

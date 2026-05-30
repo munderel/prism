@@ -509,6 +509,86 @@ export async function listGoogleEvents(
   });
 }
 
+export interface CalendarChanges {
+  ok: boolean;            // false = couldn't talk to Google (no client / hard error)
+  changed: boolean;       // true = events changed since the token (or unknown → be safe)
+  expired: boolean;       // true = 410 Gone: stored syncToken is invalid; caller must full-resync
+  nextSyncToken?: string; // capture and persist to advance the incremental cursor
+  count: number;          // number of changed events seen
+}
+
+/**
+ * Incremental "did anything change?" probe using Google's sync tokens.
+ *
+ * Google forbids combining `syncToken` with `timeMin/timeMax/orderBy`, so this
+ * is a SEPARATE path from `listGoogleEvents` (which is windowed). It is used
+ * only as a cheap gate: the windowed reconcile in the sync engine remains the
+ * source of truth. With a token, one call tells us whether to do the expensive
+ * sync at all; without one (or on 410), we seed/refresh the token.
+ *
+ * - With `syncToken`: returns only events changed since that token + a fresh
+ *   `nextSyncToken`. `changed` reflects whether anything came back.
+ * - Without `syncToken`: a bounded baseline list (from `seedTimeMin`) to obtain
+ *   an initial `nextSyncToken`; `changed` is reported true so the caller runs a
+ *   full sync once to converge.
+ * - On 410 (token expired/too old): `{ expired: true }` — caller clears the
+ *   token, full-resyncs, and reseeds.
+ * - On any other error: conservative `{ ok:false, changed:true }` so the caller
+ *   still runs a full sync rather than silently skipping.
+ */
+export async function getCalendarChanges(
+  userId: string,
+  calendarId: string,
+  syncToken?: string,
+  opts?: { seedTimeMin?: string },
+): Promise<CalendarChanges> {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return { ok: false, changed: false, expired: false, count: 0 };
+
+  try {
+    let pageToken: string | undefined;
+    let nextSyncToken: string | undefined;
+    let count = 0;
+
+    do {
+      const response = await withBackoff(
+        () =>
+          calendar.events.list({
+            calendarId,
+            maxResults: 250,
+            singleEvents: true,
+            showDeleted: true,
+            pageToken,
+            // syncToken is mutually exclusive with time-window params.
+            ...(syncToken
+              ? { syncToken }
+              : { timeMin: opts?.seedTimeMin ?? new Date(Date.now() - 30 * 86400000).toISOString() }),
+          }),
+        `events.changes ${calendarId}`,
+      );
+      count += (response.data.items ?? []).length;
+      pageToken = response.data.nextPageToken ?? undefined;
+      if (response.data.nextSyncToken) nextSyncToken = response.data.nextSyncToken;
+    } while (pageToken);
+
+    return {
+      ok: true,
+      // No prior token → report changed so the caller converges once.
+      changed: syncToken ? count > 0 : true,
+      expired: false,
+      nextSyncToken,
+      count,
+    };
+  } catch (err) {
+    const info = classifyGoogleError(err);
+    if (info.status === 410) {
+      return { ok: true, changed: true, expired: true, count: 0 };
+    }
+    console.warn(`[calendar] getCalendarChanges failed for ${calendarId}:`, info.message);
+    return { ok: false, changed: true, expired: false, count: 0 };
+  }
+}
+
 /**
  * List Google Calendar events that Prism created (i.e. tagged with
  * `extendedProperties.private.prismManaged = '1'`) within a date range.
