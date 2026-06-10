@@ -47,10 +47,10 @@ export default defineConfig({
       // Raise as later waves add coverage to hotspots (auth, process-task
       // generator, kpi-aggregation, url-validation).
       thresholds: {
-        lines: 43,
-        statements: 42,
-        branches: 32,
-        functions: 40,
+        lines: 52,
+        statements: 51,
+        branches: 44,
+        functions: 52,
       },
     },
   },
