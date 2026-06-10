@@ -130,6 +130,29 @@ describe('buildDailyGrid — daily mode', () => {
     const latestDate1 = grid1.flat().reduce((max, c) => (c.dateKey > max ? c.dateKey : max), '');
     expect(latestDate1 < latestDate0).toBe(true);
   });
+
+  it('promotes a completed cell to "gold" when the isGoldDay callback returns true', () => {
+    // 7 consecutive completed days ending Wed 05-20 (today).
+    const history = [
+      entry('2026-05-14', true), entry('2026-05-15', true), entry('2026-05-16', true),
+      entry('2026-05-17', true), entry('2026-05-18', true), entry('2026-05-19', true),
+      entry('2026-05-20', true),
+    ];
+    // Mark the 7th day as gold.
+    const isGoldDay = (key: string) => key === '2026-05-20';
+    const grid = buildDailyGrid(history, 127, 0, isGoldDay);
+    const cells = grid.flat();
+    expect(cells.find((c) => c.dateKey === '2026-05-20')!.state).toBe('gold');
+    // Earlier completed days stay 'completed'.
+    expect(cells.find((c) => c.dateKey === '2026-05-19')!.state).toBe('completed');
+  });
+
+  it('leaves cells as "completed" when isGoldDay is omitted', () => {
+    const history = [entry('2026-05-19', true), entry('2026-05-20', true)];
+    const grid = buildDailyGrid(history, 127, 0);
+    const cells = grid.flat();
+    expect(cells.find((c) => c.dateKey === '2026-05-20')!.state).toBe('completed');
+  });
 });
 
 // ── buildWeeklyGrid tests ─────────────────────────────────────────────────────

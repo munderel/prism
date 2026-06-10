@@ -35,11 +35,11 @@ function resolveSize(size: AvatarSize): number {
 
 /** Extract up-to-two uppercase initials from a display name.
  *
- * - Two words → first letter of each word.
- * - One word  → first letter only.
- * - Null / empty → "?".
+ * - Two-plus words → first + last word's first letter.
+ * - One word → first letter only.
+ * - Null / empty / whitespace → "?".
  */
-function getInitials(name: string | null): string {
+export function getInitials(name: string | null): string {
   if (!name || !name.trim()) return '?';
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0][0].toUpperCase();

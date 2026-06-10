@@ -5,8 +5,9 @@ import { m, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { LEVEL_LABELS } from '@/lib/goal-constants';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { useTaskHydration } from '@/hooks/useTaskHydration';
 import { WorkBlocksSection } from './WorkBlocksSection';
-import { parseDurationToMinutes, formatMinutesCompact } from '@/lib/task-utils';
+import { parseDurationToMinutes, formatMinutesCompact, sumTaskWorkBlockMinutes } from '@/lib/task-utils';
 import { Avatar } from '@/components/ui/Avatar';
 import { mutate } from 'swr';
 import { parseLocalDate, toTaskDueDateKey } from '@/lib/date-utils';
@@ -61,47 +62,9 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (!fullPage) dialogRef.current?.focus(); }, [fullPage]);
 
-  // Hydration: tracks whether a full-task fetch has completed (used to
-  // populate relation fields like deliverableItems and workBlocks that may
-  // be missing from a partial task prop passed by list-row callers).
-  const [fetchedRelations, setFetchedRelations] = useState<{
-    workBlocks?: any[];
-    deliverableItems?: any[];
-    assignee?: any;
-    goal?: any;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!task?.id) return;
-    const needsHydration =
-      task.workBlocks === undefined ||
-      task.deliverableItems === undefined;
-    if (!needsHydration) return;
-    fetch(`/api/tasks/${task.id}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: any) => {
-        if (data) {
-          setFetchedRelations({
-            workBlocks: data.workBlocks,
-            deliverableItems: data.deliverableItems,
-            assignee: data.assignee,
-            goal: data.goal,
-          });
-        }
-      })
-      .catch(() => { /* ignore; editor will use the partial task */ });
-  }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Merge the passed task with any fetched relations into a single object.
-  const hydratedTask = task
-    ? {
-        ...task,
-        workBlocks: fetchedRelations?.workBlocks ?? task.workBlocks,
-        deliverableItems: fetchedRelations?.deliverableItems ?? task.deliverableItems,
-        assignee: fetchedRelations?.assignee ?? task.assignee,
-        goal: fetchedRelations?.goal ?? task.goal,
-      }
-    : null;
+  // Hydrate relation fields (workBlocks, deliverableItems, assignee, goal)
+  // when a partial task is passed by list-row callers. See useTaskHydration.
+  const { fetchedRelations, hydratedTask } = useTaskHydration(task);
 
   // Use task (the original prop) as the source of truth for form field init.
   // hydratedTask is used only for relation-heavy computed values (hours, deliverableItems).
@@ -397,18 +360,11 @@ export function TaskEditor({ task, prefilledGoalId, onSave, onClose, fullPage = 
     }
   }, [fetchedRelations?.deliverableItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Compute hours-done from workBlocks (read-only summary)
-  const doneMinutes = useMemo(() => {
-    const blocks: Array<{ start: string; end: string; actualMinutes: number | null; completionStatus: string }> =
-      hydratedTask?.workBlocks ?? [];
-    return blocks
-      .filter((b) => b.completionStatus === 'COMPLETED' || b.completionStatus === 'PARTIAL')
-      .reduce((sum, b) => {
-        if (b.actualMinutes != null) return sum + b.actualMinutes;
-        const ms = new Date(b.end).getTime() - new Date(b.start).getTime();
-        return sum + Math.round(ms / 60000);
-      }, 0);
-  }, [hydratedTask?.workBlocks]);
+  // Hours-done summary from completed/partial work blocks (read-only)
+  const doneMinutes = useMemo(
+    () => sumTaskWorkBlockMinutes(hydratedTask?.workBlocks),
+    [hydratedTask?.workBlocks],
+  );
 
   const assigneeOptions = useMemo(() => {
     const seed = hydratedTask?.assignee;

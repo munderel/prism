@@ -4,6 +4,7 @@ import { m } from 'framer-motion';
 import { Target, Check, Users } from 'lucide-react';
 import { KpiProgressBar } from '@/components/goals/KpiProgressBar';
 import { LEVEL_COLORS, LEVEL_LABELS, formatGoalDateRange } from '@/lib/goal-constants';
+import { getInitials } from '@/components/ui/Avatar';
 
 interface Owner {
   id: string;
@@ -54,14 +55,7 @@ function OwnerBadge({ owner }: { owner: Owner | null }) {
     );
   }
   const label = owner.name ?? owner.email;
-  const initials =
-    label
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase() ?? '')
-      .join('') ||
-    label[0]?.toUpperCase() ||
-    '?';
+  const initials = getInitials(label);
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-medium text-indigo-300 border border-indigo-500/20"
