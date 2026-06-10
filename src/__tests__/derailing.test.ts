@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { checkTaskDerailStatus, checkStreakAtRisk, computeDerailInfo, type UserAimLike } from '../lib/derailing';
 
 const tz = 'America/New_York';
@@ -33,6 +33,36 @@ describe('checkTaskDerailStatus', () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     expect(checkTaskDerailStatus({ status: 'TODO', dueDate: tomorrow }, tz)).toBe('ok');
+  });
+
+  // Regression guard for the date-only UTC-midnight bug: a plain due-date task
+  // (stored at UTC midnight) due "today" in the user's local tz must reach
+  // at_risk/derailing. The old toZonedTime(dueDate) same-day check rolled these
+  // back a day for any timezone west of UTC and silently suppressed all alerts.
+  describe('date-only dueDate (UTC midnight) — timezone regression', () => {
+    afterEach(() => vi.useRealTimers());
+
+    // EDT (May) is UTC-4: 23:00Z = 19:00 local, 18:30Z = 14:30 local, 15:00Z = 11:00 local.
+    const dateOnlyToday = '2026-05-30T00:00:00.000Z';
+
+    it('derails a date-only task due today past 6pm local', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-30T23:00:00.000Z')); // 19:00 EDT
+      expect(checkTaskDerailStatus({ status: 'TODO', dueDate: dateOnlyToday }, tz)).toBe('derailing');
+      expect(checkTaskDerailStatus({ status: 'IN_PROGRESS', dueDate: dateOnlyToday }, tz)).toBe('derailing');
+    });
+
+    it('flags at_risk for a date-only TODO due today past 2pm local', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-30T18:30:00.000Z')); // 14:30 EDT
+      expect(checkTaskDerailStatus({ status: 'TODO', dueDate: dateOnlyToday }, tz)).toBe('at_risk');
+    });
+
+    it('stays ok before 2pm local', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-30T15:00:00.000Z')); // 11:00 EDT
+      expect(checkTaskDerailStatus({ status: 'TODO', dueDate: dateOnlyToday }, tz)).toBe('ok');
+    });
   });
 });
 

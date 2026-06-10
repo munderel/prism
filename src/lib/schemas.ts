@@ -36,6 +36,9 @@ export const registerSchema = z.object({
     .regex(/[^a-zA-Z0-9]/, 'Password must contain at least one special character'),
   name: z.string().optional(),
   invitationId: z.string().min(1, 'Invitation ID is required'),
+  // Secret token from the emailed invite link. Optional for back-compat, but
+  // verified server-side when the invitation carries a token.
+  token: z.string().optional(),
 });
 
 // === TASKS ===

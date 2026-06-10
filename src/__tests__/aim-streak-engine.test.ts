@@ -285,6 +285,21 @@ describe('computeWeeklyStreak', () => {
     expect(result.currentStreak).toBe(2);
   });
 
+  it('REGRESSION: an in-progress current week below target does NOT collapse a prior-week streak', () => {
+    // asOf = Mon May 18 (start of current week, 0 completions yet).
+    // Last week (May 11–17) hit the target (3). The streak should remain 1,
+    // not reset to 0 just because the new week has not been filled yet.
+    const asOf = new Date(2026, 4, 18); // Monday
+    const instances = [
+      completed('2026-05-11'),
+      completed('2026-05-12'),
+      completed('2026-05-13'),
+      // current week (May 18–24): nothing completed yet
+    ];
+    const result = computeWeeklyStreak(instances, 3, asOf);
+    expect(result.currentStreak).toBe(1);
+  });
+
   it('a miss in a prior week breaks the streak', () => {
     // Current week: hit; two-weeks-ago: hit; last week: miss
     const asOf = new Date(2026, 4, 20); // May 20

@@ -229,10 +229,14 @@ export async function recomputeAimStreaks(
   userId: string,
   opts: { dryRun?: boolean; asOf?: Date } = {},
 ): Promise<AimStreakReport[]> {
-  const userAims = await prisma.userAim.findMany({
-    where: { userId, isActive: true },
-    include: { aimCategory: true },
-  });
+  const [user, userAims] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } }),
+    prisma.userAim.findMany({
+      where: { userId, isActive: true },
+      include: { aimCategory: true },
+    }),
+  ]);
+  const tz = user?.timezone ?? 'America/New_York';
 
   const reports: AimStreakReport[] = [];
 
@@ -247,11 +251,11 @@ export async function recomputeAimStreaks(
     let newStreak: number;
 
     if (ua.aimCategory.isDaily) {
-      const result = computeDailyStreak(instances, ua.activeWeekdays, opts.asOf);
+      const result = computeDailyStreak(instances, ua.activeWeekdays, opts.asOf, tz);
       newStreak = result.currentStreak;
     } else {
       const weeklyTarget = ua.customFrequency ?? ua.aimCategory.defaultFrequency;
-      const result = computeWeeklyStreak(instances, weeklyTarget, opts.asOf);
+      const result = computeWeeklyStreak(instances, weeklyTarget, opts.asOf, tz);
       newStreak = result.currentStreak;
     }
 

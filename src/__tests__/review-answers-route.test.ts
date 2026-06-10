@@ -71,4 +71,24 @@ describe('POST /api/reviews/[id]/answers', () => {
     expect(res.status).toBe(404);
     expect(mockAnswerUpsert).not.toHaveBeenCalled();
   });
+
+  it('IDOR guard: a TEAM review owned by another user is not writable by a non-admin', async () => {
+    // Team-review rows are per-user with private answers. Previously the
+    // `!isTeamReview &&` short-circuit let any authed user write here.
+    mockReviewFindUnique.mockResolvedValue({ id: 'review-1', userId: 'otherUser', isTeamReview: true } as any);
+    const req = new Request('http://localhost/api/reviews/review-1/answers', { method: 'POST' }) as any;
+    const res = await POST(req, { params });
+    expect(res.status).toBe(404);
+    expect(mockAnswerUpsert).not.toHaveBeenCalled();
+  });
+
+  it('admin may write answers on another user team review (rollups)', async () => {
+    mockRequireAuth.mockResolvedValue({ session: { user: { id: 'admin1', isAdmin: true } }, userId: 'admin1' } as any);
+    mockReviewFindUnique.mockResolvedValue({ id: 'review-1', userId: 'otherUser', isTeamReview: true } as any);
+    mockAnswerUpsert.mockResolvedValue({ id: 'ans-1' } as any);
+    const req = new Request('http://localhost/api/reviews/review-1/answers', { method: 'POST' }) as any;
+    const res = await POST(req, { params });
+    expect(res.status).toBe(200);
+    expect(mockAnswerUpsert).toHaveBeenCalledTimes(1);
+  });
 });

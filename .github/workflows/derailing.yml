@@ -5,6 +5,13 @@ on:
     - cron: '0 18-23 * * *'
   workflow_dispatch:
 
+# Serialize runs: a manual dispatch or a delayed schedule can't overlap an
+# in-flight run and double-send notifications. Queue rather than cancel so a
+# tick is never dropped.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest

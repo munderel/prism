@@ -5,6 +5,7 @@ import { notFoundResponse, pickDefined, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, updateMeetingSchema } from '@/lib/schemas';
 import { deleteGoogleEvent, updateGoogleEvent, createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
 import { getLocalDateString } from '@/lib/date-utils';
+import { fromZonedTime } from 'date-fns-tz';
 
 const MEETING_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
@@ -14,6 +15,43 @@ async function findMeetingOrFail(id: string) {
   const meeting = await prisma.meeting.findUnique({ where: { id } });
   if (!meeting) return notFoundResponse('Meeting');
   return meeting;
+}
+
+/**
+ * Resolve the calendar date (YYYY-MM-DD) for a meeting's Google event: the
+ * explicit occurDate for ONE_TIME meetings, otherwise the next occurrence of
+ * its weekday, otherwise today. Honors a pending PATCH-body override.
+ */
+function resolveMeetingDateStr(
+  meeting: { cadence: string; occurDate: Date | null; dayOfWeek: number | null },
+  body: { cadence?: string; occurDate?: string | null; dayOfWeek?: number | null },
+): string {
+  const cadence = body.cadence ?? meeting.cadence;
+  const dayOfWeek = body.dayOfWeek !== undefined ? body.dayOfWeek : meeting.dayOfWeek;
+  if (cadence === 'ONE_TIME' && (body.occurDate || meeting.occurDate)) {
+    const raw = body.occurDate || meeting.occurDate!;
+    const asString = typeof raw === 'string' ? raw : new Date(raw).toISOString();
+    return /^\d{4}-\d{2}-\d{2}$/.test(asString) ? asString : getLocalDateString(new Date(asString));
+  }
+  if (dayOfWeek != null) {
+    const today = new Date();
+    const daysUntil = (dayOfWeek - today.getDay() + 7) % 7;
+    const nextDate = new Date(today);
+    nextDate.setDate(today.getDate() + daysUntil);
+    return getLocalDateString(nextDate);
+  }
+  return getLocalDateString();
+}
+
+/**
+ * Build a Google-event ISO instant from a local wall-clock date + HH:mm time in
+ * the user's timezone. Uses fromZonedTime — NOT `new Date(naive).toISOString()`,
+ * which parses the naive string in the SERVER's timezone (UTC on Vercel) and
+ * then the Z suffix makes Google ignore the timeZone field, landing the event
+ * at the wrong wall-clock time for every non-UTC user.
+ */
+function gcalInstant(dateStr: string, time: string, tz: string): string {
+  return fromZonedTime(`${dateStr}T${time}:00`, tz).toISOString();
 }
 
 export async function GET(
@@ -106,22 +144,7 @@ export async function PATCH(
         attendeeEmails = attendeeUsers.map(a => ({ email: a.email }));
       }
 
-      let dateStr: string;
-      if (newCadence === 'ONE_TIME' && (body.occurDate || meeting.occurDate)) {
-        const raw = body.occurDate || meeting.occurDate!;
-        const asString = typeof raw === 'string' ? raw : new Date(raw).toISOString();
-        dateStr = /^\d{4}-\d{2}-\d{2}$/.test(asString) ? asString : getLocalDateString(new Date(asString));
-      } else if (newDayOfWeek != null) {
-        const today = new Date();
-        // Drop the `|| 7` — a meeting whose weekday matches today should
-        // stay on today, not be bumped a week forward.
-        const daysUntil = (newDayOfWeek - today.getDay() + 7) % 7;
-        const nextDate = new Date(today);
-        nextDate.setDate(today.getDate() + daysUntil);
-        dateStr = getLocalDateString(nextDate);
-      } else {
-        dateStr = getLocalDateString();
-      }
+      const dateStr = resolveMeetingDateStr(meeting, body);
 
       const ts = body.timeStart ?? meeting.timeStart;
       const te = body.timeEnd ?? meeting.timeEnd;
@@ -129,8 +152,8 @@ export async function PATCH(
       const gcalEvent = await createGoogleEvent(meeting.createdById, {
         summary: body.title ?? meeting.title,
         description: (body.description !== undefined ? body.description : meeting.description) || undefined,
-        start: new Date(`${dateStr}T${ts}:00`).toISOString(),
-        end: new Date(`${dateStr}T${te}:00`).toISOString(),
+        start: gcalInstant(dateStr, ts, tz),
+        end: gcalInstant(dateStr, te, tz),
         timeZone: tz,
         addMeetLink: !!meeting.meetLink,
         recurrence,
@@ -164,12 +187,24 @@ export async function PATCH(
         body.cadence ?? meeting.cadence,
         body.dayOfWeek !== undefined ? body.dayOfWeek : meeting.dayOfWeek,
       );
+      // A timed Google event needs a REAL date — the old `1970-01-01T${time}`
+      // placeholder relocated the event to Jan 1 1970 (and omitted timeZone, so
+      // the time was server-parsed too). Resolve the meeting's actual occurrence
+      // date and build the instant in the user's timezone.
+      const tz = (await prisma.user.findUnique({
+        where: { id: meeting.createdById },
+        select: { timezone: true },
+      }))?.timezone ?? 'America/New_York';
+      const dateStr = resolveMeetingDateStr(meeting, body);
+      const patchStart = body.timeStart ?? (body.timeEnd ? meeting.timeStart : undefined);
+      const patchEnd = body.timeEnd ?? (body.timeStart ? meeting.timeEnd : undefined);
       try {
         const patched = await updateGoogleEvent(meeting.createdById, meeting.calendarEventId, {
           summary: body.title,
           description: body.description !== undefined ? (body.description || '') : undefined,
-          start: body.timeStart ? new Date(`1970-01-01T${body.timeStart}:00`).toISOString() : undefined,
-          end: body.timeEnd ? new Date(`1970-01-01T${body.timeEnd}:00`).toISOString() : undefined,
+          start: patchStart ? gcalInstant(dateStr, patchStart, tz) : undefined,
+          end: patchEnd ? gcalInstant(dateStr, patchEnd, tz) : undefined,
+          timeZone: (body.timeStart || body.timeEnd) ? tz : undefined,
           recurrence,
         }, targetCalendarId);
         if (!patched) {

@@ -4,6 +4,7 @@ import { requireAuth, authError } from '@/lib/auth-guard';
 import { notFoundResponse, forbiddenResponse, canAccessProcess, NO_STORE } from '@/lib/api-helpers';
 import { parseBody, completeProcessSchema } from '@/lib/schemas';
 import { updateSpecificStreak } from '@/lib/streak-engine';
+import { advisoryLock } from '@/lib/concurrency';
 
 export async function POST(
   request: NextRequest,
@@ -40,53 +41,48 @@ export async function POST(
   date.setHours(0, 0, 0, 0);
   const nextDay = new Date(date.getTime() + 86400000);
 
-  // Check for existing execution on this date
-  const existing = await prisma.processExecution.findFirst({
-    where: {
-      processId: id,
-      scheduledDate: { gte: date, lt: nextDay },
-    },
-  });
+  // Serialize the read-decide-write per (process, day) so a double-click or two
+  // concurrent clients can't both pass the findFirst check and insert duplicate
+  // ProcessExecution rows (which would double-count streaks/history).
+  const outcome = await advisoryLock(`process-complete:${id}:${date.toISOString()}`, async (tx) => {
+    const existing = await tx.processExecution.findFirst({
+      where: { processId: id, scheduledDate: { gte: date, lt: nextDay } },
+    });
 
-  if (existing) {
-    // Toggle: if already completed, un-complete; if not, complete
-    if (existing.completedAt) {
-      const updated = await prisma.processExecution.update({
-        where: { id: existing.id },
-        data: { completedAt: null },
-      });
-      return Response.json({ execution: updated, completed: false }, NO_STORE);
-    } else {
-      const updated = await prisma.processExecution.update({
+    if (existing) {
+      // Toggle: if already completed, un-complete; if not, complete.
+      if (existing.completedAt) {
+        const updated = await tx.processExecution.update({
+          where: { id: existing.id },
+          data: { completedAt: null },
+        });
+        return { execution: updated, completed: false, created: false, fireStreak: false };
+      }
+      const updated = await tx.processExecution.update({
         where: { id: existing.id },
         data: { completedAt: new Date() },
       });
-
-      // Per-process streak. Daily streak is driven solely by powerdown.
-      await updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) => console.warn('[streak] process streak update failed:', err));
-
-      return Response.json({ execution: updated, completed: true }, NO_STORE);
+      return { execution: updated, completed: true, created: false, fireStreak: true };
     }
+
+    const execution = await tx.processExecution.create({
+      data: { processId: id, executedById: auth.userId, scheduledDate: date, completedAt: new Date() },
+    });
+    await tx.process.update({ where: { id }, data: { lastRunAt: new Date() } });
+    return { execution, completed: true, created: true, fireStreak: true };
+  });
+
+  // Per-process streak (outside the lock — the streak engine uses the singleton
+  // client and would otherwise contend with the open advisory transaction).
+  // Daily streak is driven solely by powerdown.
+  if (outcome.fireStreak) {
+    await updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) =>
+      console.warn('[streak] process streak update failed:', err),
+    );
   }
 
-  // Create new execution marked as complete
-  const execution = await prisma.processExecution.create({
-    data: {
-      processId: id,
-      executedById: auth.userId,
-      scheduledDate: date,
-      completedAt: new Date(),
-    },
-  });
-
-  // Update process lastRunAt
-  await prisma.process.update({
-    where: { id },
-    data: { lastRunAt: new Date() },
-  });
-
-  // Per-process streak. Daily streak is driven solely by powerdown.
-  await updateSpecificStreak(auth.userId, `process_${id}`, process.cadence).catch((err) => console.warn('[streak] process streak update failed:', err));
-
-  return Response.json({ execution, completed: true }, { status: 201, ...NO_STORE });
+  return Response.json(
+    { execution: outcome.execution, completed: outcome.completed },
+    outcome.created ? { status: 201, ...NO_STORE } : NO_STORE,
+  );
 }

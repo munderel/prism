@@ -18,11 +18,16 @@ export async function GET(request: NextRequest) {
     // we'd re-notify users about reviews skipped a year ago on every run.
     const nagFloor = new Date(now);
     nagFloor.setDate(nagFloor.getDate() - NAG_LOOKBACK_DAYS);
+    // Dedup: don't re-nag a review nagged within the last ~day. Without this the
+    // daily cron re-sent the same overdue-review alert every day for up to 30
+    // days (the lookback only bounded how far back it looked, not re-sends).
+    const nagCooldown = new Date(now.getTime() - 20 * 60 * 60 * 1000); // ~20h
 
     const overdueReviews = await prisma.review.findMany({
       where: {
         scheduledDate: { gte: nagFloor, lt: now },
         completedAt: null,
+        OR: [{ lastNaggedAt: null }, { lastNaggedAt: { lt: nagCooldown } }],
       },
       include: {
         user: { select: { id: true } },
@@ -40,7 +45,16 @@ export async function GET(request: NextRequest) {
         )
       );
 
-    await Promise.all(notifications);
+    // allSettled — one user's failed notify must not abort the whole nag run.
+    await Promise.allSettled(notifications);
+
+    // Mark the nagged reviews so they're not re-nagged before the cooldown.
+    if (overdueReviews.length > 0) {
+      await prisma.review.updateMany({
+        where: { id: { in: overdueReviews.map((r) => r.id) } },
+        data: { lastNaggedAt: now },
+      });
+    }
 
     return Response.json({
       ok: true,

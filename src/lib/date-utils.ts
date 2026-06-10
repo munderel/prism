@@ -211,12 +211,19 @@ export function formatDisplayDate(
   options?: { weekday?: boolean },
 ): string {
   if (!dateOrString) return '\u2014';
-  const d = typeof dateOrString === 'string' ? new Date(dateOrString.includes('T') ? dateOrString : `${dateOrString}T00:00:00`) : dateOrString;
+  // UTC-anchor like formatDateOnly: a bare 'YYYY-MM-DD' parses as UTC midnight,
+  // and rendering forces timeZone:'UTC'. Otherwise a date-only value stored at
+  // UTC midnight (Goal/Powerdown/session dates, delegated due dates) renders one
+  // calendar day early for viewers west of UTC (the whole user base by default).
+  const d = typeof dateOrString === 'string'
+    ? new Date(dateOrString.includes('T') ? dateOrString : `${dateOrString}T00:00:00.000Z`)
+    : dateOrString;
   if (isNaN(d.getTime())) return '\u2014';
   const fmt: Intl.DateTimeFormatOptions = {
     year: 'numeric',
     month: options?.weekday ? 'long' : 'short',
     day: 'numeric',
+    timeZone: 'UTC',
   };
   if (options?.weekday) fmt.weekday = 'long';
   return d.toLocaleDateString('en-US', fmt);

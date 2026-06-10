@@ -111,7 +111,10 @@ const passwordProvider = CredentialsProvider({
           throw new Error('2FA_REQUIRED');
         }
         const { verifySync } = await import('otplib');
-        const isValidTotp = verifySync({
+        // otplib v13 verifySync returns a discriminated-union object
+        // ({ valid: true, ... } | { valid: false }) — BOTH truthy. Read .valid;
+        // `if (!verifySync(...))` would always be false and silently bypass 2FA.
+        const { valid: isValidTotp } = verifySync({
           token: credentials.totpCode,
           secret: user.totpSecret,
         });

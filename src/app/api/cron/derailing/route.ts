@@ -4,8 +4,12 @@ import { prisma } from '@/lib/prisma';
 import { checkTaskDerailStatus } from '@/lib/derailing';
 import { checkAndBreakMissedStreaks } from '@/lib/streak-engine';
 import { notifyUser } from '@/lib/notifications';
-import { toZonedTime } from 'date-fns-tz';
+import { toUserDayStamp, dstSafeDate } from '@/lib/user-timezone';
 import { NotificationType } from '@prisma/client';
+
+// Bound the Vercel function so a growing user base can't silently overrun the
+// default timeout mid-run (mirrors the google-sync cron's budget).
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
@@ -23,31 +27,47 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const derailingTasks = tasks.filter((task) => {
-      if (!task.dueDate) return false;
-      const timezone = task.owner.timezone || 'America/New_York';
-      const dueLocal = toZonedTime(task.dueDate, timezone);
-      const nowLocal = toZonedTime(new Date(), timezone);
-      const sameLocalDay =
-        dueLocal.getFullYear() === nowLocal.getFullYear() &&
-        dueLocal.getMonth() === nowLocal.getMonth() &&
-        dueLocal.getDate() === nowLocal.getDate();
+    const now = new Date();
 
-      return sameLocalDay && checkTaskDerailStatus(task, timezone) === 'derailing';
+    const derailingTasks = tasks.filter((task) => {
+      const timezone = task.owner.timezone || 'America/New_York';
+      // checkTaskDerailStatus already does the (timezone-correct) due-today
+      // check via toTaskDueDateKey; the old duplicated toZonedTime(dueDate)
+      // same-day block here shifted date-only tasks back a day and silently
+      // suppressed every derail notification for non-UTC users.
+      return checkTaskDerailStatus(task, timezone) === 'derailing';
     });
 
-    const notifications = derailingTasks
-      .map((task) =>
-        notifyUser(
-          task.owner.id,
-          'Task Derailing!',
-          `"${task.title}" is past 6pm and not done. Take action now.`,
-          '/tasks',
-          NotificationType.DERAILING,
-        )
-      );
+    // Dedup: notify each derailing task at most once per the owner's LOCAL day.
+    // The cron fires hourly 18:00–23:00, so without this a still-derailing task
+    // produced up to ~6 duplicate push+email+inbox alerts per evening.
+    const toNotify = derailingTasks.filter((task) => {
+      const timezone = task.owner.timezone || 'America/New_York';
+      const localDayStart = dstSafeDate(toUserDayStamp(now, timezone), timezone);
+      return !task.lastDerailNotifiedAt || task.lastDerailNotifiedAt < localDayStart;
+    });
 
-    await Promise.all(notifications);
+    const notifications = toNotify.map((task) =>
+      notifyUser(
+        task.owner.id,
+        'Task Derailing!',
+        `"${task.title}" is past 6pm and not done. Take action now.`,
+        '/tasks',
+        NotificationType.DERAILING,
+      ),
+    );
+
+    // allSettled — one user's failed lookup/notify must not abort the whole
+    // run and skip the streak loop below for everyone else.
+    await Promise.allSettled(notifications);
+
+    // Mark the notified tasks so a later fire today won't re-alert them.
+    if (toNotify.length > 0) {
+      await prisma.task.updateMany({
+        where: { id: { in: toNotify.map((t) => t.id) } },
+        data: { lastDerailNotifiedAt: now },
+      });
+    }
 
     // Check and break streaks for missed AIMs, Processes, Reviews
     const allUsers = await prisma.user.findMany({ select: { id: true } });
@@ -57,7 +77,7 @@ export async function GET(request: NextRequest) {
       streaksBroken += breaks.length;
     }
 
-    return Response.json({ ok: true, checked: tasks.length, notified: notifications.length, streaksBroken });
+    return Response.json({ ok: true, checked: tasks.length, derailing: derailingTasks.length, notified: toNotify.length, streaksBroken });
   } catch (error) {
     console.error('[cron/derailing] Unhandled error:', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });

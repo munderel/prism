@@ -85,6 +85,10 @@ vi.mock('@/lib/aim-progress', () => ({
   recalculateUserAimProgress: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@/lib/streak-recompute', () => ({
+  recomputeAimStreaks: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@/lib/kpi-progress', () => ({
   cascadeKpiUpdate: vi.fn().mockResolvedValue(undefined),
   recalculateMonthlyNumericKpi: vi.fn().mockResolvedValue(undefined),
@@ -314,7 +318,8 @@ describe('PUT /api/aims/user — KPI linkage validation', () => {
       },
     } as any);
     mockAimCategoryFindMany.mockResolvedValue([{ id: 'cat-1' }] as any);
-    mockKpiFindUnique.mockResolvedValue({ id: 'kpi-numeric', type: 'NUMERIC' } as any);
+    // Leaf KPI (no rollup children) — eligible for AIM linkage.
+    mockKpiFindUnique.mockResolvedValue({ id: 'kpi-numeric', type: 'NUMERIC', _count: { linkedFrom: 0 } } as any);
     mockAimCategoryFindUnique.mockResolvedValue({ createdByUserId: 'user-1', isDefault: false } as any);
 
     vi.mocked(prisma.$transaction).mockResolvedValue([{ id: 'ua-1', aimCategory: {} }] as any);
@@ -331,6 +336,20 @@ describe('PUT /api/aims/user — KPI linkage validation', () => {
         data: expect.objectContaining({ linkedKpiId: 'kpi-numeric', kpiIncrement: 0.5 }),
       }),
     );
+  });
+
+  it('rejects linking an AIM to a KPI that rolls up weekly children (dual-role guard)', async () => {
+    mockParseBody.mockResolvedValue({
+      data: { aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-monthly' }] },
+    } as any);
+    mockAimCategoryFindMany.mockResolvedValue([{ id: 'cat-1' }] as any);
+    // Rollup parent: has linked weekly children → would lose AIM increments to SUM(children).
+    mockKpiFindUnique.mockResolvedValue({ id: 'kpi-monthly', type: 'NUMERIC', _count: { linkedFrom: 3 } } as any);
+
+    const res = await PUT(makePutRequest({ aims: [{ aimCategoryId: 'cat-1', linkedKpiId: 'kpi-monthly' }] }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain('rolls up weekly children');
   });
 
   it('allows unlinking (linkedKpiId: null) without touching KPI values', async () => {

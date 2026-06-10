@@ -32,6 +32,10 @@ vi.mock('@/lib/aim-progress', () => ({
   recalculateUserAimProgress: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@/lib/streak-recompute', () => ({
+  recomputeAimStreaks: vi.fn().mockResolvedValue([]),
+}));
+
 import { prisma } from '@/lib/prisma';
 import { verifyAimToken } from '@/lib/completion-token';
 import { updateSpecificStreak, maybeIncrementDailyStreakIfDayComplete } from '@/lib/streak-engine';

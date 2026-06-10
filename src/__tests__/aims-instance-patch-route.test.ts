@@ -57,12 +57,17 @@ vi.mock('@/lib/aim-progress', () => ({
   recalculateUserAimProgress: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@/lib/streak-recompute', () => ({
+  recomputeAimStreaks: vi.fn().mockResolvedValue([]),
+}));
+
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-guard';
 import { parseBody } from '@/lib/schemas';
 import { updateSpecificStreak, maybeIncrementDailyStreakIfDayComplete } from '@/lib/streak-engine';
 import { applyBufferOnCompletion } from '@/lib/derailing-buffer';
 import { recalculateUserAimProgress } from '@/lib/aim-progress';
+import { recomputeAimStreaks } from '@/lib/streak-recompute';
 import { PATCH } from '@/app/api/aims/instances/[id]/route';
 
 const mockFindUnique = vi.mocked(prisma.aimInstance.findUnique);
@@ -131,6 +136,8 @@ describe('PATCH /api/aims/instances/[id]', () => {
     expect(vi.mocked(maybeIncrementDailyStreakIfDayComplete)).toHaveBeenCalledWith('user-1');
     expect(vi.mocked(applyBufferOnCompletion)).toHaveBeenCalledWith('user-1', 'cat-1');
     expect(vi.mocked(recalculateUserAimProgress)).toHaveBeenCalledWith('user-1', 'cat-1');
+    // Single canonical streak writer is invoked (and awaited) on status change.
+    expect(vi.mocked(recomputeAimStreaks)).toHaveBeenCalledWith('user-1');
   });
 
   it('does not fire streak/buffer side-effects when aim is already completed', async () => {

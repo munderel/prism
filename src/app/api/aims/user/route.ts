@@ -99,13 +99,24 @@ export async function PUT(request: NextRequest) {
     if (aim.linkedKpiId !== undefined && aim.linkedKpiId !== null) {
       const targetKpi = await prisma.kpi.findUnique({
         where: { id: aim.linkedKpiId },
-        select: { id: true, type: true },
+        select: { id: true, type: true, _count: { select: { linkedFrom: true } } },
       });
       if (!targetKpi) {
         return Response.json({ error: 'Linked KPI not found' }, { status: 400 });
       }
       if (targetKpi.type !== KpiType.NUMERIC) {
         return Response.json({ error: 'Cannot link AIM to a BINARY KPI' }, { status: 400 });
+      }
+      // Forbid the dual-role config: a KPI that is BOTH a rollup parent (has
+      // linked weekly children) AND AIM-linked has two conflicting writers of
+      // actualValue — the monthly rollup overwrites the AIM's direct increments
+      // with SUM(children), silently losing the AIM contribution. Only leaf KPIs
+      // (no children) may be AIM-linked.
+      if (targetKpi._count.linkedFrom > 0) {
+        return Response.json(
+          { error: 'Cannot link an AIM to a KPI that rolls up weekly children. Link the AIM to a leaf (weekly) KPI instead.' },
+          { status: 400 },
+        );
       }
     }
     if (aim.kpiIncrement !== undefined && aim.kpiIncrement !== null && aim.kpiIncrement <= 0) {

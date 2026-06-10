@@ -188,14 +188,11 @@ async function softDeleteDescendants(goalId: string, now: Date) {
     idsToDelete.push(...frontier);
   }
 
-  // Hard-delete all tasks linked to goals being deleted
-  await prisma.task.deleteMany({
-    where: { goalId: { in: idsToDelete } },
-  });
-
-  // Soft-delete all goals
-  await prisma.goal.updateMany({
-    where: { id: { in: idsToDelete } },
-    data: { deletedAt: now },
-  });
+  // Atomic: hard-delete the linked tasks AND soft-delete the goals together, so
+  // a failure between them can't leave goals trashed with their tasks already
+  // gone (or vice-versa). The BFS above is read-only and can stay outside.
+  await prisma.$transaction([
+    prisma.task.deleteMany({ where: { goalId: { in: idsToDelete } } }),
+    prisma.goal.updateMany({ where: { id: { in: idsToDelete } }, data: { deletedAt: now } }),
+  ]);
 }

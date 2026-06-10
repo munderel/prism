@@ -25,9 +25,12 @@ export async function POST(
     return Response.json({ error: 'Idea has already been converted' }, { status: 400 });
   }
 
+  // All fields are optional, so an empty body validates fine — but a malformed
+  // value (bad priority enum, wrong-typed ownerId, invalid dueDate) must surface
+  // as a 400 rather than being silently dropped to a default.
   const parsed = await parseBody(request, convertIdeaSchema);
-  const body = 'error' in parsed ? {} : parsed.data;
-  const { ownerId, priority, dueDate } = body;
+  if ('error' in parsed) return parsed.error;
+  const { ownerId, priority, dueDate } = parsed.data;
 
   const taskOwnerId = ownerId ?? idea.process?.assigneeId ?? idea.authorId;
 

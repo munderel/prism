@@ -1,21 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Prisma } from '@prisma/client';
 
+// prisma.$transaction is what advisoryLock uses; we invoke the callback with a
+// `tx` whose methods we can assert on. $executeRaw is the advisory-lock SQL.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    process: {
-      findUnique: vi.fn(),
-      updateMany: vi.fn(),
-      update: vi.fn(),
-    },
-    task: {
-      count: vi.fn(),
-      create: vi.fn(),
-    },
-    user: {
-      findUnique: vi.fn(),
-    },
+    process: { findUnique: vi.fn() },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -27,9 +18,14 @@ import { prisma } from '@/lib/prisma';
 import { generateTasksForCurrentPeriod } from '@/lib/process-task-generator';
 
 const mockProcessFindUnique = vi.mocked(prisma.process.findUnique);
-const mockProcessUpdateMany = vi.mocked(prisma.process.updateMany);
-const mockTaskCount = vi.mocked(prisma.task.count);
-const mockTaskCreate = vi.mocked(prisma.task.create);
+const mockTransaction = vi.mocked(prisma.$transaction);
+
+// tx-scoped mocks (rebuilt each test)
+let txProcessFindUnique: ReturnType<typeof vi.fn>;
+let txProcessUpdate: ReturnType<typeof vi.fn>;
+let txTaskCount: ReturnType<typeof vi.fn>;
+let txTaskCreate: ReturnType<typeof vi.fn>;
+let txTaskCreateMany: ReturnType<typeof vi.fn>;
 
 const baseAdvancedProcess = {
   id: 'proc-1',
@@ -46,84 +42,69 @@ const baseAdvancedProcess = {
   function: { id: 'fn-1' },
 };
 
-describe('generateTasksForCurrentPeriod — race-condition guard', () => {
+describe('generateTasksForCurrentPeriod — race / atomicity guard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockProcessFindUnique.mockResolvedValue(baseAdvancedProcess as any);
-    mockTaskCount.mockResolvedValue(0);
-    mockTaskCreate.mockResolvedValue({ id: 'task-1' } as any);
+
+    txProcessFindUnique = vi.fn().mockResolvedValue({ lastRunAt: null });
+    txProcessUpdate = vi.fn().mockResolvedValue({});
+    txTaskCount = vi.fn().mockResolvedValue(0);
+    txTaskCreate = vi.fn().mockResolvedValue({ id: 'task-1' });
+    txTaskCreateMany = vi.fn().mockResolvedValue({ count: 0 });
+
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(0),
+      process: { findUnique: txProcessFindUnique, update: txProcessUpdate },
+      task: { count: txTaskCount, create: txTaskCreate, createMany: txTaskCreateMany },
+      user: { findUnique: vi.fn().mockResolvedValue({ timezone: 'America/New_York' }) },
+    };
+    // advisoryLock(key, fn) => prisma.$transaction(tx => fn(tx))
+    mockTransaction.mockImplementation((async (cb: any) => cb(tx)) as any);
   });
 
-  it('creates the task when the period claim succeeds', async () => {
-    mockProcessUpdateMany.mockResolvedValue({ count: 1 } as any);
-
+  it('runs inside a transaction (advisory lock) and creates the task, then advances lastRunAt', async () => {
     await generateTasksForCurrentPeriod('proc-1');
-
-    expect(mockProcessUpdateMany).toHaveBeenCalledOnce();
-    expect(mockTaskCreate).toHaveBeenCalledOnce();
+    expect(mockTransaction).toHaveBeenCalledOnce();
+    expect(txTaskCreate).toHaveBeenCalledOnce();
+    expect(txProcessUpdate).toHaveBeenCalledOnce(); // claim advanced AFTER create
   });
 
-  it('skips creation when the period claim loses the race (count === 0)', async () => {
-    mockProcessUpdateMany.mockResolvedValue({ count: 0 } as any);
-
+  it('skips creation when the period was already claimed (lastRunAt >= periodStart)', async () => {
+    txProcessFindUnique.mockResolvedValue({ lastRunAt: new Date() });
     await generateTasksForCurrentPeriod('proc-1');
-
-    expect(mockProcessUpdateMany).toHaveBeenCalledOnce();
-    expect(mockTaskCreate).not.toHaveBeenCalled();
+    expect(txTaskCreate).not.toHaveBeenCalled();
+    expect(txProcessUpdate).not.toHaveBeenCalled();
   });
 
-  it('only one of two concurrent callers wins the claim', async () => {
-    // Simulate Postgres row-level serialization: first updateMany matches the
-    // row (count 1), second updateMany sees the already-advanced lastRunAt
-    // and matches nothing (count 0).
-    mockProcessUpdateMany
-      .mockResolvedValueOnce({ count: 1 } as any)
-      .mockResolvedValueOnce({ count: 0 } as any);
-
-    await Promise.all([
-      generateTasksForCurrentPeriod('proc-1'),
-      generateTasksForCurrentPeriod('proc-1'),
-    ]);
-
-    expect(mockProcessUpdateMany).toHaveBeenCalledTimes(2);
-    expect(mockTaskCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it('swallows P2002 from task.create as a final safety net', async () => {
-    mockProcessUpdateMany.mockResolvedValue({ count: 1 } as any);
-    mockTaskCreate.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError('Unique constraint', {
-        code: 'P2002',
-        clientVersion: 'test',
-      }),
-    );
-
-    await expect(generateTasksForCurrentPeriod('proc-1')).resolves.toBeUndefined();
-  });
-
-  it('re-throws non-P2002 errors from task.create', async () => {
-    mockProcessUpdateMany.mockResolvedValue({ count: 1 } as any);
-    mockTaskCreate.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError('Connection lost', {
-        code: 'P1001',
-        clientVersion: 'test',
-      }),
-    );
-
-    await expect(generateTasksForCurrentPeriod('proc-1')).rejects.toThrow();
-  });
-
-  it('claims with periodStart-based WHERE so prior-period lastRunAt does not block', async () => {
-    mockProcessUpdateMany.mockResolvedValue({ count: 1 } as any);
-
+  it('skips creation when tasks already exist this period but still advances the claim', async () => {
+    txTaskCount.mockResolvedValue(2);
     await generateTasksForCurrentPeriod('proc-1');
+    expect(txTaskCreate).not.toHaveBeenCalled();
+    expect(txProcessUpdate).toHaveBeenCalledOnce();
+  });
 
-    const callArgs = mockProcessUpdateMany.mock.calls[0][0] as any;
-    expect(callArgs.where.id).toBe('proc-1');
-    expect(callArgs.where.OR).toEqual([
-      { lastRunAt: null },
-      expect.objectContaining({ lastRunAt: expect.objectContaining({ lt: expect.any(Date) }) }),
-    ]);
-    expect(callArgs.data.lastRunAt).toBeInstanceOf(Date);
+  it('REGRESSION: a create failure does NOT advance lastRunAt (transaction rolls back, period retried)', async () => {
+    txTaskCreate.mockRejectedValue(new Error('Connection lost'));
+    await expect(generateTasksForCurrentPeriod('proc-1')).rejects.toThrow('Connection lost');
+    // The claim advance happens only after the create; a thrown create means it
+    // never ran, so the transaction rolls back and the next call retries.
+    expect(txProcessUpdate).not.toHaveBeenCalled();
+  });
+
+  it('uses createMany for multi-step processes (single statement, skipDuplicates)', async () => {
+    mockProcessFindUnique.mockResolvedValue({
+      ...baseAdvancedProcess,
+      steps: [
+        { title: 'Step 1', description: null },
+        { title: 'Step 2', description: null },
+      ],
+    } as any);
+    await generateTasksForCurrentPeriod('proc-1');
+    expect(txTaskCreateMany).toHaveBeenCalledOnce();
+    const arg = txTaskCreateMany.mock.calls[0][0] as any;
+    expect(arg.skipDuplicates).toBe(true);
+    expect(arg.data).toHaveLength(2);
+    expect(txProcessUpdate).toHaveBeenCalledOnce();
   });
 });

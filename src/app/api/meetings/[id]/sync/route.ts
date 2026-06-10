@@ -10,6 +10,7 @@ import {
   buildMeetingRecurrence,
 } from '@/lib/calendar';
 import { getLocalDateString } from '@/lib/date-utils';
+import { fromZonedTime } from 'date-fns-tz';
 
 /**
  * POST /api/meetings/[id]/sync
@@ -97,8 +98,8 @@ export async function POST(
       const updatedEvent = await updateGoogleEvent(meeting.createdById, existingEventId, {
         summary: meeting.title,
         description: meeting.description || '',
-        start: new Date(`${dateStr}T${meeting.timeStart}:00`).toISOString(),
-        end: new Date(`${dateStr}T${meeting.timeEnd}:00`).toISOString(),
+        start: fromZonedTime(`${dateStr}T${meeting.timeStart}:00`, tz).toISOString(),
+        end: fromZonedTime(`${dateStr}T${meeting.timeEnd}:00`, tz).toISOString(),
         timeZone: tz,
         recurrence,
       }, targetCalendarId);

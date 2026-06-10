@@ -389,8 +389,10 @@ export default function DashboardPage() {
     const visible = list.filter((t) => {
       if (t.status === 'DROPPED') return showDoneTasks;
       if (t.status === 'DONE') {
-        // Show today's completed tasks in-place (strikethrough); older completions only when toggled
-        if (t.completedAt && t.completedAt.startsWith(todayStr)) return true;
+        // Show today's completed tasks in-place (strikethrough); older completions only when toggled.
+        // completedAt is a UTC ISO instant; compare on the user's local day key
+        // (startsWith mixed UTC vs local and dropped evening completions for non-UTC users).
+        if (t.completedAt && toLocalDateKey(t.completedAt) === todayStr) return true;
         return showDoneTasks;
       }
       return true;
@@ -409,7 +411,7 @@ export default function DashboardPage() {
   const doneTotalDashboard = useMemo(
     () => {
       const todayStr = getLocalDateString();
-      return list.filter((t) => (t.status === 'DONE' || t.status === 'DROPPED') && !(t.completedAt && t.completedAt.startsWith(todayStr))).length;
+      return list.filter((t) => (t.status === 'DONE' || t.status === 'DROPPED') && !(t.completedAt && toLocalDateKey(t.completedAt) === todayStr)).length;
     },
     [list],
   );
@@ -426,10 +428,25 @@ export default function DashboardPage() {
       (Array.isArray(prev) ? prev : []).filter((t) => t.id !== id),
       false
     );
-    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+    try {
+      const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        // Roll the optimistic removal back and tell the user it failed, instead
+        // of silently leaving the row gone (or letting it pop back unexplained).
+        mutate();
+        mutateUnscheduled();
+        toast.error('Failed to delete task');
+        return;
+      }
+    } catch {
+      mutate();
+      mutateUnscheduled();
+      toast.error('Failed to delete task');
+      return;
+    }
     mutate();
     mutateUnscheduled();
-  }, [mutate, mutateUnscheduled]);
+  }, [mutate, mutateUnscheduled, toast]);
   const handleWinTheDayToggle = useCallback(async (task: DashboardTask) => {
     const newValue = !task.isWinTheDay;
     mutate(
