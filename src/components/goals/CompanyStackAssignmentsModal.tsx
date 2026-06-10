@@ -4,6 +4,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { m, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2, Building2 } from 'lucide-react';
+import { getInitials } from '@/components/ui/Avatar';
 
 interface UserRow {
   id: string;
@@ -28,16 +29,12 @@ interface CompanyStackAssignmentsModalProps {
 
 function Avatar({ user }: { user: UserRow }) {
   const label = user.name ?? user.email;
-  const initials =
-    label.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') ||
-    label[0]?.toUpperCase() ||
-    '?';
   if (user.image) {
     return <img src={user.image} alt={label} className="h-7 w-7 rounded-full object-cover" />;
   }
   return (
     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-500/60 text-xs font-semibold text-white">
-      {initials}
+      {getInitials(label)}
     </span>
   );
 }

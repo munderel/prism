@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import NextLink from 'next/link';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { m } from 'framer-motion';
-import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3, UserPlus } from 'lucide-react';
+import { Pencil, Trash2, Plus, ListTodo, Link, ChevronDown, BarChart3, UserPlus, ExternalLink } from 'lucide-react';
 import { GoalAssigneesModal } from './GoalAssigneesModal';
 import { GoalProgressBar } from './GoalProgressBar';
 import { TimeUrgencyBadge } from './TimeUrgencyBadge';
@@ -16,6 +17,7 @@ import {
   formatEnumLabel,
   formatGoalDateRange,
 } from '@/lib/goal-constants';
+import { getInitials } from '@/components/ui/Avatar';
 
 // Level-specific card styling
 function getLevelCardStyles(level: string) {
@@ -188,7 +190,6 @@ export const GoalCard = React.memo(function GoalCard({
             <div className="flex -space-x-1.5">
               {goal.assignees.slice(0, 3).map((a: { id: string; user: { id: string; name: string | null; email: string; image: string | null } }) => {
                 const label = a.user.name ?? a.user.email;
-                const initials = label.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || label[0]?.toUpperCase() || '?';
                 return a.user.image ? (
                   <img
                     key={a.id}
@@ -202,7 +203,7 @@ export const GoalCard = React.memo(function GoalCard({
                     className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--glass-bg)] bg-indigo-500/60 text-[9px] font-semibold text-white"
                     title={label}
                   >
-                    {initials}
+                    {getInitials(label)}
                   </span>
                 );
               })}
@@ -244,6 +245,14 @@ export const GoalCard = React.memo(function GoalCard({
               <ListTodo className="h-4 w-4" />
             </button>
           )}
+          <NextLink
+            href={`/goals/${goal.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-indigo-300"
+            title="Open goal detail"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </NextLink>
           <button
             onClick={() => onEdit(goal)}
             className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]"

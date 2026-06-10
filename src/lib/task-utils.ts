@@ -42,6 +42,27 @@ export function parseDurationToMinutes(input: string): number | null {
   }
 }
 
+/**
+ * Sum minutes logged against a task's work blocks (only blocks marked
+ * COMPLETED or PARTIAL count). Falls back to wall-clock duration when
+ * `actualMinutes` is null. Returns 0 for an empty/missing list.
+ */
+export function sumTaskWorkBlockMinutes(
+  blocks:
+    | Array<{ start: string | Date; end: string | Date; actualMinutes: number | null; completionStatus: string }>
+    | null
+    | undefined,
+): number {
+  if (!blocks || blocks.length === 0) return 0;
+  return blocks
+    .filter((b) => b.completionStatus === 'COMPLETED' || b.completionStatus === 'PARTIAL')
+    .reduce((sum, b) => {
+      if (b.actualMinutes != null) return sum + b.actualMinutes;
+      const ms = new Date(b.end).getTime() - new Date(b.start).getTime();
+      return sum + Math.round(ms / 60000);
+    }, 0);
+}
+
 /** Format minutes for display: "30m", "1.5h", "2d", "1w". */
 export function formatMinutesCompact(minutes: number): string {
   if (minutes < MINUTES_PER_HOUR) return `${minutes}m`;

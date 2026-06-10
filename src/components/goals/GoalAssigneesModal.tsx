@@ -4,6 +4,7 @@ import { useState } from 'react';
 import useSWR, { mutate as globalMutate } from 'swr';
 import { m, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2 } from 'lucide-react';
+import { getInitials } from '@/components/ui/Avatar';
 
 interface UserRow {
   id: string;
@@ -26,10 +27,6 @@ interface GoalAssigneesModalProps {
 function Avatar({ user, size = 'md' }: { user: UserRow; size?: 'sm' | 'md' }) {
   const dim = size === 'sm' ? 'h-5 w-5 text-[9px]' : 'h-7 w-7 text-xs';
   const label = user.name ?? user.email;
-  const initials =
-    label.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') ||
-    label[0]?.toUpperCase() ||
-    '?';
   if (user.image) {
     return (
       <img src={user.image} alt={label} className={`${dim} rounded-full object-cover`} />
@@ -39,7 +36,7 @@ function Avatar({ user, size = 'md' }: { user: UserRow; size?: 'sm' | 'md' }) {
     <span
       className={`${dim} flex items-center justify-center rounded-full bg-indigo-500/60 font-semibold text-white`}
     >
-      {initials}
+      {getInitials(label)}
     </span>
   );
 }
