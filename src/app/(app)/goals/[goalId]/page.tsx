@@ -1,7 +1,7 @@
 'use client';
 
-import { use } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import useSWR from 'swr';
 import { ChevronLeft, Target } from 'lucide-react';
 import { formatDateOnly } from '@/lib/date-utils';
@@ -45,8 +45,8 @@ const STATUS_COLOR: Record<string, string> = {
   ABANDONED: 'text-red-400',
 };
 
-export default function GoalDetailPage({ params }: { params: Promise<{ goalId: string }> }) {
-  const { goalId } = use(params);
+export default function GoalDetailPage() {
+  const { goalId } = useParams<{ goalId: string }>();
   const { data: goal, error, isLoading } = useSWR<GoalDetail>(
     `/api/goals/${goalId}?includeParents=true`
   );
