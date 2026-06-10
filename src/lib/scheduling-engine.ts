@@ -6,6 +6,7 @@
  */
 
 import { PRIORITY_RANK as SHARED_PRIORITY_RANK, type TaskPriority } from '@/lib/task-priority';
+import { rangesOverlap } from '@/lib/date-utils';
 
 // ---------- Types ----------
 
@@ -118,9 +119,8 @@ export function findSlotInRange(
   durationMs: number,
   occupied: CalendarEvent[]
 ): Date | null {
-  // Filter occupied events that overlap with our range
   const relevant = occupied
-    .filter((e) => e.start.getTime() < rangeEnd.getTime() && e.end.getTime() > rangeStart.getTime())
+    .filter((e) => rangesOverlap(e.start, e.end, rangeStart, rangeEnd))
     .sort((a, b) => a.start.getTime() - b.start.getTime());
 
   let candidate = rangeStart.getTime();

@@ -10,8 +10,9 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft, PartyPopper, AlertCircle,
   Heart, Lightbulb, Calendar, X, Circle, Pencil, Star, Flame, Target, Clock, ChevronDown,
 } from 'lucide-react';
-import { getLocalDateString, getUpcomingWeekBoundaries, getWeekBoundaries, parseLocalDate } from '@/lib/date-utils';
+import { getLocalDateString, getUpcomingWeekBoundaries, getWeekBoundaries, minutesBetween, parseLocalDate } from '@/lib/date-utils';
 import { invalidateAfterRitualChange } from '@/lib/swr-mutations';
+import { matchPrefix } from '@/lib/swr-helpers';
 import { TopNTaskSelector } from '@/components/reviews/shared/TopNTaskSelector';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ClearGoalGuide } from './ClearGoalGuide';
@@ -341,7 +342,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
             picks[b.id] = b.completionStatus;
           }
           notes[b.id] = b.notes ?? '';
-          const scheduled = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
+          const scheduled = minutesBetween(b.start, b.end);
           actual[b.id] = b.actualMinutes ?? scheduled;
         });
         setBlockReviewPicks(picks);
@@ -1066,7 +1067,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
       const workBlockReviews = todayWorkBlocks
         .filter((b) => !!blockReviewPicks[b.id])
         .map((b) => {
-          const scheduledMin = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
+          const scheduledMin = minutesBetween(b.start, b.end);
           return {
             workBlockId: b.id,
             completionStatus: blockReviewPicks[b.id],
@@ -1111,7 +1112,8 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
               : `Saved ${aimEntries.length - failures.length} of ${aimEntries.length} AIM reviews; ${failures.length} failed`,
           );
         }
-        void mutate('/api/aims/instances');
+        // Parameterised SWR keys — predicate form.
+        void mutate(matchPrefix('/api/aims/instances'));
       }
     }
 
@@ -1564,7 +1566,7 @@ export function PowerDownRitual({ onComplete, date }: PowerDownRitualProps) {
                   <p className="text-sm text-[var(--text-muted)]">Nothing to review yet — schedule some work.</p>
                 )}
                 {todayWorkBlocks.map((b) => {
-                  const scheduledMin = Math.max(0, Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000));
+                  const scheduledMin = minutesBetween(b.start, b.end);
                   const pick = blockReviewPicks[b.id];
                   return (
                     <div key={b.id} className="rounded-lg bg-[var(--surface-raised)]/50 px-4 py-3 space-y-2">

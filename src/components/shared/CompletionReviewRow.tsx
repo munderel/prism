@@ -1,18 +1,8 @@
 'use client';
 
-/**
- * CompletionReviewRow
- *
- * Renders a single WorkBlock or AIM instance as a reviewable row with:
- *  - time range + title
- *  - status picker (COMPLETED / PARTIAL / MISSED for WorkBlocks;
- *                   COMPLETED / SKIPPED / MISSED for AIM instances)
- *  - actual-minutes input (shown when status !== 'MISSED')
- *
- * Used by:
- *  - PowerDownRitual "Review Work Blocks" step
- *  - WeeklyReviewWizard "Review Last Week" step
- */
+import { minutesBetween } from '@/lib/date-utils';
+
+/** Status picker row shared by Powerdown and Weekly Review for WorkBlocks + AIM instances. */
 
 interface WorkBlockReviewItem {
   kind: 'workblock';
@@ -95,17 +85,9 @@ export function CompletionReviewRow({
     currentStatus ??
     (item.kind === 'workblock' ? item.completionStatus : item.status);
 
-  // Scheduled / target minutes for default actual-minutes value
   const defaultMinutes: number =
     item.kind === 'workblock'
-      ? (item.scheduledMinutes ??
-          Math.max(
-            0,
-            Math.round(
-              (new Date(item.end).getTime() - new Date(item.start).getTime()) /
-                60000,
-            ),
-          ))
+      ? (item.scheduledMinutes ?? minutesBetween(item.start, item.end))
       : (item.targetMinutes ?? 60);
 
   const resolvedActual = currentActualMinutes ?? item.actualMinutes ?? defaultMinutes;
@@ -126,11 +108,15 @@ export function CompletionReviewRow({
         ? `${s.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–${e.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
         : s.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     } else {
-      // All-day AIM — just show the date
-      timeLabel = new Date(item.scheduledDate + 'T00:00:00').toLocaleDateString([], {
+      // All-day AIM. scheduledDate is a full ISO at UTC midnight; pinning the
+      // formatter to UTC keeps the displayed calendar day stable for every
+      // viewer (the old `scheduledDate + 'T00:00:00'` concat produced an
+      // invalid date string when the input was already an ISO).
+      timeLabel = new Date(item.scheduledDate).toLocaleDateString(undefined, {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
+        timeZone: 'UTC',
       });
     }
     if (item.targetMinutes) durationLabel = `${item.targetMinutes}m target`;
