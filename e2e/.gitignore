@@ -1,4 +1,5 @@
 auth/storageState.json
+auth/storageState.*.json
 test-results/
 playwright-report/
 .last-run.json
