@@ -168,31 +168,28 @@ export async function PATCH(
   // queries AimInstance.status='COMPLETED' rows for today, and needs this
   // instance's new status to be visible in the DB.
   if (isNowCompleting) {
+    const category = updated.aimCategory;
+    const linkedKpiId =
+      category.linkedKpiId && category.linkedKpi?.type === KpiType.NUMERIC
+        ? category.linkedKpiId
+        : null;
+    const kpiIncrement = category.kpiIncrement ?? 1;
+
     await Promise.allSettled([
       updateSpecificStreak(existing.userId, `aim_${existing.aimCategoryId}`).catch((err) => console.warn('[streak] aim streak update failed:', err)),
       maybeIncrementDailyStreakIfDayComplete(existing.userId).catch((err) => console.warn('[streak] daily streak update failed:', err)),
       applyBufferOnCompletion(existing.userId, existing.aimCategoryId).catch((err) => console.warn('[buffer] completion update failed:', err)),
+      linkedKpiId
+        ? (async () => {
+            // increment first, then cascade — cascade reads the new value.
+            await prisma.kpi.update({
+              where: { id: linkedKpiId },
+              data: { actualValue: { increment: kpiIncrement } },
+            });
+            await cascadeKpiUpdate(linkedKpiId);
+          })().catch((err) => console.warn('[aims] KPI increment failed:', err))
+        : Promise.resolve(),
     ]);
-
-    // KPI increment: if this AIM category is linked to a NUMERIC KPI,
-    // increment its actualValue and cascade up the parent chain.
-    // Use the category data from the updated instance (INSTANCE_INCLUDE fetches linkedKpi).
-    const category = updated.aimCategory;
-    if (
-      category.linkedKpiId &&
-      category.linkedKpi?.type === KpiType.NUMERIC
-    ) {
-      const increment = category.kpiIncrement ?? 1;
-      try {
-        await prisma.kpi.update({
-          where: { id: category.linkedKpiId },
-          data: { actualValue: { increment } },
-        });
-        await cascadeKpiUpdate(category.linkedKpiId);
-      } catch (err) {
-        console.warn('[aims] KPI increment failed:', err);
-      }
-    }
   }
 
   if (status !== undefined && status !== existing.status) {

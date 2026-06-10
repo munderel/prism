@@ -1,8 +1,15 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackReadAccess } from '@/lib/auth-guard';
 import { parseBody, putUserAimsSchema } from '@/lib/schemas';
-import { KpiType } from '@prisma/client';
+import { KpiType, type Prisma } from '@prisma/client';
+
+type KpiWithGoalStack = Prisma.KpiGetPayload<{
+  include: {
+    goal: { include: { stack: true } };
+    _count: { select: { linkedFrom: true } };
+  };
+}>;
 
 export async function GET() {
   const auth = await requireAuth();
@@ -85,22 +92,84 @@ export async function PUT(request: NextRequest) {
 
   const existingCategories = await prisma.aimCategory.findMany({
     where: { id: { in: categoryIds } },
-    select: { id: true },
+    select: {
+      id: true,
+      createdByUserId: true,
+      isDefault: true,
+      linkedKpiId: true,
+      kpiIncrement: true,
+    },
   });
-  const existingIds = new Set(existingCategories.map((c) => c.id));
-  const missingId = categoryIds.find((id: string) => !existingIds.has(id));
+  const categoryById = new Map(existingCategories.map((c) => [c.id, c]));
+  const missingId = categoryIds.find((id: string) => !categoryById.has(id));
   if (missingId) {
     return Response.json({ error: `AimCategory ${missingId} not found` }, { status: 404 });
   }
 
-  // Validate KPI linkage before touching the DB.
-  // linkedKpiId is only allowed on NUMERIC KPIs.
-  for (const aim of aims as AimInput[]) {
-    if (aim.linkedKpiId !== undefined && aim.linkedKpiId !== null) {
-      const targetKpi = await prisma.kpi.findUnique({
-        where: { id: aim.linkedKpiId },
-        select: { id: true, type: true, _count: { select: { linkedFrom: true } } },
-      });
+  const aimList = aims as AimInput[];
+
+  // Aims that touch KPI linkage on the (shared) AimCategory row. Those rows are
+  // not per-user data and need a stricter ownership check than the per-user
+  // UserAim upsert below.
+  const kpiLinkageAims = aimList.filter(
+    (a) => a.linkedKpiId !== undefined || a.kpiIncrement !== undefined,
+  );
+
+  // Only a genuine change to the category's KPI linkage requires ownership.
+  // A no-op resend (e.g. saving active-days on a shared default AIM) must not
+  // be rejected — that silently dropped per-user edits.
+  const changedLinkageAims = kpiLinkageAims.filter((aim) => {
+    const cat = categoryById.get(aim.aimCategoryId);
+    if (!cat) return false;
+    const linkedChanged =
+      aim.linkedKpiId !== undefined && (aim.linkedKpiId ?? null) !== (cat.linkedKpiId ?? null);
+    const incrementChanged =
+      aim.kpiIncrement !== undefined && (aim.kpiIncrement ?? null) !== (cat.kpiIncrement ?? null);
+    return linkedChanged || incrementChanged;
+  });
+
+  // Ownership: only the creator (or an admin for shared defaults) may mutate
+  // a category. Without this, any signed-in user could rewrite another user's
+  // habit by guessing its id.
+  for (const aim of changedLinkageAims) {
+    const cat = categoryById.get(aim.aimCategoryId);
+    if (!cat) continue;
+    const isCreator = cat.createdByUserId === auth.userId;
+    const isSharedDefault = cat.isDefault && cat.createdByUserId === null;
+    const allowed =
+      isCreator || (isSharedDefault && auth.session.user.isAdmin);
+    if (!allowed) {
+      return Response.json(
+        { error: 'Not allowed to modify this AIM category' },
+        { status: 403 },
+      );
+    }
+  }
+
+  // Batch-validate KPI linkages: one round-trip for type, leaf status, and
+  // stack-read access.
+  const linkedKpiIds = Array.from(
+    new Set(
+      kpiLinkageAims
+        .map((a) => a.linkedKpiId)
+        .filter((id): id is string => typeof id === 'string'),
+    ),
+  );
+  const kpiById = new Map<string, KpiWithGoalStack>();
+  if (linkedKpiIds.length) {
+    const rows = await prisma.kpi.findMany({
+      where: { id: { in: linkedKpiIds } },
+      include: {
+        goal: { include: { stack: true } },
+        _count: { select: { linkedFrom: true } },
+      },
+    });
+    for (const k of rows) kpiById.set(k.id, k);
+  }
+
+  for (const aim of aimList) {
+    if (aim.linkedKpiId) {
+      const targetKpi = kpiById.get(aim.linkedKpiId);
       if (!targetKpi) {
         return Response.json({ error: 'Linked KPI not found' }, { status: 400 });
       }
@@ -118,46 +187,40 @@ export async function PUT(request: NextRequest) {
           { status: 400 },
         );
       }
+      const denied = await checkStackReadAccess(
+        targetKpi.goal.stack,
+        auth.userId,
+        auth.session.user.isAdmin,
+        { goalId: targetKpi.goalId },
+      );
+      if (denied) {
+        return Response.json(
+          { error: 'Not allowed to link to this KPI' },
+          { status: 403 },
+        );
+      }
     }
     if (aim.kpiIncrement !== undefined && aim.kpiIncrement !== null && aim.kpiIncrement <= 0) {
       return Response.json({ error: 'kpiIncrement must be > 0' }, { status: 400 });
     }
   }
 
-  // Collect aims that include KPI linkage changes (applied to AimCategory below).
-  const kpiLinkageAims = (aims as AimInput[]).filter(
-    (a) => a.linkedKpiId !== undefined || a.kpiIncrement !== undefined,
-  );
-
-  // Validate that the requesting user owns the category (only user-created habits
-  // with createdByUserId === auth.userId may be modified by this user; default
-  // categories are shared and must not be mutated by individual users).
-  for (const aim of kpiLinkageAims) {
-    const category = existingCategories.find((c) => c.id === aim.aimCategoryId);
-    if (!category) continue; // already verified above
-    const fullCat = await prisma.aimCategory.findUnique({
+  // Persist UserAim upserts and AimCategory linkage updates atomically, so a
+  // partial failure can't leave UserAim and AimCategory inconsistent. Category
+  // writes are limited to genuine changes — a no-op resend never touches the
+  // shared row.
+  const categoryUpdates = changedLinkageAims.map((aim) => {
+    const updateData: { linkedKpiId?: string | null; kpiIncrement?: number | null } = {};
+    if (aim.linkedKpiId !== undefined) updateData.linkedKpiId = aim.linkedKpiId;
+    if (aim.kpiIncrement !== undefined) updateData.kpiIncrement = aim.kpiIncrement;
+    return prisma.aimCategory.update({
       where: { id: aim.aimCategoryId },
-      select: { createdByUserId: true, isDefault: true, linkedKpiId: true, kpiIncrement: true },
+      data: updateData,
     });
-    if (!fullCat) continue;
-    // Only a genuine change to the shared category's KPI linkage requires
-    // ownership. A no-op resend (e.g. saving active-days on a shared default
-    // AIM) must not be rejected — that silently dropped per-user edits.
-    const linkedChanged =
-      aim.linkedKpiId !== undefined && (aim.linkedKpiId ?? null) !== (fullCat.linkedKpiId ?? null);
-    const incrementChanged =
-      aim.kpiIncrement !== undefined && (aim.kpiIncrement ?? null) !== (fullCat.kpiIncrement ?? null);
-    if (!linkedChanged && !incrementChanged) continue;
-    if (fullCat.isDefault && fullCat.createdByUserId !== auth.userId && !auth.session.user.isAdmin) {
-      return Response.json(
-        { error: 'Cannot modify KPI linkage on a shared default AIM category' },
-        { status: 403 },
-      );
-    }
-  }
+  });
 
-  const results = await prisma.$transaction(
-    aims.map((aim: AimInput) =>
+  const txResult = await prisma.$transaction([
+    ...aimList.map((aim) =>
       prisma.userAim.upsert({
         where: {
           userId_aimCategoryId: {
@@ -168,14 +231,15 @@ export async function PUT(request: NextRequest) {
         update: buildAimData(aim),
         create: buildAimData(aim, auth.userId) as any,
         include: { aimCategory: true },
-      })
-    )
-  );
+      }),
+    ),
+    ...categoryUpdates,
+  ]);
 
   // Per-aim SEED skip: for any aim the caller just flagged skipSeedPhase=true
   // that's still sitting in SEED, advance it to SPROUT now. Scoped to SEED so a
   // GROW/FLOW aim is never knocked backwards.
-  const skipSeedCategoryIds = (aims as AimInput[])
+  const skipSeedCategoryIds = aimList
     .filter((a) => a.skipSeedPhase === true && a.currentPhase === undefined)
     .map((a) => a.aimCategoryId);
   if (skipSeedCategoryIds.length > 0) {
@@ -189,21 +253,6 @@ export async function PUT(request: NextRequest) {
     });
   }
 
-  // Apply KPI linkage changes to AimCategory (outside the upsert transaction —
-  // these are structural edits to the shared category row, not per-user data).
-  if (kpiLinkageAims.length > 0) {
-    await Promise.all(
-      kpiLinkageAims.map((aim) => {
-        const updateData: { linkedKpiId?: string | null; kpiIncrement?: number | null } = {};
-        if (aim.linkedKpiId !== undefined) updateData.linkedKpiId = aim.linkedKpiId;
-        if (aim.kpiIncrement !== undefined) updateData.kpiIncrement = aim.kpiIncrement;
-        return prisma.aimCategory.update({
-          where: { id: aim.aimCategoryId },
-          data: updateData,
-        });
-      }),
-    );
-  }
-
+  const results = txResult.slice(0, aimList.length);
   return Response.json(results);
 }
