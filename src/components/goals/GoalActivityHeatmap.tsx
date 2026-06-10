@@ -32,11 +32,16 @@ const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
 export default function GoalActivityHeatmap({ goalId, days = 84 }: GoalActivityHeatmapProps) {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
-  const { data: history } = useSWR<ActivityEntry[]>(
+  const { data: history, error, isLoading } = useSWR<ActivityEntry[]>(
     `/api/goals/${goalId}/activity?days=${days}`
   );
 
-  if (!history) return null;
+  if (isLoading) {
+    return <div className="text-xs text-[var(--text-muted)] py-2">Loading activity…</div>;
+  }
+  if (error || !history) {
+    return <div className="text-xs text-[var(--text-muted)] py-2">Activity unavailable.</div>;
+  }
 
   const grid = buildGrid(history, days);
 
