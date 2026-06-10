@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { parseBody, createMeetingSchema } from '@/lib/schemas';
 import { createGoogleEvent, getGoogleSyncInfo, buildMeetingRecurrence } from '@/lib/calendar';
 import { getLocalDateString } from '@/lib/date-utils';
+import { fromZonedTime } from 'date-fns-tz';
 
 const MEETING_INCLUDE = {
   createdBy: { select: { id: true, name: true, email: true } },
@@ -115,8 +116,11 @@ export async function POST(request: NextRequest) {
       const gcalEvent = await createGoogleEvent(auth.userId, {
         summary: title,
         description: description || undefined,
-        start: new Date(`${dateStr}T${timeStart}:00`).toISOString(),
-        end: new Date(`${dateStr}T${timeEnd}:00`).toISOString(),
+        // fromZonedTime interprets the naive local time in the user's tz, so the
+        // event lands at the intended wall-clock time. `new Date(naive)` would
+        // parse it in the server's tz (UTC on Vercel) → wrong time for non-UTC users.
+        start: fromZonedTime(`${dateStr}T${timeStart}:00`, tz).toISOString(),
+        end: fromZonedTime(`${dateStr}T${timeEnd}:00`, tz).toISOString(),
         timeZone: tz,
         addMeetLink: addMeetLink !== false,
         recurrence,

@@ -10,11 +10,15 @@ import { requireAuth, authError } from '@/lib/auth-guard';
  * after `leaderboardResetAt`. In addition:
  * - Aim instance pointsEarned is zeroed (those are user-owned non-history data)
  * - PublicWin rows are deleted (they are milestone announcements tied to the streak)
- * - All of the user's Streak rows are zeroed (currentCount -> 0, bestCount
- *   preserved). This includes 'daily', 'powerdown', per-aim (aim_<id>), and
- *   per-process (process_<id>) streaks. Zeroing only the 'daily' row left
- *   stale 'powerdown' rows at inflated counts that pre-dated the atomicity
- *   fix, so a fresh reset never fully cleared the visible streaks.
+ *
+ * It deliberately does NOT touch the live `Streak` rows. The Streak table is the
+ * canonical streak STATE (it drives the daily/powerdown flame, milestones, derail
+ * nags and Beeminder), not a leaderboard cache. Zeroing currentCount here made a
+ * "leaderboard reset" silently destroy the user's real daily/powerdown/aim/process
+ * streaks — and because lastActiveDate was left set, a same-day completion couldn't
+ * even re-credit them. The reset now only re-windows the activity score via
+ * `leaderboardResetAt`; streaks stay intact. (Use /api/streaks/reset to reset a
+ * streak deliberately.)
  */
 export async function POST() {
   const auth = await requireAuth();
@@ -33,10 +37,6 @@ export async function POST() {
     }),
     prisma.publicWin.deleteMany({
       where: { userId: auth.userId },
-    }),
-    prisma.streak.updateMany({
-      where: { userId: auth.userId },
-      data: { currentCount: 0 },
     }),
   ]);
 

@@ -79,7 +79,24 @@ export async function POST(
 
   const scheduledEnd = addMinutes(scheduledStart, process.defaultDurationMinutes);
 
-  const { task, execution } = await prisma.$transaction(async (tx) => {
+  const dayStart = startOfDay(scheduledStart);
+  const dayEnd = new Date(dayStart.getTime() + 86400000);
+
+  const result = await prisma.$transaction(async (tx) => {
+    // Idempotency: if this occurrence is already scheduled (re-schedule, retry,
+    // or double-click), reuse it instead of creating a duplicate Task +
+    // ProcessExecution for the same day (which double-booked the calendar and
+    // could double-count toward per-process aggregates).
+    const existing = await tx.processExecution.findFirst({
+      where: { processId: process.id, scheduledDate: { gte: dayStart, lt: dayEnd } },
+    });
+    if (existing) {
+      const existingTask = existing.taskId
+        ? await tx.task.findUnique({ where: { id: existing.taskId } })
+        : null;
+      return { task: existingTask, execution: existing, duplicate: true };
+    }
+
     const task = await tx.task.create({
       data: {
         ownerId: responsibleUserId,
@@ -110,10 +127,13 @@ export async function POST(
       data: { nextDueAt: scheduledStart },
     });
 
-    return { task, execution };
+    return { task, execution, duplicate: false };
   });
 
-  return Response.json({ task, execution }, { status: 201 });
+  return Response.json(
+    { task: result.task, execution: result.execution },
+    { status: result.duplicate ? 200 : 201 },
+  );
 }
 
 function computeScheduledDate(

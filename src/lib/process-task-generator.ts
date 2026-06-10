@@ -1,4 +1,4 @@
-import { ProcessCadence, Prisma } from '@prisma/client';
+import { ProcessCadence } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import {
   startOfWeek, startOfMonth, endOfMonth,
@@ -8,7 +8,7 @@ import {
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { pad2 } from '@/lib/google-sync-state';
 import { resolveAssignee } from '@/lib/delegation';
-import { conditionalUpdate } from '@/lib/concurrency';
+import { advisoryLock } from '@/lib/concurrency';
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
@@ -124,117 +124,114 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
 
   const { periodStart, dueDate } = getCurrentPeriodRange(process);
 
-  // Atomically claim this period — Postgres row-level lock on the UPDATE
-  // serializes concurrent callers, so only one request creates tasks per
-  // period. checkAndCreateDueProcessTasks() runs on every GET /api/tasks and
-  // GET /api/calendar, so without this guard parallel SWR fetches can both
-  // pass the task.count() check and insert duplicate rows.
-  const claimed = await conditionalUpdate(prisma.process, {
-    where: {
-      id: processId,
-      OR: [{ lastRunAt: null }, { lastRunAt: { lt: periodStart } }],
-    },
-    data: { lastRunAt: new Date() },
-  });
-  if (!claimed) return;
+  // Serialize per-process AND keep the period-claim atomic with the creates.
+  // checkAndCreateDueProcessTasks() runs on every GET /api/tasks and
+  // /api/calendar, so concurrent SWR fetches can race here. The advisory lock
+  // serializes them; advancing lastRunAt only AFTER a successful create (inside
+  // the same transaction) means a transient create failure ROLLS BACK the claim
+  // so the next call retries — the old code advanced lastRunAt first, so any
+  // create failure silently skipped the whole period forever.
+  await advisoryLock(`process-gen:${processId}`, async (tx) => {
+    const claim = await tx.process.findUnique({
+      where: { id: processId },
+      select: { lastRunAt: true },
+    });
+    // Already created (and committed) for this period.
+    if (claim?.lastRunAt && claim.lastRunAt >= periodStart) return;
 
-  // BASIC mode: create a single task for the current period with time blocks
-  if (process.mode === 'BASIC') {
-    if (!process.scheduledTime) return;
+    if (process.mode === 'BASIC') {
+      if (!process.scheduledTime) return;
 
-    const existing = await prisma.task.count({
+      const existing = await tx.task.count({
+        where: {
+          processId,
+          status: { in: ['TODO', 'IN_PROGRESS', 'DONE'] },
+          dueDate: { gte: periodStart, lte: dueDate },
+        },
+      });
+
+      if (existing === 0) {
+        // Compute time blocks in the user's timezone
+        const user = await tx.user.findUnique({
+          where: { id: ownerId },
+          select: { timezone: true },
+        });
+        const userTz = user?.timezone ?? 'America/New_York';
+        const [hours, minutes] = process.scheduledTime.split(':').map(Number);
+        const zonedDue = toZonedTime(dueDate, userTz);
+        const dateKey = `${zonedDue.getFullYear()}-${pad2(zonedDue.getMonth() + 1)}-${pad2(zonedDue.getDate())}`;
+        const timeBlockStart = fromZonedTime(`${dateKey}T${pad2(hours)}:${pad2(minutes)}:00`, userTz);
+        const timeBlockEnd = new Date(timeBlockStart.getTime() + (process.defaultDurationMinutes ?? 60) * 60_000);
+
+        await tx.task.create({
+          data: {
+            ownerId,
+            taskType: 'MAINTENANCE',
+            title: process.title,
+            description: process.description,
+            dueDate,
+            timeBlockStart,
+            timeBlockEnd,
+            status: 'TODO',
+            priority: 'MEDIUM',
+            estimatedMinutes: process.defaultDurationMinutes,
+            processId,
+          },
+        });
+      }
+
+      await tx.process.update({ where: { id: processId }, data: { lastRunAt: new Date() } });
+      return;
+    }
+
+    // ADVANCED mode — one task per step (independent), or one task if no steps.
+    const existing = await tx.task.count({
       where: {
         processId,
         status: { in: ['TODO', 'IN_PROGRESS', 'DONE'] },
         dueDate: { gte: periodStart, lte: dueDate },
       },
     });
-    if (existing > 0) return;
 
-    // Compute time blocks in user's timezone
-    const user = await prisma.user.findUnique({
-      where: { id: ownerId },
-      select: { timezone: true },
-    });
-    const userTz = user?.timezone ?? 'America/New_York';
-    const [hours, minutes] = process.scheduledTime.split(':').map(Number);
-    const zonedDue = toZonedTime(dueDate, userTz);
-    const dateKey = `${zonedDue.getFullYear()}-${pad2(zonedDue.getMonth() + 1)}-${pad2(zonedDue.getDate())}`;
-    const timeBlockStart = fromZonedTime(`${dateKey}T${pad2(hours)}:${pad2(minutes)}:00`, userTz);
-    const timeBlockEnd = new Date(timeBlockStart.getTime() + (process.defaultDurationMinutes ?? 60) * 60_000);
-
-    try {
-      await prisma.task.create({
-        data: {
-          ownerId,
-          taskType: 'MAINTENANCE',
-          title: process.title,
-          description: process.description,
-          dueDate,
-          timeBlockStart,
-          timeBlockEnd,
-          status: 'TODO',
-          priority: 'MEDIUM',
-          estimatedMinutes: process.defaultDurationMinutes,
-          processId,
-        },
-      });
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return;
-      throw e;
-    }
-    return;
-  }
-
-  // Idempotency: check if any tasks exist for this process in the current period
-  const existing = await prisma.task.count({
-    where: {
-      processId,
-      status: { in: ['TODO', 'IN_PROGRESS', 'DONE'] },
-      dueDate: { gte: periodStart, lte: dueDate },
-    },
-  });
-  if (existing > 0) return;
-
-  // Create tasks: one per step (independent), or one parent task if no steps
-  const swallowDuplicate = (e: unknown) => {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return;
-    throw e;
-  };
-
-  if (process.steps.length === 0) {
-    await prisma.task.create({
-      data: {
-        ownerId,
-        taskType: 'MAINTENANCE',
-        title: process.title,
-        description: process.description,
-        dueDate,
-        status: 'TODO',
-        priority: 'MEDIUM',
-        estimatedMinutes: process.defaultDurationMinutes,
-        processId,
-      },
-    }).catch(swallowDuplicate);
-  } else {
-    await Promise.all(
-      process.steps.map((step) =>
-        prisma.task.create({
+    if (existing === 0) {
+      if (process.steps.length === 0) {
+        await tx.task.create({
           data: {
             ownerId,
             taskType: 'MAINTENANCE',
-            title: step.title,
-            description: step.description,
+            title: process.title,
+            description: process.description,
             dueDate,
             status: 'TODO',
             priority: 'MEDIUM',
             estimatedMinutes: process.defaultDurationMinutes,
             processId,
           },
-        }).catch(swallowDuplicate)
-      )
-    );
-  }
+        });
+      } else {
+        // createMany in a single statement (avoids parallel queries on the tx
+        // client); skipDuplicates leans on the partial unique index on
+        // (processId, dueDate, title) so a retry can't double-insert.
+        await tx.task.createMany({
+          data: process.steps.map((step) => ({
+            ownerId,
+            taskType: 'MAINTENANCE' as const,
+            title: step.title,
+            description: step.description,
+            dueDate,
+            status: 'TODO' as const,
+            priority: 'MEDIUM' as const,
+            estimatedMinutes: process.defaultDurationMinutes,
+            processId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    // Advance the claim only after a successful create — atomic with the writes.
+    await tx.process.update({ where: { id: processId }, data: { lastRunAt: new Date() } });
+  });
 }
 
 // ─── Period start helper (for route invalidation) ─────────────────────────────

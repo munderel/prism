@@ -1,8 +1,12 @@
 import { NextRequest } from 'next/server';
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, scheduleAimsSchema } from '@/lib/schemas';
 import { getEffectiveDuration } from '@/lib/aim-phases';
+import { parseDateOnly } from '@/lib/date-utils';
+import { toUserDayStamp, shiftDayStamp } from '@/lib/user-timezone';
+import { advisoryLock } from '@/lib/concurrency';
 
 /**
  * POST /api/aims/schedule
@@ -54,11 +58,19 @@ export async function POST(request: NextRequest) {
       })
     : category.defaultDurationMin;
 
-  // Generate instances for the next 4 weeks (28 days)
+  // Generate instances for the next 4 weeks (28 days) in the USER's timezone.
+  // The previous implementation used server-local time (setHours/setDate on a
+  // server-local Date), so an 08:00 routine for an Eastern user landed at 03:00
+  // and could be filed on the wrong calendar day. We resolve the day in the
+  // user's tz and build each instant with fromZonedTime.
   const WEEKS = 4;
+  const tz =
+    (await prisma.user.findUnique({ where: { id: auth.userId }, select: { timezone: true } }))
+      ?.timezone ?? 'America/New_York';
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const currentDayOfWeek = today.getDay(); // 0 = Sunday
+  const nowLocal = toZonedTime(now, tz);
+  const todayStamp = toUserDayStamp(now, tz); // YYYY-MM-DD in the user's tz
+  const currentDayOfWeek = nowLocal.getDay(); // 0 = Sunday, in the user's tz
 
   const instancesToCreate: {
     userId: string;
@@ -70,6 +82,8 @@ export async function POST(request: NextRequest) {
 
   for (const { dayOfWeek, timeStart } of days) {
     const [hours, minutes] = timeStart.split(':').map(Number);
+    const hh = String(hours).padStart(2, '0');
+    const mm = String(minutes).padStart(2, '0');
 
     for (let week = 0; week < WEEKS; week++) {
       // Calculate the date for this dayOfWeek in this week
@@ -77,34 +91,50 @@ export async function POST(request: NextRequest) {
       if (daysUntil < 0) daysUntil += 7;
       if (daysUntil === 0 && week === 0) {
         // If today is the target day, include it only if the time hasn't passed
-        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        // (compared in the user's local wall clock).
+        const nowMinutes = nowLocal.getHours() * 60 + nowLocal.getMinutes();
         const targetMinutes = hours * 60 + minutes;
         if (nowMinutes > targetMinutes) {
           daysUntil += 7; // Push to next week
         }
       }
 
-      const targetDate = new Date(today);
-      targetDate.setDate(today.getDate() + daysUntil + week * 7);
-
-      const blockStart = new Date(targetDate);
-      blockStart.setHours(hours, minutes, 0, 0);
-
-      const blockEnd = new Date(blockStart);
-      blockEnd.setMinutes(blockEnd.getMinutes() + durationMin);
+      const targetStamp = shiftDayStamp(todayStamp, daysUntil + week * 7);
+      // Wall-clock time interpreted in the user's tz → correct UTC instant.
+      const blockStart = fromZonedTime(`${targetStamp}T${hh}:${mm}:00`, tz);
+      const blockEnd = new Date(blockStart.getTime() + durationMin * 60000);
 
       instancesToCreate.push({
         userId: auth.userId,
         aimCategoryId,
-        scheduledDate: targetDate,
+        // Date-only anchor (UTC midnight of the user's local calendar date),
+        // matching the convention used across the aim/calendar queries.
+        scheduledDate: parseDateOnly(targetStamp)!,
         timeBlockStart: blockStart,
         timeBlockEnd: blockEnd,
       });
     }
   }
 
-  // Batch create all instances with createMany, then fetch with includes
-  await prisma.aimInstance.createMany({ data: instancesToCreate });
+  // Idempotent (re-)scheduling: serialize per user+category, and replace this
+  // category's future un-started instances rather than blindly appending — a
+  // re-save or double-click previously duplicated every block for 4 weeks.
+  // Only SCHEDULED (un-started) future instances are cleared; completed/missed
+  // history and any started instance are preserved. The today-anchor is the
+  // earliest day we generate, so we don't disturb earlier-today rows.
+  const earliestStamp = toUserDayStamp(now, tz);
+  const windowStart = parseDateOnly(earliestStamp)!;
+  await advisoryLock(`aims-schedule:${auth.userId}:${aimCategoryId}`, async (tx) => {
+    await tx.aimInstance.deleteMany({
+      where: {
+        userId: auth.userId,
+        aimCategoryId,
+        status: 'SCHEDULED',
+        scheduledDate: { gte: windowStart },
+      },
+    });
+    await tx.aimInstance.createMany({ data: instancesToCreate, skipDuplicates: true });
+  });
 
   // Retrieve the created instances with their related data
   const created = await prisma.aimInstance.findMany({

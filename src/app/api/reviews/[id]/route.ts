@@ -46,9 +46,16 @@ function cadenceWindow(reviewType: ReviewType, scheduledDate: Date): { gte: Date
 
 type Review = Awaited<ReturnType<typeof prisma.review.findUnique>>;
 
-/** Check if an individual (non-team) review is accessible to the current user. */
+/**
+ * Check if a review row is accessible to the current user. Team-review rows are
+ * PER-USER (each participant has their own Review with isTeamReview=true and
+ * private `notes`/`checklistState`/answers), so access is the row owner or an
+ * admin — never "any authed user because it's a team review". The previous
+ * `review.isTeamReview ||` short-circuit was an IDOR letting anyone read/edit a
+ * teammate's private review. This mirrors the list endpoint's scoping.
+ */
 function canAccessIndividualReview(review: NonNullable<Review>, userId: string, isAdmin: boolean): boolean {
-  return review.isTeamReview || review.userId === userId || isAdmin;
+  return review.userId === userId || isAdmin;
 }
 
 export async function GET(

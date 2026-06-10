@@ -1,5 +1,6 @@
+import { timingSafeEqual } from 'crypto';
 import { prisma } from '@/lib/prisma';
-import { NO_STORE } from '@/lib/api-helpers';
+import { NO_STORE, INVITE_EXPIRY_MS } from '@/lib/api-helpers';
 import bcrypt from 'bcryptjs';
 import { parseBody, registerSchema } from '@/lib/schemas';
 
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
   try {
     const parsed = await parseBody(request, registerSchema);
     if ('error' in parsed) return parsed.error;
-    const { email, password, name, invitationId } = parsed.data;
+    const { email, password, name, invitationId, token } = parsed.data;
     const normalizedEmail = email.trim().toLowerCase();
 
     // Rate limiting: max 5 registration attempts per email per hour
@@ -29,6 +30,12 @@ export async function POST(request: Request) {
         { status: 429 }
       );
     }
+    // Record this attempt so the rate-limit counter above actually reflects
+    // registration traffic. Previously it counted LoginAttempt rows that
+    // registration never wrote, so the limit could never trip.
+    await prisma.loginAttempt.create({
+      data: { email: normalizedEmail, success: false },
+    });
 
     // Verify invitation exists and is valid
     const invitation = await prisma.invitation.findFirst({
@@ -44,6 +51,33 @@ export async function POST(request: Request) {
         { error: 'Invalid or expired invitation' },
         { status: 403 }
       );
+    }
+
+    // Enforce the 7-day expiry window. Invitations are never persisted as
+    // EXPIRED, so a stale-but-PENDING invite would otherwise register forever.
+    // Mirrors the /api/invitations/[id]/accept guard.
+    if (Date.now() - new Date(invitation.createdAt).getTime() > INVITE_EXPIRY_MS) {
+      return Response.json(
+        { error: 'Invalid or expired invitation' },
+        { status: 403 }
+      );
+    }
+
+    // When the invitation carries a secret token, require it (timing-safe), so
+    // knowledge of the invitation id alone cannot claim the invitee's account.
+    if (invitation.token) {
+      const expected = Buffer.from(invitation.token, 'utf-8');
+      const provided = Buffer.from(token ?? '', 'utf-8');
+      if (
+        !token ||
+        expected.length !== provided.length ||
+        !timingSafeEqual(expected, provided)
+      ) {
+        return Response.json(
+          { error: 'Invalid or expired invitation' },
+          { status: 403 }
+        );
+      }
     }
 
     // Check if user already exists (e.g. via Google OAuth)

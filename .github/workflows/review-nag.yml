@@ -5,6 +5,11 @@ on:
     - cron: '0 13 * * *'
   workflow_dispatch:
 
+# Serialize runs so an overlapping dispatch/schedule can't double-send.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   nag:
     runs-on: ubuntu-latest

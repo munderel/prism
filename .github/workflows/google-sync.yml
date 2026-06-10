@@ -5,6 +5,13 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
+# Serialize runs: a */15 schedule plus a manual dispatch could otherwise run two
+# syncs at once. Per-user claim locks already guard data, but this avoids the
+# wasted overlapping work entirely.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest

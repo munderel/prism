@@ -13,10 +13,17 @@ export async function POST(
   if ('error' in auth) return authError(auth);
 
   const { id } = await params;
-  const body = await request.json();
+  // Guard the parse so an empty/malformed body returns a clean 400 instead of
+  // an unhandled 500 (request.json() throws on invalid JSON).
+  let body: { scheduledDate?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'Invalid or missing JSON body' }, { status: 400 });
+  }
   const { scheduledDate } = body;
 
-  if (!scheduledDate) {
+  if (!scheduledDate || typeof scheduledDate !== 'string') {
     return Response.json({ error: 'scheduledDate is required' }, { status: 400 });
   }
 

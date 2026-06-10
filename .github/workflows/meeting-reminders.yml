@@ -12,6 +12,12 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch: # Allow manual trigger for testing
 
+# Serialize runs so an overlapping dispatch/schedule can't double-send the
+# "meeting in 10 minutes" reminder (the lastReminderSentAt dedup is not atomic).
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   remind:
     runs-on: ubuntu-latest

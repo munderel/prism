@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, batchScheduleSchema } from '@/lib/schemas';
+import { parseDateOnly } from '@/lib/date-utils';
+import { toUserDayStamp } from '@/lib/user-timezone';
 
 interface BatchUpdate {
   id: string;
@@ -51,7 +53,7 @@ export async function POST(request: NextRequest) {
   // Fetch all tasks to verify they exist and check ownership
   const existingTasks = await prisma.task.findMany({
     where: { id: { in: taskIds } },
-    select: { id: true, ownerId: true },
+    select: { id: true, ownerId: true, owner: { select: { timezone: true } } },
   });
 
   // Check that all task IDs were found
@@ -85,9 +87,12 @@ export async function POST(request: NextRequest) {
       const start = new Date(update.timeBlockStart);
       const end = new Date(update.timeBlockEnd);
 
-      // Sync dueDate to the date portion of timeBlockStart
-      const dueDate = new Date(start);
-      dueDate.setUTCHours(0, 0, 0, 0);
+      // Sync dueDate to the block's LOCAL calendar day in the owner's timezone,
+      // stored as a UTC-midnight date-only anchor (parseDateOnly) like the rest
+      // of the app. setUTCHours(0,0,0,0) filed late-evening/early-morning blocks
+      // on the wrong day for non-UTC users.
+      const ownerTz = task.owner?.timezone ?? 'America/New_York';
+      const dueDate = parseDateOnly(toUserDayStamp(start, ownerTz))!;
 
       return prisma.task.update({
         where: { id: task.id },

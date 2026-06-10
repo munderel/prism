@@ -8,7 +8,10 @@ import { parseBody, createReviewAnswerSchema } from '@/lib/schemas';
 async function loadReview(reviewId: string, userId: string, isAdmin: boolean) {
   const review = await prisma.review.findUnique({ where: { id: reviewId } });
   if (!review) return { error: notFoundResponse('Review') as Response };
-  if (!review.isTeamReview && review.userId !== userId && !isAdmin) return { error: notFoundResponse('Review') as Response };
+  // Team-review rows are per-user; answers are private to the row owner. Scope
+  // to owner-or-admin (the `!review.isTeamReview &&` guard was an IDOR letting
+  // any authed user read/write a teammate's review answers).
+  if (review.userId !== userId && !isAdmin) return { error: notFoundResponse('Review') as Response };
   return { review };
 }
 

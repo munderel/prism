@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireAdmin, authError } from '@/lib/auth-guard';
 import { notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
@@ -132,17 +133,29 @@ export async function POST(request: NextRequest) {
   const warn = (msg: string) => {
     warnings.push(msg);
   };
+  // Collects weekly→monthly KPI links to resolve; reused post-commit for recalc.
+  const kpiLinkQueue: { kpiId: string; parentGoalId: string; linkedToName: string }[] = [];
+  // Monthly KPIs touched by KPI edits; recascaded AFTER the transaction commits.
+  const touchedMonthlyKpiIds = new Set<string>();
 
-  // Cache user-by-email lookups within this request to keep query count down.
-  const userByEmailCache = new Map<string, string | null>();
-  async function resolveUserId(email: string | undefined | null): Promise<string | null> {
-    if (!email) return null;
-    if (userByEmailCache.has(email)) return userByEmailCache.get(email) ?? null;
-    const u = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-    const id = u?.id ?? null;
-    userByEmailCache.set(email, id);
-    return id;
-  }
+  // Apply the entire commit atomically: a mid-import failure (bad hierarchy,
+  // size/depth cap, stale ref, runtime error, timeout) now rolls back ALL writes
+  // instead of leaving a half-applied, corrupted stack. Progress/KPI cascades run
+  // AFTER commit — they recompute from committed data via the singleton client.
+  await prisma.$transaction(async (tx) => {
+    // Shadow the module client so every write below routes through the tx.
+    const prisma = tx;
+
+    // Cache user-by-email lookups within this request to keep query count down.
+    const userByEmailCache = new Map<string, string | null>();
+    async function resolveUserId(email: string | undefined | null): Promise<string | null> {
+      if (!email) return null;
+      if (userByEmailCache.has(email)) return userByEmailCache.get(email) ?? null;
+      const u = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+      const id = u?.id ?? null;
+      userByEmailCache.set(email, id);
+      return id;
+    }
 
   // Soft-delete removed goals
   for (const del of diff.deleted) {
@@ -215,10 +228,10 @@ export async function POST(request: NextRequest) {
     await prisma.goal.update({ where: { id }, data: { sortOrder: idx } });
   }
 
-  // Create new goals (walk the incoming tree, create those without IDs)
-  // kpiLinkQueue collects weekly KPIs that need to be linked to monthly KPIs after creation
-  const kpiLinkQueue: { kpiId: string; parentGoalId: string; linkedToName: string }[] = [];
+  // Create new goals (walk the incoming tree, create those without IDs).
+  // kpiLinkQueue (declared above the transaction) collects weekly KPIs to link.
   await createNewGoals(
+    prisma,
     incomingGoals,
     stackId,
     null,
@@ -231,30 +244,20 @@ export async function POST(request: NextRequest) {
     warn
   );
 
-  // Resolve KPI links (two-pass: monthly KPIs created first, now link weekly KPIs)
+  // Resolve KPI links (two-pass: monthly KPIs created first, now link weekly KPIs).
+  // Sequential (not Promise.all) — these writes run on the transaction client.
   if (kpiLinkQueue.length > 0) {
     const parentIds = Array.from(new Set(kpiLinkQueue.map((l) => l.parentGoalId)));
     const allMonthlyKpis = await prisma.kpi.findMany({
       where: { goalId: { in: parentIds } },
     });
     const kpiMap = new Map(allMonthlyKpis.map((k) => [`${k.goalId}:${k.name}`, k]));
-    const updates = kpiLinkQueue
-      .map((link) => {
-        const mk = kpiMap.get(`${link.parentGoalId}:${link.linkedToName}`);
-        return mk ? prisma.kpi.update({ where: { id: link.kpiId }, data: { linkedKpiId: mk.id } }) : null;
-      })
-      .filter(Boolean);
-    await Promise.all(updates);
+    for (const link of kpiLinkQueue) {
+      const mk = kpiMap.get(`${link.parentGoalId}:${link.linkedToName}`);
+      if (mk) await prisma.kpi.update({ where: { id: link.kpiId }, data: { linkedKpiId: mk.id } });
+    }
   }
-
-  // Recalculate monthly KPIs that have new linked weeklies
-  if (kpiLinkQueue.length > 0) {
-    const monthlyGoalIds = Array.from(new Set(kpiLinkQueue.map((l) => l.parentGoalId)));
-    const monthlyKpis = await prisma.kpi.findMany({
-      where: { goalId: { in: monthlyGoalIds }, linkedFrom: { some: {} } },
-    });
-    await Promise.all(monthlyKpis.map((mk) => cascadeKpiUpdate(mk.id)));
-  }
+  // (Monthly-KPI recalculation for these links runs post-commit — see below.)
 
   // Task updates on existing goals (add/modify/remove based on taskChanges)
   const TASK_DATE_FIELDS = new Set([
@@ -272,7 +275,7 @@ export async function POST(request: NextRequest) {
     // Added tasks on existing goals
     for (const task of entry.added) {
       await prisma.task.create({
-        data: await buildTaskCreateData(task, entry.goalId, auth.userId, resolveUserId, warn),
+        data: await buildTaskCreateData(prisma, task, entry.goalId, auth.userId, resolveUserId, warn),
       });
     }
 
@@ -371,7 +374,6 @@ export async function POST(request: NextRequest) {
 
   // KPI updates on existing goals (add/modify/remove based on kpiChanges)
   const goalMeta = new Map(currentDbGoals.map((g) => [g.id, { level: g.level, parentId: g.parentId }]));
-  const touchedMonthlyKpiIds = new Set<string>();
   for (const entry of diff.kpiChanges) {
     if (!entry.goalId) continue;
 
@@ -519,9 +521,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Recalculate any monthly KPIs affected by KPI updates
-  await Promise.all(Array.from(touchedMonthlyKpiIds).map((mkId) => cascadeKpiUpdate(mkId)));
-
   // Stack-level metadata: visibility / weekStartDay
   const stackUpdate: Record<string, any> = {};
   if (incomingMeta.visibility !== undefined && incomingMeta.visibility !== stack.visibility) {
@@ -541,8 +540,8 @@ export async function POST(request: NextRequest) {
   // GoalLink resolution assumes goal titles are unique within a stack; on
   // collision we warn and take the first match.
   if (stack.isCompany) {
-    await applyMetaLinks(stackId, incomingMeta.links ?? [], warn);
-    await applyCompanyAssignments(stackId, incomingMeta.company_assignments ?? [], auth.userId, resolveUserId, warn);
+    await applyMetaLinks(prisma, stackId, incomingMeta.links ?? [], warn);
+    await applyCompanyAssignments(prisma, stackId, incomingMeta.company_assignments ?? [], auth.userId, resolveUserId, warn);
   }
 
   // Create ConfigVersion
@@ -561,8 +560,21 @@ export async function POST(request: NextRequest) {
       createdById: auth.userId,
     },
   });
+  }, { maxWait: 15_000, timeout: 60_000 });
 
-  // Cascade progress bottom-up: start from leaf goals so parents recompute correctly
+  // ──── Post-commit recomputes (read committed data via the singleton client) ────
+  // Recalculate monthly KPIs that gained new linked weeklies during this import.
+  if (kpiLinkQueue.length > 0) {
+    const monthlyGoalIds = Array.from(new Set(kpiLinkQueue.map((l) => l.parentGoalId)));
+    const monthlyKpis = await prisma.kpi.findMany({
+      where: { goalId: { in: monthlyGoalIds }, linkedFrom: { some: {} } },
+    });
+    for (const mk of monthlyKpis) await cascadeKpiUpdate(mk.id);
+  }
+  // Recalculate any monthly KPIs affected by KPI edits.
+  for (const mkId of Array.from(touchedMonthlyKpiIds)) await cascadeKpiUpdate(mkId);
+
+  // Cascade progress bottom-up: start from leaf goals so parents recompute correctly.
   const leafGoals = await prisma.goal.findMany({
     where: {
       stackId,
@@ -571,7 +583,7 @@ export async function POST(request: NextRequest) {
     },
     select: { id: true },
   });
-  await Promise.all(leafGoals.map((leaf) => cascadeProgressUp(leaf.id)));
+  for (const leaf of leafGoals) await cascadeProgressUp(leaf.id);
 
   return Response.json({ ok: true, diff, warnings });
 }
@@ -580,6 +592,7 @@ const MAX_GOALS_PER_IMPORT = 500;
 const MAX_IMPORT_DEPTH = 20;
 
 async function createNewGoals(
+  db: Prisma.TransactionClient,
   nodes: GoalNode[],
   stackId: string,
   parentId: string | null,
@@ -591,6 +604,9 @@ async function createNewGoals(
   resolveUserId: (email: string | undefined | null) => Promise<string | null> = async () => null,
   warn: (msg: string) => void = () => {}
 ) {
+  // All writes route through the passed transaction client so a mid-import
+  // failure rolls the whole import back atomically.
+  const prisma = db;
   if (depth > MAX_IMPORT_DEPTH) {
     throw new Error('Import exceeds maximum nesting depth');
   }
@@ -653,7 +669,7 @@ async function createNewGoals(
       if (node.tasks?.length && ownerId) {
         for (const task of node.tasks) {
           await prisma.task.create({
-            data: await buildTaskCreateData(task, created.id, ownerId, resolveUserId, warn),
+            data: await buildTaskCreateData(db, task, created.id, ownerId, resolveUserId, warn),
           });
         }
       }
@@ -697,6 +713,7 @@ async function createNewGoals(
       // Recurse for children of this new goal
       if (node.children?.length) {
         await createNewGoals(
+          db,
           node.children,
           stackId,
           created.id,
@@ -712,6 +729,7 @@ async function createNewGoals(
     } else if (node.children?.length) {
       // Existing goal — recurse into children to find new ones
       await createNewGoals(
+        db,
         node.children,
         stackId,
         node.id,
@@ -754,12 +772,14 @@ function collectIncomingKpisForGoal(nodes: GoalNode[], goalId: string): Map<stri
  * warning on stale references rather than aborting.
  */
 async function buildTaskCreateData(
+  db: Prisma.TransactionClient,
   task: TaskNode,
   goalId: string,
   ownerId: string,
   resolveUserId: (email: string | undefined | null) => Promise<string | null>,
   warn: (msg: string) => void
 ): Promise<any> {
+  const prisma = db;
   const assigneeId = task.assignee ? await resolveUserId(task.assignee) : null;
   if (task.assignee && !assigneeId) {
     warn(`Unknown task assignee "${task.assignee}" on task "${task.title}"`);
@@ -823,10 +843,12 @@ async function buildTaskCreateData(
  * Deletes current links not present in incoming.
  */
 async function applyMetaLinks(
+  db: Prisma.TransactionClient,
   stackId: string,
   incomingLinks: NonNullable<YamlMeta['links']>,
   warn: (msg: string) => void
 ) {
+  const prisma = db;
   const currentLinks = await prisma.goalLink.findMany({
     where: { companyGoal: { stackId, deletedAt: null } },
     include: {
@@ -916,12 +938,14 @@ async function applyMetaLinks(
  * via the shared cache; unknown email warns and skips.
  */
 async function applyCompanyAssignments(
+  db: Prisma.TransactionClient,
   stackId: string,
   incoming: NonNullable<YamlMeta['company_assignments']>,
   actorUserId: string,
   resolveUserId: (email: string | undefined | null) => Promise<string | null>,
   warn: (msg: string) => void
 ) {
+  const prisma = db;
   const current = await prisma.companyGoalAssignment.findMany({
     where: { goalStackId: stackId },
     include: { user: { select: { email: true } } },

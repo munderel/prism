@@ -196,15 +196,14 @@ export async function PATCH(
   }
 
   if (status !== undefined && status !== existing.status) {
+    // recalculateUserAimProgress owns completionCount/lastCompletedAt;
+    // recomputeAimStreaks is the SINGLE canonical writer of
+    // currentStreak/bestStreak. Both are awaited so the persisted streak is
+    // deterministic and final before the response — a fire-and-forget recompute
+    // here previously raced the older week-frequency writer, and a detached
+    // promise can be killed when the serverless function suspends.
     await recalculateUserAimProgress(existing.userId, existing.aimCategoryId);
-    // Recompute UserAim.currentStreak / bestStreak whenever an instance's
-    // status changes (COMPLETED → SKIPPED, SKIPPED → MISSED, etc). The
-    // engine treats SKIPPED as a bridge day and MISSED as a break, so a
-    // status flip without recompute would leave UserAim.currentStreak
-    // stale. Fire-and-forget — never block the response on streak math.
-    recomputeAimStreaks(existing.userId).catch((err) =>
-      console.warn('[streak] aim streak recompute failed:', err),
-    );
+    await recomputeAimStreaks(existing.userId);
   }
 
   // Google Calendar sync — fire-and-forget.

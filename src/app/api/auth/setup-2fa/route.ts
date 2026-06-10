@@ -78,7 +78,9 @@ export async function POST(request: Request) {
     return Response.json({ error: '2FA is already enabled' }, { status: 400 });
   }
 
-  if (!verifySync({ token: extracted.code, secret: user.totpSecret })) {
+  // otplib v13 verifySync returns { valid: boolean, ... } — read .valid, never
+  // the object itself (an object is always truthy → would bypass verification).
+  if (!verifySync({ token: extracted.code, secret: user.totpSecret }).valid) {
     return Response.json({ error: 'Invalid verification code' }, { status: 400 });
   }
 
@@ -110,7 +112,7 @@ export async function DELETE(request: Request) {
     return Response.json({ error: '2FA is not enabled' }, { status: 400 });
   }
 
-  if (!verifySync({ token: extracted.code, secret: user.totpSecret })) {
+  if (!verifySync({ token: extracted.code, secret: user.totpSecret }).valid) {
     return Response.json({ error: 'Invalid verification code' }, { status: 400 });
   }
 

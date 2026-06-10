@@ -13,7 +13,9 @@ export interface ApiClient {
 }
 
 function baseURL(): string {
-  return process.env.E2E_BASE_URL ?? 'https://prism.upwhiten.com';
+  // Default to localhost, never production — this client runs destructive
+  // mutations. Set E2E_BASE_URL explicitly to target a deployed environment.
+  return process.env.E2E_BASE_URL ?? 'http://localhost:3000';
 }
 
 export async function createApiClient(browserContext?: BrowserContext): Promise<ApiClient> {

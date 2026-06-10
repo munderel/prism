@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    loginAttempt: { count: vi.fn() },
+    loginAttempt: { count: vi.fn(), create: vi.fn() },
     invitation: { findFirst: vi.fn(), update: vi.fn() },
     user: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(),
@@ -48,6 +48,8 @@ describe('POST /api/auth/register', () => {
       email: 'user@example.com',
       status: 'PENDING',
       role: 'user',
+      createdAt: new Date(),
+      token: null,
     } as any);
     mockUserFindUnique.mockResolvedValue(null);
     mockTransaction.mockImplementation(async (cbOrArray: any) => {
@@ -122,6 +124,47 @@ describe('POST /api/auth/register', () => {
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toContain('Invalid or expired invitation');
+  });
+
+  it('returns 403 for an expired (stale PENDING) invitation', async () => {
+    mockInvitationFindFirst.mockResolvedValue({
+      id: 'inv-123',
+      email: 'user@example.com',
+      status: 'PENDING',
+      role: 'user',
+      createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000), // 8 days old
+      token: null,
+    } as any);
+    const res = await POST(createRequest(validBody));
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 when the invitation has a token but none/ wrong is supplied', async () => {
+    mockInvitationFindFirst.mockResolvedValue({
+      id: 'inv-123',
+      email: 'user@example.com',
+      status: 'PENDING',
+      role: 'user',
+      createdAt: new Date(),
+      token: 'secret-token-abc',
+    } as any);
+    // no token in body
+    expect((await POST(createRequest(validBody))).status).toBe(403);
+    // wrong token in body
+    expect((await POST(createRequest({ ...validBody, token: 'wrong' }))).status).toBe(403);
+  });
+
+  it('succeeds when the correct invitation token is supplied', async () => {
+    mockInvitationFindFirst.mockResolvedValue({
+      id: 'inv-123',
+      email: 'user@example.com',
+      status: 'PENDING',
+      role: 'user',
+      createdAt: new Date(),
+      token: 'secret-token-abc',
+    } as any);
+    const res = await POST(createRequest({ ...validBody, token: 'secret-token-abc' }));
+    expect(res.status).toBe(200);
   });
 
   it('normalizes email case for invitation lookup', async () => {

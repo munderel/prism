@@ -305,6 +305,7 @@ model Task {
   completedAt        DateTime?
   failedAt           DateTime?
   rescheduledTo      DateTime?
+  lastDerailNotifiedAt DateTime? // dedup: hourly derailing cron notifies at most once per local day
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
@@ -411,6 +412,7 @@ model Review {
   timeBlockStart      DateTime?
   timeBlockEnd        DateTime?
   calendarEventId     String?
+  lastNaggedAt        DateTime? // dedup: review-nag cron reminds at most once per ~day per review
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 

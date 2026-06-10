@@ -82,7 +82,9 @@ export async function GET(request: NextRequest) {
         )
       );
 
-      await Promise.all(notifications);
+      // allSettled — one attendee's failed notify must not abort the run and
+      // skip lastReminderSentAt for the rest (which would re-send next tick).
+      await Promise.allSettled(notifications);
       notified += attendeeIds.length;
       meetingsToUpdate.push(meeting.id);
     }

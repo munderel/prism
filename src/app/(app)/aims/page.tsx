@@ -533,11 +533,20 @@ export default function AimsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'COMPLETED' }),
       });
+      if (!res.ok) {
+        // HTTP failure (403/404/validation): roll the optimistic tick back so
+        // the checkbox doesn't stay falsely checked, and tell the user.
+        mutateTodayInstances();
+        toast.error('Failed to complete aim');
+        return;
+      }
       const data = await res.json().catch(() => ({}));
       if (data.beeminderError) toast.error(`Beeminder sync failed: ${data.beeminderError}`);
       mutateAims(); // Refresh user aims for streak/phase updates
+      await invalidateAfterAimChange(); // ripple to leaderboard / calendar / streaks
     } catch {
-      mutateTodayInstances(); // Revert on error
+      mutateTodayInstances(); // Revert on network error
+      toast.error('Failed to complete aim');
     }
   };
 
@@ -550,14 +559,21 @@ export default function AimsPage() {
       { revalidate: false },
     );
     try {
-      await fetch(`/api/aims/instances/${instanceId}`, {
+      const res = await fetch(`/api/aims/instances/${instanceId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'SCHEDULED' }),
       });
+      if (!res.ok) {
+        mutateTodayInstances();
+        toast.error('Failed to undo aim');
+        return;
+      }
       mutateAims();
+      await invalidateAfterAimChange();
     } catch {
       mutateTodayInstances();
+      toast.error('Failed to undo aim');
     }
   };
 

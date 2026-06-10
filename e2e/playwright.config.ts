@@ -3,6 +3,12 @@ import * as path from 'path';
 
 const STORAGE_STATE = path.join(__dirname, 'auth', 'storageState.json');
 
+// Default the E2E target to localhost — NOT production. The suite runs
+// destructive mutations (create/edit/delete), so silently defaulting an unset
+// E2E_BASE_URL to the live site meant `npm run e2e` could mutate production
+// data. To intentionally run against production, set E2E_BASE_URL explicitly.
+const E2E_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
+
 export default defineConfig({
   testDir: './specs',
   outputDir: './test-results',
@@ -14,7 +20,7 @@ export default defineConfig({
   expect: { timeout: 7_000 },
 
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? 'https://prism.upwhiten.com',
+    baseURL: E2E_BASE_URL,
     viewport: { width: 1440, height: 900 },
     locale: 'en-US',
     timezoneId: 'America/Los_Angeles',

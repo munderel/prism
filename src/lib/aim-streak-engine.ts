@@ -12,7 +12,32 @@
  * JS Date.getDay() returns 0=Sun…6=Sat, so  bit position = 1 << dayOfWeek.
  */
 
-import { toLocalDateKey, parseLocalDate, getLocalDateString } from '@/lib/date-utils';
+import { toLocalDateKey, getLocalDateString } from '@/lib/date-utils';
+import { toUserDayStamp, shiftDayStamp } from '@/lib/user-timezone';
+
+/** Day-of-week (0=Sun..6=Sat) for a YYYY-MM-DD stamp. Parsed in UTC so the
+ *  weekday is tz-independent (a calendar date's weekday doesn't depend on tz). */
+function dowOfStamp(stamp: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
+  const [y, m, d] = stamp.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+}
+
+/** ISO-week key (e.g. "2026-W21") for a YYYY-MM-DD stamp, computed in UTC. */
+function isoWeekKeyFromStamp(stamp: string): string {
+  const [y, m, d] = stamp.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dayOfWeek = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - dayOfWeek);
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((dt.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${dt.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+/** Resolve a scheduledDate to its YYYY-MM-DD key in the given tz (or server-local
+ *  when tz is omitted — correct for client callers running in the browser). */
+function dayStampOf(value: Date | string, timezone?: string): string {
+  return timezone ? toUserDayStamp(new Date(value), timezone) : toLocalDateKey(value);
+}
 
 // ---------------------------------------------------------------------------
 // Bitmask helper
@@ -98,13 +123,16 @@ export function computeDailyStreak(
   instances: AimInstanceRow[],
   activeWeekdays: number,
   asOf?: Date,
+  timezone?: string,
 ): DailyStreakResult {
   if (activeWeekdays === 0) return { currentStreak: 0 };
 
   // Index each YYYY-MM-DD scheduledDate to its streak classification. If a
   // day has multiple instances (rare — e.g. a one-off plus a regular row),
   // 'completed' wins over 'skipped' wins over 'breaks' so the user gets the
-  // most generous interpretation.
+  // most generous interpretation. Keys are derived in the user's tz when given,
+  // else server-local (browser-local for client callers) — the cursor below
+  // uses the SAME frame so the comparison is consistent.
   const dayClass = new Map<string, StreakDayClass>();
   const promote = (current: StreakDayClass | undefined, next: StreakDayClass): StreakDayClass => {
     if (current === 'completed' || next === 'completed') return 'completed';
@@ -112,27 +140,26 @@ export function computeDailyStreak(
     return 'breaks';
   };
   for (const inst of instances) {
-    const key = toLocalDateKey(inst.scheduledDate);
+    const key = dayStampOf(inst.scheduledDate, timezone);
     const cls = classifyInstanceForStreak(inst);
     dayClass.set(key, promote(dayClass.get(key), cls));
   }
 
-  const today = asOf ? parseLocalDate(getLocalDateString(asOf)) : (() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  })();
+  // "Today" in the same frame, as a YYYY-MM-DD stamp; walk back via string math
+  // (DST-safe, server-tz-independent) rather than Date.setDate.
+  const todayStamp = timezone
+    ? toUserDayStamp(asOf ?? new Date(), timezone)
+    : getLocalDateString(asOf ?? new Date());
 
   let streak = 0;
-  const cursor = new Date(today);
+  let cursorStamp = todayStamp;
 
   // Walk back up to 365 days to avoid infinite loops on edge cases.
   for (let i = 0; i < 365; i++) {
-    const dow = cursor.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+    const dow = dowOfStamp(cursorStamp);
 
     if (isDayActive(activeWeekdays, dow)) {
-      const key = getLocalDateString(cursor);
-      const cls = dayClass.get(key);
+      const cls = dayClass.get(cursorStamp);
       if (cls === 'completed') {
         streak++;
       } else if (cls === 'skipped') {
@@ -144,7 +171,7 @@ export function computeDailyStreak(
       }
     }
     // Inactive day — skip back another day without breaking.
-    cursor.setDate(cursor.getDate() - 1);
+    cursorStamp = shiftDayStamp(cursorStamp, -1);
   }
 
   return { currentStreak: streak };
@@ -154,15 +181,6 @@ export function computeDailyStreak(
 // Weekly streak counter
 // ---------------------------------------------------------------------------
 
-function isoWeekKey(date: Date): string {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const dayOfWeek = d.getDay() || 7;
-  d.setDate(d.getDate() + 4 - dayOfWeek);
-  const yearStart = new Date(d.getFullYear(), 0, 1);
-  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${d.getFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-}
-
 /**
  * Walk backwards from the current ISO week (or `asOf` week) and count
  * consecutive weeks where completions >= weeklyTarget.
@@ -170,14 +188,20 @@ function isoWeekKey(date: Date): string {
  * Rules:
  *  - A week is a "hit" when its completion count >= weeklyTarget.
  *  - A week is "gold" when its completion count > weeklyTarget.
- *  - The first week with count < weeklyTarget stops the streak.
+ *  - The CURRENT (in-progress) week is special-cased: if it has not hit the
+ *    target YET it is skipped (neither counted nor breaking) so the streak keeps
+ *    reflecting completed prior weeks — previously the streak collapsed to 0 at
+ *    the start of every new week until the target was re-hit.
+ *  - The first COMPLETED prior week below target stops the streak.
  *  - If `weeklyTarget <= 0`, returns { currentStreak: 0, goldWeeks: 0 }.
- *  - Scans back a maximum of 52 weeks.
+ *  - Scans back a maximum of 52 weeks. Day-keys are derived in the user's tz
+ *    when provided, else server-local (browser-local for client callers).
  */
 export function computeWeeklyStreak(
   instances: AimInstanceRow[],
   weeklyTarget: number,
   asOf?: Date,
+  timezone?: string,
 ): WeeklyStreakResult {
   if (weeklyTarget <= 0) return { currentStreak: 0, goldWeeks: 0 };
 
@@ -187,31 +211,30 @@ export function computeWeeklyStreak(
   const weekCounts = new Map<string, number>();
   for (const inst of instances) {
     if (classifyInstanceForStreak(inst) !== 'completed') continue;
-    const d = typeof inst.scheduledDate === 'string'
-      ? parseLocalDate(toLocalDateKey(inst.scheduledDate))
-      : new Date(inst.scheduledDate.getFullYear(), inst.scheduledDate.getMonth(), inst.scheduledDate.getDate());
-    const key = isoWeekKey(d);
+    const key = isoWeekKeyFromStamp(dayStampOf(inst.scheduledDate, timezone));
     weekCounts.set(key, (weekCounts.get(key) ?? 0) + 1);
   }
 
-  const now = asOf ?? new Date();
-  // Start from the Monday of the current ISO week.
-  const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dow = cursor.getDay() || 7; // Mon=1..Sun=7
-  cursor.setDate(cursor.getDate() - (dow - 1)); // rewind to this week's Monday
+  // Anchor on today's stamp; stepping back 7 calendar days stays in consecutive
+  // ISO weeks regardless of which weekday the anchor falls on.
+  let cursorStamp = timezone
+    ? toUserDayStamp(asOf ?? new Date(), timezone)
+    : getLocalDateString(asOf ?? new Date());
 
   let streak = 0;
   let goldWeeks = 0;
 
   for (let w = 0; w < 52; w++) {
-    const key = isoWeekKey(cursor);
+    const key = isoWeekKeyFromStamp(cursorStamp);
     const count = weekCounts.get(key) ?? 0;
 
     if (count >= weeklyTarget) {
       streak++;
       if (count > weeklyTarget) goldWeeks++;
-      // Step back one week.
-      cursor.setDate(cursor.getDate() - 7);
+      cursorStamp = shiftDayStamp(cursorStamp, -7);
+    } else if (w === 0) {
+      // Current week not hit YET — skip it without breaking the streak.
+      cursorStamp = shiftDayStamp(cursorStamp, -7);
     } else {
       break;
     }

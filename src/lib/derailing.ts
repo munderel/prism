@@ -1,5 +1,6 @@
 import { toZonedTime } from 'date-fns-tz';
 import { getEffectiveFrequency } from './aim-phases';
+import { toTaskDueDateKey, getLocalDateString } from './date-utils';
 
 // ─── Task derailing ───────────────────────────────────────────────────────────
 
@@ -23,14 +24,16 @@ export function checkTaskDerailStatus(
   if (!task.dueDate) return 'ok';
 
   const zonedNow = toZonedTime(new Date(), timezone);
-  const zonedDue = toZonedTime(new Date(task.dueDate), timezone);
 
-  // Only check tasks due today
-  const sameDay =
-    zonedNow.getFullYear() === zonedDue.getFullYear() &&
-    zonedNow.getMonth() === zonedDue.getMonth() &&
-    zonedNow.getDate() === zonedDue.getDate();
-  if (!sameDay) return 'ok';
+  // Only check tasks due TODAY in the user's local calendar. dueDate is stored
+  // under two conventions: date-only tasks are anchored at UTC midnight, timed
+  // tasks at a real instant. toTaskDueDateKey() distinguishes them and yields
+  // the same day-key the dashboard buckets by — running the raw value through
+  // toZonedTime() shifted date-only tasks back a day for non-UTC users, so the
+  // most common task shape could never reach at_risk/derailing.
+  const dueKey = toTaskDueDateKey(task.dueDate);
+  const todayKey = getLocalDateString(zonedNow);
+  if (dueKey !== todayKey) return 'ok';
 
   const hour = zonedNow.getHours();
   if (hour >= 18) return 'derailing';

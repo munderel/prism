@@ -5,6 +5,7 @@ import { htmlResponse as html } from '@/lib/html-response';
 import { updateSpecificStreak, maybeIncrementDailyStreakIfDayComplete } from '@/lib/streak-engine';
 import { applyBufferOnCompletion } from '@/lib/derailing-buffer';
 import { recalculateUserAimProgress } from '@/lib/aim-progress';
+import { recomputeAimStreaks } from '@/lib/streak-recompute';
 
 const htmlResponse = (body: string, status = 200) => html(body, 'Aim Completion', status);
 
@@ -96,6 +97,12 @@ export async function GET(
     ),
     recalculateUserAimProgress(userId, aim.aimCategoryId).catch((err) =>
       console.warn('[aims] progress recalc failed (external):', err),
+    ),
+    // Single canonical writer for UserAim.currentStreak/bestStreak. The in-app
+    // PATCH path also calls this; the external path previously omitted it, so a
+    // daily aim completed via the email link kept a stale/weekly-rule streak.
+    recomputeAimStreaks(userId).catch((err) =>
+      console.warn('[streak] aim streak recompute failed (external):', err),
     ),
   ]);
 

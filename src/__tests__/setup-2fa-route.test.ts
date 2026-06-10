@@ -139,7 +139,7 @@ describe('POST /api/auth/setup-2fa', () => {
   it('returns 400 for invalid TOTP code', async () => {
     mockSafeParseJson.mockResolvedValue({ data: { code: '000000' } } as any);
     mockUserFindUnique.mockResolvedValue({ totpSecret: 'SECRET', is2FAEnabled: false } as any);
-    mockVerifySync.mockReturnValue(false);
+    mockVerifySync.mockReturnValue({ valid: false } as any);
     const res = await POST(createCodeRequest('000000'));
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -149,7 +149,7 @@ describe('POST /api/auth/setup-2fa', () => {
   it('enables 2FA on valid code', async () => {
     mockSafeParseJson.mockResolvedValue({ data: { code: '123456' } } as any);
     mockUserFindUnique.mockResolvedValue({ totpSecret: 'SECRET', is2FAEnabled: false } as any);
-    mockVerifySync.mockReturnValue(true);
+    mockVerifySync.mockReturnValue({ valid: true, delta: 0 } as any);
     mockUserUpdate.mockResolvedValue({} as any);
 
     const res = await POST(createCodeRequest('123456'));
@@ -187,7 +187,7 @@ describe('DELETE /api/auth/setup-2fa', () => {
   it('returns 400 for invalid code when disabling', async () => {
     mockSafeParseJson.mockResolvedValue({ data: { code: '000000' } } as any);
     mockUserFindUnique.mockResolvedValue({ totpSecret: 'SECRET', is2FAEnabled: true } as any);
-    mockVerifySync.mockReturnValue(false);
+    mockVerifySync.mockReturnValue({ valid: false } as any);
     const res = await DELETE(createCodeRequest('000000'));
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -197,7 +197,7 @@ describe('DELETE /api/auth/setup-2fa', () => {
   it('disables 2FA and wipes secret on valid code', async () => {
     mockSafeParseJson.mockResolvedValue({ data: { code: '123456' } } as any);
     mockUserFindUnique.mockResolvedValue({ totpSecret: 'SECRET', is2FAEnabled: true } as any);
-    mockVerifySync.mockReturnValue(true);
+    mockVerifySync.mockReturnValue({ valid: true, delta: 0 } as any);
     mockUserUpdate.mockResolvedValue({} as any);
 
     const res = await DELETE(createCodeRequest('123456'));

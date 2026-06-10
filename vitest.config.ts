@@ -9,6 +9,12 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // The default 5s timeout is tight for userEvent-heavy interaction tests and
+    // flakes under CPU contention (e.g. a parallel build/agent run starves the
+    // jsdom event loop and a trivial render times out). 15s removes that flake
+    // class without masking genuinely hung tests.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     // .claude/ is the harness's working space for git worktrees and other
     // session state. It's gitignored, but vitest's default file discovery
     // scans it anyway — worktree copies have their own node_modules with a

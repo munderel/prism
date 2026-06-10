@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError, checkStackWriteAccess } from '@/lib/auth-guard';
+import { requireAuth, authError, checkStackWriteAccess, verifyStackMembership } from '@/lib/auth-guard';
 import { NO_STORE, USER_SUMMARY_SELECT } from '@/lib/api-helpers';
 import { parseBody, createTaskSchema } from '@/lib/schemas';
 import { parseRRule } from '@/lib/recurrence';
@@ -255,24 +255,27 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'goalId is required for IMPROVE tasks' }, { status: 400 });
   }
 
-  if (taskType === 'IMPROVE') {
-    const goal = await prisma.goal.findUnique({
-      where: { id: goalId! },
-      include: { stack: true },
-    });
-    if (!goal || goal.deletedAt) {
+  // Validate the linked goal for ANY task type that supplies a goalId — not
+  // just IMPROVE. Previously REACT/MAINTENANCE/REVIEW tasks could attach to a
+  // soft-deleted or foreign goal (whose title + stack name then leaked back in
+  // list responses) with no write-access check.
+  const linkedGoal = goalId
+    ? await prisma.goal.findUnique({ where: { id: goalId }, include: { stack: true } })
+    : null;
+  if (goalId) {
+    if (!linkedGoal || linkedGoal.deletedAt) {
       return Response.json({ error: 'Goal not found' }, { status: 404 });
     }
-    if (goal.level !== 'WEEKLY') {
+    if (taskType === 'IMPROVE' && linkedGoal.level !== 'WEEKLY') {
       return Response.json({ error: 'Tasks can only be created under WEEKLY goals' }, { status: 400 });
     }
     // Creating a task under a goal is a restricted write: assignees and
     // company-goal-assignees may contribute tasks to goals they're on.
     const accessDenied = await checkStackWriteAccess(
-      goal.stack,
+      linkedGoal.stack,
       auth.userId,
       auth.session.user.isAdmin,
-      { goalId: goalId!, restricted: true },
+      { goalId, restricted: true },
     );
     if (accessDenied) return accessDenied;
   }
@@ -282,6 +285,35 @@ export async function POST(request: NextRequest) {
     const process = await prisma.process.findUnique({ where: { id: processId } });
     if (!process) {
       return Response.json({ error: 'Process not found' }, { status: 404 });
+    }
+  }
+
+  // Validate assignee: it must be a real user, and for a goal-linked task a
+  // member of that goal's stack — otherwise a task could be routed to someone
+  // with no visibility into it (it would surface on their dashboard via the
+  // assigneeId filter).
+  if (assigneeId) {
+    const assignee = await prisma.user.findUnique({ where: { id: assigneeId }, select: { id: true } });
+    if (!assignee) {
+      return Response.json({ error: 'Assignee not found' }, { status: 400 });
+    }
+    if (linkedGoal && !(await verifyStackMembership(linkedGoal.stack, assigneeId, goalId ?? undefined))) {
+      return Response.json({ error: "Assignee is not a member of this goal's stack" }, { status: 403 });
+    }
+  }
+
+  // Validate parent task: it must exist and be accessible to the caller
+  // (owner, assignee, or admin) — you can't nest a task under someone else's.
+  if (parentId) {
+    const parent = await prisma.task.findUnique({
+      where: { id: parentId },
+      select: { ownerId: true, assigneeId: true },
+    });
+    if (!parent) {
+      return Response.json({ error: 'Parent task not found' }, { status: 400 });
+    }
+    if (!auth.session.user.isAdmin && parent.ownerId !== auth.userId && parent.assigneeId !== auth.userId) {
+      return Response.json({ error: 'Cannot nest under a task you do not own' }, { status: 403 });
     }
   }
 
