@@ -59,7 +59,9 @@ export default function TrainingPage() {
   const [formGoalId, setFormGoalId] = useState('');
 
   const { data: items, isLoading, mutate } = useSWR('/api/training', { revalidateOnFocus: false });
-  const { data: goals } = useSWR('/api/goals');
+  // Personal scope (owned + assigned stacks). A bare /api/goals 400s — the
+  // route requires stackId or an isCompany/level param.
+  const { data: goals } = useSWR('/api/goals?isCompany=false');
 
   const trainingItems = Array.isArray(items) ? items : [];
   const goalList = Array.isArray(goals) ? goals : [];
