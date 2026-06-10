@@ -16,7 +16,7 @@
                     │  └──────────┘  └───────────────┘  │
                     └──────────────────────────────────┘     ┌────────────┐
                               │                             │ OpenRouter  │
-                              │  Vercel Cron (3 jobs)       │ (LLM API)  │
+                              │  GH Actions Cron (4 jobs)   │ (LLM API)  │
                               └─────────────────────────────└────────────┘
 ```
 
@@ -283,14 +283,18 @@ The Power Down page forces dark theme regardless of user's app-wide theme settin
 
 ## Cron Jobs & Background Processing
 
-Two Vercel cron jobs defined in `vercel.json`:
+Four GitHub Actions workflows in `.github/workflows/` call the cron endpoints on a schedule (cron does NOT run on Vercel). Each workflow is serialized with a `concurrency` group so a manual dispatch can't overlap a scheduled run:
 
-| Job | Schedule | Endpoint | Purpose |
-|-----|----------|----------|---------|
-| Derail Detection | Every 30 min | `POST /api/cron/derailing` | Check AIM streaks, flag derailing habits |
-| Review Nag | Daily 9 AM | `POST /api/cron/review-nag` | Send email reminders for overdue reviews |
+| Workflow | Schedule | Endpoint | Purpose |
+|----------|----------|----------|---------|
+| `derailing.yml` | Hourly 18:00–23:00 UTC | `POST /api/cron/derailing` | Flag at-risk/derailing tasks and streaks, notify (deduped per local day via `Task.lastDerailNotifiedAt`) |
+| `meeting-reminders.yml` | Every 5 min | `POST /api/cron/meeting-reminders` | Push reminders shortly before meetings |
+| `review-nag.yml` | Daily 13:00 UTC | `POST /api/cron/review-nag` | Remind about overdue reviews (deduped via `Review.lastNaggedAt`) |
+| `google-sync.yml` | Every 15 min | `POST /api/cron/google-sync` | Background 2-way Google Calendar sync |
 
-**Authentication:** All cron endpoints verify `CRON_SECRET` via timing-safe HMAC comparison in `requireCronSecret()`. Vercel sends the secret as `Authorization: Bearer <secret>`.
+A `POST /api/cron/streaks-recompute` handler also exists for manual/maintenance use; it has no scheduled workflow.
+
+**Authentication:** All cron endpoints verify `CRON_SECRET` via timing-safe HMAC comparison in `requireCronSecret()`. The workflows send the secret as `Authorization: Bearer <secret>` using the `CRON_SECRET` and `PRODUCTION_URL` GitHub Actions secrets.
 
 **How it works:** Cron endpoints are standard API routes that perform DB operations and send notifications. They are excluded from the auth middleware matcher.
 

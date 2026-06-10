@@ -1,6 +1,6 @@
 # Prism — API Reference
 
-*79 API route handlers across 22 domain areas*
+*130+ API route handlers across 22+ domain areas*
 
 ## General Conventions
 
@@ -238,6 +238,17 @@ Update goal fields (title, description, status, progressPct, dates, sortOrder).
 **Auth:** Owner or Admin
 
 Soft-delete a goal (sets `deletedAt`).
+
+### `GET /api/goals/[id]/activity`
+**Auth:** Stack read access (owner, assignee, or admin)
+
+Daily completed-task counts for a goal, used by the goal-detail activity heatmap.
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `days` | number | 84 | Window size in days (clamped 1–365) |
+
+**Response:** `{ date: string; count: number }[]` — oldest → newest, zero-filled for every day in the range.
 
 ### `POST /api/goals/import`
 **Auth:** Authenticated user
@@ -882,14 +893,29 @@ POST: Log a distraction.
 **Auth:** All cron endpoints require `Authorization: Bearer <CRON_SECRET>` verified via timing-safe HMAC.
 
 ### `POST /api/cron/derailing`
-**Schedule:** Every 30 minutes
+**Schedule:** Hourly during 18:00–23:00 UTC (GitHub Actions `derailing.yml`)
 
-Check all users' AIM streaks and flag habits that are derailing. Sends notifications for at-risk aims.
+Check all users' tasks and streaks and flag derailing items. Sends notifications for at-risk items, deduped to at most once per user-local day via `Task.lastDerailNotifiedAt`.
+
+### `POST /api/cron/meeting-reminders`
+**Schedule:** Every 5 minutes (GitHub Actions `meeting-reminders.yml`)
+
+Send push notifications shortly before scheduled meetings.
 
 ### `POST /api/cron/review-nag`
-**Schedule:** Daily at 9 AM
+**Schedule:** Daily at 13:00 UTC (GitHub Actions `review-nag.yml`)
 
-Send email reminders for overdue reviews.
+Send reminders for overdue reviews, deduped via `Review.lastNaggedAt`.
+
+### `POST /api/cron/google-sync`
+**Schedule:** Every 15 minutes (GitHub Actions `google-sync.yml`)
+
+Background 2-way Google Calendar sync for all linked users.
+
+### `POST /api/cron/streaks-recompute`
+**Schedule:** None (manual/maintenance only — no scheduled workflow)
+
+Recompute AIM streaks from history.
 
 ---
 

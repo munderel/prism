@@ -78,7 +78,7 @@ goal-dashboard/
 │   ├── app/
 │   │   ├── (app)/              # Authenticated pages (dashboard, goals, tasks, etc.)
 │   │   ├── (auth)/             # Public pages (login, accept-invite)
-│   │   └── api/                # 80+ API route handlers
+│   │   └── api/                # 130+ API route handlers
 │   ├── components/             # 100+ React components organized by feature
 │   │   ├── aims/               # Habit tracking UI
 │   │   ├── calendar/           # Calendar views and scheduling
@@ -95,9 +95,9 @@ goal-dashboard/
 │   ├── types/                  # TypeScript declarations
 │   └── test/                   # Test setup, mocks, fixtures
 ├── prisma/
-│   ├── schema.prisma           # 40+ models, 11 enums
+│   ├── schema.prisma           # 58 models, 18 enums
 │   ├── seed.ts                 # Database seeding
-│   └── migrations/             # 25+ migration files
+│   └── migrations/             # 75+ migration files
 └── public/                     # Static assets
 ```
 
@@ -135,8 +135,8 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed setup instructions for each serv
 |----------|-------------|
 | [Prism_How_It_Works.md](Prism_How_It_Works.md) | Comprehensive feature guide (user perspective) |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design, layers, auth flow, integrations |
-| [API-REFERENCE.md](API-REFERENCE.md) | All 80+ API endpoints with request/response schemas |
-| [DATABASE.md](DATABASE.md) | Data model documentation (40+ models, enums, relationships) |
+| [API-REFERENCE.md](API-REFERENCE.md) | All 130+ API endpoints with request/response schemas |
+| [DATABASE.md](DATABASE.md) | Data model documentation (58 models, 18 enums, relationships) |
 | [DEVELOPER-GUIDE.md](DEVELOPER-GUIDE.md) | Local setup, conventions, patterns, adding features |
 | [DESIGN-DECISIONS.md](DESIGN-DECISIONS.md) | Architecture Decision Records (12 ADRs) |
 | [TESTING.md](TESTING.md) | Test strategy, running tests, writing tests |
