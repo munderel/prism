@@ -1,6 +1,6 @@
 # Prism — Database Schema Documentation
 
-*Source: `prisma/schema.prisma` (40+ models, 11 enums)*
+*Source: `prisma/schema.prisma` (58 models, 18 enums)*
 
 ## Overview
 
@@ -207,6 +207,20 @@ One-to-one with User. Controls notification channels.
 | `mentionAlerts` | Boolean | `true` |
 | `reviewNags` | Boolean | `true` |
 
+#### NotificationChannelPref
+Per-(notification type × channel) preference with an optional quiet-hours window. Unique on `[userId, notifType, channel]`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `notifType` | NotificationType | Which notification this row governs |
+| `channel` | NotificationChannel | Delivery channel (e.g. PUSH, EMAIL, INBOX) |
+| `enabled` | Boolean | Whether this type×channel is delivered |
+| `quietHoursEnabled` | Boolean | Gate deliveries during a local-time window |
+| `quietHoursStart` / `quietHoursEnd` | Int? | Minutes past midnight (user-local); wrap-around windows (start > end) span overnight |
+
+#### Notification
+In-app notification inbox rows (bell icon). Created alongside push/email dispatch; marked read per user.
+
 #### PushSubscription
 Web Push subscription endpoints per user. Fields: `endpoint`, `p256dh`, `auth`.
 
@@ -314,6 +328,7 @@ The central work unit. Links to Goal, Process, AimInstance, and User (owner + as
 | `completedAt` | DateTime? | When marked done |
 | `failedAt` | DateTime? | When marked failed |
 | `rescheduledTo` | DateTime? | Rescheduled date |
+| `lastDerailNotifiedAt` | DateTime? | Last derail notification sent (dedup: at most once per user-local day) |
 
 Indexes: `ownerId`, `dueDate`, `status`, `goalId`, `[ownerId, dueDate]`, `[ownerId, status]`, `assigneeId`
 
@@ -389,6 +404,7 @@ Scheduled review sessions (weekly, monthly, yearly).
 | `timeBlockStart` | DateTime? | Calendar time block |
 | `timeBlockEnd` | DateTime? | Calendar time block |
 | `calendarEventId` | String? | Google Calendar event ID |
+| `lastNaggedAt` | DateTime? | Last review-nag notification sent (dedup: at most once per ~day) |
 
 Indexes: `[userId, reviewType]`, `scheduledDate`
 

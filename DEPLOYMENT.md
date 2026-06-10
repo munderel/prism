@@ -156,9 +156,12 @@ In Vercel → Project Settings → Environment Variables, add:
 
 ### Step 3: Deploy
 - Trigger deploy (Vercel auto-builds with `next build`)
-- Vercel cron jobs are auto-configured from `vercel.json`:
-  - `/api/cron/derailing` — every 30 min
-  - `/api/cron/review-nag` — daily 9 AM
+- Cron runs from **GitHub Actions**, not Vercel. Four workflows in `.github/workflows/` call the endpoints on a schedule:
+  - `derailing.yml` → `/api/cron/derailing` — hourly 18:00–23:00 UTC
+  - `meeting-reminders.yml` → `/api/cron/meeting-reminders` — every 5 min
+  - `review-nag.yml` → `/api/cron/review-nag` — daily 13:00 UTC
+  - `google-sync.yml` → `/api/cron/google-sync` — every 15 min
+- The workflows require two **GitHub Actions secrets** on the repo: `CRON_SECRET` (same value as the Vercel env var) and `PRODUCTION_URL` (e.g. `https://your-domain.com`). A workflow is only active once merged to the default branch.
 
 ### Step 4: Custom Domain (optional)
 1. Vercel → Project Settings → Domains
@@ -177,7 +180,7 @@ In Vercel → Project Settings → Environment Variables, add:
 - [ ] Create a task with time blocks → check it appears in Google Calendar
 - [ ] Calendar page shows both internal events and Google Calendar events
 - [ ] Complete a task → Google Calendar event is deleted
-- [ ] Check Vercel logs for cron job execution (Functions tab)
+- [ ] Check GitHub Actions runs for cron workflow execution (repo → Actions tab)
 - [ ] Send a test email notification (if SMTP configured)
 - [ ] Test push notification subscription (if VAPID configured)
 - [ ] AI quiz generation works in Training (if OpenRouter configured)
