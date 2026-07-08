@@ -77,6 +77,29 @@ describe('generateTasksForCurrentPeriod — race / atomicity guard', () => {
     expect(txProcessUpdate).not.toHaveBeenCalled();
   });
 
+  it('FAST PATH: does NOT open the advisory-lock transaction when the outer lastRunAt >= periodStart', async () => {
+    // The findUnique already loaded lastRunAt; a fresh claim means the whole
+    // transaction (advisory lock) is skipped, saving a lock per request.
+    mockProcessFindUnique.mockResolvedValue({
+      ...baseAdvancedProcess,
+      lastRunAt: new Date(),
+    } as any);
+    await generateTasksForCurrentPeriod('proc-1');
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(txProcessFindUnique).not.toHaveBeenCalled();
+    expect(txTaskCreate).not.toHaveBeenCalled();
+  });
+
+  it('FAST PATH: STILL opens the transaction when lastRunAt is before periodStart (stale claim)', async () => {
+    // A lastRunAt from a prior period must not short-circuit — the lock runs.
+    mockProcessFindUnique.mockResolvedValue({
+      ...baseAdvancedProcess,
+      lastRunAt: new Date('2000-01-01T00:00:00Z'),
+    } as any);
+    await generateTasksForCurrentPeriod('proc-1');
+    expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
   it('skips creation when tasks already exist this period but still advances the claim', async () => {
     txTaskCount.mockResolvedValue(2);
     await generateTasksForCurrentPeriod('proc-1');
