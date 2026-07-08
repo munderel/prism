@@ -888,6 +888,23 @@ POST: Log a distraction.
 
 ---
 
+## System
+
+### `GET /api/health`
+**Auth:** None (excluded from auth middleware)
+
+Minimal public health check. Anonymous callers get **only**:
+
+```json
+{ "ok": true, "dbStatus": "connected" }
+```
+
+`dbStatus` is `"connected"` or `"error"` based on a cheap `SELECT 1` ping. No env details, counts, or error messages are exposed anonymously — point uptime monitors at this contract.
+
+With `Authorization: Bearer <CRON_SECRET>` (same timing-safe check as the cron endpoints), the response is the verbose operator diagnostic: env presence flags (`dbUrlSet`, `tokenKeySet`, `googleIdSet`, `googleSecretSet`), `nextAuthUrl`, `nodeEnv`, `userCount`, `accountCount`, and `dbError` detail on failure.
+
+---
+
 ## Cron Jobs
 
 **Auth:** All cron endpoints require `Authorization: Bearer <CRON_SECRET>` verified via timing-safe HMAC.
