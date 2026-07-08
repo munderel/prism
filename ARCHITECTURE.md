@@ -299,6 +299,18 @@ A `POST /api/cron/streaks-recompute` handler also exists for manual/maintenance 
 
 **How it works:** Cron endpoints are standard API routes that perform DB operations and send notifications. They are excluded from the auth middleware matcher.
 
+**Observability:** Each cron endpoint logs a structured `run complete` line via `createLogger('cron/<name>').info(...)` carrying its summary counts (checked/notified/failed/etc.), so a successful run is visible in logs, not just a silent 200. Per-user failures inside the loop and whole-run catch blocks funnel through `reportError` (below) instead of a bare `console.error`.
+
+---
+
+## Error Reporting
+
+Centralized in `src/lib/error-reporter.ts` — no external APM dependency; it builds on the structured logger (`src/lib/logger.ts`, JSON-in-prod with secret redaction).
+
+`reportError(context, error, meta?)` emits one redacted `error`-level log line (message + stack + meta) and, when `ALERT_WEBHOOK_URL` is set, POSTs a compact JSON payload (`context`, `message`, `stack`, `meta`, `time`) to that webhook with a 5s `AbortSignal.timeout`. The POST is **awaited** (serverless-safe: no fire-and-forget that a killed lambda would drop) but any webhook failure is swallowed so alerting can never turn a handled error into a crashed request.
+
+Wired into `withErrorHandler`'s catch (`src/lib/api-helpers.ts`, every API route's 500 path) and into each cron route's error handling. `ALERT_WEBHOOK_URL` is an **optional** env var (unset = log only) validated for URL well-formedness at boot in `src/lib/env-check.ts`.
+
 ---
 
 ## Security

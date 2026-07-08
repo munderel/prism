@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { reportError } from './error-reporter';
 
 /**
  * Wraps an API route handler with standardized error handling.
@@ -20,7 +21,7 @@ export function withErrorHandler(
           return Response.json({ error: 'A record with that value already exists' }, { status: 409 });
         }
       }
-      console.error('[api] Unhandled error:', error instanceof Error ? error.message : error);
+      await reportError('api', error);
       return Response.json({ error: 'Internal server error' }, { status: 500 });
     }
   };

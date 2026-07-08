@@ -4,8 +4,12 @@ import { prisma } from '@/lib/prisma';
 import { notifyUser } from '@/lib/notifications';
 import { formatDateOnly } from '@/lib/date-utils';
 import { NotificationType } from '@prisma/client';
+import { createLogger } from '@/lib/logger';
+import { reportError } from '@/lib/error-reporter';
 
 const NAG_LOOKBACK_DAYS = 30;
+
+const log = createLogger('cron/review-nag');
 
 export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
@@ -56,13 +60,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return Response.json({
-      ok: true,
-      overdue: overdueReviews.length,
-      notified: notifications.length,
-    });
+    const summary = { overdue: overdueReviews.length, notified: notifications.length };
+    log.info('run complete', summary);
+    return Response.json({ ok: true, ...summary });
   } catch (error) {
-    console.error('[cron/review-nag] Unhandled error:', error);
+    await reportError('cron/review-nag', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
