@@ -518,6 +518,11 @@ List user's Google Calendar calendars (for selection in settings).
 
 Force sync with Google Calendar.
 
+### `GET /api/calendar/debug`
+**Auth:** Admin only
+
+Read-only diagnostic for duplicate Prism-managed events: lists every event matching a Prism-managed title across the caller's writable calendars with raw `extendedProperties`/`creator`/`organizer` fields, plus the caller's sync state. Data is scoped to the calling admin's own Google account. Non-admins get 403 (the calendar page's Diagnose button surfaces this in its debug panel).
+
 ---
 
 ## Reviews
