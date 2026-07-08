@@ -201,6 +201,51 @@ In Vercel → Project Settings → Environment Variables, add:
 
 ---
 
+## Rotating TOKEN_ENCRYPTION_KEY
+
+Google refresh tokens are stored AES-256-GCM-encrypted under
+`TOKEN_ENCRYPTION_KEY`. Rotating the key without re-encrypting would strand
+every connected user (`[calendar] Cannot decrypt refresh token … re-auth
+required`). Use `scripts/rotate-token-key.ts`, which re-encrypts every stored
+token under the new key (and encrypts any legacy plaintext tokens along the
+way).
+
+### Runbook
+
+1. Generate the new key: `openssl rand -hex 32`
+2. Dry-run the rotation against production (no writes; prints
+   rotated / plaintext-backfilled / already-current / failed counts):
+   ```bash
+   DATABASE_URL="your-production-url" \
+   OLD_TOKEN_ENCRYPTION_KEY="<current key>" \
+   TOKEN_ENCRYPTION_KEY="<new key>" \
+   npm run rotate-token-key -- --dry-run
+   ```
+3. Run it for real (drop `--dry-run`, same env vars). Any `FAILED user=`
+   lines mean that user's token decrypts with neither key — they keep their
+   old value and must disconnect/reconnect Google after the rotation.
+4. Flip `TOKEN_ENCRYPTION_KEY` to the new key in Vercel → Project Settings →
+   Environment Variables.
+5. Redeploy so the running app picks up the new key.
+6. Verify: log in as a Google-linked user and confirm the calendar page loads
+   and **Sync Now** (`POST /api/calendar/sync`) succeeds; check logs for
+   `Cannot decrypt refresh token` errors.
+
+Between step 3 and step 5 the live app still holds the old key while the DB
+holds tokens under the new one, so Google sync fails closed (no data loss)
+for that brief window and recovers at the redeploy — run the steps
+back-to-back.
+
+### Plaintext backfill (no key change)
+
+Tokens stored before encryption was introduced are plaintext (no `:` in the
+value) and only survive via a legacy fallback. To encrypt the stragglers
+without rotating, run the same script with `OLD_TOKEN_ENCRYPTION_KEY` set to
+the **same** value as `TOKEN_ENCRYPTION_KEY` — already-encrypted tokens are
+left untouched, plaintext ones get encrypted. No env flip or redeploy needed.
+
+---
+
 ## Quick Reference: Where Each Env Var Is Used
 
 | Variable | Files |
@@ -208,7 +253,7 @@ In Vercel → Project Settings → Environment Variables, add:
 | `DATABASE_URL` | `src/lib/prisma.ts`, `prisma/schema.prisma` |
 | `NEXTAUTH_*` | `src/lib/auth.ts` |
 | `GOOGLE_CLIENT_*` | `src/lib/auth.ts`, `src/lib/calendar.ts` |
-| `TOKEN_ENCRYPTION_KEY` | `src/lib/crypto.ts`, `src/lib/auth.ts`, `src/lib/calendar.ts` |
+| `TOKEN_ENCRYPTION_KEY` | `src/lib/crypto.ts`, `src/lib/auth.ts`, `src/lib/calendar.ts`, `scripts/rotate-token-key.ts` (rotation: see above) |
 | `CRON_SECRET` | `src/lib/auth-guard.ts` |
 | `SMTP_*` | `src/lib/notifications.ts` |
 | `VAPID_*` | `src/lib/notifications.ts` |
