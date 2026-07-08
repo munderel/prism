@@ -26,6 +26,28 @@
 | 403 | Forbidden (not owner/admin) |
 | 404 | Not found |
 | 409 | Conflict (duplicate resource) |
+| 429 | Rate limit exceeded (see Rate Limiting below) |
+
+### Rate Limiting
+
+High-volume mutation routes are rate-limited per user via a DB-backed sliding
+window (`enforceRateLimit` in `src/lib/rate-limit.ts`, backed by the
+`RateLimitEvent` table). Limits are deliberately generous — normal UI usage,
+SWR retry bursts, and YAML imports never hit them; they exist to stop runaway
+scripts and abuse. Over the limit, the route returns
+`429 { "error": "Rate limit exceeded. Please wait a moment and try again." }`.
+
+| Route(s) | Limit |
+|----------|-------|
+| `POST /api/tasks` | 120 / 5 min per user |
+| `POST /api/goals` | 120 / 5 min per user |
+| `POST /api/processes` | 120 / 5 min per admin |
+| `POST /api/calendar` | 120 / 5 min per user |
+| `PATCH`/`DELETE /api/calendar/events/[id]` | 120 / 5 min per user (shared budget) |
+| `POST /api/auth/register` | 5 / hour per email (inline `LoginAttempt` counter) |
+| `POST /api/invitations` | 10 / hour per admin (inline `Invitation` counter) |
+
+GET routes are never rate-limited.
 
 ---
 

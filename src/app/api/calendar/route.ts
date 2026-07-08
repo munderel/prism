@@ -10,6 +10,7 @@ import { parseGoogleSyncState, type GoogleEventOverride, pad2 } from '@/lib/goog
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
 import { getTaskTypeColor } from '@/lib/prism-colors';
+import { enforceRateLimit, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS } from '@/lib/rate-limit';
 
 // Drag/resize/delete updates revalidate this endpoint. Any caching between
 // server and client (Vercel edge, browser heuristic, Next data cache) reads
@@ -1010,6 +1011,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
+
+  const limited = await enforceRateLimit(`calendar:${auth.userId}`, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS);
+  if (limited) return limited;
 
   const parsed = await parseBody(request, createCalendarEventSchema);
   if ('error' in parsed) return parsed.error;

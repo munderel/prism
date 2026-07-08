@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { parseBody, updateCalendarEventSchema } from '@/lib/schemas';
 import { deleteGoogleEvent, getGoogleEvent, updateGoogleEvent, classifyGoogleError, type GoogleErrorCode } from '@/lib/calendar';
+import { enforceRateLimit, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS } from '@/lib/rate-limit';
 
 // Map our internal error codes to HTTP statuses + user-facing toasts so the
 // client can show a specific message instead of a generic "Failed to update".
@@ -109,6 +110,9 @@ export async function DELETE(
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
 
+  const limited = await enforceRateLimit(`calendar-events:${auth.userId}`, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS);
+  if (limited) return limited;
+
   const { id: eventId } = await params;
   const scope = await resolveEventScope(auth.userId, eventId, auth.session.user.isAdmin);
   if (scope.status === 'forbidden') {
@@ -146,6 +150,9 @@ export async function PATCH(
 ) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
+
+  const limited = await enforceRateLimit(`calendar-events:${auth.userId}`, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS);
+  if (limited) return limited;
 
   const { id: eventId } = await params;
   const scope = await resolveEventScope(auth.userId, eventId, auth.session.user.isAdmin);

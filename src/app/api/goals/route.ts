@@ -3,6 +3,7 @@ import { Prisma, GoalLevel, GoalStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NO_STORE, notFoundResponse, forbiddenResponse } from '@/lib/api-helpers';
 import { parseBody, createGoalSchema } from '@/lib/schemas';
+import { enforceRateLimit, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS } from '@/lib/rate-limit';
 import {
   requireAuth,
   requireAdmin,
@@ -166,6 +167,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
+
+  const limited = await enforceRateLimit(`goals:${auth.userId}`, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS);
+  if (limited) return limited;
 
   const parsed = await parseBody(request, createGoalSchema);
   if ('error' in parsed) return parsed.error;

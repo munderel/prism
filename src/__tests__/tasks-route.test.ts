@@ -22,6 +22,13 @@ vi.mock('@/lib/prisma', () => {
     goalStack: { findMany: vi.fn() },
     process: { findUnique: vi.fn(), update: vi.fn() },
     deliverableItem: { createMany: vi.fn(), aggregate: vi.fn() },
+    // Write rate limiting (src/lib/rate-limit.ts) runs on POST: 0 recent
+    // events = always under the limit, so existing tests are unaffected.
+    rateLimitEvent: {
+      count: vi.fn().mockResolvedValue(0),
+      create: vi.fn().mockResolvedValue({}),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     // The real $transaction passes a tx-scoped client to the callback. The mock
     // routes back to `prisma` so the same vi.fn instances (task.create etc.)
     // record calls — existing assertions on mockTaskCreate keep working.

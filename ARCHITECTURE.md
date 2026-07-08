@@ -311,6 +311,7 @@ A `POST /api/cron/streaks-recompute` handler also exists for manual/maintenance 
 | Cron auth | Timing-safe HMAC comparison (`createHmac` + `timingSafeEqual`) |
 | Account lockout | `isLockedOut` flag checked in JWT refresh callback |
 | CSRF | `SameSite=Lax` session cookies + same-origin check on unsafe `/api` methods (`verifyRequestOrigin` in edge middleware; inline in `POST /api/invitations`) |
+| Rate limiting | DB-backed sliding window (`RateLimitEvent` table + `enforceRateLimit` in `src/lib/rate-limit.ts`): 120 writes / 5 min per user on high-volume mutation routes (task/goal/process/calendar-event creates, calendar-event PATCH/DELETE); registration (5/hr per email) and invitations (10/hr per admin) keep their own inline counters |
 | Password hashing | bcryptjs |
 | Headers | HSTS, X-Content-Type-Options, X-Frame-Options, CSP, Permissions-Policy |
 | Input validation | Server-side validation in every API route handler |
