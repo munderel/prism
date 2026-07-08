@@ -113,6 +113,7 @@ describe('notifyUser — per-channel dispatcher gating', () => {
     expect(mockSendNotification).toHaveBeenCalledWith(
       expect.objectContaining({ endpoint: 'https://push.ex/mobile' }),
       expect.any(String),
+      expect.objectContaining({ timeout: 10000, TTL: 3600 }),
     );
   });
 
