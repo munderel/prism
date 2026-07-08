@@ -466,7 +466,7 @@ All calendar operations are wrapped in try/catch — if Google API is unavailabl
 - Verify `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set
 - Verify `TOKEN_ENCRYPTION_KEY` is set (64-char hex string)
 - Check if the user has a `googleRefreshToken` in the database
-- The Google OAuth consent screen must include `https://www.googleapis.com/auth/calendar` scope
+- The Google OAuth consent screen must include the `https://www.googleapis.com/auth/calendar.events` and `https://www.googleapis.com/auth/calendar.readonly` scopes
 
 ### Prisma connection errors
 

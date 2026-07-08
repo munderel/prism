@@ -53,7 +53,20 @@ This is the biggest setup — it powers both login AND calendar sync.
    - `openid`
    - `email`
    - `profile`
-   - `https://www.googleapis.com/auth/calendar`
+   - `https://www.googleapis.com/auth/calendar.events`
+   - `https://www.googleapis.com/auth/calendar.readonly`
+
+   The app deliberately does NOT request the broad `auth/calendar` scope
+   (which also grants ACL/sharing and calendar create/delete) — it only
+   needs event read/write plus a read-only calendar list.
+
+   > **Migrating from the old full `auth/calendar` scope:** users who
+   > connected Google before the narrowing keep their old broad grant
+   > until they reconnect. Sync keeps working either way; to drop the
+   > broad grant, a user can disconnect and re-link Google (or revoke
+   > Prism at <https://myaccount.google.com/permissions> and sign in with
+   > Google again) — the new consent screen will only ask for
+   > "View and edit events" + "See your calendars".
 5. Add test users if in "Testing" mode (required before publishing)
 
 ### Step 4: Create OAuth Credentials

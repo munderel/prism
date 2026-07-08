@@ -185,7 +185,15 @@ export const authOptions: NextAuthOptions = {
         params: {
           access_type: 'offline',
           prompt: 'consent',
-          scope: 'openid email profile https://www.googleapis.com/auth/calendar',
+          // Least privilege: the app only does events CRUD (calendar.events)
+          // and calendarList.list/get (calendar.readonly). The former full
+          // 'auth/calendar' scope also granted ACL/sharing + calendar
+          // create/delete, which nothing in src/lib/calendar.ts,
+          // calendar-sync-engine.ts, google-recurring-sync.ts, or
+          // work-block-sync.ts uses. Existing refresh tokens keep the old
+          // broad scope until the user re-links Google (see DEPLOYMENT.md).
+          scope:
+            'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly',
         },
       },
     }),
