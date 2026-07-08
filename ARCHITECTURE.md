@@ -50,7 +50,8 @@
 **Middleware** (`src/middleware.ts`):
 - Checks NextAuth JWT token on every request
 - Redirects unauthenticated users to `/login` with callback URL
-- Excluded paths: `/login`, `/accept-invite`, `/api/auth`, `/api/cron`, `/api/invitations`, `/_next/*`, `/favicon.ico`
+- Same-origin (CSRF) check: rejects `POST`/`PATCH`/`PUT`/`DELETE` to `/api/*` with `403 { error: 'Invalid origin' }` when a present `Origin` header doesn't match the request host (`x-forwarded-host` preferred over `host`) or `NEXTAUTH_URL`'s host. Requests **without** an `Origin` header (curl, server-to-server, cron) are allowed — the check targets browser CSRF, complementing the `SameSite=Lax` session cookie. Helper: `verifyRequestOrigin` in `src/lib/origin-check.ts` (edge-safe, no prisma/node-only imports)
+- Excluded paths: `/login`, `/accept-invite`, `/api/auth`, `/api/cron`, `/api/health`, `/api/invitations`, `/api/notifications/public-key`, `/sw.js`, `/_next/*`, `/favicon.ico`. Of these, the admin-only `POST /api/invitations` enforces the same origin check inline in its handler (the route is excluded so the public invite-accept flow keeps working)
 
 **Redirects** (in `next.config.mjs`):
 - `/dashboard` &rarr; `/`
@@ -309,6 +310,7 @@ A `POST /api/cron/streaks-recompute` handler also exists for manual/maintenance 
 | Token encryption | AES-256-GCM for Google refresh tokens at rest |
 | Cron auth | Timing-safe HMAC comparison (`createHmac` + `timingSafeEqual`) |
 | Account lockout | `isLockedOut` flag checked in JWT refresh callback |
+| CSRF | `SameSite=Lax` session cookies + same-origin check on unsafe `/api` methods (`verifyRequestOrigin` in edge middleware; inline in `POST /api/invitations`) |
 | Password hashing | bcryptjs |
 | Headers | HSTS, X-Content-Type-Options, X-Frame-Options, CSP, Permissions-Policy |
 | Input validation | Server-side validation in every API route handler |

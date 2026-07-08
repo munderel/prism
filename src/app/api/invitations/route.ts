@@ -5,6 +5,7 @@ import { requireAdmin, authError } from '@/lib/auth-guard';
 import { NO_STORE, isInviteExpired } from '@/lib/api-helpers';
 import { parseBody, createInvitationSchema } from '@/lib/schemas';
 import { isEmailTransportConfigured, sendInviteEmail } from '@/lib/notifications';
+import { verifyRequestOrigin } from '@/lib/origin-check';
 
 const RATE_LIMIT_MAX = 10; // max invitations per hour
 
@@ -22,6 +23,12 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  // This route is excluded from the middleware matcher (the invite-accept flow
+  // must stay public), so the same-origin CSRF check runs inline here.
+  if (!verifyRequestOrigin(request)) {
+    return Response.json({ error: 'Invalid origin' }, { status: 403 });
+  }
+
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
