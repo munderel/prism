@@ -2,6 +2,10 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCronSecret } from '@/lib/auth-guard';
 import { runCalendarSync } from '@/lib/calendar-sync-engine';
+import { createLogger } from '@/lib/logger';
+import { reportError } from '@/lib/error-reporter';
+
+const log = createLogger('cron/google-sync');
 
 // Background 2-way Google Calendar sync (Issue 8). Runs every ~15 min from
 // GitHub Actions (.github/workflows/google-sync.yml). Pulls Google-side edits
@@ -55,7 +59,7 @@ export async function GET(request: NextRequest) {
       else processed++;
     } catch (err) {
       failed++;
-      console.error('[cron/google-sync] sync failed for user', user.id, err);
+      await reportError('cron/google-sync', err, { userId: user.id });
     } finally {
       // Advance the rotation cursor even on failure/skip so one stuck user
       // can't starve the rest.
@@ -65,13 +69,14 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return Response.json({
-    ok: true,
+  const summary = {
     eligible: users.length,
     processed,
     skipped,
     failed,
     budgetHit,
     durationMs: Date.now() - startedAt,
-  });
+  };
+  log.info('run complete', summary);
+  return Response.json({ ok: true, ...summary });
 }

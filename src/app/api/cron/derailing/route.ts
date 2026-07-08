@@ -6,6 +6,10 @@ import { checkAndBreakMissedStreaks } from '@/lib/streak-engine';
 import { notifyUser } from '@/lib/notifications';
 import { toUserDayStamp, dstSafeDate } from '@/lib/user-timezone';
 import { NotificationType } from '@prisma/client';
+import { createLogger } from '@/lib/logger';
+import { reportError } from '@/lib/error-reporter';
+
+const log = createLogger('cron/derailing');
 
 // Bound the Vercel function so a growing user base can't silently overrun the
 // default timeout mid-run (mirrors the google-sync cron's budget).
@@ -77,9 +81,11 @@ export async function GET(request: NextRequest) {
       streaksBroken += breaks.length;
     }
 
-    return Response.json({ ok: true, checked: tasks.length, derailing: derailingTasks.length, notified: toNotify.length, streaksBroken });
+    const summary = { checked: tasks.length, derailing: derailingTasks.length, notified: toNotify.length, streaksBroken };
+    log.info('run complete', summary);
+    return Response.json({ ok: true, ...summary });
   } catch (error) {
-    console.error('[cron/derailing] Unhandled error:', error);
+    await reportError('cron/derailing', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

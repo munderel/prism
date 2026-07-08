@@ -4,6 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { notifyUser } from '@/lib/notifications';
 import { generateMeetingInstances, isUserInMeeting } from '@/lib/meeting-utils';
 import { NotificationType } from '@prisma/client';
+import { createLogger } from '@/lib/logger';
+import { reportError } from '@/lib/error-reporter';
+
+const log = createLogger('cron/meeting-reminders');
 
 export async function GET(request: NextRequest) {
   if (!requireCronSecret(request)) {
@@ -97,9 +101,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    log.info('run complete', { checked, notified });
     return Response.json({ ok: true, checked, notified });
   } catch (error) {
-    console.error('[cron/meeting-reminders] Unhandled error:', error);
+    await reportError('cron/meeting-reminders', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

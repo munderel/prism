@@ -2,6 +2,10 @@ import { NextRequest } from 'next/server';
 import { requireCronSecret } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 import { recomputeUserStreaks, type UserRecomputeReport } from '@/lib/streak-recompute';
+import { createLogger } from '@/lib/logger';
+import { reportError } from '@/lib/error-reporter';
+
+const log = createLogger('cron/streaks-recompute');
 
 /**
  * Walks each user's PowerdownSession history and rewrites their `daily` and
@@ -42,15 +46,11 @@ export async function POST(request: NextRequest) {
       if (report.applied) applied++;
       reports.push(report);
     } catch (err) {
-      console.error('[cron/streaks-recompute] failed for user=%s:', userId, err);
+      await reportError('cron/streaks-recompute', err, { userId });
     }
   }
 
-  return Response.json({
-    ok: true,
-    total: userIds.length,
-    applied,
-    dryRun: !!body.dryRun,
-    reports,
-  });
+  const summary = { total: userIds.length, applied, dryRun: !!body.dryRun };
+  log.info('run complete', summary);
+  return Response.json({ ...summary, ok: true, reports });
 }
