@@ -9,10 +9,12 @@ vi.mock('next-auth/jwt', () => ({
 // Mock next/server
 const mockRedirect = vi.fn((url: URL) => ({ type: 'redirect', url }));
 const mockNext = vi.fn(() => ({ type: 'next' }));
+const mockJson = vi.fn((body: unknown, init?: ResponseInit) => ({ type: 'json', body, init }));
 vi.mock('next/server', () => ({
   NextResponse: {
     redirect: (...args: any[]) => mockRedirect(...args),
     next: (...args: any[]) => mockNext(...args),
+    json: (...args: any[]) => mockJson(...(args as [unknown, ResponseInit?])),
   },
 }));
 
@@ -21,8 +23,16 @@ import { middleware, config } from '@/middleware';
 
 const mockGetToken = vi.mocked(getToken);
 
-function createMockRequest(url: string) {
-  return { url, nextUrl: new URL(url) } as any;
+function createMockRequest(
+  url: string,
+  init?: { method?: string; headers?: Record<string, string> }
+) {
+  return {
+    url,
+    nextUrl: new URL(url),
+    method: init?.method ?? 'GET',
+    headers: new Headers(init?.headers ?? {}),
+  } as any;
 }
 
 describe('middleware', () => {
@@ -95,6 +105,93 @@ describe('middleware', () => {
     await middleware(request);
 
     expect(mockNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('middleware same-origin (CSRF) check', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetToken.mockResolvedValue({ id: 'user1', isAdmin: false } as any);
+  });
+
+  it('rejects a cross-origin POST to an API route with 403', async () => {
+    const request = createMockRequest('http://localhost:3000/api/tasks', {
+      method: 'POST',
+      headers: { origin: 'https://evil.example', host: 'localhost:3000' },
+    });
+    const response = await middleware(request);
+
+    expect(mockJson).toHaveBeenCalledTimes(1);
+    expect(mockJson).toHaveBeenCalledWith({ error: 'Invalid origin' }, { status: 403 });
+    expect((response as any).type).toBe('json');
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it.each(['PATCH', 'PUT', 'DELETE'])('rejects cross-origin %s to an API route', async (method) => {
+    const request = createMockRequest('http://localhost:3000/api/goals', {
+      method,
+      headers: { origin: 'https://evil.example', host: 'localhost:3000' },
+    });
+    await middleware(request);
+
+    expect(mockJson).toHaveBeenCalledWith({ error: 'Invalid origin' }, { status: 403 });
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('allows a same-origin POST to an API route', async () => {
+    const request = createMockRequest('http://localhost:3000/api/tasks', {
+      method: 'POST',
+      headers: { origin: 'http://localhost:3000', host: 'localhost:3000' },
+    });
+    await middleware(request);
+
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    expect(mockJson).not.toHaveBeenCalled();
+  });
+
+  it('allows a POST without an Origin header (non-browser client)', async () => {
+    const request = createMockRequest('http://localhost:3000/api/tasks', {
+      method: 'POST',
+      headers: { host: 'localhost:3000' },
+    });
+    await middleware(request);
+
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    expect(mockJson).not.toHaveBeenCalled();
+  });
+
+  it('does not origin-check GET requests', async () => {
+    const request = createMockRequest('http://localhost:3000/api/tasks', {
+      method: 'GET',
+      headers: { origin: 'https://evil.example', host: 'localhost:3000' },
+    });
+    await middleware(request);
+
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    expect(mockJson).not.toHaveBeenCalled();
+  });
+
+  it('does not origin-check non-API paths', async () => {
+    const request = createMockRequest('http://localhost:3000/goals', {
+      method: 'POST',
+      headers: { origin: 'https://evil.example', host: 'localhost:3000' },
+    });
+    await middleware(request);
+
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    expect(mockJson).not.toHaveBeenCalled();
+  });
+
+  it('runs the auth redirect before the origin check', async () => {
+    mockGetToken.mockResolvedValue(null);
+    const request = createMockRequest('http://localhost:3000/api/tasks', {
+      method: 'POST',
+      headers: { origin: 'https://evil.example', host: 'localhost:3000' },
+    });
+    await middleware(request);
+
+    expect(mockRedirect).toHaveBeenCalledTimes(1);
+    expect(mockJson).not.toHaveBeenCalled();
   });
 });
 
