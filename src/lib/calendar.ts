@@ -16,6 +16,15 @@ function extractStatus(err: unknown): number | undefined {
   return e?.code ?? e?.status ?? e?.response?.status;
 }
 
+/**
+ * Per-request timeout for every Google Calendar API call made through the
+ * client built by getCalendarClient. Without it a hung socket can stall a
+ * serverless invocation until the platform kills it. A timeout surfaces as a
+ * no-status transient error, which classifyGoogleError/withBackoff already
+ * treat as retryable. Mirrors the explicit timeoutMs on the OpenRouter client.
+ */
+const GOOGLE_API_TIMEOUT_MS = 15_000;
+
 export type GoogleErrorCode =
   | 'not_connected'
   | 'not_found'
@@ -436,7 +445,9 @@ export async function getCalendarClient(userId: string) {
     });
   });
 
-  return google.calendar({ version: 'v3', auth: oauth2Client });
+  // `timeout` is a gaxios GlobalOption — googleapis forwards it to every
+  // request issued by this client (events.list/insert/patch/delete, etc.).
+  return google.calendar({ version: 'v3', auth: oauth2Client, timeout: GOOGLE_API_TIMEOUT_MS });
 }
 
 /**
