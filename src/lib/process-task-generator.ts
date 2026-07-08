@@ -124,6 +124,14 @@ export async function generateTasksForCurrentPeriod(processId: string): Promise<
 
   const { periodStart, dueDate } = getCurrentPeriodRange(process);
 
+  // Fast path: this runs on every GET /api/tasks and /api/calendar, so for the
+  // common case where the period was already generated we skip the whole
+  // transaction + advisory lock. The findUnique above already loaded lastRunAt,
+  // so this costs nothing extra. The in-transaction re-check below stays the
+  // AUTHORITATIVE claim — it re-reads lastRunAt under the lock, so a race that
+  // slips past this stale-read gate is still resolved correctly.
+  if (process.lastRunAt && process.lastRunAt >= periodStart) return;
+
   // Serialize per-process AND keep the period-claim atomic with the creates.
   // checkAndCreateDueProcessTasks() runs on every GET /api/tasks and
   // /api/calendar, so concurrent SWR fetches can race here. The advisory lock
