@@ -8,6 +8,7 @@ import { parseDateOnly, parseTaskDueInput } from '@/lib/date-utils';
 import { syncTaskCalendarEvent } from '@/lib/calendar';
 import { unflagOtherWinTheDay } from '@/lib/task-helpers';
 import { checkAndCreateDueProcessTasks } from '@/lib/process-task-checker';
+import { enforceRateLimit, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS } from '@/lib/rate-limit';
 
 const GOAL_WITH_PARENT_SELECT = {
   id: true,
@@ -245,6 +246,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if ('error' in auth) return authError(auth);
+
+  const limited = await enforceRateLimit(`tasks:${auth.userId}`, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS);
+  if (limited) return limited;
 
   const parsed = await parseBody(request, createTaskSchema);
   if ('error' in parsed) return parsed.error;

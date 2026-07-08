@@ -33,6 +33,13 @@ vi.mock('@/lib/prisma', () => ({
     powerdownSession: { findFirst: vi.fn(), update: vi.fn() },
     meeting: { findFirst: vi.fn() },
     aimInstance: { findFirst: vi.fn(), update: vi.fn() },
+    // Write rate limiting (src/lib/rate-limit.ts) runs on PATCH/DELETE: 0
+    // recent events = always under the limit, so existing tests are unaffected.
+    rateLimitEvent: {
+      count: vi.fn().mockResolvedValue(0),
+      create: vi.fn().mockResolvedValue({}),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   },
 }));
 

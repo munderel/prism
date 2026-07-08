@@ -1186,6 +1186,18 @@ model LoginAttempt {
   @@index([email, createdAt])
 }
 
+// === RATE LIMITING ===
+// One row per allowed write on a rate-limited mutation route, counted per
+// key = "<route>:<userId>" within a sliding window. Rows older than 24h are
+// opportunistically purged by the helper. See src/lib/rate-limit.ts.
+model RateLimitEvent {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
 // === AUDIT LOG ===
 // Append-only trail for high-blast-radius actions (admin deletes, bulk ops,
 // streak resets, destructive cron runs). Writes are fire-and-forget safe — a

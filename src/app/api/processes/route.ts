@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuthFromRequest, requireAdmin, authError } from '@/lib/auth-guard';
 import { processAccessWhere } from '@/lib/api-helpers';
 import { parseBody, createBusinessFunctionSchema } from '@/lib/schemas';
+import { enforceRateLimit, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS } from '@/lib/rate-limit';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuthFromRequest(request);
@@ -33,6 +34,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
+
+  const limited = await enforceRateLimit(`processes:${auth.userId}`, WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS);
+  if (limited) return limited;
 
   const parsed = await parseBody(request, createBusinessFunctionSchema);
   if ('error' in parsed) return parsed.error;
