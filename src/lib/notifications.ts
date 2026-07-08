@@ -14,7 +14,8 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   );
 }
 
-// Configure SMTP fallback
+// Configure SMTP fallback. Explicit timeouts so a dead/slow SMTP host cannot
+// stall an awaited notifyUser inside a request path or a cron loop.
 const transporter = process.env.SMTP_HOST
   ? nodemailer.createTransport({
       host: process.env.SMTP_HOST,
@@ -23,6 +24,9 @@ const transporter = process.env.SMTP_HOST
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     })
   : null;
 
@@ -65,12 +69,31 @@ async function sendEmailMessage(
 ): Promise<EmailDeliveryResult> {
   if (resend) {
     try {
-      const { error } = await resend.emails.send({
-        from: defaultFromAddress,
-        to,
-        subject,
-        html,
-      });
+      // The Resend SDK exposes no per-call timeout, so race the send against a
+      // 15s timer. A timeout keeps the EmailDeliveryResult shape callers already
+      // tolerate (sent:false + error) rather than hanging the awaiting request.
+      const RESEND_TIMEOUT_MS = 15000;
+      const sendResult = await Promise.race([
+        resend.emails.send({
+          from: defaultFromAddress,
+          to,
+          subject,
+          html,
+        }),
+        new Promise<EmailDeliveryResult>((resolve) =>
+          setTimeout(
+            () => resolve({ configured: true, sent: false, error: 'Resend timed out' }),
+            RESEND_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+
+      // The timeout branch already returns a finished EmailDeliveryResult.
+      if ('sent' in sendResult) {
+        return sendResult;
+      }
+
+      const { error } = sendResult;
 
       if (error) {
         return {
@@ -303,6 +326,8 @@ async function sendPushNotificationsGated(
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           payload,
+          // Cap the request so one dead push endpoint cannot stall a cron loop.
+          { timeout: 10000, TTL: 3600 },
         );
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number }).statusCode;
