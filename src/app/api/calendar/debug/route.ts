@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { requireAuth, authError } from '@/lib/auth-guard';
+import { requireAdmin, authError } from '@/lib/auth-guard';
 import { NO_STORE } from '@/lib/api-helpers';
 import { getCalendarClient, listWritableCalendarIds } from '@/lib/calendar';
 
@@ -19,10 +19,12 @@ const MANAGED_TITLES = [
  * `recurringEventId` fields so we can tell tagged-vs-untagged orphans apart
  * from a single screenshot of the response.
  *
- * Authenticated GET only. Never deletes or modifies anything.
+ * Admin-only GET (surface reduction — it dumps raw creator/organizer/
+ * extendedProperties and sync state). Data stays scoped to the caller's own
+ * Google calendars. Never deletes or modifies anything.
  */
 export async function GET() {
-  const auth = await requireAuth();
+  const auth = await requireAdmin();
   if ('error' in auth) return authError(auth);
 
   const writableCalendars = await listWritableCalendarIds(auth.userId);
