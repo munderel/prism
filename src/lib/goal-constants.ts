@@ -1,5 +1,19 @@
 import { formatDateOnly } from './date-utils';
 
+/**
+ * Shared Prisma `where` fragment for reading ONLY live (non-soft-deleted) goals.
+ *
+ * Goal is the only soft-deleted model (schema: `deletedAt`), so every
+ * `prisma.goal.findMany/findFirst/count/aggregate` that should exclude trashed
+ * goals must spread this. Using the shared constant (instead of a hand-written
+ * `deletedAt: null`) makes the intent greppable and is enforced by the guard
+ * test in `src/lib/__tests__/goal-soft-delete-guard.test.ts`.
+ *
+ * Do NOT use this on the restore/trash read paths that intentionally look at
+ * deleted rows — those are explicitly allow-listed in the guard test.
+ */
+export const ACTIVE_GOAL_WHERE = { deletedAt: null } as const;
+
 export const LEVEL_LABELS: Record<string, string> = {
   HIGH_HARD: 'High Hard Goal',
   STRATEGIC: 'Yearly',

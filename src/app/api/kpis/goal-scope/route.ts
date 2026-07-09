@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { GoalLevel, KpiTimeLevel, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
+import { ACTIVE_GOAL_WHERE } from '@/lib/goal-constants';
 import { parseDateOnly, getLocalDateString } from '@/lib/date-utils';
 
 // Map the KPI dashboard's timeLevel to the goal level we scope to.
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
     where: {
       level: mappedLevel,
       status: 'IN_PROGRESS',
-      deletedAt: null,
+      ...ACTIVE_GOAL_WHERE,
       startDate: { lte: todayUtc },
       endDate: { gte: todayUtc },
       ...(stackAccessClause ?? {}),

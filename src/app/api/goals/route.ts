@@ -11,6 +11,7 @@ import {
 } from '@/lib/auth-guard';
 
 import { validateGoalLevel } from '@/lib/goal-validation';
+import { ACTIVE_GOAL_WHERE } from '@/lib/goal-constants';
 import { cascadeProgressUp } from '@/lib/progress';
 import { parseLocalDate, parseDateOnly, toUtcDateOnly } from '@/lib/date-utils';
 
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
       return Response.json([], NO_STORE);
     }
 
-    const goalWhere: Prisma.GoalWhereInput = { stackId: { in: stackIds }, deletedAt: null };
+    const goalWhere: Prisma.GoalWhereInput = { stackId: { in: stackIds }, ...ACTIVE_GOAL_WHERE };
     if (levelParam) goalWhere.level = levelParam as GoalLevel;
     if (statusParam) goalWhere.status = statusParam as GoalStatus;
 
@@ -117,7 +118,7 @@ export async function GET(request: NextRequest) {
   }
 
   const goals = await prisma.goal.findMany({
-    where: { stackId, deletedAt: null },
+    where: { stackId, ...ACTIVE_GOAL_WHERE },
     orderBy: { sortOrder: 'asc' },
     include: {
       children: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } },
@@ -207,7 +208,7 @@ export async function POST(request: NextRequest) {
 
   // Determine sortOrder
   const siblingCount = await prisma.goal.count({
-    where: { stackId, parentId: parentId ?? null, deletedAt: null },
+    where: { stackId, parentId: parentId ?? null, ...ACTIVE_GOAL_WHERE },
   });
 
   // --- Auto-generate clear goals based on duration ---
