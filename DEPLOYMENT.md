@@ -201,6 +201,95 @@ In Vercel → Project Settings → Environment Variables, add:
 
 ---
 
+## Migration Failure Rollback
+
+The Vercel build command couples deploys to migrations:
+
+```
+"build": "prisma migrate deploy && next build"
+```
+
+If a migration fails, the build fails and the new deployment never goes live —
+the previously running deployment keeps serving traffic. The danger case is a
+migration that **partially applied** before erroring: Prisma records it as
+failed in the `_prisma_migrations` table, and every subsequent
+`prisma migrate deploy` (i.e. every subsequent build) refuses to run until the
+failed migration is resolved.
+
+### Recover
+
+1. **Restore serving immediately (no DB change needed).** In the Vercel
+   dashboard → Deployments, find the last known-good deployment and
+   **Promote to Production** (instant rollback). The old build already matches
+   the pre-migration schema, so it keeps working while you repair the DB.
+2. **Inspect the failed migration:**
+   ```bash
+   DATABASE_URL="your-production-url" npx prisma migrate status
+   # or, directly:
+   # SELECT migration_name, finished_at, rolled_back_at, logs
+   #   FROM _prisma_migrations WHERE finished_at IS NULL;
+   ```
+3. **Manually revert any partially-applied DDL** for that migration by hand
+   (drop the table/column/index it created), so the schema matches the last
+   successful migration.
+4. **Mark the migration rolled back** so the pipeline can move forward:
+   ```bash
+   DATABASE_URL="your-production-url" \
+   npx prisma migrate resolve --rolled-back <failed_migration_name>
+   ```
+5. Fix the migration (or the underlying DDL), commit, and redeploy — the build's
+   `prisma migrate deploy` now re-applies cleanly.
+
+> **House style: additive-only migrations.** Because builds and migrations are
+> coupled, every migration in `prisma/migrations/` is written to be additive
+> (add columns/tables/indexes; never drop or rewrite data destructively in the
+> same deploy). This keeps the previous deployment forward-compatible with the
+> new schema, so the instant-rollback in step 1 is always safe. Follow this
+> style for new migrations.
+
+---
+
+## Rotating CRON_SECRET
+
+`CRON_SECRET` authenticates the GitHub Actions cron workflows to the app's cron
+endpoints (`requireCronSecret` in `src/lib/auth-guard.ts` — a timing-safe HMAC
+compare). It lives in **two** places that must always match: the Vercel env var
+and the GitHub Actions repo secret consumed by all four cron workflows under
+`.github/workflows/` (`derailing.yml`, `google-sync.yml`, `meeting-reminders.yml`,
+`review-nag.yml`).
+
+> `requireCronSecret` **denies all requests when `CRON_SECRET` is unset**
+> (`if (!secret) return false`), so never clear the var — always overwrite it.
+
+### Runbook
+
+Rotate both copies in one window to avoid cron 401s:
+
+1. Generate a new secret (32+ bytes):
+   ```bash
+   openssl rand -base64 32
+   ```
+2. Update the **GitHub Actions secret**: repo → Settings → Secrets and variables
+   → Actions → `CRON_SECRET` → update.
+3. Update the **Vercel env var**: Project Settings → Environment Variables →
+   `CRON_SECRET` → overwrite with the same value.
+4. **Redeploy** so the running app reads the new value (env changes only take
+   effect on a new deployment).
+5. Verify: watch the next scheduled run under repo → **Actions** (or trigger a
+   workflow manually) and confirm the cron endpoint returns 200, not 401.
+
+Between steps 2–4 the workflows send the new secret while the app still holds
+the old one, so cron requests fail closed (401) for that brief window and
+recover at the redeploy — run the steps back-to-back. Cron is idempotent, so a
+few missed ticks are harmless.
+
+> For rotating the AES-256-GCM token key, see
+> [Rotating TOKEN_ENCRYPTION_KEY](#rotating-token_encryption_key) below — it
+> requires a data-migration script (`scripts/rotate-token-key.ts`) and cannot be
+> done by overwriting the env var alone.
+
+---
+
 ## Rotating TOKEN_ENCRYPTION_KEY
 
 Google refresh tokens are stored AES-256-GCM-encrypted under
