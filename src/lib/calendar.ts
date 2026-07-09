@@ -5,15 +5,22 @@ import { decryptToken } from './crypto';
 import { getCompletionUrl } from './completion-token';
 
 type GoogleApiErrorShape = {
-  code?: number;
+  // gaxios stamps a *string* `code` (e.g. 'TimeoutError', ' ECONNRESET') on
+  // transport errors that carry no HTTP status — hence `number | string`.
+  code?: number | string;
   status?: number;
   message?: string;
   response?: { status?: number; headers?: Record<string, string | string[] | undefined> };
 };
 
+// Return only a numeric HTTP status. A gaxios transport failure (timeout,
+// connection reset) sets a *string* `code` and no `status`; without this guard
+// that string would masquerade as a status and defeat both the 5xx retry check
+// in withBackoff and the no-status transient fallback in classifyGoogleError.
 function extractStatus(err: unknown): number | undefined {
   const e = err as GoogleApiErrorShape;
-  return e?.code ?? e?.status ?? e?.response?.status;
+  const raw = e?.code ?? e?.status ?? e?.response?.status;
+  return typeof raw === 'number' ? raw : undefined;
 }
 
 /**
@@ -114,7 +121,9 @@ export async function withBackoff<T>(fn: () => Promise<T>, label: string): Promi
       return await fn();
     } catch (err) {
       const status = extractStatus(err);
-      const retryable = status === 429 || (status !== undefined && status >= 500 && status < 600);
+      // No numeric status = a transport error (timeout / connection reset):
+      // retry it, matching classifyGoogleError's no-status transient branch.
+      const retryable = status === undefined || status === 429 || (status >= 500 && status < 600);
       if (!retryable || attempt === delays.length) throw err;
       const retryAfter = extractRetryAfterMs(err);
       const base = delays[attempt];
