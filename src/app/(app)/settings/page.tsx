@@ -557,23 +557,15 @@ export default function SettingsPage() {
     }
   };
 
-  const resendInvitation = async (invitationId: string, email: string, role: string) => {
-    // Revoke the old one first, then create a new one
-    const revokeRes = await fetch(`/api/invitations/${invitationId}`, {
-      method: 'PATCH',
-    });
-    if (!revokeRes.ok) {
-      toast.error('Failed to revoke old invitation');
-      return;
-    }
-
-    const createRes = await fetch('/api/invitations', {
+  const resendInvitation = async (invitationId: string) => {
+    // Resend on the same invitation row: regenerates the token (invalidating
+    // the old link) and restarts the 7-day expiry window. Works for both
+    // still-valid and already-expired PENDING invites.
+    const res = await fetch(`/api/invitations/${invitationId}/resend`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, role }),
     });
-    if (createRes.ok) {
-      const newInvitation = await createRes.json();
+    if (res.ok) {
+      const newInvitation = await res.json();
       const inviteUrl = `${window.location.origin}${newInvitation.inviteUrl}`;
       try {
         await navigator.clipboard.writeText(inviteUrl);
@@ -594,16 +586,16 @@ export default function SettingsPage() {
         } else if (newInvitation.emailConfigured) {
           toast.error(
             newInvitation.emailError
-              ? `Invitation recreated, but email failed: ${newInvitation.emailError}`
-              : 'Invitation recreated, but email failed.'
+              ? `Invitation resent, but email failed: ${newInvitation.emailError}`
+              : 'Invitation resent, but email failed.'
           );
         } else {
-          toast.success('Invitation recreated. Email is not configured.');
+          toast.success('Invitation resent. Email is not configured.');
         }
       }
       fetchInvitations();
     } else {
-      const data = await createRes.json();
+      const data = await res.json().catch(() => ({}));
       toast.error(data.error || 'Failed to resend invitation');
     }
   };
@@ -1560,9 +1552,9 @@ export default function SettingsPage() {
                               )}
                             </button>
                             <button
-                              onClick={() => resendInvitation(inv.id, inv.email, inv.role)}
+                              onClick={() => resendInvitation(inv.id)}
                               className="rounded-lg px-2.5 py-1 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-                              title="Revoke and resend with new link"
+                              title={inv.isExpired ? 'Send a fresh link and restart the 7-day window' : 'Regenerate the invite link and restart the 7-day window'}
                             >
                               <RefreshCw className="h-3.5 w-3.5 inline-block mr-1" />
                               Resend
