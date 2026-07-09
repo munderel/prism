@@ -10,7 +10,7 @@
 // any webhook failure is swallowed so alerting can never turn a handled error
 // into a crashed request.
 
-import { createLogger } from './logger';
+import { createLogger, redactSecrets } from './logger';
 
 const WEBHOOK_TIMEOUT_MS = 5000;
 
@@ -36,7 +36,9 @@ export async function reportError(
         context,
         message,
         stack,
-        meta,
+        // Redact secret-bearing meta keys before they leave the process — the
+        // webhook host is external, so match the redaction the log line applies.
+        meta: meta ? redactSecrets(meta) : undefined,
         time: new Date().toISOString(),
       }),
       signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
