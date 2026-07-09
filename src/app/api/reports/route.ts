@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, authError } from '@/lib/auth-guard';
 import { computeIndividualReport, computeLeverageAnalysis } from '@/lib/reports';
+import { ACTIVE_GOAL_WHERE } from '@/lib/goal-constants';
 import { cacheHeaders } from '@/lib/api-helpers';
 
 const TASK_REPORT_SELECT = {
@@ -38,7 +39,7 @@ async function companyReport(): Promise<Response> {
       where: { isCompany: true },
       include: {
         goals: {
-          where: { deletedAt: null, parentId: null },
+          where: { ...ACTIVE_GOAL_WHERE, parentId: null },
           select: { title: true, progressPct: true },
         },
       },
