@@ -62,6 +62,14 @@ describe('classifyGoogleError', () => {
     expect(info.status).toBeUndefined();
   });
 
+  it('treats a gaxios timeout (string code, no status) as transient', () => {
+    // gaxios stamps a *string* code ('TimeoutError') with no HTTP status; it
+    // must not masquerade as a numeric status and fall through to `unknown`.
+    const info = classifyGoogleError(Object.assign(new Error('timeout'), { code: 'TimeoutError' }));
+    expect(info).toMatchObject({ code: 'transient', retryable: true });
+    expect(info.status).toBeUndefined();
+  });
+
   it('reads status from response.status when code/status missing', () => {
     const info = classifyGoogleError({ response: { status: 429 } });
     expect(info.code).toBe('rate_limited');
@@ -104,6 +112,21 @@ describe('withBackoff', () => {
     expect(caught).toBe(err);
     // 4 delays configured + 1 initial attempt = 5 total
     expect(fn).toHaveBeenCalledTimes(5);
+    vi.useRealTimers();
+  });
+
+  it('retries a gaxios timeout (string code, no numeric status) then succeeds', async () => {
+    vi.useFakeTimers();
+    const timeout = Object.assign(new Error('timeout'), { code: 'TimeoutError' });
+    const fn = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce('ok');
+    const promise = withBackoff(fn, 'test');
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result).toBe('ok');
+    expect(fn).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
 
