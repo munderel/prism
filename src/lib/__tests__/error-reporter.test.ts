@@ -8,6 +8,16 @@ vi.mock('../logger', () => ({
     warn: vi.fn(),
     error: errorSpy,
   })),
+  // Faithful-enough shallow stand-in for the real redactSecrets so the webhook
+  // payload assertions exercise redaction without importing the mocked module.
+  redactSecrets: (v: unknown) => {
+    if (!v || typeof v !== 'object') return v;
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      out[k] = /token|secret|authorization|password/i.test(k) ? '[REDACTED]' : val;
+    }
+    return out;
+  },
 }));
 
 import { reportError } from '../error-reporter';
@@ -69,6 +79,18 @@ describe('reportError', () => {
       meta: { route: '/api/tasks' },
     });
     expect(typeof payload.time).toBe('string');
+  });
+
+  it('redacts secret-bearing meta keys in the webhook payload', async () => {
+    process.env.ALERT_WEBHOOK_URL = 'https://hooks.example/incident';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await reportError('api', new Error('kaboom'), { route: '/api/tasks', token: 'sk-live-secret' });
+
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(payload.meta.route).toBe('/api/tasks');
+    expect(payload.meta.token).toBe('[REDACTED]');
   });
 
   it('swallows a webhook fetch rejection and still logs', async () => {
