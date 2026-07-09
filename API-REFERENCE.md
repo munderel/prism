@@ -46,6 +46,7 @@ scripts and abuse. Over the limit, the route returns
 | `PATCH`/`DELETE /api/calendar/events/[id]` | 120 / 5 min per user (shared budget) |
 | `POST /api/auth/register` | 5 / hour per email (inline `LoginAttempt` counter) |
 | `POST /api/invitations` | 10 / hour per admin (inline `Invitation` counter) |
+| `POST /api/invitations/[id]/resend` | 10 / hour per admin (shared `Invitation` counter) |
 
 GET routes are never rate-limited.
 
@@ -176,6 +177,22 @@ Get invitation details by ID.
 **Auth:** None (public)
 
 Accept an invitation. Used during registration flow.
+
+### `POST /api/invitations/[id]/resend`
+**Auth:** Admin
+
+Resend a `PENDING` invitation. Regenerates the invitation token — **the old
+invite link is immediately invalidated** — and resets `createdAt` so the 7-day
+expiry window restarts, then re-sends the invite email. Works for both
+still-valid and already-expired pending invites.
+
+Returns the updated invitation plus `inviteUrl`, `emailConfigured`, `emailSent`,
+and `emailError`, mirroring `POST /api/invitations`.
+
+- `404` if the invitation does not exist.
+- `409` if the invitation is not `PENDING` (already accepted / revoked).
+- `429` if the admin has hit the 10-invitations-per-hour budget (shared with
+  `POST /api/invitations`).
 
 ---
 
